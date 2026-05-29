@@ -1,6 +1,12 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
-import inputMethod from '@ohos.inputMethod';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
+
+interface InputMethodSubtype {
+  id: string;
+  label?: string;
+  locale?: string;
+  mode?: string;
+}
 import display from '@ohos.display';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
@@ -305,7 +311,7 @@ export class KeyboardController {
       this.context.destroy();
     });
 
-    IMEAbility.on('setSubtype', (subtype: inputMethod.InputMethodSubtype) => {
+    IMEAbility.on('setSubtype', (subtype: InputMethodSubtype) => {
       const modeMap: Record<string, string> = {
         'hiragana': InputMode.HIRAGANA,
         'katakana': InputMode.KATAKANA,
