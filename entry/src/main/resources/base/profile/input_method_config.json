@@ -1,0 +1,25 @@
+{
+  "subtypes": [
+    {
+      "icon": "$media:icon",
+      "id": "hiragana",
+      "label": "$string:subtype_hiragana",
+      "locale": "ja-JP",
+      "mode": "lower"
+    },
+    {
+      "icon": "$media:icon",
+      "id": "katakana",
+      "label": "$string:subtype_katakana",
+      "locale": "ja-JP",
+      "mode": "lower"
+    },
+    {
+      "icon": "$media:icon",
+      "id": "alphanumeric",
+      "label": "$string:subtype_alphanumeric",
+      "locale": "en-US",
+      "mode": "lower"
+    }
+  ]
+}

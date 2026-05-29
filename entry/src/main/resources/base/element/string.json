@@ -1,0 +1,10 @@
+{
+  "string": [
+    { "name": "entry_desc",          "value": "shunti IME" },
+    { "name": "extension_label",     "value": "shunti IME" },
+    { "name": "extension_desc",      "value": "Japanese Input Method by shunti" },
+    { "name": "subtype_hiragana",    "value": "日本語（ひらがな）" },
+    { "name": "subtype_katakana",    "value": "カタカナ" },
+    { "name": "subtype_alphanumeric","value": "英数字" }
+  ]
+}
