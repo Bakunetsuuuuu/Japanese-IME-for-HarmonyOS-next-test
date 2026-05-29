@@ -1,4 +1,5 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
+import inputMethod from '@ohos.inputMethod';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
 import display from '@ohos.display';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
@@ -229,7 +230,11 @@ export class KeyboardController {
   private inputHandle: InputHandler = InputHandler.getInstance();
   private kbDelegate: inputMethodEngine.KeyboardDelegate | undefined;
 
-  constructor(private context: InputMethodExtensionContext) {}
+  private context: InputMethodExtensionContext;
+
+  constructor(context: InputMethodExtensionContext) {
+    this.context = context;
+  }
 
   onCreate(): void {
     this.initPanel();
@@ -300,7 +305,7 @@ export class KeyboardController {
       this.context.destroy();
     });
 
-    IMEAbility.on('setSubtype', (subtype: inputMethodEngine.InputMethodSubtype) => {
+    IMEAbility.on('setSubtype', (subtype: inputMethod.InputMethodSubtype) => {
       const modeMap: Record<string, string> = {
         'hiragana': InputMode.HIRAGANA,
         'katakana': InputMode.KATAKANA,
@@ -321,9 +326,6 @@ export class KeyboardController {
 
   private unregisterListeners(): void {
     display.off('change');
-    IMEAbility.off('inputStart');
-    IMEAbility.off('inputStop');
-    IMEAbility.off('setSubtype');
     this.kbDelegate?.off('keyDown');
   }
 }
