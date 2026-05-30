@@ -28,18 +28,17 @@ const IMEAbility = inputMethodEngine.getInputMethodAbility();
 // ---------- InputHandler ----------
 
 export class InputHandler {
+  private static _instance: InputHandler | undefined = undefined;
   private kbController: inputMethodEngine.KeyboardController | undefined;
   private inputClient: inputMethodEngine.InputClient | undefined;
   private converter: JapaneseConverter = new JapaneseConverter();
   private kanjiConverter: KanaKanjiConverter = new KanaKanjiConverter();
 
   static getInstance(): InputHandler {
-    let inst = AppStorage.get<InputHandler>('inputHandler');
-    if (!inst) {
-      inst = new InputHandler();
-      AppStorage.setOrCreate('inputHandler', inst);
+    if (!InputHandler._instance) {
+      InputHandler._instance = new InputHandler();
     }
-    return inst;
+    return InputHandler._instance;
   }
 
   onInputStart(

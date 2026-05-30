@@ -15,7 +15,7 @@ export struct KeyboardView {
   @State isShift: boolean = false;
   @State isCapsLock: boolean = false;
 
-  private get handler(): InputHandler {
+  private getHandler(): InputHandler {
     return InputHandler.getInstance();
   }
 
@@ -68,13 +68,13 @@ export struct KeyboardView {
       Row({ space: 4 }) {
         this.ModeKey()
         this.FuncKey('、', () => {
-          this.handler.commitTopCandidate();
-          this.handler.insertText('、');
+          this.getHandler().commitTopCandidate();
+          this.getHandler().insertText('、');
         })
         this.SpaceKey()
         this.FuncKey('。', () => {
-          this.handler.commitTopCandidate();
-          this.handler.insertText('。');
+          this.getHandler().commitTopCandidate();
+          this.getHandler().insertText('。');
         })
         this.EnterKey()
       }
@@ -97,7 +97,7 @@ export struct KeyboardView {
       .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
       .onClick(() => {
         const key = (this.isShift || this.isCapsLock) ? value.toUpperCase() : value;
-        this.handler.handleKeyPress(key);
+        this.getHandler().handleKeyPress(key);
         if (this.isShift && !this.isCapsLock) {
           this.isShift = false;
         }
@@ -137,7 +137,7 @@ export struct KeyboardView {
       .borderRadius(5)
       .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
       .onClick(() => {
-        this.handler.handleBackspace();
+        this.getHandler().handleBackspace();
       })
   }
 
@@ -153,7 +153,7 @@ export struct KeyboardView {
       .borderRadius(5)
       .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
       .onClick(() => {
-        this.handler.handleSpaceKey();
+        this.getHandler().handleSpaceKey();
       })
   }
 
@@ -170,7 +170,7 @@ export struct KeyboardView {
       .borderRadius(5)
       .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
       .onClick(() => {
-        this.handler.commitTopCandidate();
+        this.getHandler().commitTopCandidate();
         const current = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
         const next = current === InputMode.HIRAGANA ? InputMode.KATAKANA
           : current === InputMode.KATAKANA ? InputMode.ALPHANUMERIC
@@ -202,7 +202,7 @@ export struct KeyboardView {
       .borderRadius(5)
       .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
       .onClick(() => {
-        this.handler.handleEnterKey();
+        this.getHandler().handleEnterKey();
       })
   }
 }
