@@ -1,5 +1,8 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
+import display from '@ohos.display';
+import { JapaneseConverter, toKatakana } from './JapaneseConverter';
+import { KanaKanjiConverter } from './KanaKanjiConverter';
 
 interface InputMethodSubtype {
   id: string;
@@ -7,9 +10,6 @@ interface InputMethodSubtype {
   locale?: string;
   mode?: string;
 }
-import display from '@ohos.display';
-import { JapaneseConverter, toKatakana } from './JapaneseConverter';
-import { KanaKanjiConverter } from './KanaKanjiConverter';
 
 export const enum InputState {
   IDLE = 'IDLE',
