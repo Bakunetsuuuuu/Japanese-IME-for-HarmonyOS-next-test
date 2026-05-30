@@ -22,19 +22,19 @@ function getKanaByDir(key: FlickKeyDef, dir: FlickDir): string {
 
 const FLICK_GRID: FlickKeyDef[][] = [
   [
-    { center: 'あ', up: 'い', right: 'う', down: 'え', left: 'お' },
-    { center: 'か', up: 'き', right: 'く', down: 'け', left: 'こ' },
-    { center: 'さ', up: 'し', right: 'す', down: 'せ', left: 'そ' },
+    { center: 'あ', up: 'う', right: 'え', down: 'お', left: 'い' },
+    { center: 'か', up: 'く', right: 'け', down: 'こ', left: 'き' },
+    { center: 'さ', up: 'す', right: 'せ', down: 'そ', left: 'し' },
   ],
   [
-    { center: 'た', up: 'ち', right: 'つ', down: 'て', left: 'と' },
-    { center: 'な', up: 'に', right: 'ぬ', down: 'ね', left: 'の' },
-    { center: 'は', up: 'ひ', right: 'ふ', down: 'へ', left: 'ほ' },
+    { center: 'た', up: 'つ', right: 'て', down: 'と', left: 'ち' },
+    { center: 'な', up: 'ぬ', right: 'ね', down: 'の', left: 'に' },
+    { center: 'は', up: 'ふ', right: 'へ', down: 'ほ', left: 'ひ' },
   ],
   [
-    { center: 'ま', up: 'み', right: 'む', down: 'め', left: 'も' },
-    { center: 'や', right: 'ゆ', left: 'よ' },
-    { center: 'ら', up: 'り', right: 'る', down: 'れ', left: 'ろ' },
+    { center: 'ま', up: 'む', right: 'め', down: 'も', left: 'み' },
+    { center: 'や', up: 'ゆ', down: 'よ' },
+    { center: 'ら', up: 'る', right: 'れ', down: 'ろ', left: 'り' },
   ],
   [
     { center: '゛', up: '゜', down: '小', special: 'dakuten' },
