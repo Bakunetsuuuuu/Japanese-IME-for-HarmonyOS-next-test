@@ -254,10 +254,18 @@ export class KeyboardController {
     }
   }
 
+  // Calculate panel height from actual content size in vp × screen density.
+  // Layout: preview bar 48vp + 5 key rows×44vp + 4 gaps×5vp + padding 12vp = 300vp portrait
+  private computePanelHeight(dis: display.Display, isLandscape: boolean): number {
+    const density = dis.densityPixels > 0 ? dis.densityPixels : 3.0;
+    const totalVp = isLandscape ? 264 : 300;
+    return Math.ceil(totalVp * density);
+  }
+
   private initPanel(): void {
     const dis = display.getDefaultDisplaySync();
     const isLandscape = dis.width > dis.height;
-    const keyHeight = Math.floor(dis.height * (isLandscape ? 0.50 : 0.42));
+    const keyHeight = this.computePanelHeight(dis, isLandscape);
 
     AppStorage.setOrCreate('isLandscape', isLandscape);
     AppStorage.setOrCreate('displayWidth', dis.width);
@@ -282,7 +290,7 @@ export class KeyboardController {
   private resizePanel(): void {
     const dis = display.getDefaultDisplaySync();
     const isLandscape = dis.width > dis.height;
-    const keyHeight = Math.floor(dis.height * (isLandscape ? 0.50 : 0.42));
+    const keyHeight = this.computePanelHeight(dis, isLandscape);
 
     AppStorage.setOrCreate('isLandscape', isLandscape);
     AppStorage.setOrCreate('displayWidth', dis.width);
