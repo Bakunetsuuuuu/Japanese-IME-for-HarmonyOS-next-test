@@ -254,12 +254,26 @@ export class KeyboardController {
     }
   }
 
+  private computeKeyWidths(dis: display.Display): void {
+    const safeDPI = dis.densityDPI > 0 ? dis.densityDPI : 460;
+    const density = safeDPI / 160;
+    const screenVp = dis.width / density;
+    // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead
+    const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
+    const skwVp = Math.round(kwVp * 1.2);
+    // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
+    const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
+    AppStorage.setOrCreate('keyWidthVp', kwVp);
+    AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
+    AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
+  }
+
   private initPanel(): void {
     const dis = display.getDefaultDisplaySync();
     const isLandscape = dis.width > dis.height;
     // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
     // content: 48vp bar + 5×44vp rows + 4×5vp gaps + 12vp padding = 300vp portrait
-    const density = dis.densityDPI / 160;
+    const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
     const contentPx = Math.ceil((isLandscape ? 264 : 300) * density);
     // clamp to 25–60% of screen height in case densityDPI returns an odd value
     const keyHeight = Math.max(
@@ -270,6 +284,7 @@ export class KeyboardController {
     AppStorage.setOrCreate('isLandscape', isLandscape);
     AppStorage.setOrCreate('displayWidth', dis.width);
     AppStorage.setOrCreate('keyboardHeight', keyHeight);
+    this.computeKeyWidths(dis);
 
     const panelInfo: inputMethodEngine.PanelInfo = {
       type: inputMethodEngine.PanelType.SOFT_KEYBOARD,
@@ -290,7 +305,7 @@ export class KeyboardController {
   private resizePanel(): void {
     const dis = display.getDefaultDisplaySync();
     const isLandscape = dis.width > dis.height;
-    const density = dis.densityDPI / 160;
+    const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
     const contentPx = Math.ceil((isLandscape ? 264 : 300) * density);
     const keyHeight = Math.max(
       Math.floor(dis.height * 0.25),
@@ -300,6 +315,7 @@ export class KeyboardController {
     AppStorage.setOrCreate('isLandscape', isLandscape);
     AppStorage.setOrCreate('displayWidth', dis.width);
     AppStorage.setOrCreate('keyboardHeight', keyHeight);
+    this.computeKeyWidths(dis);
 
     this.panel?.resize(dis.width, keyHeight)
       .then(() => this.panel?.moveTo(0, dis.height - keyHeight));
