@@ -23,14 +23,6 @@ export struct KeyboardView {
     return (this.isShift || this.isCapsLock) ? key.toUpperCase() : key;
   }
 
-  private keyWidth(): number {
-    return this.isLandscape ? 48 : 36;
-  }
-
-  private specialKeyWidth(): number {
-    return this.isLandscape ? 56 : 44;
-  }
-
   build() {
     Column({ space: 5 }) {
       // Number row
@@ -90,7 +82,7 @@ export struct KeyboardView {
       .fontSize(17)
       .fontColor(Color.Black)
       .textAlign(TextAlign.Center)
-      .width(this.keyWidth())
+      .layoutWeight(1)
       .height(44)
       .backgroundColor('#FFFFFF')
       .borderRadius(5)
@@ -108,7 +100,7 @@ export struct KeyboardView {
     Text(this.isCapsLock ? '⇪' : '⇧')
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .width(this.specialKeyWidth())
+      .layoutWeight(1.3)
       .height(44)
       .backgroundColor(this.isShift || this.isCapsLock ? '#4A90E2' : '#ADB5BD')
       .fontColor(Color.White)
@@ -130,7 +122,7 @@ export struct KeyboardView {
     Text('⌫')
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .width(this.specialKeyWidth())
+      .layoutWeight(1.3)
       .height(44)
       .backgroundColor('#ADB5BD')
       .fontColor(Color.White)
@@ -163,7 +155,7 @@ export struct KeyboardView {
       : 'A')
       .fontSize(15)
       .textAlign(TextAlign.Center)
-      .width(this.specialKeyWidth())
+      .layoutWeight(1.3)
       .height(44)
       .backgroundColor('#ADB5BD')
       .fontColor(Color.White)
@@ -183,7 +175,7 @@ export struct KeyboardView {
     Text(label)
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .width(this.keyWidth())
+      .layoutWeight(1)
       .height(44)
       .backgroundColor('#FFFFFF')
       .borderRadius(5)
@@ -195,7 +187,7 @@ export struct KeyboardView {
     Text('⏎')
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .width(this.specialKeyWidth())
+      .layoutWeight(1.3)
       .height(44)
       .backgroundColor('#4A90E2')
       .fontColor(Color.White)
