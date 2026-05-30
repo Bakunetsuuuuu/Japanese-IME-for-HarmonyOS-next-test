@@ -118,7 +118,7 @@ export struct FlickKeyboardView {
     this.h().handleDirectKana(kana);
   }
 
-  private onTouch(e: TouchEvent, row: number, col: number, key: FlickKeyDef): void {
+  private handleTouch(e: TouchEvent, row: number, col: number, key: FlickKeyDef): void {
     if (e.type === TouchType.Down) {
       const t = e.touches[0];
       this.touchStartX = t.x;
@@ -224,7 +224,7 @@ export struct FlickKeyboardView {
     .borderRadius(8)
     .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
     .onTouch((e: TouchEvent) => {
-      this.onTouch(e, rowIdx, colIdx, key);
+      this.handleTouch(e, rowIdx, colIdx, key);
     })
   }
 
