@@ -254,18 +254,18 @@ export class KeyboardController {
     }
   }
 
-  // Calculate panel height from actual content size in vp × screen density.
-  // Layout: preview bar 48vp + 5 key rows×44vp + 4 gaps×5vp + padding 12vp = 300vp portrait
-  private computePanelHeight(dis: display.Display, isLandscape: boolean): number {
-    const density = dis.densityPixels > 0 ? dis.densityPixels : 3.0;
-    const totalVp = isLandscape ? 264 : 300;
-    return Math.ceil(totalVp * density);
-  }
-
   private initPanel(): void {
     const dis = display.getDefaultDisplaySync();
     const isLandscape = dis.width > dis.height;
-    const keyHeight = this.computePanelHeight(dis, isLandscape);
+    // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
+    // content: 48vp bar + 5×44vp rows + 4×5vp gaps + 12vp padding = 300vp portrait
+    const density = dis.densityDPI / 160;
+    const contentPx = Math.ceil((isLandscape ? 264 : 300) * density);
+    // clamp to 25–60% of screen height in case densityDPI returns an odd value
+    const keyHeight = Math.max(
+      Math.floor(dis.height * 0.25),
+      Math.min(contentPx, Math.floor(dis.height * 0.60))
+    );
 
     AppStorage.setOrCreate('isLandscape', isLandscape);
     AppStorage.setOrCreate('displayWidth', dis.width);
@@ -290,7 +290,12 @@ export class KeyboardController {
   private resizePanel(): void {
     const dis = display.getDefaultDisplaySync();
     const isLandscape = dis.width > dis.height;
-    const keyHeight = this.computePanelHeight(dis, isLandscape);
+    const density = dis.densityDPI / 160;
+    const contentPx = Math.ceil((isLandscape ? 264 : 300) * density);
+    const keyHeight = Math.max(
+      Math.floor(dis.height * 0.25),
+      Math.min(contentPx, Math.floor(dis.height * 0.60))
+    );
 
     AppStorage.setOrCreate('isLandscape', isLandscape);
     AppStorage.setOrCreate('displayWidth', dis.width);
