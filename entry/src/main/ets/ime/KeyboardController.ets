@@ -25,6 +25,43 @@ export const enum InputMode {
 
 const IMEAbility = inputMethodEngine.getInputMethodAbility();
 
+const DAKUTEN: Record<string, string> = {
+  'か':'が','き':'ぎ','く':'ぐ','け':'げ','こ':'ご',
+  'さ':'ざ','し':'じ','す':'ず','せ':'ぜ','そ':'ぞ',
+  'た':'だ','ち':'ぢ','つ':'づ','て':'で','と':'ど',
+  'は':'ば','ひ':'び','ふ':'ぶ','へ':'べ','ほ':'ぼ','う':'ゔ',
+  'が':'か','ぎ':'き','ぐ':'く','げ':'け','ご':'こ',
+  'ざ':'さ','じ':'し','ず':'す','ぜ':'せ','ぞ':'そ',
+  'だ':'た','ぢ':'ち','づ':'つ','で':'て','ど':'と',
+  'ば':'は','び':'ひ','ぶ':'ふ','べ':'へ','ぼ':'ほ','ゔ':'う',
+  'カ':'ガ','キ':'ギ','ク':'グ','ケ':'ゲ','コ':'ゴ',
+  'サ':'ザ','シ':'ジ','ス':'ズ','セ':'ゼ','ソ':'ゾ',
+  'タ':'ダ','チ':'ヂ','ツ':'ヅ','テ':'デ','ト':'ド',
+  'ハ':'バ','ヒ':'ビ','フ':'ブ','ヘ':'ベ','ホ':'ボ','ウ':'ヴ',
+  'ガ':'カ','ギ':'キ','グ':'ク','ゲ':'ケ','ゴ':'コ',
+  'ザ':'サ','ジ':'シ','ズ':'ス','ゼ':'セ','ゾ':'ソ',
+  'ダ':'タ','ヂ':'チ','ヅ':'ツ','デ':'テ','ド':'ト',
+  'バ':'ハ','ビ':'ヒ','ブ':'フ','ベ':'ヘ','ボ':'ホ','ヴ':'ウ',
+};
+const HANDAKUTEN: Record<string, string> = {
+  'は':'ぱ','ひ':'ぴ','ふ':'ぷ','へ':'ぺ','ほ':'ぽ',
+  'ば':'ぱ','び':'ぴ','ぶ':'ぷ','べ':'ぺ','ぼ':'ぽ',
+  'ぱ':'は','ぴ':'ひ','ぷ':'ふ','ぺ':'へ','ぽ':'ほ',
+  'ハ':'パ','ヒ':'ピ','フ':'プ','ヘ':'ペ','ホ':'ポ',
+  'バ':'パ','ビ':'ピ','ブ':'プ','ベ':'ペ','ボ':'ポ',
+  'パ':'ハ','ピ':'ヒ','プ':'フ','ペ':'ヘ','ポ':'ホ',
+};
+const SMALL_KANA: Record<string, string> = {
+  'あ':'ぁ','い':'ぃ','う':'ぅ','え':'ぇ','お':'ぉ',
+  'つ':'っ','や':'ゃ','ゆ':'ゅ','よ':'ょ','わ':'ゎ',
+  'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お',
+  'っ':'つ','ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ',
+  'ア':'ァ','イ':'ィ','ウ':'ゥ','エ':'ェ','オ':'ォ',
+  'ツ':'ッ','ヤ':'ャ','ユ':'ュ','ヨ':'ョ','ワ':'ヮ',
+  'ァ':'ア','ィ':'イ','ゥ':'ウ','ェ':'エ','ォ':'オ',
+  'ッ':'ツ','ャ':'ヤ','ュ':'ユ','ョ':'ヨ','ヮ':'ワ',
+};
+
 // ---------- InputHandler ----------
 
 export class InputHandler {
@@ -219,6 +256,62 @@ export class InputHandler {
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
+  handleDirectKana(kana: string): void {
+    const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+
+    if (mode === InputMode.ALPHANUMERIC) {
+      this.commitPending();
+      this.insertText(kana);
+      return;
+    }
+
+    if (state === InputState.SELECTING) {
+      this.commitTopCandidate();
+    }
+
+    const current = AppStorage.get<string>('composingText') ?? '';
+    AppStorage.setOrCreate('composingText', current + kana);
+    AppStorage.setOrCreate('pendingRomaji', '');
+    AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+  }
+
+  handleDakuten(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.COMPOSING) { return; }
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    if (composing.length === 0) { return; }
+    const last = composing.slice(-1);
+    const toggled = DAKUTEN[last];
+    if (toggled !== undefined) {
+      AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
+    }
+  }
+
+  handleHandakuten(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.COMPOSING) { return; }
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    if (composing.length === 0) { return; }
+    const last = composing.slice(-1);
+    const toggled = HANDAKUTEN[last];
+    if (toggled !== undefined) {
+      AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
+    }
+  }
+
+  handleSmall(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.COMPOSING) { return; }
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    if (composing.length === 0) { return; }
+    const last = composing.slice(-1);
+    const toggled = SMALL_KANA[last];
+    if (toggled !== undefined) {
+      AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
+    }
+  }
+
   insertText(text: string): void {
     this.inputClient?.insertText(text);
   }
@@ -263,9 +356,12 @@ export class KeyboardController {
     const skwVp = Math.round(kwVp * 1.2);
     // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
     const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
+    // Flick keys: 3 columns + 2 gaps × 3vp + 4vp H-padding
+    const flickKwVp = Math.max(Math.floor((screenVp - 10) / 3), 80);
     AppStorage.setOrCreate('keyWidthVp', kwVp);
     AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
     AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
+    AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
   }
 
   private initPanel(): void {
@@ -274,7 +370,7 @@ export class KeyboardController {
     // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
     // content: 48vp bar + 5×44vp rows + 4×5vp gaps + 12vp padding = 300vp portrait
     const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-    const contentPx = Math.ceil((isLandscape ? 264 : 300) * density);
+    const contentPx = Math.ceil((isLandscape ? 290 : 340) * density);
     // clamp to 25–60% of screen height in case densityDPI returns an odd value
     const keyHeight = Math.max(
       Math.floor(dis.height * 0.25),
@@ -306,7 +402,7 @@ export class KeyboardController {
     const dis = display.getDefaultDisplaySync();
     const isLandscape = dis.width > dis.height;
     const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-    const contentPx = Math.ceil((isLandscape ? 264 : 300) * density);
+    const contentPx = Math.ceil((isLandscape ? 290 : 340) * density);
     const keyHeight = Math.max(
       Math.floor(dis.height * 0.25),
       Math.min(contentPx, Math.floor(dis.height * 0.60))
