@@ -1,6 +1,10 @@
+import inputMethodEngine from '@ohos.inputMethodEngine';
 import { InputHandler, InputState, InputMode } from '../ime/KeyboardController';
 import { CandidateBar } from '../components/CandidateBar';
 import { KeyboardView } from '../components/KeyboardView';
+
+// Prevent duplicate registration if aboutToAppear fires more than once
+let _inputStartRegistered = false;
 
 @Entry
 @Component
@@ -12,6 +16,19 @@ struct KeyboardPage {
   @StorageLink('candidates') candidates: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
   @StorageLink('isLandscape') isLandscape: boolean = false;
+
+  // Register inputStart in the panel UI engine so this engine's InputHandler
+  // also receives inputClient — without this, deleteBackward/insertText are no-ops.
+  aboutToAppear(): void {
+    if (_inputStartRegistered) { return; }
+    _inputStartRegistered = true;
+    inputMethodEngine.getInputMethodAbility().on('inputStart', (
+      kbCtrl: inputMethodEngine.KeyboardController,
+      client: inputMethodEngine.InputClient
+    ) => {
+      InputHandler.getInstance().onInputStart(kbCtrl, client);
+    });
+  }
 
   onBackPress(): boolean {
     InputHandler.getInstance().hideKeyboard();
