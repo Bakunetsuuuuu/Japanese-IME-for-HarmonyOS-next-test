@@ -14,6 +14,10 @@ export struct KeyboardView {
   @Prop isLandscape: boolean = false;
   @State isShift: boolean = false;
   @State isCapsLock: boolean = false;
+  // Key widths pre-computed from screen density in KeyboardController
+  @StorageLink('keyWidthVp') keyWidthVp: number = 36;
+  @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
+  @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
 
   private getHandler(): InputHandler {
     return InputHandler.getInstance();
@@ -26,17 +30,16 @@ export struct KeyboardView {
   build() {
     Column({ space: 5 }) {
       // Number row
-      Row({ space: 4 }) {
+      Row({ space: 2 }) {
         ForEach(NUMBER_ROW, (key: string) => {
           this.RegularKey(key, key)
         }, (key: string) => key)
       }
       .width('100%')
-      .justifyContent(FlexAlign.Center)
 
       // QWERTY rows 0 and 1
       ForEach([0, 1], (rowIdx: number) => {
-        Row({ space: 4 }) {
+        Row({ space: 2 }) {
           ForEach(ROWS[rowIdx], (key: string) => {
             this.RegularKey(this.displayKey(key), key)
           }, (key: string) => key)
@@ -46,7 +49,7 @@ export struct KeyboardView {
       }, (rowIdx: number) => String(rowIdx))
 
       // Bottom letter row (z-m) with shift and backspace
-      Row({ space: 4 }) {
+      Row({ space: 2 }) {
         this.ShiftKey()
         ForEach(ROWS[2], (key: string) => {
           this.RegularKey(this.displayKey(key), key)
@@ -57,7 +60,7 @@ export struct KeyboardView {
       .justifyContent(FlexAlign.Center)
 
       // Function row
-      Row({ space: 4 }) {
+      Row({ space: 2 }) {
         this.ModeKey()
         this.FuncKey('、', () => {
           this.getHandler().commitTopCandidate();
@@ -82,7 +85,7 @@ export struct KeyboardView {
       .fontSize(17)
       .fontColor(Color.Black)
       .textAlign(TextAlign.Center)
-      .layoutWeight(1)
+      .width(this.keyWidthVp)
       .height(44)
       .backgroundColor('#FFFFFF')
       .borderRadius(5)
@@ -100,7 +103,7 @@ export struct KeyboardView {
     Text(this.isCapsLock ? '⇪' : '⇧')
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .layoutWeight(1.3)
+      .width(this.specialKeyWidthVp)
       .height(44)
       .backgroundColor(this.isShift || this.isCapsLock ? '#4A90E2' : '#ADB5BD')
       .fontColor(Color.White)
@@ -122,7 +125,7 @@ export struct KeyboardView {
     Text('⌫')
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .layoutWeight(1.3)
+      .width(this.specialKeyWidthVp)
       .height(44)
       .backgroundColor('#ADB5BD')
       .fontColor(Color.White)
@@ -139,7 +142,7 @@ export struct KeyboardView {
       : 'space')
       .fontSize(14)
       .textAlign(TextAlign.Center)
-      .layoutWeight(1)
+      .width(this.spaceKeyWidthVp)
       .height(44)
       .backgroundColor('#FFFFFF')
       .borderRadius(5)
@@ -155,7 +158,7 @@ export struct KeyboardView {
       : 'A')
       .fontSize(15)
       .textAlign(TextAlign.Center)
-      .layoutWeight(1.3)
+      .width(this.specialKeyWidthVp)
       .height(44)
       .backgroundColor('#ADB5BD')
       .fontColor(Color.White)
@@ -175,7 +178,7 @@ export struct KeyboardView {
     Text(label)
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .layoutWeight(1)
+      .width(this.keyWidthVp)
       .height(44)
       .backgroundColor('#FFFFFF')
       .borderRadius(5)
@@ -187,7 +190,7 @@ export struct KeyboardView {
     Text('⏎')
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .layoutWeight(1.3)
+      .width(this.specialKeyWidthVp)
       .height(44)
       .backgroundColor('#4A90E2')
       .fontColor(Color.White)
