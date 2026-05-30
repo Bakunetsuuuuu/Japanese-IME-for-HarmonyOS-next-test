@@ -38,8 +38,8 @@ const FLICK_GRID: FlickKeyDef[][] = [
   ],
   [
     { center: '゛', up: '゜', down: '小', special: 'dakuten' },
-    { center: 'わ', right: 'を', down: 'ん', left: 'ー' },
-    { center: '⌫', special: 'backspace' },
+    { center: 'わ', up: 'ん', right: 'ー', down: '～', left: 'を' },
+    { center: '、', up: '？', right: '！', down: '…', left: '。', special: 'punct' },
   ],
 ];
 
@@ -88,13 +88,16 @@ export struct FlickKeyboardView {
   }
 
   private centerLabel(row: number, col: number, key: FlickKeyDef): string {
-    if (key.special !== undefined) { return key.center; }
-    if (this.isActive(row, col)) { return this.toMode(getKanaByDir(key, this.flickDir)); }
-    return this.toMode(key.center);
+    if (key.special === 'backspace' || key.special === 'dakuten') { return key.center; }
+    if (this.isActive(row, col)) {
+      const raw = getKanaByDir(key, this.flickDir);
+      return key.special === 'punct' ? raw : this.toMode(raw);
+    }
+    return key.special === 'punct' ? key.center : this.toMode(key.center);
   }
 
   private keyBg(row: number, col: number, key: FlickKeyDef): ResourceColor {
-    if (key.special !== undefined) { return '#ADB5BD'; }
+    if (key.special === 'backspace' || key.special === 'dakuten') { return '#ADB5BD'; }
     if (this.isActive(row, col)) { return '#B8D4F0'; }
     return '#FFFFFF';
   }
@@ -112,6 +115,11 @@ export struct FlickKeyboardView {
       } else if (dir === 'down') {
         this.h().handleSmall();
       }
+      return;
+    }
+    if (key.special === 'punct') {
+      this.h().commitTopCandidate();
+      this.h().insertText(getKanaByDir(key, dir));
       return;
     }
     const kana = this.toMode(getKanaByDir(key, dir));
@@ -158,15 +166,8 @@ export struct FlickKeyboardView {
       // Function row
       Row({ space: 3 }) {
         this.FlickModeKey()
-        this.FlickPuncKey('、', () => {
-          this.h().commitTopCandidate();
-          this.h().insertText('、');
-        })
         this.FlickSpaceKey()
-        this.FlickPuncKey('。', () => {
-          this.h().commitTopCandidate();
-          this.h().insertText('。');
-        })
+        this.FlickBackspaceKey()
         this.FlickEnterKey()
       }
       .width('100%')
@@ -196,7 +197,7 @@ export struct FlickKeyboardView {
 
         Text(this.centerLabel(rowIdx, colIdx, key))
           .fontSize(this.isActive(rowIdx, colIdx) ? 22 : 19)
-          .fontColor(key.special !== undefined ? Color.White : Color.Black)
+          .fontColor(key.special === 'backspace' || key.special === 'dakuten' ? Color.White : Color.Black)
           .fontWeight(FontWeight.Medium)
           .width('50%')
           .textAlign(TextAlign.Center)
@@ -250,16 +251,19 @@ export struct FlickKeyboardView {
       })
   }
 
-  @Builder FlickPuncKey(label: string, action: () => void) {
-    Text(label)
+  @Builder FlickBackspaceKey() {
+    Text('⌫')
       .fontSize(17)
       .textAlign(TextAlign.Center)
-      .width(44)
+      .width(60)
       .height(44)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor('#ADB5BD')
+      .fontColor(Color.White)
       .borderRadius(5)
       .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-      .onClick(action)
+      .onClick(() => {
+        this.h().handleBackspace();
+      })
   }
 
   @Builder FlickSpaceKey() {
@@ -268,7 +272,7 @@ export struct FlickKeyboardView {
       : 'space')
       .fontSize(14)
       .textAlign(TextAlign.Center)
-      .width(120)
+      .width(160)
       .height(44)
       .backgroundColor('#FFFFFF')
       .borderRadius(5)
