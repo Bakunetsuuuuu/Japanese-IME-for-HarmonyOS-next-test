@@ -143,7 +143,7 @@ export class InputHandler {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
 
     if (state === InputState.IDLE) {
-      this.inputClient?.deleteBackward(1);
+      this.inputClient?.deleteForward(1);
       return;
     }
 
