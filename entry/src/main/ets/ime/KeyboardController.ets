@@ -355,7 +355,7 @@ export class InputHandler {
       // Multi-segment: auto-convert all but the last segment, show alternatives for last.
       // Candidate[0] is the full Gboard-style auto-converted sentence.
       const prefixText = segs.slice(0, -1)
-        .map((s: string) => this.kanjiConverter.lookup(s)[0])
+        .map((s: string) => this.kanjiConverter.autoConvert(s))
         .join('');
       const lastSeg = segs[segs.length - 1];
       const lastCands = this.kanjiConverter.lookup(lastSeg);
@@ -438,7 +438,7 @@ export class InputHandler {
     }
     if (composing.length === 0) { return; }
     this.bSegs = this.kanjiConverter.segment(composing);
-    this.bChosen = this.bSegs.map((seg: string) => this.kanjiConverter.lookup(seg)[0]);
+    this.bChosen = this.bSegs.map((seg: string) => this.kanjiConverter.autoConvert(seg));
     this.bCur = 0;
     this.updateBunsetsuStorage();
   }

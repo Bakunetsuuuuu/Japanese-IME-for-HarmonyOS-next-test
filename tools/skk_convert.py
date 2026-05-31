@@ -30,24 +30,39 @@ OKURI_EXPANSIONS: dict = {
     'u': ['う'],
     'e': ['え'],
     'o': ['お'],
-    # Consonant rows
-    'k': ['く', 'き', 'か'],    # godan-k: 書く, 書き, 書か(neg)
-    'g': ['ぐ', 'ぎ', 'が'],    # godan-g: 泳ぐ, 泳ぎ
-    's': ['す', 'し', 'さ'],    # godan-s: 話す, 話し, 話さ(neg)
-    'z': ['ず', 'じ'],           # godan-z
-    'c': ['ち'],                  # ch-row: 待ち, 立ち (連用形)
-    't': ['て', 'つ', 'た'],    # godan-t: 立つ, 持て; also て-base
-    'd': ['で', 'だ'],           # godan-d (rare)
-    'n': ['ぬ', 'ん', 'に'],    # godan-n: 死ぬ, 死ん(de), 死に
-    'b': ['ぶ', 'び', 'ば'],    # godan-b: 遊ぶ, 遊び, 遊ば(neg)
-    'p': ['ぷ', 'ぴ'],           # godan-p (rare)
-    'm': ['む', 'み', 'ま'],    # godan-m: 飲む, 飲み, 飲ま(neg)
-    'r': ['る', 'り', 'ら'],    # godan-r or ichidan: 帰る/食べる, 帰り, 帰ら(neg)
-    'w': ['わ'],                  # godan-w neg/pass stem: 笑わ, 買わ
-    'h': ['ひ', 'は'],           # h-row (adjective: 楽し, 若し)
-    'y': ['よ', 'ゆ'],           #
-    'j': ['じ'],                  #
+    # Consonant rows — simple single-kana suffixes (always applied)
+    'k': ['く', 'き', 'か'],
+    'g': ['ぐ', 'ぎ', 'が'],
+    's': ['す', 'し', 'さ'],
+    'z': ['ず', 'じ'],
+    'c': ['ち'],
+    't': ['て', 'つ', 'た',           # 来た etc; 打て/打つ
+          'った', 'って', 'てる'],    # godan-つ: 打った/打って/打てる
+    'd': ['で', 'だ'],
+    'n': ['ぬ', 'ん', 'に', 'んだ', 'んで'],
+    'b': ['ぶ', 'び', 'ば', 'んだ', 'んで', 'べる'],
+    'p': ['ぷ', 'ぴ'],
+    'm': ['む', 'み', 'ま', 'んだ', 'んで', 'める'],
+    'r': ['る', 'り', 'ら',
+          'た', 'て', 'ます', 'たい',  # ichidan: 食べた/食べて/食べます/食べたい
+          'ない', 'られる', 'れる',    # neg/potential/passive
+          'った', 'って'],            # godan-る: 帰った/帰って
+    'w': ['わ', 'い'],
+    'h': ['ひ', 'は'],
+    'y': ['よ', 'ゆ'],
+    'j': ['じ'],
 }
+
+# Additional compound suffixes applied only when stem_kana length >= min_stem.
+# This avoids false-positive entries from short/irregular stems (e.g. すs/酸/).
+COMPOUND_OKURI: list = [
+    # (consonant, min_stem_len, [compound_suffixes])
+    ('k', 2, ['いた', 'いて', 'きたい']),   # 書く→書いた/書いて/書きたい
+    ('g', 2, ['いだ', 'いで', 'ぎたい']),   # 泳ぐ→泳いだ/泳いで/泳ぎたい
+    ('s', 2, ['した', 'して', 'したい', 'せる']),  # 話す→話した/話して/話したい/話せる
+    ('k', 1, ['きたい']),    # 1-char stems too: 行きたい, 書きたい (godan-く desire)
+    ('g', 1, ['ぎたい']),    # 泳ぎたい
+]
 
 HIRAGANA_RE = re.compile(r'^[ぁ-ん]+$')
 MAX_CANDIDATES = 5
@@ -124,17 +139,26 @@ def convert(src: str) -> dict:
             stem_kana = reading[:-1]
             if not stem_kana or not HIRAGANA_RE.match(stem_kana):
                 continue
+            def add_expansion(stem: str, suf: str, cands: list) -> None:
+                reading_key = stem + suf
+                full_cands = [c + suf for c in cands]
+                if reading_key not in result:
+                    result[reading_key] = []
+                for fc in full_cands:
+                    if fc not in result[reading_key]:
+                        result[reading_key].append(fc)
+                result[reading_key] = result[reading_key][:MAX_CANDIDATES]
+
             expansions = OKURI_EXPANSIONS.get(consonant, [])
             for kana_suffix in expansions:
-                full_reading = stem_kana + kana_suffix
-                full_candidates = [c + kana_suffix for c in candidates]
-                if full_reading not in result:
-                    result[full_reading] = []
-                for fc in full_candidates:
-                    if fc not in result[full_reading]:
-                        result[full_reading].append(fc)
-                # Cap combined list
-                result[full_reading] = result[full_reading][:MAX_CANDIDATES]
+                add_expansion(stem_kana, kana_suffix, candidates)
+
+            # Compound suffixes with optional minimum stem length
+            stem_len = len(stem_kana)
+            for (cons, min_stem, suffixes) in COMPOUND_OKURI:
+                if consonant == cons and stem_len >= min_stem:
+                    for kana_suffix in suffixes:
+                        add_expansion(stem_kana, kana_suffix, candidates)
 
     return result
 

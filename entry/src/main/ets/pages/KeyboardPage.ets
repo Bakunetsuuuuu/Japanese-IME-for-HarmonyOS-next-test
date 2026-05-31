@@ -79,24 +79,22 @@ struct KeyboardPage {
           .borderColor('#CCCCCC')
         } else {
           Column() {
-            // Composing kana strip — shown whenever composing or selecting
-            if (this.inputState !== InputState.IDLE) {
-              Row() {
-                Text(this.composingText + this.pendingRomaji)
-                  .fontSize(16)
-                  .fontColor('#111111')
-                  .maxLines(1)
-                  .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .padding({ left: 12, right: 8 })
-                  .layoutWeight(1)
-              }
-              .width('100%')
-              .height(28)
-              .backgroundColor('#FAFAFA')
-              .borderWidth({ bottom: 1 })
-              .borderColor('#DDDDDD')
-              .alignItems(VerticalAlign.Center)
+            // Composing kana strip — always visible to prevent layout shifts
+            Row() {
+              Text(this.composingText + this.pendingRomaji)
+                .fontSize(16)
+                .fontColor('#111111')
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .padding({ left: 12, right: 8 })
+                .layoutWeight(1)
             }
+            .width('100%')
+            .height(28)
+            .backgroundColor('#FAFAFA')
+            .borderWidth({ bottom: 1 })
+            .borderColor('#DDDDDD')
+            .alignItems(VerticalAlign.Center)
 
             // Candidate bar row + layout toggle
             Row() {
