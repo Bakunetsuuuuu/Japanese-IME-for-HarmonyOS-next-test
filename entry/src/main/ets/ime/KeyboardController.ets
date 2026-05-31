@@ -1,6 +1,7 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
 import display from '@ohos.display';
+import { util } from '@kit.ArkTS';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
 
@@ -390,6 +391,7 @@ export class KeyboardController {
   onCreate(): void {
     this.initPanel();
     this.registerListeners();
+    this.loadDictionary();
   }
 
   onDestroy(): void {
@@ -398,6 +400,17 @@ export class KeyboardController {
       IMEAbility.destroyPanel(this.panel);
       this.panel = undefined;
     }
+  }
+
+  private loadDictionary(): void {
+    this.context.resourceManager.getRawFileContent('dict.json')
+      .then((data: Uint8Array) => {
+        const decoder = new util.TextDecoder('utf-8');
+        const text = decoder.decodeToString(data);
+        const dict = JSON.parse(text) as Record<string, string[]>;
+        KanaKanjiConverter.loadDictionary(dict);
+      })
+      .catch((_e: Error) => { /* fall back to inline static dict */ });
   }
 
   private computeKeyWidths(dis: display.Display): void {
