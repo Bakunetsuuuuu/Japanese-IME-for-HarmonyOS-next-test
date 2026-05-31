@@ -41,3 +41,30 @@ entry/src/main/ets/
 
 DevEco Studio で開き、HarmonyOS NEXT 実機 or エミュレータにデプロイ。  
 設定 → 言語入力 → キーボード → **shunti IME** を選択して有効化。
+
+### 辞書の再生成
+
+`dict.json` は SKK-JISYO.L から自動生成されます。更新する場合:
+
+```bash
+curl "https://raw.githubusercontent.com/skk-dev/dict/master/SKK-JISYO.L" -o /tmp/SKK-JISYO.L
+python3 tools/skk_convert.py
+```
+
+## ライセンス
+
+### アプリコード
+
+本プロジェクト独自のソースコード（`.ets` ファイル等）は MIT ライセンスです。
+
+### 変換辞書 (dict.json)
+
+`entry/src/main/resources/rawfile/dict.json` は [SKK-JISYO.L](https://github.com/skk-dev/dict) を変換したものです。
+
+**GNU General Public License v2.0 以降** が適用されます。
+
+> Copyright (C) 1988-1995, 1997, 1999-2014  
+> Masahiko Sato, Hironobu Takahashi, and SKK Development Team \<skk@ring.gr.jp\>  
+> Source: https://github.com/skk-dev/dict
+
+詳細は [NOTICE](./NOTICE) および [LICENSES/GPL-2.0.txt](./LICENSES/GPL-2.0.txt) を参照してください。
