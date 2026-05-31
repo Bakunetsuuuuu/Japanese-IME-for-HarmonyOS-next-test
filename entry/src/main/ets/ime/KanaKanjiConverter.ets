@@ -201,6 +201,92 @@ const DICTIONARY: Record<string, string[]> = {
   'ソフトウェア': ['ソフトウェア'], 'そふとうぇあ': ['ソフトウェア'],
   'ハードウェア': ['ハードウェア'],
 
+  // 外来語・カタカナ語（カタカナ優先）
+  'てれび': ['テレビ'],
+  'すまほ': ['スマホ'],
+  'こーひー': ['コーヒー'],
+  'じゅーす': ['ジュース'],
+  'びーる': ['ビール'],
+  'わいん': ['ワイン'],
+  'ぴざ': ['ピザ'],
+  'けーき': ['ケーキ'],
+  'ちょこれーと': ['チョコレート'],
+  'あいすくりーむ': ['アイスクリーム'],
+  'はんばーがー': ['ハンバーガー'],
+  'さんどいっち': ['サンドイッチ'],
+  'ぱすた': ['パスタ'],
+  'ほてる': ['ホテル'],
+  'れすとらん': ['レストラン'],
+  'こんびに': ['コンビニ'],
+  'めーる': ['メール'],
+  'ふぁいる': ['ファイル'],
+  'うぇぶ': ['ウェブ'],
+  'げーむ': ['ゲーム'],
+  'こんぴゅーた': ['コンピュータ'],
+  'かめら': ['カメラ'],
+  'すくりーん': ['スクリーン'],
+  'きーぼーど': ['キーボード'],
+  'ばってりー': ['バッテリー'],
+  'さーば': ['サーバ', 'サーバー'],
+  'でーた': ['データ'],
+  'くらうど': ['クラウド'],
+  'ねっと': ['ネット'],
+  'かーど': ['カード'],
+  'ぺーじ': ['ページ'],
+  'ぶらうざ': ['ブラウザ'],
+  'さいと': ['サイト'],
+  'あかうんと': ['アカウント'],
+  'ぱすわーど': ['パスワード'],
+  'あぷりけーしょん': ['アプリケーション'],
+  'でざいん': ['デザイン'],
+  'さーびす': ['サービス'],
+  'こんてんつ': ['コンテンツ'],
+  'ちーむ': ['チーム'],
+  'ちゃんす': ['チャンス'],
+  'すきる': ['スキル'],
+  'ぼーなす': ['ボーナス'],
+  'てくのろじー': ['テクノロジー'],
+  'えねるぎー': ['エネルギー'],
+  'じゃあなる': ['ジャーナル'],
+  'ぺっと': ['ペット'],
+  'ぱーてぃー': ['パーティー'],
+  'ぱーてぃ': ['パーティ', 'パーティー'],
+  'きっちん': ['キッチン'],
+  'べっど': ['ベッド'],
+  'そふぁ': ['ソファ', 'ソファー'],
+  'てーぶる': ['テーブル'],
+  'しゃわー': ['シャワー'],
+  'といれ': ['トイレ'],
+  'まんしょん': ['マンション'],
+  'あぱーと': ['アパート'],
+  'にゅーす': ['ニュース'],
+  'すぽーつ': ['スポーツ'],
+  'おんらいん': ['オンライン'],
+  'うぃるす': ['ウイルス'],
+  'すとれす': ['ストレス'],
+  'いめーじ': ['イメージ'],
+  'すたいる': ['スタイル'],
+  'えにめ': ['アニメ'],
+  'あにめ': ['アニメ'],
+  'まんが': ['漫画', 'まんが', 'マンガ'],
+  'むーびー': ['ムービー', '映画'],
+  'らいぶ': ['ライブ'],
+  'こんさーと': ['コンサート'],
+  'おーでぃお': ['オーディオ'],
+  'びでお': ['ビデオ', '動画'],
+  'もーど': ['モード'],
+  'すてーたす': ['ステータス'],
+  'れべる': ['レベル'],
+  'いんすとーる': ['インストール'],
+  'でりーと': ['デリート'],
+  'こぴー': ['コピー'],
+  'ぺーすと': ['ペースト'],
+  'せーぶ': ['セーブ', '保存'],
+  'ろーど': ['ロード', '読み込み'],
+  'あっぷでーと': ['アップデート'],
+  'あっぷろーど': ['アップロード'],
+  'だうんろーど': ['ダウンロード'],
+
   // 頻出活用形（SKK辞書の順序が不自然なものを上書き）
   'なった': ['成った', 'なった', '鳴った'],
   'いった': ['行った', '言った', 'いった'],
@@ -319,21 +405,25 @@ export class KanaKanjiConverter {
   lookup(kana: string): string[] {
     const entry = DICTIONARY[kana];
     const ext = KanaKanjiConverter.supplementaryDict[kana];
+    const kata = KanaKanjiConverter.toKatakana(kana);
     let cands: string[];
 
     if (entry && entry.length > 0) {
-      // DICTIONARY takes priority; append any additional SKK candidates
       cands = [...entry];
       if (ext && ext.length > 0) {
         for (const c of ext) {
           if (!cands.includes(c)) { cands.push(c); }
         }
       }
+      if (kata !== kana && !cands.includes(kata)) { cands.push(kata); }
       if (!cands.includes(kana)) { cands.push(kana); }
     } else if (ext && ext.length > 0) {
-      cands = ext.includes(kana) ? [...ext] : [...ext, kana];
+      cands = [...ext];
+      if (kata !== kana && !cands.includes(kata)) { cands.push(kata); }
+      if (!cands.includes(kana)) { cands.push(kana); }
     } else {
-      return [kana];
+      // Not in any dict: katakana first (handles loanwords not yet in dict)
+      return kata !== kana ? [kata, kana] : [kana];
     }
     return KanaKanjiConverter.filterCandidates(kana, cands);
   }
@@ -346,14 +436,24 @@ export class KanaKanjiConverter {
     return this.lookup(kana)[0];
   }
 
-  // Remove half-width katakana, pure-ASCII romaji, and redundant full-width katakana.
-  // Full-width katakana is kept when no kanji alternative exists (e.g. パソコン from ぱそこん).
+  // Convert hiragana to katakana (U+3041-U+3096 → U+30A1-U+30F6, offset 0x60).
+  static toKatakana(hiragana: string): string {
+    let result = '';
+    for (let i = 0; i < hiragana.length; i++) {
+      const code = hiragana.charCodeAt(i);
+      result += (code >= 0x3041 && code <= 0x3096)
+        ? String.fromCharCode(code + 0x60)
+        : hiragana[i];
+    }
+    return result;
+  }
+
+  // Remove half-width katakana and pure-ASCII romaji only.
+  // Full-width katakana is always kept (loanwords need カタカナ even when kanji exists).
   private static filterCandidates(kana: string, cands: string[]): string[] {
-    const hasKanji = cands.some(c => /[一-鿿㐀-䶿]/.test(c));
     const filtered = cands.filter(c => {
-      if (/^[ｦ-ﾟ]+$/.test(c)) { return false; }
-      if (/^[A-Za-zÀ-ɏ]+$/.test(c)) { return false; }
-      if (hasKanji && /^[ァ-ヺーヴ]+$/.test(c)) { return false; }
+      if (/^[ｦ-ﾟ]+$/.test(c)) { return false; } // half-width katakana
+      if (/^[A-Za-zÀ-ɏ]+$/.test(c)) { return false; } // romaji / latin
       return true;
     });
     return filtered.length > 0 ? filtered : [kana];
