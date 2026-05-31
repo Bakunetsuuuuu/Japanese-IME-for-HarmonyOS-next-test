@@ -185,8 +185,8 @@ export struct FlickKeyboardView {
   // Left column keys per row
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
-      Text('↩')
-        .fontSize(16).textAlign(TextAlign.Center)
+      Text('取消')
+        .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#ADB5BD').fontColor(Color.White)
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
@@ -199,7 +199,7 @@ export struct FlickKeyboardView {
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
         .onClick(() => { this.h().handleCursorLeft(); })
     } else if (rowIdx === 2) {
-      Text('☺記')
+      Text('記号')
         .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#ADB5BD').fontColor(Color.White)
