@@ -243,8 +243,10 @@ export struct FlickKeyboardView {
           const st = AppStorage.get<string>('inputState') ?? 'IDLE';
           if (st === 'BUNSETSU') {
             this.h().commitBunsetsu();
-          } else if (st !== 'IDLE') {
+          } else if (st === 'SELECTING') {
             this.h().commitTopCandidate();
+          } else if (st === 'COMPOSING') {
+            this.h().commitRaw();
           } else {
             this.h().handleEnterKey();
           }

@@ -267,11 +267,23 @@ export class InputHandler {
 
   handleEnterKey(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state !== InputState.IDLE) {
+    if (state === InputState.BUNSETSU) {
+      this.commitBunsetsu();
+    } else if (state === InputState.SELECTING) {
       this.commitTopCandidate();
+    } else if (state === InputState.COMPOSING) {
+      this.commitRaw();
     } else {
       this.inputClient?.sendKeyFunction(0);
     }
+  }
+
+  commitRaw(): void {
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const pending = this.converter.flushPending();
+    const all = composing + pending;
+    if (all.length > 0) { this.insertText(all); }
+    this.resetComposition();
   }
 
   commitCandidate(index: number): void {
@@ -588,7 +600,7 @@ export class KeyboardController {
     // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
     // content: 48vp bar + 5×44vp rows + 4×5vp gaps + 12vp padding = 300vp portrait
     const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-    const contentPx = Math.ceil((isLandscape ? 290 : 340) * density);
+    const contentPx = Math.ceil((isLandscape ? 310 : 360) * density);
     // clamp to 25–60% of screen height in case densityDPI returns an odd value
     const keyHeight = Math.max(
       Math.floor(dis.height * 0.25),
@@ -620,7 +632,7 @@ export class KeyboardController {
     const dis = display.getDefaultDisplaySync();
     const isLandscape = dis.width > dis.height;
     const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-    const contentPx = Math.ceil((isLandscape ? 290 : 340) * density);
+    const contentPx = Math.ceil((isLandscape ? 310 : 360) * density);
     const keyHeight = Math.max(
       Math.floor(dis.height * 0.25),
       Math.min(contentPx, Math.floor(dis.height * 0.60))
