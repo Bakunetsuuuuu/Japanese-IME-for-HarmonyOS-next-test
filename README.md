@@ -38,31 +38,28 @@ HarmonyOS NEXT (API 12 / 6.1) 向けの日本語 IME です。フリック入力
 
 | フリック入力 | 変換候補 | 記号パネル |
 |---|---|---|
-| *(coming soon)* | *(coming soon)* | *(coming soon)* |
+| ![フリック入力](docs/screenshots/flick-input.png) | ![変換候補](docs/screenshots/conversion.png) | ![記号パネル](docs/screenshots/symbol-panel.png) |
 
 ---
 
-## ビルド & インストール
+## インストール
 
-**必要環境**: DevEco Studio 5.x 以上、HarmonyOS Next API 12 以上の実機またはエミュレータ
+[Releases](https://github.com/shuntilettuce/japanese-ime-for-harmonyos-next/releases) から `.zip` をダウンロードし、展開して `.app` を取り出してください。
 
-```bash
-# リポジトリをクローン
-git clone https://github.com/shuntilettuce/japanese-ime-for-harmonyos-next.git
+**前提条件：**
+1. 設定 → 端末情報 → バージョン番号を7回タップ → 開発者向けオプションを有効化
+2. 設定 → 開発者向けオプション → **USB デバッグ をオン**
+3. USB で PC に接続 → 端末側に「USB デバッグを許可しますか？」と出たら **許可**
 
-# DevEco Studio で開き、実機/エミュレータにデプロイ
-# 設定 → 言語と入力 → キーボード → shunti IME を有効化
+**hdc でインストール：**
+```sh
+hdc install JapaneseIMEforHarmonyOSnext-default-signed.app
 ```
 
-### 辞書の再生成
+> hdc は DevEco Studio に同梱されています（`sdk/default/openharmony/toolchains/hdc`）
 
-`dict.json` は SKK-JISYO.L から自動生成されます。最新辞書を取り込む場合:
-
-```bash
-curl "https://raw.githubusercontent.com/skk-dev/dict/master/SKK-JISYO.L" -o /tmp/SKK-JISYO.L
-python3 tools/skk_convert.py
-# → entry/src/main/resources/rawfile/dict.json が更新されます
-```
+**有効化：**  
+設定 → 言語と入力 → キーボードの管理 → **shunti IME** をオン
 
 ---
 
