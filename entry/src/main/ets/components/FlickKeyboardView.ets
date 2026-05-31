@@ -223,7 +223,14 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#ADB5BD').fontColor(Color.White)
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-        .onClick(() => { this.h().handleSpaceKey(); })
+        .onClick(() => {
+          const st = AppStorage.get<string>('inputState') ?? 'IDLE';
+          if (st === 'COMPOSING') {
+            this.h().handleBunsetsu();
+          } else {
+            this.h().handleSpaceKey();
+          }
+        })
     } else {
       Text('→')
         .fontSize(16).textAlign(TextAlign.Center)
@@ -232,10 +239,12 @@ export struct FlickKeyboardView {
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
         .onClick(() => {
           const st = AppStorage.get<string>('inputState') ?? 'IDLE';
-          if (st !== 'IDLE') {
-            this.h().commitTopCandidate(); // 候補を確定（かな入力中も漢字を確定）
+          if (st === 'BUNSETSU') {
+            this.h().commitBunsetsu();
+          } else if (st !== 'IDLE') {
+            this.h().commitTopCandidate();
           } else {
-            this.h().handleEnterKey(); // IDLE → 改行
+            this.h().handleEnterKey();
           }
         })
     }

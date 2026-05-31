@@ -6,6 +6,7 @@ import { CandidateBar } from '../components/CandidateBar';
 import { KeyboardView } from '../components/KeyboardView';
 import { FlickKeyboardView } from '../components/FlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
+import { BunsetsuBar } from '../components/BunsetsuBar';
 
 let _inputStartRegistered = false;
 let _dictLoaded = false;
@@ -22,6 +23,9 @@ struct KeyboardPage {
   @StorageLink('isLandscape') isLandscape: boolean = false;
   @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
   @StorageLink('keyboardSubMode') keyboardSubMode: string = 'kana';
+  @StorageLink('bunsetsuTexts') bunsetsuTexts: string[] = [];
+  @StorageLink('bunsetsuRaw') bunsetsuRaw: string[] = [];
+  @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
 
   aboutToAppear(): void {
     if (!_dictLoaded) {
@@ -57,49 +61,67 @@ struct KeyboardPage {
         SymbolView()
       } else {
         // Preview bar
-        Row() {
-          Row() {
-            if (this.candidates.length > 0) {
-              CandidateBar({
-                candidates: this.candidates,
-                selectedIndex: this.selectedIndex
-              })
-            } else {
-              Text(this.composingText + this.pendingRomaji)
-                .fontSize(16)
-                .fontColor('#222222')
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .padding({ left: 10, right: 4 })
-            }
-          }
-          .width('82%')
-          .height(48)
-          .alignItems(VerticalAlign.Center)
-
-          // Layout toggle: フ = switch to flick, Q = switch to QWERTY
-          Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
-            .fontSize(14)
-            .fontColor('#444444')
-            .textAlign(TextAlign.Center)
-            .width(50)
-            .height(40)
-            .backgroundColor('#C0C5CC')
-            .borderRadius(6)
-            .onClick(() => {
-              const next = this.keyboardLayout === 'FLICK' ? 'QWERTY' : 'FLICK';
-              AppStorage.setOrCreate('keyboardLayout', next);
+        if (this.inputState === InputState.BUNSETSU) {
+          // Two-row preview: segment chips on top, candidates below
+          Column() {
+            BunsetsuBar({
+              segments: this.bunsetsuTexts,
+              currentIndex: this.bunsetsuCurrent
             })
+            CandidateBar({
+              candidates: this.candidates,
+              selectedIndex: this.selectedIndex
+            })
+          }
+          .width('100%')
+          .backgroundColor('#E0E3E8')
+          .borderWidth({ bottom: 1 })
+          .borderColor('#CCCCCC')
+        } else {
+          Row() {
+            Row() {
+              if (this.candidates.length > 0) {
+                CandidateBar({
+                  candidates: this.candidates,
+                  selectedIndex: this.selectedIndex
+                })
+              } else {
+                Text(this.composingText + this.pendingRomaji)
+                  .fontSize(16)
+                  .fontColor('#222222')
+                  .maxLines(1)
+                  .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .padding({ left: 10, right: 4 })
+              }
+            }
+            .width('82%')
+            .height(48)
+            .alignItems(VerticalAlign.Center)
+
+            // Layout toggle: フ = switch to flick, Q = switch to QWERTY
+            Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
+              .fontSize(14)
+              .fontColor('#444444')
+              .textAlign(TextAlign.Center)
+              .width(50)
+              .height(40)
+              .backgroundColor('#C0C5CC')
+              .borderRadius(6)
+              .onClick(() => {
+                const next = this.keyboardLayout === 'FLICK' ? 'QWERTY' : 'FLICK';
+                AppStorage.setOrCreate('keyboardLayout', next);
+              })
+          }
+          .width('100%')
+          .height(48)
+          .backgroundColor(
+            this.inputState === InputState.SELECTING ? '#E0E3E8' : '#F0F2F5'
+          )
+          .borderWidth({ bottom: 1 })
+          .borderColor('#CCCCCC')
+          .alignItems(VerticalAlign.Center)
+          .padding({ right: 4 })
         }
-        .width('100%')
-        .height(48)
-        .backgroundColor(
-          this.inputState === InputState.SELECTING ? '#E0E3E8' : '#F0F2F5'
-        )
-        .borderWidth({ bottom: 1 })
-        .borderColor('#CCCCCC')
-        .alignItems(VerticalAlign.Center)
-        .padding({ right: 4 })
 
         // Keyboard
         if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
