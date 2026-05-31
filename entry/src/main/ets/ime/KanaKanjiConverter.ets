@@ -202,6 +202,65 @@ const DICTIONARY: Record<string, string[]> = {
   'ソフトウェア': ['ソフトウェア'], 'そふとうぇあ': ['ソフトウェア'],
   'ハードウェア': ['ハードウェア'],
 
+  // 頻出活用形（SKK辞書の順序が不自然なものを上書き）
+  'なった': ['成った', 'なった', '鳴った'],
+  'いった': ['行った', '言った', 'いった'],
+  'きた': ['来た', 'きた'],
+  'いきたい': ['行きたい', '生きたい', 'いきたい'],
+  'みたい': ['みたい', '見たい'],
+  'したい': ['したい', '仕たい'],
+  'うれしい': ['嬉しい', 'うれしい'],
+  'おいしい': ['美味しい', 'おいしい'],
+  'かなしい': ['悲しい', 'かなしい'],
+  'さびしい': ['寂しい', 'さびしい'],
+  'むずかしい': ['難しい', 'むずかしい'],
+  'おもしろい': ['面白い', 'おもしろい'],
+  'まじめ': ['真面目', 'まじめ'],
+  'なにか': ['何か', 'なにか'],
+  'だれか': ['誰か', 'だれか'],
+  'どこか': ['どこか', '何処か'],
+  'なんで': ['なんで', '何で'],
+  'そんな': ['そんな', '然な'],
+  'こんな': ['こんな', '然な'],
+  'あんな': ['あんな', '然な'],
+  'どんな': ['どんな'],
+  'ちゃんと': ['ちゃんと'],
+  'やっぱり': ['やっぱり', 'やはり'],
+  'やはり': ['やはり', 'やっぱり'],
+  'ちょっと': ['ちょっと', '一寸'],
+  'もっと': ['もっと'],
+  'ずっと': ['ずっと'],
+  'きっと': ['きっと', '必ず'],
+  'やっと': ['やっと', 'ようやく'],
+  'ほんとう': ['本当', 'ほんとう'],
+  'ほんと': ['本当', 'ほんと'],
+  'すごく': ['すごく', '凄く'],
+  'めちゃ': ['めちゃ'],
+  'とても': ['とても', '大変'],
+  'すごい': ['凄い', 'すごい'],
+  'たくさん': ['たくさん', '沢山'],
+  'いっぱい': ['一杯', 'いっぱい'],
+  'ありがと': ['ありがと'],
+  'おねがい': ['お願い', 'おねがい'],
+  'おねがいします': ['お願いします', 'おねがいします'],
+  'わかった': ['分かった', 'わかった'],
+  'わかる': ['分かる', '解る', 'わかる'],
+  'おもう': ['思う', 'おもう'],
+  'かんじる': ['感じる', 'かんじる'],
+  'かんがえる': ['考える', 'かんがえる'],
+  'いそがしい': ['忙しい', 'いそがしい'],
+  'たいへん': ['大変', 'たいへん'],
+  'じゃない': ['じゃない', 'ではない'],
+  'じゃなくて': ['じゃなくて', 'ではなくて'],
+  'だって': ['だって', '何故なら'],
+  'つまり': ['つまり', '即ち'],
+  'やばい': ['やばい', 'ヤバい'],
+  'かわいい': ['可愛い', 'かわいい'],
+  'かっこいい': ['格好いい', 'かっこいい'],
+  'うまい': ['上手い', '旨い', 'うまい'],
+  'へた': ['下手', 'へた'],
+  'なるほど': ['なるほど', '成る程'],
+
   // 助詞・機能語（かな自体が候補）
   'は': ['は'], 'が': ['が'], 'を': ['を'],
   'に': ['二', '似', '荷', '２', 'に'],
@@ -241,24 +300,54 @@ const DICTIONARY: Record<string, string[]> = {
 export class KanaKanjiConverter {
   private static supplementaryDict: Record<string, string[]> = {};
 
+  // Particles and auxiliaries kept as kana in auto-convert and preferred during DP traceback
+  private static readonly FUNCTION_WORDS: Record<string, boolean> = {
+    'は': true, 'が': true, 'を': true, 'に': true, 'で': true,
+    'も': true, 'と': true, 'の': true, 'へ': true, 'や': true,
+    'から': true, 'まで': true, 'より': true, 'ほど': true,
+    'くらい': true, 'ぐらい': true, 'ばかり': true, 'など': true,
+    'なんか': true, 'しか': true, 'だけ': true, 'さえ': true, 'こそ': true,
+    'か': true, 'ね': true, 'よ': true, 'ぞ': true, 'わ': true, 'な': true,
+    'て': true, 'ば': true, 'のに': true, 'ので': true,
+    'けど': true, 'けれど': true, 'けれども': true, 'ながら': true, 'たり': true,
+    'ために': true, 'ように': true,
+    'た': true, 'ない': true, 'だ': true, 'じゃ': true, 'かな': true,
+    'です': true, 'ます': true, 'ません': true, 'でした': true, 'ました': true,
+    'でしょう': true, 'ましょう': true, 'だろう': true, 'だろ': true,
+  };
+
   static loadDictionary(dict: Record<string, string[]>): void {
     KanaKanjiConverter.supplementaryDict = dict;
   }
 
   lookup(kana: string): string[] {
-    let cands: string[];
+    const entry = DICTIONARY[kana];
     const ext = KanaKanjiConverter.supplementaryDict[kana];
-    if (ext && ext.length > 0) {
+    let cands: string[];
+
+    if (entry && entry.length > 0) {
+      // DICTIONARY takes priority; append any additional SKK candidates
+      cands = [...entry];
+      if (ext && ext.length > 0) {
+        for (const c of ext) {
+          if (!cands.includes(c)) { cands.push(c); }
+        }
+      }
+      if (!cands.includes(kana)) { cands.push(kana); }
+    } else if (ext && ext.length > 0) {
       cands = ext.includes(kana) ? [...ext] : [...ext, kana];
     } else {
-      const entry = DICTIONARY[kana];
-      if (entry && entry.length > 0) {
-        cands = entry.includes(kana) ? [...entry] : [...entry, kana];
-      } else {
-        return [kana];
-      }
+      return [kana];
     }
     return KanaKanjiConverter.filterCandidates(kana, cands);
+  }
+
+  // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
+  autoConvert(kana: string): string {
+    if (KanaKanjiConverter.FUNCTION_WORDS[kana]) {
+      return kana;
+    }
+    return this.lookup(kana)[0];
   }
 
   // Remove half-width katakana, pure-ASCII romaji, and redundant full-width katakana.
@@ -266,36 +355,94 @@ export class KanaKanjiConverter {
   private static filterCandidates(kana: string, cands: string[]): string[] {
     const hasKanji = cands.some(c => /[一-鿿㐀-䶿]/.test(c));
     const filtered = cands.filter(c => {
-      if (/^[ｦ-ﾟ]+$/.test(c)) { return false; }         // half-width katakana
-      if (/^[A-Za-zÀ-ɏ]+$/.test(c)) { return false; } // romaji / latin
-      if (hasKanji && /^[ァ-ヺーヴ]+$/.test(c)) { return false; } // redundant katakana
+      if (/^[ｦ-ﾟ]+$/.test(c)) { return false; }
+      if (/^[A-Za-zÀ-ɏ]+$/.test(c)) { return false; }
+      if (hasKanji && /^[ァ-ヺーヴ]+$/.test(c)) { return false; }
       return true;
     });
     return filtered.length > 0 ? filtered : [kana];
   }
 
-  // Greedy longest-match segmentation: splits kana string into dictionary-matched segments.
+  private inDict(sub: string): boolean {
+    return !!(KanaKanjiConverter.supplementaryDict[sub] || DICTIONARY[sub]);
+  }
+
+  // Two-phase DP segmentation with backward DP validation.
+  // Forward dp[i] = min segments to cover kana[0..i).
+  // Backward bdp[j] = min segments to cover kana[j..n).
+  // A segment at position i of length len is globally optimal iff dp[i]+1+bdp[i+len] == dp[n].
+  // Traceback prefers function words, then longest dict match, among globally optimal segments.
   segment(kana: string): string[] {
-    const segs: string[] = [];
-    let i = 0;
-    while (i < kana.length) {
-      let matchLen = 0;
-      // Try longest match first, shrink until a dict entry is found
-      for (let len = Math.min(kana.length - i, 10); len >= 1; len--) {
+    const n = kana.length;
+    if (n === 0) { return []; }
+    const INF = n + 1;
+    const MAX_LEN = 10;
+
+    // Forward DP
+    const dp: number[] = [];
+    for (let j = 0; j <= n; j++) { dp.push(INF); }
+    dp[0] = 0;
+    for (let i = 0; i < n; i++) {
+      if (dp[i] === INF) { continue; }
+      const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
+      for (let len = 1; len <= maxLen; len++) {
         const sub = kana.slice(i, i + len);
-        if (KanaKanjiConverter.supplementaryDict[sub] || DICTIONARY[sub]) {
-          matchLen = len;
-          break;
+        if (this.inDict(sub) || len === 1) {
+          const cost = dp[i] + 1;
+          if (cost < dp[i + len]) { dp[i + len] = cost; }
         }
       }
-      if (matchLen === 0) {
-        // No dict entry: consume one character as its own segment
-        segs.push(kana[i]);
-        i += 1;
-      } else {
-        segs.push(kana.slice(i, i + matchLen));
-        i += matchLen;
+    }
+
+    // Backward DP
+    const bdp: number[] = [];
+    for (let j = 0; j <= n; j++) { bdp.push(INF); }
+    bdp[n] = 0;
+    for (let i = n - 1; i >= 0; i--) {
+      const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
+      for (let len = 1; len <= maxLen; len++) {
+        const sub = kana.slice(i, i + len);
+        if (this.inDict(sub) || len === 1) {
+          const cost = bdp[i + len] + 1;
+          if (cost < bdp[i]) { bdp[i] = cost; }
+        }
       }
+    }
+
+    const optTotal = dp[n];
+    const segs: string[] = [];
+    let i = 0;
+    while (i < n) {
+      const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
+
+      // Prefer the longest function word on a globally optimal path
+      let fwChosen = 0;
+      for (let len = 1; len <= maxLen; len++) {
+        const sub = kana.slice(i, i + len);
+        if (KanaKanjiConverter.FUNCTION_WORDS[sub]
+            && dp[i] + 1 + bdp[i + len] === optTotal) {
+          fwChosen = len;
+        }
+      }
+
+      let chosen: number;
+      if (fwChosen > 0) {
+        chosen = fwChosen;
+      } else {
+        // No function word: take longest dict match on globally optimal path
+        chosen = 1;
+        for (let len = maxLen; len >= 1; len--) {
+          const sub = kana.slice(i, i + len);
+          if ((this.inDict(sub) || len === 1)
+              && dp[i] + 1 + bdp[i + len] === optTotal) {
+            chosen = len;
+            break;
+          }
+        }
+      }
+
+      segs.push(kana.slice(i, i + chosen));
+      i += chosen;
     }
     return segs;
   }
