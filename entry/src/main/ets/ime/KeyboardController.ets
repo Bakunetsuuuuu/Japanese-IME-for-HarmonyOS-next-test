@@ -120,6 +120,7 @@ export class InputHandler {
     AppStorage.setOrCreate('candidates', [] as string[]);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
+    AppStorage.setOrCreate('keyboardSubMode', 'kana');
     if (!AppStorage.has('inputMode')) {
       AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
     }
@@ -414,6 +415,9 @@ export class KeyboardController {
     AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
     AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
     AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
+    // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
+    const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
+    AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
   }
 
   private initPanel(): void {

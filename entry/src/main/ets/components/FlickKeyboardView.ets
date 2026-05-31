@@ -179,6 +179,9 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#ADB5BD').fontColor(Color.White)
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+        .onClick(() => {
+          AppStorage.setOrCreate('keyboardSubMode', 'symbol');
+        })
     } else {
       Text(this.inputMode === InputMode.HIRAGANA ? 'あa1'
         : this.inputMode === InputMode.KATAKANA ? 'アa1'
