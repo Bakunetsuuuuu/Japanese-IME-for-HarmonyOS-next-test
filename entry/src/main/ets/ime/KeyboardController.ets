@@ -106,6 +106,7 @@ export class InputHandler {
   private bSegs: string[] = [];   // kana text of each segment
   private bChosen: string[] = []; // currently chosen conversion for each segment
   private bCur: number = 0;       // index of focused segment
+  private undoStack: string[] = [];
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
@@ -127,6 +128,7 @@ export class InputHandler {
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
+    this.undoStack = [];
     if (!AppStorage.has('inputMode')) {
       AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
     }
@@ -136,6 +138,7 @@ export class InputHandler {
     this.kbController = undefined;
     this.inputClient = undefined;
     this.converter.reset();
+    this.undoStack = [];
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -531,8 +534,23 @@ export class InputHandler {
     }
   }
 
+  handleUndo(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.IDLE) {
+      this.resetComposition();
+      return;
+    }
+    if (this.undoStack.length === 0) { return; }
+    const last = this.undoStack.pop()!;
+    this.inputClient?.deleteForward(last.length);
+  }
+
   insertText(text: string): void {
     this.inputClient?.insertText(text);
+    if (text.length > 0) {
+      this.undoStack.push(text);
+      if (this.undoStack.length > 10) { this.undoStack.shift(); }
+    }
   }
 
   hideKeyboard(): void {

@@ -23,6 +23,25 @@ export struct KeyboardView {
     return InputHandler.getInstance();
   }
 
+  private bsDelayTimer: number = -1;
+  private bsRepeatTimer: number = -1;
+
+  private startBsRepeat(): void {
+    this.getHandler().handleBackspace();
+    this.bsDelayTimer = setTimeout(() => {
+      this.bsRepeatTimer = setInterval(() => {
+        this.getHandler().handleBackspace();
+      }, 100);
+    }, 500);
+  }
+
+  private stopBsRepeat(): void {
+    clearTimeout(this.bsDelayTimer);
+    clearInterval(this.bsRepeatTimer);
+    this.bsDelayTimer = -1;
+    this.bsRepeatTimer = -1;
+  }
+
   private displayKey(key: string): string {
     return (this.isShift || this.isCapsLock) ? key.toUpperCase() : key;
   }
@@ -131,8 +150,12 @@ export struct KeyboardView {
       .fontColor(Color.White)
       .borderRadius(5)
       .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-      .onClick(() => {
-        this.getHandler().handleBackspace();
+      .onTouch((event: TouchEvent) => {
+        if (event.type === TouchType.Down) {
+          this.startBsRepeat();
+        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+          this.stopBsRepeat();
+        }
       })
   }
 
