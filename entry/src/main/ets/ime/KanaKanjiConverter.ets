@@ -402,6 +402,33 @@ export class KanaKanjiConverter {
     'です': true, 'ます': true, 'ません': true, 'でした': true, 'ました': true,
     'でしょう': true, 'ましょう': true, 'だろう': true, 'だろ': true,
     'ください': true, 'ちゃう': true, 'てる': true, 'でる': true,
+    // 否定・打消し系
+    'もない': true, 'でもない': true, 'ではない': true, 'じゃない': true,
+    'でしかない': true, 'しかない': true, 'ことない': true, 'ことはない': true,
+    'なくちゃ': true, 'なきゃ': true, 'なければならない': true, 'ねばならない': true,
+    'ずに': true, 'ずには': true, 'ぬ': true,
+    // 推量・伝聞・様態
+    'かも': true, 'かもしれない': true, 'かもしれません': true, 'かもね': true,
+    'みたい': true, 'みたいな': true, 'みたいに': true, 'らしい': true,
+    'そう': true, 'そうだ': true, 'そうです': true, 'ようだ': true, 'ような': true,
+    'はず': true, 'はずだ': true, 'わけ': true, 'わけだ': true, 'べき': true,
+    'つもり': true, 'まま': true, 'ところで': true, 'ところが': true,
+    // 接続・引用
+    'という': true, 'といった': true, 'とか': true, 'って': true, 'ったって': true,
+    'なんて': true, 'なんと': true, 'だって': true, 'たって': true,
+    'のだ': true, 'んだ': true, 'のです': true, 'んです': true, 'のである': true,
+    'だが': true, 'ですが': true, 'だけど': true, 'だけれど': true,
+    'および': true, 'または': true, 'ただし': true, 'なお': true,
+    // 補助動詞・アスペクト
+    'ている': true, 'ていた': true, 'ています': true, 'てた': true,
+    'ておく': true, 'とく': true, 'てしまう': true, 'ちゃった': true,
+    'てみる': true, 'ていく': true, 'てくる': true, 'てきた': true,
+    'すぎる': true, 'すぎ': true, 'がち': true, 'っぽい': true,
+    // 副助詞・その他
+    'ずつ': true, 'ごと': true, 'つつ': true, 'だらけ': true, 'まみれ': true,
+    'ても': true, 'でも': true, 'のような': true, 'のように': true,
+    'ながらも': true, 'つつも': true, 'からこそ': true, 'ばこそ': true,
+    'やつ': true, 'もん': true, 'わけではない': true, 'というか': true,
   };
 
   static loadDictionary(dict: Record<string, string[]>): void {
