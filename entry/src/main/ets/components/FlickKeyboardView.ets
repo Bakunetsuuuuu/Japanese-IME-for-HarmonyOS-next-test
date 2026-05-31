@@ -230,7 +230,14 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#4A90E2').fontColor(Color.White)
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-        .onClick(() => { this.h().handleEnterKey(); })
+        .onClick(() => {
+          const st = AppStorage.get<string>('inputState') ?? 'IDLE';
+          if (st === 'COMPOSING') {
+            this.h().handleSpaceKey(); // COMPOSING → 変換候補を表示
+          } else {
+            this.h().handleEnterKey(); // SELECTING → 確定 / IDLE → 改行
+          }
+        })
     }
   }
 
