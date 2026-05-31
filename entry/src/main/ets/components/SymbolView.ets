@@ -93,7 +93,7 @@ export struct SymbolView {
           .textAlign(TextAlign.Center)
           .width(48).height(40)
           .fontColor(Color.White)
-          .backgroundColor('#555C68')
+          .backgroundColor('#ADB5BD')
           .borderRadius(20)
           .onClick(() => {
             AppStorage.setOrCreate('keyboardSubMode', 'kana');
@@ -105,8 +105,8 @@ export struct SymbolView {
             .fontSize(i === 1 ? 12 : 13)
             .textAlign(TextAlign.Center)
             .width(38).height(32)
-            .fontColor(Color.White)
-            .backgroundColor(this.currentTab === i ? '#777E8A' : 'transparent')
+            .fontColor(this.currentTab === i ? Color.White : '#444444')
+            .backgroundColor(this.currentTab === i ? '#6C757D' : '#C8CDD4')
             .borderRadius(8)
             .onClick(() => {
               this.currentTab = i;
@@ -130,9 +130,10 @@ export struct SymbolView {
                     .textAlign(TextAlign.Center)
                     .width(this.symKeyWidthVp)
                     .height(34)
-                    .fontColor(Color.White)
-                    .backgroundColor('#4E5564')
+                    .fontColor(Color.Black)
+                    .backgroundColor('#FFFFFF')
                     .borderRadius(6)
+                    .shadow({ radius: 1, color: '#33000000', offsetY: 1 })
                     .onClick(() => { this.insert(sym); })
                 }, (sym: string) => String(this.currentTab) + sym)
               }
@@ -153,7 +154,7 @@ export struct SymbolView {
         Text('あいう')
           .fontSize(13).textAlign(TextAlign.Center)
           .width(68).height(44)
-          .fontColor(Color.White)
+          .fontColor('#444444')
           .onClick(() => {
             AppStorage.setOrCreate('keyboardSubMode', 'kana');
           })
@@ -164,8 +165,8 @@ export struct SymbolView {
             .fontSize(btn === 'GIF' ? 13 : 17)
             .textAlign(TextAlign.Center)
             .width(btn === 'GIF' ? 52 : 46).height(44)
-            .fontColor(Color.White)
-            .backgroundColor('#4E5564')
+            .fontColor('#444444')
+            .backgroundColor('#C8CDD4')
             .borderRadius(8)
         }, (btn: string) => btn)
 
@@ -173,8 +174,8 @@ export struct SymbolView {
         Text('☆')
           .fontSize(18).textAlign(TextAlign.Center)
           .width(46).height(44)
-          .fontColor(Color.White)
-          .backgroundColor('#666D7A')
+          .fontColor('#444444')
+          .backgroundColor('#B0B7BF')
           .borderRadius(8)
 
         // ⌫ backspace
@@ -182,7 +183,7 @@ export struct SymbolView {
           .fontSize(18).textAlign(TextAlign.Center)
           .width(52).height(44)
           .fontColor(Color.White)
-          .backgroundColor('#4E5564')
+          .backgroundColor('#ADB5BD')
           .borderRadius(8)
           .onClick(() => { this.h().handleBackspace(); })
       }
@@ -194,6 +195,6 @@ export struct SymbolView {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#3A3F4A')
+    .backgroundColor('#D1D5DB')
   }
 }
