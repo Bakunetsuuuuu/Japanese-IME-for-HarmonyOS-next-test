@@ -349,19 +349,23 @@ export class InputHandler {
     let candidates: string[];
 
     if (segs.length <= 1) {
-      // Single word: show per-word candidates as before
+      // Single word: lookup already appends katakana and raw kana
       candidates = this.kanjiConverter.lookup(composing);
     } else {
-      // Multi-segment: auto-convert all but the last segment, show alternatives for last.
-      // Candidate[0] is the full Gboard-style auto-converted sentence.
+      // Multi-segment: auto-convert prefix, show variants for last segment
       const prefixText = segs.slice(0, -1)
         .map((s: string) => this.kanjiConverter.autoConvert(s))
         .join('');
       const lastSeg = segs[segs.length - 1];
       const lastCands = this.kanjiConverter.lookup(lastSeg);
       candidates = lastCands.map((c: string) => prefixText + c);
+      // Full katakana of entire composing text (before raw kana fallback)
+      const fullKatakana = KanaKanjiConverter.toKatakana(composing);
+      if (!candidates.includes(fullKatakana)) {
+        candidates.push(fullKatakana);
+      }
       if (!candidates.includes(composing)) {
-        candidates.push(composing); // raw kana fallback
+        candidates.push(composing);
       }
     }
 
