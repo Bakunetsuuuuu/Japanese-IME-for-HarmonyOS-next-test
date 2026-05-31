@@ -1,11 +1,14 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
+import util from '@ohos.util';
 import { InputHandler, InputState, InputMode } from '../ime/KeyboardController';
+import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
 import { KeyboardView } from '../components/KeyboardView';
 import { FlickKeyboardView } from '../components/FlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
 
 let _inputStartRegistered = false;
+let _dictLoaded = false;
 
 @Entry
 @Component
@@ -21,6 +24,17 @@ struct KeyboardPage {
   @StorageLink('keyboardSubMode') keyboardSubMode: string = 'kana';
 
   aboutToAppear(): void {
+    if (!_dictLoaded) {
+      _dictLoaded = true;
+      getContext(this).resourceManager.getRawFileContent('dict.json')
+        .then((data: Uint8Array) => {
+          const decoder = new util.TextDecoder('utf-8');
+          const text = decoder.decode(data);
+          KanaKanjiConverter.loadDictionary(JSON.parse(text) as Record<string, string[]>);
+        })
+        .catch((_e: Error) => {});
+    }
+
     if (_inputStartRegistered) { return; }
     _inputStartRegistered = true;
     inputMethodEngine.getInputMethodAbility().on('inputStart', (
