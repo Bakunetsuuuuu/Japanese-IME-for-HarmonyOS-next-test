@@ -1,0 +1,42 @@
+shunti IME — Third-Party Notices
+=================================
+
+This application incorporates the following third-party software and data.
+
+──────────────────────────────────────────────────────────────────────
+1. SKK-JISYO.L (Japanese input dictionary)
+──────────────────────────────────────────────────────────────────────
+
+The file entry/src/main/resources/rawfile/dict.json is derived from
+SKK-JISYO.L, a Japanese kana-kanji conversion dictionary distributed
+by the SKK Development Team.
+
+  Source : https://github.com/skk-dev/dict
+  Format : EUC-JP → UTF-8 JSON (converted by tools/skk_convert.py)
+
+Copyright (C) 1988-1995, 1997, 1999-2014
+
+  Masahiko Sato <masahiko@kuis.kyoto-u.ac.jp>
+  Hironobu Takahashi <takahasi@tiny.or.jp>
+  Masahiro Doteguchi
+  Miki Inooka
+  Yukiyoshi Kameyama <kameyama@kuis.kyoto-u.ac.jp>
+  Akihiko Sasaki
+  Dai Ando
+  Junichi Okukawa
+  Katsushi Sato
+  Nobuhiro Yamagishi
+  NAKAJIMA Mikio <minakaji@osaka.email.ne.jp>
+  MITA Yuusuke <clefs@mail.goo.ne.jp>
+  SKK Development Team <skk@ring.gr.jp>
+
+Maintainer: SKK Development Team <skk@ring.gr.jp>
+
+This dictionary is free software; you can redistribute it and/or
+modify it under the terms of the GNU General Public License as
+published by the Free Software Foundation; either version 2, or
+(at your option) any later version.
+
+The full text of the GNU General Public License version 2 is available
+at: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
+and in the file LICENSES/GPL-2.0.txt in this repository.
