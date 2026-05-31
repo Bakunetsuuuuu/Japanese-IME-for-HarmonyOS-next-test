@@ -1,7 +1,7 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
 import display from '@ohos.display';
-import { util } from '@kit.ArkTS';
+import util from '@ohos.util';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
 
@@ -406,7 +406,7 @@ export class KeyboardController {
     this.context.resourceManager.getRawFileContent('dict.json')
       .then((data: Uint8Array) => {
         const decoder = new util.TextDecoder('utf-8');
-        const text = decoder.decodeToString(data);
+        const text = decoder.decode(data);
         const dict = JSON.parse(text) as Record<string, string[]>;
         KanaKanjiConverter.loadDictionary(dict);
       })
