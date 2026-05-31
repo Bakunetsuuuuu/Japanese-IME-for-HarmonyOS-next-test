@@ -82,13 +82,15 @@ export struct KeyboardView {
       Row({ space: 2 }) {
         this.ModeKey()
         this.FuncKey('、', () => {
-          this.getHandler().commitTopCandidate();
-          this.getHandler().insertText('、');
+          const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+          if (state === InputState.IDLE) { this.getHandler().insertText('、'); }
+          else { this.getHandler().handleDirectKana('、'); }
         })
         this.SpaceKey()
         this.FuncKey('。', () => {
-          this.getHandler().commitTopCandidate();
-          this.getHandler().insertText('。');
+          const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+          if (state === InputState.IDLE) { this.getHandler().insertText('。'); }
+          else { this.getHandler().handleDirectKana('。'); }
         })
         this.EnterKey()
       }

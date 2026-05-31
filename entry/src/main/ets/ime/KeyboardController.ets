@@ -536,10 +536,7 @@ export class InputHandler {
 
   handleUndo(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state !== InputState.IDLE) {
-      this.resetComposition();
-      return;
-    }
+    if (state !== InputState.IDLE) { return; }
     const last: string = this.undoStack.pop() ?? '';
     if (last.length > 0) {
       this.inputClient?.deleteForward(last.length);

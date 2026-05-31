@@ -1,4 +1,4 @@
-import { InputHandler, InputMode } from '../ime/KeyboardController';
+import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
 import { toKatakana } from '../ime/JapaneseConverter';
 
 type FlickDir = 'center' | 'up' | 'right' | 'down' | 'left';
@@ -125,8 +125,13 @@ export struct FlickKeyboardView {
       return;
     }
     if (key.special === 'punct') {
-      this.h().commitTopCandidate();
-      this.h().insertText(getKanaByDir(key, dir));
+      const punct = getKanaByDir(key, dir);
+      const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+      if (state === InputState.IDLE) {
+        this.h().insertText(punct);
+      } else {
+        this.h().handleDirectKana(punct);
+      }
       return;
     }
     const kana = this.toMode(getKanaByDir(key, dir));
