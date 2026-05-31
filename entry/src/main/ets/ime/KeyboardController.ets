@@ -165,6 +165,7 @@ export class InputHandler {
         : result.committed;
       const current = AppStorage.get<string>('composingText') ?? '';
       AppStorage.setOrCreate('composingText', current + kana);
+      this.updateCandidates();
     }
 
     AppStorage.setOrCreate('pendingRomaji', result.pending);
@@ -331,7 +332,28 @@ export class InputHandler {
       AppStorage.setOrCreate('candidates', [] as string[]);
       return;
     }
-    AppStorage.setOrCreate('candidates', this.kanjiConverter.lookup(composing));
+
+    const segs = this.kanjiConverter.segment(composing);
+    let candidates: string[];
+
+    if (segs.length <= 1) {
+      // Single word: show per-word candidates as before
+      candidates = this.kanjiConverter.lookup(composing);
+    } else {
+      // Multi-segment: auto-convert all but the last segment, show alternatives for last.
+      // Candidate[0] is the full Gboard-style auto-converted sentence.
+      const prefixText = segs.slice(0, -1)
+        .map((s: string) => this.kanjiConverter.lookup(s)[0])
+        .join('');
+      const lastSeg = segs[segs.length - 1];
+      const lastCands = this.kanjiConverter.lookup(lastSeg);
+      candidates = lastCands.map((c: string) => prefixText + c);
+      if (!candidates.includes(composing)) {
+        candidates.push(composing); // raw kana fallback
+      }
+    }
+
+    AppStorage.setOrCreate('candidates', candidates);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
   }
 
