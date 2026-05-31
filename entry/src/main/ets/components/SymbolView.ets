@@ -203,10 +203,10 @@ export struct SymbolView {
           })
 
         // Emoji button → emoji panel
-        Text('😊')
-          .fontSize(17)
+        Text('絵文字')
+          .fontSize(12)
           .textAlign(TextAlign.Center)
-          .width(46).height(44)
+          .width(56).height(44)
           .fontColor('#444444')
           .backgroundColor('#C8CDD4')
           .borderRadius(8)
