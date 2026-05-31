@@ -232,14 +232,20 @@ const DICTIONARY: Record<string, string[]> = {
 };
 
 export class KanaKanjiConverter {
+  private static supplementaryDict: Record<string, string[]> = {};
+
+  static loadDictionary(dict: Record<string, string[]>): void {
+    KanaKanjiConverter.supplementaryDict = dict;
+  }
+
   lookup(kana: string): string[] {
+    const ext = KanaKanjiConverter.supplementaryDict[kana];
+    if (ext && ext.length > 0) {
+      return ext.includes(kana) ? ext : [...ext, kana];
+    }
     const entry = DICTIONARY[kana];
     if (entry && entry.length > 0) {
-      // Always include the raw kana as last fallback
-      if (!entry.includes(kana)) {
-        return [...entry, kana];
-      }
-      return entry;
+      return entry.includes(kana) ? entry : [...entry, kana];
     }
     return [kana];
   }
