@@ -78,49 +78,65 @@ struct KeyboardPage {
           .borderWidth({ bottom: 1 })
           .borderColor('#CCCCCC')
         } else {
-          Row() {
-            Row() {
-              if (this.candidates.length > 0) {
-                CandidateBar({
-                  candidates: this.candidates,
-                  selectedIndex: this.selectedIndex
-                })
-              } else {
+          Column() {
+            // Composing kana strip — shown whenever composing or selecting
+            if (this.inputState !== InputState.IDLE) {
+              Row() {
                 Text(this.composingText + this.pendingRomaji)
                   .fontSize(16)
-                  .fontColor('#222222')
+                  .fontColor('#111111')
                   .maxLines(1)
                   .textOverflow({ overflow: TextOverflow.Ellipsis })
-                  .padding({ left: 10, right: 4 })
+                  .padding({ left: 12, right: 8 })
+                  .layoutWeight(1)
               }
+              .width('100%')
+              .height(28)
+              .backgroundColor('#FAFAFA')
+              .borderWidth({ bottom: 1 })
+              .borderColor('#DDDDDD')
+              .alignItems(VerticalAlign.Center)
             }
-            .width('82%')
-            .height(48)
-            .alignItems(VerticalAlign.Center)
 
-            // Layout toggle: フ = switch to flick, Q = switch to QWERTY
-            Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
-              .fontSize(14)
-              .fontColor('#444444')
-              .textAlign(TextAlign.Center)
-              .width(50)
-              .height(40)
-              .backgroundColor('#C0C5CC')
-              .borderRadius(6)
-              .onClick(() => {
-                const next = this.keyboardLayout === 'FLICK' ? 'QWERTY' : 'FLICK';
-                AppStorage.setOrCreate('keyboardLayout', next);
-              })
+            // Candidate bar row + layout toggle
+            Row() {
+              Row() {
+                if (this.candidates.length > 0) {
+                  CandidateBar({
+                    candidates: this.candidates,
+                    selectedIndex: this.selectedIndex
+                  })
+                }
+              }
+              .width('82%')
+              .height(48)
+              .alignItems(VerticalAlign.Center)
+
+              // Layout toggle: フ = switch to flick, Q = switch to QWERTY
+              Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
+                .fontSize(14)
+                .fontColor('#444444')
+                .textAlign(TextAlign.Center)
+                .width(50)
+                .height(40)
+                .backgroundColor('#C0C5CC')
+                .borderRadius(6)
+                .onClick(() => {
+                  const next = this.keyboardLayout === 'FLICK' ? 'QWERTY' : 'FLICK';
+                  AppStorage.setOrCreate('keyboardLayout', next);
+                })
+            }
+            .width('100%')
+            .height(48)
+            .backgroundColor(
+              this.inputState === InputState.SELECTING ? '#E0E3E8' : '#F0F2F5'
+            )
+            .borderWidth({ bottom: 1 })
+            .borderColor('#CCCCCC')
+            .alignItems(VerticalAlign.Center)
+            .padding({ right: 4 })
           }
           .width('100%')
-          .height(48)
-          .backgroundColor(
-            this.inputState === InputState.SELECTING ? '#E0E3E8' : '#F0F2F5'
-          )
-          .borderWidth({ bottom: 1 })
-          .borderColor('#CCCCCC')
-          .alignItems(VerticalAlign.Center)
-          .padding({ right: 4 })
         }
 
         // Keyboard
