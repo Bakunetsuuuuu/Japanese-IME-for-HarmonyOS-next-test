@@ -246,15 +246,32 @@ export class KanaKanjiConverter {
   }
 
   lookup(kana: string): string[] {
+    let cands: string[];
     const ext = KanaKanjiConverter.supplementaryDict[kana];
     if (ext && ext.length > 0) {
-      return ext.includes(kana) ? ext : [...ext, kana];
+      cands = ext.includes(kana) ? [...ext] : [...ext, kana];
+    } else {
+      const entry = DICTIONARY[kana];
+      if (entry && entry.length > 0) {
+        cands = entry.includes(kana) ? [...entry] : [...entry, kana];
+      } else {
+        return [kana];
+      }
     }
-    const entry = DICTIONARY[kana];
-    if (entry && entry.length > 0) {
-      return entry.includes(kana) ? entry : [...entry, kana];
-    }
-    return [kana];
+    return KanaKanjiConverter.filterCandidates(kana, cands);
+  }
+
+  // Remove half-width katakana, pure-ASCII romaji, and redundant full-width katakana.
+  // Full-width katakana is kept when no kanji alternative exists (e.g. パソコン from ぱそこん).
+  private static filterCandidates(kana: string, cands: string[]): string[] {
+    const hasKanji = cands.some(c => /[一-鿿㐀-䶿]/.test(c));
+    const filtered = cands.filter(c => {
+      if (/^[ｦ-ﾟ]+$/.test(c)) { return false; }         // half-width katakana
+      if (/^[A-Za-zÀ-ɏ]+$/.test(c)) { return false; } // romaji / latin
+      if (hasKanji && /^[ァ-ヺーヴ]+$/.test(c)) { return false; } // redundant katakana
+      return true;
+    });
+    return filtered.length > 0 ? filtered : [kana];
   }
 
   // Greedy longest-match segmentation: splits kana string into dictionary-matched segments.

@@ -49,6 +49,7 @@ export struct FlickKeyboardView {
   @Prop inputMode: string = InputMode.HIRAGANA;
   @Prop isLandscape: boolean = false;
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
+  @StorageLink('inputState') inputState: string = 'IDLE';
 
   @State activeRow: number = -1;
   @State activeCol: number = -1;
@@ -218,8 +219,9 @@ export struct FlickKeyboardView {
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
         .onClick(() => { this.h().handleCursorRight(); })
     } else if (rowIdx === 2) {
-      Text('⏎')
-        .fontSize(16).textAlign(TextAlign.Center)
+      Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
+        .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
+        .textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#ADB5BD').fontColor(Color.White)
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
