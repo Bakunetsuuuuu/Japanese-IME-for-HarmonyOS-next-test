@@ -463,6 +463,11 @@ export class KanaKanjiConverter {
     return !!(KanaKanjiConverter.supplementaryDict[sub] || DICTIONARY[sub]);
   }
 
+  // Returns true for kana that cannot start a Japanese word/morpheme.
+  private static isNoStarter(c: string): boolean {
+    return 'っゃゅょぁぃぅぇぉゎん'.indexOf(c) >= 0;
+  }
+
   // Two-phase DP segmentation with backward DP validation.
   // Forward dp[i] = min segments to cover kana[0..i).
   // Backward bdp[j] = min segments to cover kana[j..n).
@@ -540,6 +545,17 @@ export class KanaKanjiConverter {
       segs.push(kana.slice(i, i + chosen));
       i += chosen;
     }
-    return segs;
+
+    // Post-process: merge segments that start with a non-word-start kana into the previous segment.
+    // e.g. ["い","っしょ"] → ["いっしょ"],  ["もっ","と"] is fine but ["も","っと"] → ["もっと"]
+    const merged: string[] = [];
+    for (const seg of segs) {
+      if (merged.length > 0 && KanaKanjiConverter.isNoStarter(seg[0])) {
+        merged[merged.length - 1] += seg;
+      } else {
+        merged.push(seg);
+      }
+    }
+    return merged;
   }
 }
