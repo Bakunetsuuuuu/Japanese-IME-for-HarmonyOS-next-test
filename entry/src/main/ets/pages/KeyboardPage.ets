@@ -59,7 +59,7 @@ struct KeyboardPage {
         // Preview bar
         Row() {
           Row() {
-            if (this.inputState === InputState.SELECTING && this.candidates.length > 0) {
+            if (this.candidates.length > 0) {
               CandidateBar({
                 candidates: this.candidates,
                 selectedIndex: this.selectedIndex

@@ -239,6 +239,7 @@ export class InputHandler {
       if (composing.length === 0 && newPending.length === 0) {
         AppStorage.setOrCreate('inputState', InputState.IDLE);
       }
+      this.updateCandidates();
     }
   }
 
@@ -259,12 +260,10 @@ export class InputHandler {
   }
 
   commitTopCandidate(): void {
-    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state === InputState.SELECTING) {
-      const candidates = AppStorage.get<string[]>('candidates') ?? [];
-      const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
-      const text = candidates.length > 0 ? candidates[idx] : '';
-      if (text.length > 0) { this.insertText(text); }
+    const candidates = AppStorage.get<string[]>('candidates') ?? [];
+    const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
+    if (candidates.length > 0) {
+      this.insertText(candidates[idx]);
       this.resetComposition();
       return;
     }
@@ -288,6 +287,16 @@ export class InputHandler {
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
+  private updateCandidates(): void {
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    if (composing.length === 0) {
+      AppStorage.setOrCreate('candidates', [] as string[]);
+      return;
+    }
+    AppStorage.setOrCreate('candidates', this.kanjiConverter.lookup(composing));
+    AppStorage.setOrCreate('selectedCandidateIndex', 0);
+  }
+
   handleVariantCycle(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state !== InputState.COMPOSING) { return; }
@@ -297,6 +306,7 @@ export class InputHandler {
     const next = VARIANT_CYCLE[last];
     if (next !== undefined) {
       AppStorage.setOrCreate('composingText', composing.slice(0, -1) + next);
+      this.updateCandidates();
     }
   }
 
@@ -328,6 +338,7 @@ export class InputHandler {
     AppStorage.setOrCreate('composingText', current + kana);
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    this.updateCandidates();
   }
 
   handleDakuten(): void {
