@@ -256,4 +256,30 @@ export class KanaKanjiConverter {
     }
     return [kana];
   }
+
+  // Greedy longest-match segmentation: splits kana string into dictionary-matched segments.
+  segment(kana: string): string[] {
+    const segs: string[] = [];
+    let i = 0;
+    while (i < kana.length) {
+      let matchLen = 0;
+      // Try longest match first, shrink until a dict entry is found
+      for (let len = Math.min(kana.length - i, 10); len >= 1; len--) {
+        const sub = kana.slice(i, i + len);
+        if (KanaKanjiConverter.supplementaryDict[sub] || DICTIONARY[sub]) {
+          matchLen = len;
+          break;
+        }
+      }
+      if (matchLen === 0) {
+        // No dict entry: consume one character as its own segment
+        segs.push(kana[i]);
+        i += 1;
+      } else {
+        segs.push(kana.slice(i, i + matchLen));
+        i += matchLen;
+      }
+    }
+    return segs;
+  }
 }

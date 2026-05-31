@@ -16,6 +16,7 @@ export const enum InputState {
   IDLE = 'IDLE',
   COMPOSING = 'COMPOSING',
   SELECTING = 'SELECTING',
+  BUNSETSU = 'BUNSETSU',
 }
 
 export const enum InputMode {
@@ -101,6 +102,10 @@ export class InputHandler {
   private inputClient: inputMethodEngine.InputClient | undefined;
   private converter: JapaneseConverter = new JapaneseConverter();
   private kanjiConverter: KanaKanjiConverter = new KanaKanjiConverter();
+  // bunsetsu state
+  private bSegs: string[] = [];   // kana text of each segment
+  private bChosen: string[] = []; // currently chosen conversion for each segment
+  private bCur: number = 0;       // index of focused segment
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
@@ -216,6 +221,22 @@ export class InputHandler {
       return;
     }
 
+    if (state === InputState.BUNSETSU) {
+      // Exit bunsetsu, restore composing text
+      const composing = this.bSegs.join('');
+      this.bSegs = [];
+      this.bChosen = [];
+      this.bCur = 0;
+      AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
+      AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
+      AppStorage.setOrCreate('bunsetsuDisplay', '');
+      AppStorage.setOrCreate('bunsetsuCurrent', 0);
+      AppStorage.setOrCreate('composingText', composing);
+      AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+      this.updateCandidates();
+      return;
+    }
+
     if (state === InputState.SELECTING) {
       AppStorage.setOrCreate('candidates', [] as string[]);
       AppStorage.setOrCreate('inputState', InputState.COMPOSING);
@@ -253,6 +274,11 @@ export class InputHandler {
   }
 
   commitCandidate(index: number): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.BUNSETSU) {
+      this.commitBunsetsuCandidate(index);
+      return;
+    }
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const text = index < candidates.length ? candidates[index] : '';
     if (text.length > 0) { this.insertText(text); }
@@ -260,6 +286,11 @@ export class InputHandler {
   }
 
   commitTopCandidate(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.BUNSETSU) {
+      this.commitBunsetsu();
+      return;
+    }
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
@@ -280,10 +311,17 @@ export class InputHandler {
 
   private resetComposition(): void {
     this.converter.reset();
+    this.bSegs = [];
+    this.bChosen = [];
+    this.bCur = 0;
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
+    AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
+    AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
+    AppStorage.setOrCreate('bunsetsuDisplay', '');
+    AppStorage.setOrCreate('bunsetsuCurrent', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
@@ -311,13 +349,23 @@ export class InputHandler {
   }
 
   handleCursorLeft(): void {
-    this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
-      .catch((_e: Error) => {});
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.BUNSETSU) {
+      this.selectBunsetsuSegment(this.bCur - 1);
+    } else {
+      this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+        .catch((_e: Error) => {});
+    }
   }
 
   handleCursorRight(): void {
-    this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
-      .catch((_e: Error) => {});
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.BUNSETSU) {
+      this.selectBunsetsuSegment(this.bCur + 1);
+    } else {
+      this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
+        .catch((_e: Error) => {});
+    }
   }
 
   handleDirectKana(kana: string): void {
@@ -330,7 +378,7 @@ export class InputHandler {
       return;
     }
 
-    if (state === InputState.SELECTING) {
+    if (state === InputState.SELECTING || state === InputState.BUNSETSU) {
       this.commitTopCandidate();
     }
 
@@ -339,6 +387,74 @@ export class InputHandler {
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
     this.updateCandidates();
+  }
+
+  // Enter bunsetsu mode: segment composing text and show first segment's candidates
+  handleBunsetsu(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.COMPOSING) { return; }
+    let composing = AppStorage.get<string>('composingText') ?? '';
+    const pending = this.converter.flushPending();
+    const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
+    if (pending.length > 0) {
+      const kana = mode === InputMode.KATAKANA ? toKatakana(pending) : pending;
+      composing = composing + kana;
+      AppStorage.setOrCreate('composingText', composing);
+      AppStorage.setOrCreate('pendingRomaji', '');
+    }
+    if (composing.length === 0) { return; }
+    this.bSegs = this.kanjiConverter.segment(composing);
+    this.bChosen = this.bSegs.map((seg: string) => this.kanjiConverter.lookup(seg)[0]);
+    this.bCur = 0;
+    this.updateBunsetsuStorage();
+  }
+
+  // Navigate to a specific segment and refresh candidates
+  selectBunsetsuSegment(idx: number): void {
+    if (idx < 0 || idx >= this.bSegs.length) { return; }
+    this.bCur = idx;
+    this.updateBunsetsuStorage();
+  }
+
+  // Commit all segments as final text
+  commitBunsetsu(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.BUNSETSU) { return; }
+    const text = this.bChosen.join('');
+    this.insertText(text);
+    this.bSegs = [];
+    this.bChosen = [];
+    this.bCur = 0;
+    this.resetComposition();
+  }
+
+  // Called when user taps a candidate while in BUNSETSU state
+  commitBunsetsuCandidate(index: number): void {
+    const candidates = AppStorage.get<string[]>('candidates') ?? [];
+    if (index < candidates.length) {
+      this.bChosen[this.bCur] = candidates[index];
+    }
+    // Advance to next segment if available
+    if (this.bCur + 1 < this.bSegs.length) {
+      this.bCur += 1;
+      this.updateBunsetsuStorage();
+    } else {
+      this.commitBunsetsu();
+    }
+  }
+
+  private updateBunsetsuStorage(): void {
+    const segTexts: string[] = this.bChosen.map((ch: string, i: number) =>
+      i === this.bCur ? `[${ch}]` : ch
+    );
+    AppStorage.setOrCreate('bunsetsuTexts', this.bChosen as string[]);
+    AppStorage.setOrCreate('bunsetsuRaw', this.bSegs as string[]);
+    AppStorage.setOrCreate('bunsetsuCurrent', this.bCur);
+    AppStorage.setOrCreate('bunsetsuDisplay', segTexts.join(''));
+    const cands = this.kanjiConverter.lookup(this.bSegs[this.bCur]);
+    AppStorage.setOrCreate('candidates', cands);
+    AppStorage.setOrCreate('selectedCandidateIndex', 0);
+    AppStorage.setOrCreate('inputState', InputState.BUNSETSU);
   }
 
   handleDakuten(): void {
