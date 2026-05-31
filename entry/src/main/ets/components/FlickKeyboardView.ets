@@ -59,7 +59,26 @@ export struct FlickKeyboardView {
 
   private readonly THRESHOLD: number = 20;
 
+  private bsDelayTimer: number = -1;
+  private bsRepeatTimer: number = -1;
+
   private h(): InputHandler { return InputHandler.getInstance(); }
+
+  private startBsRepeat(): void {
+    this.h().handleBackspace();
+    this.bsDelayTimer = setTimeout(() => {
+      this.bsRepeatTimer = setInterval(() => {
+        this.h().handleBackspace();
+      }, 100);
+    }, 500);
+  }
+
+  private stopBsRepeat(): void {
+    clearTimeout(this.bsDelayTimer);
+    clearInterval(this.bsRepeatTimer);
+    this.bsDelayTimer = -1;
+    this.bsRepeatTimer = -1;
+  }
 
   private toMode(kana: string): string {
     if (this.inputMode === InputMode.KATAKANA && /[ぁ-ん]/.test(kana)) {
@@ -166,7 +185,7 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#ADB5BD').fontColor(Color.White)
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-        .onClick(() => { this.h().commitTopCandidate(); })
+        .onClick(() => { this.h().handleUndo(); })
     } else if (rowIdx === 1) {
       Text('◄')
         .fontSize(16).textAlign(TextAlign.Center)
@@ -210,7 +229,13 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#ADB5BD').fontColor(Color.White)
         .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-        .onClick(() => { this.h().handleBackspace(); })
+        .onTouch((event: TouchEvent) => {
+          if (event.type === TouchType.Down) {
+            this.startBsRepeat();
+          } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+            this.stopBsRepeat();
+          }
+        })
     } else if (rowIdx === 1) {
       Text('►')
         .fontSize(16).textAlign(TextAlign.Center)
