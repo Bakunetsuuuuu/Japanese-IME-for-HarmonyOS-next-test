@@ -202,8 +202,17 @@ export struct SymbolView {
             AppStorage.setOrCreate('keyboardSubMode', 'kana');
           })
 
-        // Emoji / GIF / Sticker / Emoticons (visual only)
-        ForEach(['😊', 'GIF', '🎨', ':-)'], (btn: string) => {
+        // Emoji button → emoji panel
+        Text('😊')
+          .fontSize(17)
+          .textAlign(TextAlign.Center)
+          .width(46).height(44)
+          .fontColor('#444444')
+          .backgroundColor('#C8CDD4')
+          .borderRadius(8)
+          .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'emoji'); })
+
+        ForEach(['GIF', '🎨', ':-)'], (btn: string) => {
           Text(btn)
             .fontSize(btn === 'GIF' ? 13 : 17)
             .textAlign(TextAlign.Center)

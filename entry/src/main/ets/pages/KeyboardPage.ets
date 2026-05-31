@@ -6,6 +6,7 @@ import { CandidateBar } from '../components/CandidateBar';
 import { KeyboardView } from '../components/KeyboardView';
 import { FlickKeyboardView } from '../components/FlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
+import { EmojiView } from '../components/EmojiView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
 
 let _inputStartRegistered = false;
@@ -56,9 +57,11 @@ struct KeyboardPage {
 
   build() {
     Column() {
-      // Symbol view takes the full panel (no preview bar)
+      // Symbol/Emoji views take the full panel (no preview bar)
       if (this.keyboardSubMode === 'symbol') {
         SymbolView()
+      } else if (this.keyboardSubMode === 'emoji') {
+        EmojiView()
       } else {
         // Preview bar
         if (this.inputState === InputState.BUNSETSU) {
