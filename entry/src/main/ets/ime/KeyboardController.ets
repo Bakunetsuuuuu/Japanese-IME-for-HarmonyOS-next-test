@@ -540,9 +540,10 @@ export class InputHandler {
       this.resetComposition();
       return;
     }
-    if (this.undoStack.length === 0) { return; }
-    const last = this.undoStack.pop()!;
-    this.inputClient?.deleteForward(last.length);
+    const last: string = this.undoStack.pop() ?? '';
+    if (last.length > 0) {
+      this.inputClient?.deleteForward(last.length);
+    }
   }
 
   insertText(text: string): void {
