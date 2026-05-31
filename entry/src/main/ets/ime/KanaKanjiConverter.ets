@@ -394,8 +394,14 @@ export class KanaKanjiConverter {
     'けど': true, 'けれど': true, 'けれども': true, 'ながら': true, 'たり': true,
     'ために': true, 'ように': true,
     'た': true, 'ない': true, 'だ': true, 'じゃ': true, 'かな': true,
+    'なく': true, 'なくて': true, 'なかった': true, 'なければ': true,
+    'たい': true, 'たく': true, 'たくて': true,
+    'いる': true, 'ある': true, 'する': true, 'なる': true, 'くる': true,
+    'こと': true, 'もの': true, 'とき': true, 'ところ': true, 'ほう': true,
+    'これ': true, 'それ': true, 'あれ': true, 'どれ': true,
     'です': true, 'ます': true, 'ません': true, 'でした': true, 'ました': true,
     'でしょう': true, 'ましょう': true, 'だろう': true, 'だろ': true,
+    'ください': true, 'ちゃう': true, 'てる': true, 'でる': true,
   };
 
   static loadDictionary(dict: Record<string, string[]>): void {
@@ -425,7 +431,16 @@ export class KanaKanjiConverter {
       // Not in any dict: katakana first (handles loanwords not yet in dict)
       return kata !== kana ? [kata, kana] : [kana];
     }
-    return KanaKanjiConverter.filterCandidates(kana, cands);
+
+    const filtered = KanaKanjiConverter.filterCandidates(kana, cands);
+    // Function words (particles/auxiliaries) default to hiragana, not rare kanji
+    // (e.g. ない should lead with かな, not 綯い).
+    if (KanaKanjiConverter.FUNCTION_WORDS[kana] && filtered[0] !== kana) {
+      const reordered = filtered.filter((c: string) => c !== kana);
+      reordered.unshift(kana);
+      return reordered;
+    }
+    return filtered;
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
