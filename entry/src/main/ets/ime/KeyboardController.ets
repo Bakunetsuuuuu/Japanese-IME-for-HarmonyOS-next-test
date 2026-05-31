@@ -25,6 +25,36 @@ export const enum InputMode {
 
 const IMEAbility = inputMethodEngine.getInputMethodAbility();
 
+// Cycles through all applicable variants of a kana character on repeated taps.
+// Order: small (if applicable) → dakuten → handakuten (if applicable) → original
+const VARIANT_CYCLE: Record<string, string> = {
+  // ka行: dakuten toggle
+  'か':'が','が':'か','き':'ぎ','ぎ':'き','く':'ぐ','ぐ':'く','け':'げ','げ':'け','こ':'ご','ご':'こ',
+  // sa行: dakuten toggle
+  'さ':'ざ','ざ':'さ','し':'じ','じ':'し','す':'ず','ず':'す','せ':'ぜ','ぜ':'せ','そ':'ぞ','ぞ':'そ',
+  // ta行: ち/て/と dakuten only; つ→っ→づ→つ (small first)
+  'た':'だ','だ':'た','ち':'ぢ','ぢ':'ち','て':'で','で':'て','と':'ど','ど':'と',
+  'つ':'っ','っ':'づ','づ':'つ',
+  // ha行: dakuten → handakuten → original
+  'は':'ば','ば':'ぱ','ぱ':'は','ひ':'び','び':'ぴ','ぴ':'ひ',
+  'ふ':'ぶ','ぶ':'ぷ','ぷ':'ふ','へ':'べ','べ':'ぺ','ぺ':'へ','ほ':'ぼ','ぼ':'ぽ','ぽ':'ほ',
+  // う: small → dakuten → original
+  'う':'ぅ','ぅ':'ゔ','ゔ':'う',
+  // small vowels (no dakuten)
+  'あ':'ぁ','ぁ':'あ','い':'ぃ','ぃ':'い','え':'ぇ','ぇ':'え','お':'ぉ','ぉ':'お',
+  'や':'ゃ','ゃ':'や','ゆ':'ゅ','ゅ':'ゆ','よ':'ょ','ょ':'よ','わ':'ゎ','ゎ':'わ',
+  // katakana — same pattern
+  'カ':'ガ','ガ':'カ','キ':'ギ','ギ':'キ','ク':'グ','グ':'ク','ケ':'ゲ','ゲ':'ケ','コ':'ゴ','ゴ':'コ',
+  'サ':'ザ','ザ':'サ','シ':'ジ','ジ':'シ','ス':'ズ','ズ':'ス','セ':'ゼ','ゼ':'セ','ソ':'ゾ','ゾ':'ソ',
+  'タ':'ダ','ダ':'タ','チ':'ヂ','ヂ':'チ','テ':'デ','デ':'テ','ト':'ド','ド':'ト',
+  'ツ':'ッ','ッ':'ヅ','ヅ':'ツ',
+  'ハ':'バ','バ':'パ','パ':'ハ','ヒ':'ビ','ビ':'ピ','ピ':'ヒ',
+  'フ':'ブ','ブ':'プ','プ':'フ','ヘ':'ベ','ベ':'ペ','ペ':'ヘ','ホ':'ボ','ボ':'ポ','ポ':'ホ',
+  'ウ':'ゥ','ゥ':'ヴ','ヴ':'ウ',
+  'ア':'ァ','ァ':'ア','イ':'ィ','ィ':'イ','エ':'ェ','ェ':'エ','オ':'ォ','ォ':'オ',
+  'ヤ':'ャ','ャ':'ヤ','ユ':'ュ','ュ':'ユ','ヨ':'ョ','ョ':'ヨ','ワ':'ヮ','ヮ':'ワ',
+};
+
 const DAKUTEN: Record<string, string> = {
   'か':'が','き':'ぎ','く':'ぐ','け':'げ','こ':'ご',
   'さ':'ざ','し':'じ','す':'ず','せ':'ぜ','そ':'ぞ',
@@ -256,6 +286,28 @@ export class InputHandler {
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
+  handleVariantCycle(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.COMPOSING) { return; }
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    if (composing.length === 0) { return; }
+    const last = composing.slice(-1);
+    const next = VARIANT_CYCLE[last];
+    if (next !== undefined) {
+      AppStorage.setOrCreate('composingText', composing.slice(0, -1) + next);
+    }
+  }
+
+  handleCursorLeft(): void {
+    this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+      .catch((_e: Error) => {});
+  }
+
+  handleCursorRight(): void {
+    this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
+      .catch((_e: Error) => {});
+  }
+
   handleDirectKana(kana: string): void {
     const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
@@ -356,8 +408,8 @@ export class KeyboardController {
     const skwVp = Math.round(kwVp * 1.2);
     // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
     const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
-    // Flick keys: 3 columns + 2 gaps × 3vp + 4vp H-padding
-    const flickKwVp = Math.max(Math.floor((screenVp - 10) / 3), 80);
+    // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
+    const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
     AppStorage.setOrCreate('keyWidthVp', kwVp);
     AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
     AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);

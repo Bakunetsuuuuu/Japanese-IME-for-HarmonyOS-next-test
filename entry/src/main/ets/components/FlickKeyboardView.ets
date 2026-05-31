@@ -20,6 +20,7 @@ function getKanaByDir(key: FlickKeyDef, dir: FlickDir): string {
   return key.center;
 }
 
+// 3 center kana columns (displayed in cols 1-3 of the 5-col layout)
 const FLICK_GRID: FlickKeyDef[][] = [
   [
     { center: 'あ', up: 'う', right: 'え', down: 'お', left: 'い' },
@@ -47,7 +48,7 @@ const FLICK_GRID: FlickKeyDef[][] = [
 export struct FlickKeyboardView {
   @Prop inputMode: string = InputMode.HIRAGANA;
   @Prop isLandscape: boolean = false;
-  @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 120;
+  @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
 
   @State activeRow: number = -1;
   @State activeCol: number = -1;
@@ -57,9 +58,7 @@ export struct FlickKeyboardView {
 
   private readonly THRESHOLD: number = 20;
 
-  private h(): InputHandler {
-    return InputHandler.getInstance();
-  }
+  private h(): InputHandler { return InputHandler.getInstance(); }
 
   private toMode(kana: string): string {
     if (this.inputMode === InputMode.KATAKANA && /[ぁ-ん]/.test(kana)) {
@@ -68,9 +67,7 @@ export struct FlickKeyboardView {
     return kana;
   }
 
-  private rowH(): number {
-    return this.isLandscape ? 40 : 56;
-  }
+  private rowH(): number { return this.isLandscape ? 50 : 64; }
 
   private dirFrom(dx: number, dy: number): FlickDir {
     if (Math.abs(dx) < this.THRESHOLD && Math.abs(dy) < this.THRESHOLD) { return 'center'; }
@@ -88,7 +85,7 @@ export struct FlickKeyboardView {
   }
 
   private centerLabel(row: number, col: number, key: FlickKeyDef): string {
-    if (key.special === 'backspace' || key.special === 'dakuten') { return key.center; }
+    if (key.special === 'dakuten') { return key.center; }
     if (this.isActive(row, col)) {
       const raw = getKanaByDir(key, this.flickDir);
       return key.special === 'punct' ? raw : this.toMode(raw);
@@ -97,24 +94,14 @@ export struct FlickKeyboardView {
   }
 
   private keyBg(row: number, col: number, key: FlickKeyDef): ResourceColor {
-    if (key.special === 'backspace' || key.special === 'dakuten') { return '#ADB5BD'; }
+    if (key.special === 'dakuten') { return '#ADB5BD'; }
     if (this.isActive(row, col)) { return '#B8D4F0'; }
     return '#FFFFFF';
   }
 
   private onCommit(key: FlickKeyDef, dir: FlickDir): void {
-    if (key.special === 'backspace') {
-      this.h().handleBackspace();
-      return;
-    }
     if (key.special === 'dakuten') {
-      if (dir === 'center' || dir === 'right') {
-        this.h().handleDakuten();
-      } else if (dir === 'up') {
-        this.h().handleHandakuten();
-      } else if (dir === 'down') {
-        this.h().handleSmall();
-      }
+      this.h().handleVariantCycle();
       return;
     }
     if (key.special === 'punct') {
@@ -153,70 +140,128 @@ export struct FlickKeyboardView {
 
   build() {
     Column({ space: 3 }) {
+      // 4 rows × 5 columns (Gboard layout)
       ForEach([0, 1, 2, 3], (rowIdx: number) => {
         Row({ space: 3 }) {
+          this.LeftKey(rowIdx)
           ForEach([0, 1, 2], (colIdx: number) => {
             this.KeyCell(rowIdx, colIdx, FLICK_GRID[rowIdx][colIdx])
           }, (colIdx: number) => String(colIdx))
+          this.RightKey(rowIdx)
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
       }, (rowIdx: number) => String(rowIdx))
-
-      // Function row
-      Row({ space: 3 }) {
-        this.FlickModeKey()
-        this.FlickSpaceKey()
-        this.FlickBackspaceKey()
-        this.FlickEnterKey()
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
     }
     .width('100%')
     .padding({ bottom: 8, top: 4 })
   }
 
+  // Left column keys per row
+  @Builder LeftKey(rowIdx: number) {
+    if (rowIdx === 0) {
+      Text('↩')
+        .fontSize(16).textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp).height(this.rowH())
+        .backgroundColor('#ADB5BD').fontColor(Color.White)
+        .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+        .onClick(() => { this.h().commitTopCandidate(); })
+    } else if (rowIdx === 1) {
+      Text('◄')
+        .fontSize(16).textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp).height(this.rowH())
+        .backgroundColor('#ADB5BD').fontColor(Color.White)
+        .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+        .onClick(() => { this.h().handleCursorLeft(); })
+    } else if (rowIdx === 2) {
+      Text('☺記')
+        .fontSize(13).textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp).height(this.rowH())
+        .backgroundColor('#ADB5BD').fontColor(Color.White)
+        .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+    } else {
+      Text(this.inputMode === InputMode.HIRAGANA ? 'あa1'
+        : this.inputMode === InputMode.KATAKANA ? 'アa1'
+        : 'Aあ')
+        .fontSize(12).textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp).height(this.rowH())
+        .backgroundColor('#ADB5BD').fontColor(Color.White)
+        .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+        .onClick(() => {
+          this.h().commitTopCandidate();
+          const cur = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
+          const next = cur === InputMode.HIRAGANA ? InputMode.KATAKANA
+            : cur === InputMode.KATAKANA ? InputMode.ALPHANUMERIC
+            : InputMode.HIRAGANA;
+          AppStorage.setOrCreate('inputMode', next);
+        })
+    }
+  }
+
+  // Right column keys per row
+  @Builder RightKey(rowIdx: number) {
+    if (rowIdx === 0) {
+      Text('⌫')
+        .fontSize(16).textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp).height(this.rowH())
+        .backgroundColor('#ADB5BD').fontColor(Color.White)
+        .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+        .onClick(() => { this.h().handleBackspace(); })
+    } else if (rowIdx === 1) {
+      Text('►')
+        .fontSize(16).textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp).height(this.rowH())
+        .backgroundColor('#ADB5BD').fontColor(Color.White)
+        .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+        .onClick(() => { this.h().handleCursorRight(); })
+    } else if (rowIdx === 2) {
+      Text('⏎')
+        .fontSize(16).textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp).height(this.rowH())
+        .backgroundColor('#ADB5BD').fontColor(Color.White)
+        .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+        .onClick(() => { this.h().handleSpaceKey(); })
+    } else {
+      Text('→')
+        .fontSize(16).textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp).height(this.rowH())
+        .backgroundColor('#4A90E2').fontColor(Color.White)
+        .borderRadius(8).shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+        .onClick(() => { this.h().handleEnterKey(); })
+    }
+  }
+
   @Builder KeyCell(rowIdx: number, colIdx: number, key: FlickKeyDef) {
     Column({ space: 0 }) {
-      // Top hint
       Text(key.up !== undefined ? this.toMode(key.up) : ' ')
         .fontSize(11)
         .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
-        .width('100%')
-        .height('28%')
+        .width('100%').height('28%')
         .textAlign(TextAlign.Center)
 
-      // Middle: left hint | center label | right hint
       Row({ space: 0 }) {
         Text(key.left !== undefined ? this.toMode(key.left) : ' ')
           .fontSize(11)
           .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
-          .width('25%')
-          .textAlign(TextAlign.Center)
+          .width('25%').textAlign(TextAlign.Center)
 
         Text(this.centerLabel(rowIdx, colIdx, key))
-          .fontSize(this.isActive(rowIdx, colIdx) ? 22 : 19)
-          .fontColor(key.special === 'backspace' || key.special === 'dakuten' ? Color.White : Color.Black)
+          .fontSize(this.isActive(rowIdx, colIdx) ? 20 : 17)
+          .fontColor(key.special === 'dakuten' ? Color.White : Color.Black)
           .fontWeight(FontWeight.Medium)
-          .width('50%')
-          .textAlign(TextAlign.Center)
+          .width('50%').textAlign(TextAlign.Center)
 
         Text(key.right !== undefined ? this.toMode(key.right) : ' ')
           .fontSize(11)
           .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
-          .width('25%')
-          .textAlign(TextAlign.Center)
+          .width('25%').textAlign(TextAlign.Center)
       }
-      .width('100%')
-      .height('44%')
+      .width('100%').height('44%')
 
-      // Bottom hint
       Text(key.down !== undefined ? this.toMode(key.down) : ' ')
         .fontSize(11)
         .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
-        .width('100%')
-        .height('28%')
+        .width('100%').height('28%')
         .textAlign(TextAlign.Center)
     }
     .width(this.flickKeyWidthVp)
@@ -227,73 +272,5 @@ export struct FlickKeyboardView {
     .onTouch((e: TouchEvent) => {
       this.handleTouch(e, rowIdx, colIdx, key);
     })
-  }
-
-  @Builder FlickModeKey() {
-    Text(this.inputMode === InputMode.HIRAGANA ? 'あ'
-      : this.inputMode === InputMode.KATAKANA ? 'ア'
-      : 'A')
-      .fontSize(15)
-      .textAlign(TextAlign.Center)
-      .width(52)
-      .height(44)
-      .backgroundColor('#ADB5BD')
-      .fontColor(Color.White)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-      .onClick(() => {
-        this.h().commitTopCandidate();
-        const cur = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
-        const next = cur === InputMode.HIRAGANA ? InputMode.KATAKANA
-          : cur === InputMode.KATAKANA ? InputMode.ALPHANUMERIC
-          : InputMode.HIRAGANA;
-        AppStorage.setOrCreate('inputMode', next);
-      })
-  }
-
-  @Builder FlickBackspaceKey() {
-    Text('⌫')
-      .fontSize(17)
-      .textAlign(TextAlign.Center)
-      .width(60)
-      .height(44)
-      .backgroundColor('#ADB5BD')
-      .fontColor(Color.White)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-      .onClick(() => {
-        this.h().handleBackspace();
-      })
-  }
-
-  @Builder FlickSpaceKey() {
-    Text(this.inputMode === InputMode.HIRAGANA ? 'かな'
-      : this.inputMode === InputMode.KATAKANA ? 'カナ'
-      : 'space')
-      .fontSize(14)
-      .textAlign(TextAlign.Center)
-      .width(160)
-      .height(44)
-      .backgroundColor('#FFFFFF')
-      .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-      .onClick(() => {
-        this.h().handleSpaceKey();
-      })
-  }
-
-  @Builder FlickEnterKey() {
-    Text('⏎')
-      .fontSize(17)
-      .textAlign(TextAlign.Center)
-      .width(52)
-      .height(44)
-      .backgroundColor('#4A90E2')
-      .fontColor(Color.White)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
-      .onClick(() => {
-        this.h().handleEnterKey();
-      })
   }
 }
