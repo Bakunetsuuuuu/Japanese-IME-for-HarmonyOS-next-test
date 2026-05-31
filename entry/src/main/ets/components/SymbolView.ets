@@ -212,16 +212,6 @@ export struct SymbolView {
           .borderRadius(8)
           .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'emoji'); })
 
-        ForEach(['GIF', '🎨', ':-)'], (btn: string) => {
-          Text(btn)
-            .fontSize(btn === 'GIF' ? 13 : 17)
-            .textAlign(TextAlign.Center)
-            .width(btn === 'GIF' ? 52 : 46).height(44)
-            .fontColor('#444444')
-            .backgroundColor('#C8CDD4')
-            .borderRadius(8)
-        }, (btn: string) => btn)
-
         // ⓘ license info toggle
         Text('ⓘ')
           .fontSize(18).textAlign(TextAlign.Center)
