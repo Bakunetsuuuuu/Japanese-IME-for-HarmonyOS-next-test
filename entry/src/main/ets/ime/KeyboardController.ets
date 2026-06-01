@@ -107,7 +107,8 @@ export class InputHandler {
   private bChosen: string[] = [];
   private bCur: number = 0;
   private lastDeletedChar: string = '';
-  private undoStack: string[] = [];
+  private insertedBuffer: string[] = [];
+  private restoreStack: string[] = [];
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
@@ -130,7 +131,8 @@ export class InputHandler {
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
     this.lastDeletedChar = '';
-    this.undoStack = [];
+    this.insertedBuffer = [];
+    this.restoreStack = [];
     if (!AppStorage.has('inputMode')) {
       AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
     }
@@ -141,7 +143,8 @@ export class InputHandler {
     this.inputClient = undefined;
     this.converter.reset();
     this.lastDeletedChar = '';
-    this.undoStack = [];
+    this.insertedBuffer = [];
+    this.restoreStack = [];
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -224,6 +227,8 @@ export class InputHandler {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
 
     if (state === InputState.IDLE) {
+      const deleted = this.insertedBuffer.pop() ?? '';
+      if (deleted.length > 0) { this.restoreStack.push(deleted); }
       this.inputClient?.deleteForward(1);
       return;
     }
@@ -335,7 +340,8 @@ export class InputHandler {
     this.bChosen = [];
     this.bCur = 0;
     this.lastDeletedChar = '';
-    this.undoStack = [];
+    this.insertedBuffer = [];
+    this.restoreStack = [];
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -434,7 +440,7 @@ export class InputHandler {
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
     this.lastDeletedChar = '';
-    this.undoStack = [];
+    this.restoreStack = [];
     this.updateCandidates();
   }
 
@@ -553,9 +559,10 @@ export class InputHandler {
       return;
     }
     if (state === InputState.IDLE) {
-      const last: string = this.undoStack.pop() ?? '';
-      if (last.length > 0) {
-        this.inputClient?.deleteForward(last.length);
+      const ch = this.restoreStack.pop() ?? '';
+      if (ch.length > 0) {
+        this.inputClient?.insertText(ch);
+        this.insertedBuffer.push(ch);
       }
     }
   }
@@ -563,8 +570,13 @@ export class InputHandler {
   insertText(text: string): void {
     this.inputClient?.insertText(text);
     if (text.length > 0) {
-      this.undoStack.push(text);
-      if (this.undoStack.length > 10) { this.undoStack.shift(); }
+      for (let i = 0; i < text.length; i++) {
+        this.insertedBuffer.push(text[i]);
+      }
+      if (this.insertedBuffer.length > 50) {
+        this.insertedBuffer = this.insertedBuffer.slice(-50);
+      }
+      this.restoreStack = [];
     }
   }
 
