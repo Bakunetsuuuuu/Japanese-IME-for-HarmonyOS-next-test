@@ -162,9 +162,7 @@ export struct KeyboardView {
   }
 
   @Builder SpaceKey() {
-    Text(this.inputMode === InputMode.HIRAGANA ? 'かな'
-      : this.inputMode === InputMode.KATAKANA ? 'カナ'
-      : 'space')
+    Text(this.inputMode === InputMode.HIRAGANA ? 'かな' : 'space')
       .fontSize(14)
       .textAlign(TextAlign.Center)
       .width(this.spaceKeyWidthVp)
@@ -178,9 +176,7 @@ export struct KeyboardView {
   }
 
   @Builder ModeKey() {
-    Text(this.inputMode === InputMode.HIRAGANA ? 'あ'
-      : this.inputMode === InputMode.KATAKANA ? 'ア'
-      : 'A')
+    Text(this.inputMode === InputMode.HIRAGANA ? 'あ' : 'A')
       .fontSize(15)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
@@ -192,9 +188,7 @@ export struct KeyboardView {
       .onClick(() => {
         this.getHandler().commitTopCandidate();
         const current = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
-        const next = current === InputMode.HIRAGANA ? InputMode.KATAKANA
-          : current === InputMode.KATAKANA ? InputMode.ALPHANUMERIC
-          : InputMode.HIRAGANA;
+        const next = current === InputMode.HIRAGANA ? InputMode.ALPHANUMERIC : InputMode.HIRAGANA;
         AppStorage.setOrCreate('inputMode', next);
       })
   }
