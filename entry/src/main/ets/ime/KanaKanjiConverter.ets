@@ -383,6 +383,8 @@ export class KanaKanjiConverter {
   private static supplementaryDict: Record<string, string[]> = {};
   private static learned: Record<string, Record<string, number>> = {};
   private static userDict: Record<string, string[]> = {};
+  // Developer-curated dictionary bundled as rawfile/global_dict.json. Highest priority.
+  private static globalDict: Record<string, string[]> = {};
 
   // Particles and auxiliaries kept as kana in auto-convert and preferred during DP traceback
   private static readonly FUNCTION_WORDS: Record<string, boolean> = {
@@ -441,6 +443,10 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.userDict = dict;
   }
 
+  static setGlobalDict(dict: Record<string, string[]>): void {
+    KanaKanjiConverter.globalDict = dict;
+  }
+
   static setLearned(data: Record<string, Record<string, number>>): void {
     KanaKanjiConverter.learned = data;
   }
@@ -471,17 +477,21 @@ export class KanaKanjiConverter {
   }
 
   // Prepend user-registered words (deduped), keeping them ahead of dict order.
-  private static withUserWords(kana: string, list: string[]): string[] {
-    const user = KanaKanjiConverter.userDict[kana];
-    if (!user || user.length === 0) { return list; }
-    const rest = list.filter((c: string) => !user.includes(c));
-    return [...user, ...rest];
+  // Prepend the words of a registered dictionary (deduped), keeping them ahead.
+  private static withRegisteredWords(
+    registered: string[] | undefined,
+    list: string[]
+  ): string[] {
+    if (!registered || registered.length === 0) { return list; }
+    const rest = list.filter((c: string) => !registered.includes(c));
+    return [...registered, ...rest];
   }
 
   lookup(kana: string): string[] {
     const entry = DICTIONARY[kana];
     const ext = KanaKanjiConverter.supplementaryDict[kana];
     const user = KanaKanjiConverter.userDict[kana];
+    const global = KanaKanjiConverter.globalDict[kana];
     const kata = KanaKanjiConverter.toKatakana(kana);
     let cands: string[];
 
@@ -498,12 +508,14 @@ export class KanaKanjiConverter {
       cands = [...ext];
       if (kata !== kana && !cands.includes(kata)) { cands.push(kata); }
       if (!cands.includes(kana)) { cands.push(kana); }
-    } else if (user && user.length > 0) {
-      // Only the user dictionary knows this reading.
-      cands = [...user];
-      if (kata !== kana && !cands.includes(kata)) { cands.push(kata); }
+    } else if ((user && user.length > 0) || (global && global.length > 0)) {
+      // Only a registered dictionary (user/global) knows this reading.
+      cands = [];
+      if (kata !== kana) { cands.push(kata); }
       if (!cands.includes(kana)) { cands.push(kana); }
-      return cands;
+      // global leads user; both prepended ahead of the katakana/kana fallback.
+      const withUser = KanaKanjiConverter.withRegisteredWords(user, cands);
+      return KanaKanjiConverter.withRegisteredWords(global, withUser);
     } else {
       // Not in any dict: katakana first (handles loanwords not yet in dict)
       return kata !== kana ? [kata, kana] : [kana];
@@ -520,8 +532,9 @@ export class KanaKanjiConverter {
     } else {
       ordered = KanaKanjiConverter.applyLearning(kana, filtered);
     }
-    // User-registered words always lead, regardless of learning/dict order.
-    return KanaKanjiConverter.withUserWords(kana, ordered);
+    // Registered words always lead: user first, then global prepended → global wins.
+    const withUser = KanaKanjiConverter.withRegisteredWords(user, ordered);
+    return KanaKanjiConverter.withRegisteredWords(global, withUser);
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
@@ -556,7 +569,8 @@ export class KanaKanjiConverter {
   }
 
   private inDict(sub: string): boolean {
-    return !!(KanaKanjiConverter.userDict[sub]
+    return !!(KanaKanjiConverter.globalDict[sub]
+      || KanaKanjiConverter.userDict[sub]
       || KanaKanjiConverter.supplementaryDict[sub]
       || DICTIONARY[sub]);
   }

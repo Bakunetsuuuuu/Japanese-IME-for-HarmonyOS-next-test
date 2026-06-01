@@ -1,6 +1,7 @@
 {
   "src": [
     "pages/KeyboardPage",
-    "pages/Index"
+    "pages/Index",
+    "pages/DevDict"
   ]
 }

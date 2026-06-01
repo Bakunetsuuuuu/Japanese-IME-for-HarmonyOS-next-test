@@ -1,5 +1,5 @@
 import { UserDictStore } from '../ime/UserDictStore';
-import { promptAction } from '@kit.ArkUI';
+import { promptAction, router } from '@kit.ArkUI';
 
 interface DictRow {
   yomi: string;
@@ -14,8 +14,23 @@ struct Index {
   @State yomiInput: string = '';
   @State wordInput: string = '';
 
+  // Hidden access to the developer dictionary: 7 quick taps on the title.
+  private titleTapCount: number = 0;
+  private titleTapLast: number = 0;
+
   aboutToAppear(): void {
     this.reload();
+  }
+
+  private onTitleTap(): void {
+    const now = Date.now();
+    // Reset the run if taps are more than 1.5s apart.
+    this.titleTapCount = (now - this.titleTapLast <= 1500) ? this.titleTapCount + 1 : 1;
+    this.titleTapLast = now;
+    if (this.titleTapCount >= 7) {
+      this.titleTapCount = 0;
+      router.pushUrl({ url: 'pages/DevDict' });
+    }
   }
 
   private reload(): void {
@@ -76,6 +91,7 @@ struct Index {
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(Color.White)
+          .onClick(() => { this.onTitleTap(); })
       }
       .width('100%')
       .height(56)
