@@ -107,6 +107,7 @@ export class InputHandler {
   private bChosen: string[] = [];
   private bCur: number = 0;
   private lastDeletedChar: string = '';
+  private undoStack: string[] = [];
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
@@ -129,6 +130,7 @@ export class InputHandler {
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
     this.lastDeletedChar = '';
+    this.undoStack = [];
     if (!AppStorage.has('inputMode')) {
       AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
     }
@@ -139,6 +141,7 @@ export class InputHandler {
     this.inputClient = undefined;
     this.converter.reset();
     this.lastDeletedChar = '';
+    this.undoStack = [];
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -332,6 +335,7 @@ export class InputHandler {
     this.bChosen = [];
     this.bCur = 0;
     this.lastDeletedChar = '';
+    this.undoStack = [];
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -430,6 +434,7 @@ export class InputHandler {
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
     this.lastDeletedChar = '';
+    this.undoStack = [];
     this.updateCandidates();
   }
 
@@ -539,16 +544,28 @@ export class InputHandler {
 
   handleUndo(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state !== InputState.COMPOSING) { return; }
-    if (this.lastDeletedChar.length === 0) { return; }
-    const composing = AppStorage.get<string>('composingText') ?? '';
-    AppStorage.setOrCreate('composingText', composing + this.lastDeletedChar);
-    this.lastDeletedChar = '';
-    this.updateCandidates();
+    if (state === InputState.COMPOSING) {
+      if (this.lastDeletedChar.length === 0) { return; }
+      const composing = AppStorage.get<string>('composingText') ?? '';
+      AppStorage.setOrCreate('composingText', composing + this.lastDeletedChar);
+      this.lastDeletedChar = '';
+      this.updateCandidates();
+      return;
+    }
+    if (state === InputState.IDLE) {
+      const last: string = this.undoStack.pop() ?? '';
+      if (last.length > 0) {
+        this.inputClient?.deleteForward(last.length);
+      }
+    }
   }
 
   insertText(text: string): void {
     this.inputClient?.insertText(text);
+    if (text.length > 0) {
+      this.undoStack.push(text);
+      if (this.undoStack.length > 10) { this.undoStack.shift(); }
+    }
   }
 
   hideKeyboard(): void {
