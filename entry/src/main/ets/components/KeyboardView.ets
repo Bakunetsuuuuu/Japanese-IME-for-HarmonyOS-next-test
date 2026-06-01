@@ -42,16 +42,12 @@ export struct KeyboardView {
     this.bsRepeatTimer = -1;
   }
 
-  private displayKey(key: string): string {
-    return (this.isShift || this.isCapsLock) ? key.toUpperCase() : key;
-  }
-
   build() {
     Column({ space: 5 }) {
       // Number row
       Row({ space: 2 }) {
         ForEach(NUMBER_ROW, (key: string) => {
-          this.RegularKey(key, key)
+          this.RegularKey(key)
         }, (key: string) => key)
       }
       .width('100%')
@@ -60,7 +56,7 @@ export struct KeyboardView {
       ForEach([0, 1], (rowIdx: number) => {
         Row({ space: 2 }) {
           ForEach(ROWS[rowIdx], (key: string) => {
-            this.RegularKey(this.displayKey(key), key)
+            this.RegularKey(key)
           }, (key: string) => key)
         }
         .width('100%')
@@ -71,7 +67,7 @@ export struct KeyboardView {
       Row({ space: 2 }) {
         this.ShiftKey()
         ForEach(ROWS[2], (key: string) => {
-          this.RegularKey(this.displayKey(key), key)
+          this.RegularKey(key)
         }, (key: string) => key)
         this.BackspaceKey()
       }
@@ -103,8 +99,10 @@ export struct KeyboardView {
     .padding({ bottom: 8, top: 4, left: 2, right: 2 })
   }
 
-  @Builder RegularKey(label: string, value: string) {
-    Text(label)
+  @Builder RegularKey(value: string) {
+    // Read isShift/isCapsLock directly here (not via a by-value Builder param)
+    // so the label re-renders when the shift state changes.
+    Text((this.isShift || this.isCapsLock) ? value.toUpperCase() : value)
       .fontSize(17)
       .fontColor(Color.Black)
       .textAlign(TextAlign.Center)
