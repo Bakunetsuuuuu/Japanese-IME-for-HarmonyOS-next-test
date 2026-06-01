@@ -86,42 +86,7 @@ hdc install JapaneseIMEforHarmonyOSnext-default-signed.app
 
 ## ソースからビルドする
 
-### 1. DevEco Studio の導入
-
-1. [developer.huawei.com](https://developer.huawei.com/consumer/en/deveco-studio/) から **DevEco Studio** をダウンロード・インストール
-2. 初回起動時に SDK セットアップウィザードが開く  
-   - SDK コンポーネント選択画面で **HarmonyOS Next** にチェック  
-   - API バージョンは **20**（HarmonyOS 6.1）を選択
-3. インストール完了後、DevEco Studio を再起動
-
-### 2. プロジェクトを開く
-
-```sh
-git clone https://github.com/shuntilettuce/japanese-ime-for-harmonyos-next.git
-```
-
-DevEco Studio で `File → Open` → クローンしたフォルダを選択。  
-初回は Gradle 同期と依存解決が自動で走ります（数分かかる場合あり）。
-
-### 3. 署名設定
-
-`File → Project Structure → Signing Configs` を開き、  
-**Automatically generate signature** にチェックを入れて **Apply**。
-
-> Huawei アカウントへのサインインを求められます。AppGallery 登録不要の個人アカウントで OK です。
-
-### 4. ビルド & デプロイ
-
-端末を USB 接続（開発者モード・USB デバッグ有効化済みであること）した状態で：
-
-```
-Build → Build Hap(s)/APP(s) → Build APP(s)
-```
-
-または上部ツールバーの ▶ ボタンで直接実機にデプロイできます。
-
-**有効化：**  
-設定 → 言語と入力 → キーボードの管理 → **shunti IME** をオン
+開発者向け。DevEco Studio (API 20) でプロジェクトを開き、署名設定後に ▶ ボタンで実機にデプロイできます。
 
 ---
 
