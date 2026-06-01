@@ -106,11 +106,12 @@ export struct FlickKeyboardView {
 
   private centerLabel(row: number, col: number, key: FlickKeyDef): string {
     if (key.special === 'dakuten') { return key.center; }
-    if (this.isActive(row, col)) {
-      const raw = getKanaByDir(key, this.flickDir);
-      return key.special === 'punct' ? raw : this.toMode(raw);
+    if (key.special === 'punct') {
+      const raw = this.isActive(row, col) ? getKanaByDir(key, this.flickDir) : key.center;
+      return this.inputMode === InputMode.ALPHANUMERIC ? this.jpToAsciiPunct(raw) : raw;
     }
-    return key.special === 'punct' ? key.center : this.toMode(key.center);
+    if (this.isActive(row, col)) { return this.toMode(getKanaByDir(key, this.flickDir)); }
+    return this.toMode(key.center);
   }
 
   private keyBg(row: number, col: number, key: FlickKeyDef): ResourceColor {
@@ -119,13 +120,21 @@ export struct FlickKeyboardView {
     return '#FFFFFF';
   }
 
+  private jpToAsciiPunct(s: string): string {
+    const m: Record<string, string> = {
+      '、': ',', '。': '.', '！': '!', '？': '?', '…': '...',
+    };
+    return m[s] ?? s;
+  }
+
   private onCommit(key: FlickKeyDef, dir: FlickDir): void {
     if (key.special === 'dakuten') {
       this.h().handleVariantCycle();
       return;
     }
     if (key.special === 'punct') {
-      const punct = getKanaByDir(key, dir);
+      const raw = getKanaByDir(key, dir);
+      const punct = this.inputMode === InputMode.ALPHANUMERIC ? this.jpToAsciiPunct(raw) : raw;
       const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
       if (state === InputState.IDLE) {
         this.h().insertText(punct);
