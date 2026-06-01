@@ -1,6 +1,8 @@
 {
   "string": [
     { "name": "entry_desc",          "value": "shunti IME" },
+    { "name": "app_name",            "value": "shunti IME" },
+    { "name": "entry_ability_desc",  "value": "shunti IME ユーザー辞書" },
     { "name": "extension_label",     "value": "shunti IME" },
     { "name": "extension_desc",      "value": "Japanese Input Method by shunti" },
     { "name": "subtype_hiragana",    "value": "日本語（ひらがな）" },

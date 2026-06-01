@@ -22,6 +22,8 @@ HarmonyOS NEXT (API 12 / 6.1) 向けの日本語 IME です。フリック入力
 | **文節変換モード** | 文全体を文節に分割して個別に変換先を選択 |
 | **カタカナ変換** | 全文をカタカナに変換する候補を常に提供 |
 | **大規模辞書** | SKK-JISYO.L 由来 20万エントリ超 |
+| **変換学習** | 選んだ変換先の優先度を自動で上げ、次回から上位表示 |
+| **ユーザー辞書** | アプリ本体から「よみ→単語」を登録、変換候補の先頭に表示 |
 
 ### キーボード操作
 | 機能 | 説明 |
@@ -94,13 +96,17 @@ hdc install JapaneseIMEforHarmonyOSnext-default-signed.app
 entry/src/main/ets/
 ├── inputmethodextability/
 │   └── InputMethodExtAbility.ets   ← IME エントリポイント
+├── entryability/
+│   └── EntryAbility.ets            ← アプリ本体エントリポイント
 ├── ime/
 │   ├── KeyboardController.ets      ← パネル管理・InputHandler・状態管理
 │   ├── JapaneseConverter.ets       ← ローマ字→かな FSM
-│   ├── KanaKanjiConverter.ets      ← かな→漢字変換・DP文節分割
+│   ├── KanaKanjiConverter.ets      ← かな→漢字変換・DP文節分割・学習
+│   ├── UserDictStore.ets           ← ユーザー辞書の永続化（preferences）
 │   └── JapaneseConverter.ets       ← toKatakana などユーティリティ
 ├── pages/
-│   └── KeyboardPage.ets            ← メイン UI ページ（モード分岐）
+│   ├── KeyboardPage.ets            ← キーボード UI ページ（モード分岐）
+│   └── Index.ets                   ← アプリ本体（ユーザー辞書登録 UI）
 └── components/
     ├── FlickKeyboardView.ets        ← フリックキーボード
     ├── KeyboardView.ets             ← QWERTY キーボード
