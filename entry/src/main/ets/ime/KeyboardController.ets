@@ -2,6 +2,7 @@ import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
 import display from '@ohos.display';
 import util from '@ohos.util';
+import dataPreferences from '@ohos.data.preferences';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
 
@@ -109,12 +110,43 @@ export class InputHandler {
   private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
+  private imeContext: InputMethodExtensionContext | undefined = undefined;
+  private learningPrefs: dataPreferences.Preferences | undefined = undefined;
+  private learningSaveTimer: number = -1;
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
       InputHandler._instance = new InputHandler();
     }
     return InputHandler._instance;
+  }
+
+  setContext(ctx: InputMethodExtensionContext): void {
+    if (this.imeContext !== undefined) { return; }
+    this.imeContext = ctx;
+    dataPreferences.getPreferences(this.imeContext, 'shunti_learning')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.learningPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
+          KanaKanjiConverter.setLearned(data);
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
+  }
+
+  private saveLearning(): void {
+    clearTimeout(this.learningSaveTimer);
+    this.learningSaveTimer = setTimeout(() => {
+      const prefs = this.learningPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(KanaKanjiConverter.getLearned()))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 2000);
   }
 
   onInputStart(
@@ -304,9 +336,14 @@ export class InputHandler {
       this.commitBunsetsuCandidate(index);
       return;
     }
+    const composing = AppStorage.get<string>('composingText') ?? '';
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const text = index < candidates.length ? candidates[index] : '';
-    if (text.length > 0) { this.insertText(text); }
+    if (text.length > 0) {
+      KanaKanjiConverter.recordChoice(composing, text);
+      this.insertText(text);
+      this.saveLearning();
+    }
     this.resetComposition();
   }
 
@@ -316,11 +353,14 @@ export class InputHandler {
       this.commitBunsetsu();
       return;
     }
+    const composing = AppStorage.get<string>('composingText') ?? '';
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
+      KanaKanjiConverter.recordChoice(composing, candidates[idx]);
       this.insertText(candidates[idx]);
       this.resetComposition();
+      this.saveLearning();
       return;
     }
     this.commitPending();
@@ -476,17 +516,22 @@ export class InputHandler {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state !== InputState.BUNSETSU) { return; }
     const text = this.bChosen.join('');
+    for (let i = 0; i < this.bSegs.length; i++) {
+      KanaKanjiConverter.recordChoice(this.bSegs[i], this.bChosen[i]);
+    }
     this.insertText(text);
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
     this.resetComposition();
+    this.saveLearning();
   }
 
   // Called when user taps a candidate while in BUNSETSU state
   commitBunsetsuCandidate(index: number): void {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     if (index < candidates.length) {
+      KanaKanjiConverter.recordChoice(this.bSegs[this.bCur], candidates[index]);
       this.bChosen[this.bCur] = candidates[index];
     }
     // Advance to next segment if available
@@ -599,6 +644,7 @@ export class KeyboardController {
   }
 
   onCreate(): void {
+    this.inputHandle.setContext(this.context);
     this.initPanel();
     this.registerListeners();
     this.loadDictionary();

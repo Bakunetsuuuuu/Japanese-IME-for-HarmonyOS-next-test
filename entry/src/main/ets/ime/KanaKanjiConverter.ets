@@ -381,6 +381,7 @@ const DICTIONARY: Record<string, string[]> = {
 
 export class KanaKanjiConverter {
   private static supplementaryDict: Record<string, string[]> = {};
+  private static learned: Record<string, Record<string, number>> = {};
 
   // Particles and auxiliaries kept as kana in auto-convert and preferred during DP traceback
   private static readonly FUNCTION_WORDS: Record<string, boolean> = {
@@ -435,6 +436,35 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.supplementaryDict = dict;
   }
 
+  static setLearned(data: Record<string, Record<string, number>>): void {
+    KanaKanjiConverter.learned = data;
+  }
+
+  static getLearned(): Record<string, Record<string, number>> {
+    return KanaKanjiConverter.learned;
+  }
+
+  static recordChoice(kana: string, candidate: string): void {
+    if (kana.length === 0 || candidate.length === 0 || candidate === kana) { return; }
+    if (!KanaKanjiConverter.learned[kana]) {
+      if (Object.keys(KanaKanjiConverter.learned).length >= 500) { return; }
+      KanaKanjiConverter.learned[kana] = {};
+    }
+    const entry = KanaKanjiConverter.learned[kana];
+    if (entry[candidate] !== undefined || Object.keys(entry).length < 5) {
+      entry[candidate] = (entry[candidate] ?? 0) + 1;
+    }
+  }
+
+  private static applyLearning(kana: string, cands: string[]): string[] {
+    const counts = KanaKanjiConverter.learned[kana];
+    if (!counts || Object.keys(counts).length === 0) { return cands; }
+    const boosted = cands.filter((c: string) => (counts[c] ?? 0) > 0)
+      .sort((a: string, b: string) => (counts[b] ?? 0) - (counts[a] ?? 0));
+    const rest = cands.filter((c: string) => (counts[c] ?? 0) === 0);
+    return [...boosted, ...rest];
+  }
+
   lookup(kana: string): string[] {
     const entry = DICTIONARY[kana];
     const ext = KanaKanjiConverter.supplementaryDict[kana];
@@ -465,9 +495,9 @@ export class KanaKanjiConverter {
     if (KanaKanjiConverter.FUNCTION_WORDS[kana] && filtered[0] !== kana) {
       const reordered = filtered.filter((c: string) => c !== kana);
       reordered.unshift(kana);
-      return reordered;
+      return KanaKanjiConverter.applyLearning(kana, reordered);
     }
-    return filtered;
+    return KanaKanjiConverter.applyLearning(kana, filtered);
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
