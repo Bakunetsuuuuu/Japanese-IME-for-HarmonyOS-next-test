@@ -81,16 +81,18 @@ export struct KeyboardView {
       // Function row
       Row({ space: 2 }) {
         this.ModeKey()
-        this.FuncKey('、', () => {
+        this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
+          const ch = this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、';
           const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-          if (state === InputState.IDLE) { this.getHandler().insertText('、'); }
-          else { this.getHandler().handleDirectKana('、'); }
+          if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+          else { this.getHandler().handleDirectKana(ch); }
         })
         this.SpaceKey()
-        this.FuncKey('。', () => {
+        this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
+          const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
           const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-          if (state === InputState.IDLE) { this.getHandler().insertText('。'); }
-          else { this.getHandler().handleDirectKana('。'); }
+          if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+          else { this.getHandler().handleDirectKana(ch); }
         })
         this.EnterKey()
       }
