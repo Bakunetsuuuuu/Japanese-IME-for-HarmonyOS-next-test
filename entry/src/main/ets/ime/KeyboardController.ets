@@ -5,6 +5,7 @@ import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
+import { UserDictStore } from './UserDictStore';
 
 interface InputMethodSubtype {
   id: string;
@@ -136,6 +137,16 @@ export class InputHandler {
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
+    this.reloadUserDict();
+  }
+
+  // Reload the user dictionary from disk (picks up words added in the main app).
+  private reloadUserDict(): void {
+    if (!this.imeContext) { return; }
+    UserDictStore.load(this.imeContext, true)
+      .then((dict: Record<string, string[]>) => {
+        KanaKanjiConverter.setUserDict(dict);
+      });
   }
 
   private saveLearning(): void {
@@ -156,6 +167,7 @@ export class InputHandler {
     this.kbController = kbCtrl;
     this.inputClient = client;
     this.converter.reset();
+    this.reloadUserDict();
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);

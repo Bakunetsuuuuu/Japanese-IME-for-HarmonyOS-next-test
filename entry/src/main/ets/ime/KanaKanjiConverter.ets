@@ -382,6 +382,7 @@ const DICTIONARY: Record<string, string[]> = {
 export class KanaKanjiConverter {
   private static supplementaryDict: Record<string, string[]> = {};
   private static learned: Record<string, Record<string, number>> = {};
+  private static userDict: Record<string, string[]> = {};
 
   // Particles and auxiliaries kept as kana in auto-convert and preferred during DP traceback
   private static readonly FUNCTION_WORDS: Record<string, boolean> = {
@@ -436,6 +437,10 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.supplementaryDict = dict;
   }
 
+  static setUserDict(dict: Record<string, string[]>): void {
+    KanaKanjiConverter.userDict = dict;
+  }
+
   static setLearned(data: Record<string, Record<string, number>>): void {
     KanaKanjiConverter.learned = data;
   }
@@ -465,9 +470,18 @@ export class KanaKanjiConverter {
     return [...boosted, ...rest];
   }
 
+  // Prepend user-registered words (deduped), keeping them ahead of dict order.
+  private static withUserWords(kana: string, list: string[]): string[] {
+    const user = KanaKanjiConverter.userDict[kana];
+    if (!user || user.length === 0) { return list; }
+    const rest = list.filter((c: string) => !user.includes(c));
+    return [...user, ...rest];
+  }
+
   lookup(kana: string): string[] {
     const entry = DICTIONARY[kana];
     const ext = KanaKanjiConverter.supplementaryDict[kana];
+    const user = KanaKanjiConverter.userDict[kana];
     const kata = KanaKanjiConverter.toKatakana(kana);
     let cands: string[];
 
@@ -484,6 +498,12 @@ export class KanaKanjiConverter {
       cands = [...ext];
       if (kata !== kana && !cands.includes(kata)) { cands.push(kata); }
       if (!cands.includes(kana)) { cands.push(kana); }
+    } else if (user && user.length > 0) {
+      // Only the user dictionary knows this reading.
+      cands = [...user];
+      if (kata !== kana && !cands.includes(kata)) { cands.push(kata); }
+      if (!cands.includes(kana)) { cands.push(kana); }
+      return cands;
     } else {
       // Not in any dict: katakana first (handles loanwords not yet in dict)
       return kata !== kana ? [kata, kana] : [kana];
@@ -492,12 +512,16 @@ export class KanaKanjiConverter {
     const filtered = KanaKanjiConverter.filterCandidates(kana, cands);
     // Function words (particles/auxiliaries) default to hiragana, not rare kanji
     // (e.g. ない should lead with かな, not 綯い).
+    let ordered: string[];
     if (KanaKanjiConverter.FUNCTION_WORDS[kana] && filtered[0] !== kana) {
       const reordered = filtered.filter((c: string) => c !== kana);
       reordered.unshift(kana);
-      return KanaKanjiConverter.applyLearning(kana, reordered);
+      ordered = KanaKanjiConverter.applyLearning(kana, reordered);
+    } else {
+      ordered = KanaKanjiConverter.applyLearning(kana, filtered);
     }
-    return KanaKanjiConverter.applyLearning(kana, filtered);
+    // User-registered words always lead, regardless of learning/dict order.
+    return KanaKanjiConverter.withUserWords(kana, ordered);
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
@@ -532,7 +556,9 @@ export class KanaKanjiConverter {
   }
 
   private inDict(sub: string): boolean {
-    return !!(KanaKanjiConverter.supplementaryDict[sub] || DICTIONARY[sub]);
+    return !!(KanaKanjiConverter.userDict[sub]
+      || KanaKanjiConverter.supplementaryDict[sub]
+      || DICTIONARY[sub]);
   }
 
   // Returns true for kana that cannot start a Japanese word/morpheme.
