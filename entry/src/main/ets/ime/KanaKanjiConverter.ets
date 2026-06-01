@@ -513,9 +513,9 @@ export class KanaKanjiConverter {
       cands = [];
       if (kata !== kana) { cands.push(kata); }
       if (!cands.includes(kana)) { cands.push(kana); }
-      // global leads user; both prepended ahead of the katakana/kana fallback.
-      const withUser = KanaKanjiConverter.withRegisteredWords(user, cands);
-      return KanaKanjiConverter.withRegisteredWords(global, withUser);
+      // user leads global; both prepended ahead of the katakana/kana fallback.
+      const withGlobal = KanaKanjiConverter.withRegisteredWords(global, cands);
+      return KanaKanjiConverter.withRegisteredWords(user, withGlobal);
     } else {
       // Not in any dict: katakana first (handles loanwords not yet in dict)
       return kata !== kana ? [kata, kana] : [kana];
@@ -532,9 +532,9 @@ export class KanaKanjiConverter {
     } else {
       ordered = KanaKanjiConverter.applyLearning(kana, filtered);
     }
-    // Registered words always lead: user first, then global prepended → global wins.
-    const withUser = KanaKanjiConverter.withRegisteredWords(user, ordered);
-    return KanaKanjiConverter.withRegisteredWords(global, withUser);
+    // Registered words always lead: global first, then user prepended → user wins.
+    const withGlobal = KanaKanjiConverter.withRegisteredWords(global, ordered);
+    return KanaKanjiConverter.withRegisteredWords(user, withGlobal);
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
