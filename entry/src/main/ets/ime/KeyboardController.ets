@@ -103,10 +103,10 @@ export class InputHandler {
   private converter: JapaneseConverter = new JapaneseConverter();
   private kanjiConverter: KanaKanjiConverter = new KanaKanjiConverter();
   // bunsetsu state
-  private bSegs: string[] = [];   // kana text of each segment
-  private bChosen: string[] = []; // currently chosen conversion for each segment
-  private bCur: number = 0;       // index of focused segment
-  private undoStack: string[] = [];
+  private bSegs: string[] = [];
+  private bChosen: string[] = [];
+  private bCur: number = 0;
+  private lastDeletedChar: string = '';
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
@@ -128,7 +128,7 @@ export class InputHandler {
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
-    this.undoStack = [];
+    this.lastDeletedChar = '';
     if (!AppStorage.has('inputMode')) {
       AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
     }
@@ -138,7 +138,7 @@ export class InputHandler {
     this.kbController = undefined;
     this.inputClient = undefined;
     this.converter.reset();
-    this.undoStack = [];
+    this.lastDeletedChar = '';
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -255,6 +255,7 @@ export class InputHandler {
       } else {
         const composing = AppStorage.get<string>('composingText') ?? '';
         if (composing.length > 0) {
+          this.lastDeletedChar = composing.slice(-1);
           AppStorage.setOrCreate('composingText', composing.slice(0, -1));
         }
       }
@@ -330,6 +331,7 @@ export class InputHandler {
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
+    this.lastDeletedChar = '';
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -427,6 +429,7 @@ export class InputHandler {
     AppStorage.setOrCreate('composingText', current + kana);
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    this.lastDeletedChar = '';
     this.updateCandidates();
   }
 
@@ -536,19 +539,16 @@ export class InputHandler {
 
   handleUndo(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state !== InputState.IDLE) { return; }
-    const last: string = this.undoStack.pop() ?? '';
-    if (last.length > 0) {
-      this.inputClient?.deleteForward(last.length);
-    }
+    if (state !== InputState.COMPOSING) { return; }
+    if (this.lastDeletedChar.length === 0) { return; }
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    AppStorage.setOrCreate('composingText', composing + this.lastDeletedChar);
+    this.lastDeletedChar = '';
+    this.updateCandidates();
   }
 
   insertText(text: string): void {
     this.inputClient?.insertText(text);
-    if (text.length > 0) {
-      this.undoStack.push(text);
-      if (this.undoStack.length > 10) { this.undoStack.shift(); }
-    }
   }
 
   hideKeyboard(): void {
