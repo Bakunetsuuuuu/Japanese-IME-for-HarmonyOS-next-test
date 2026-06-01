@@ -52,11 +52,32 @@ HarmonyOS NEXT (API 12 / 6.1) 向けの日本語 IME です。フリック入力
 3. USB で PC に接続 → 端末側に「USB デバッグを許可しますか？」と出たら **許可**
 
 **hdc でインストール：**
+
+hdc（HarmonyOS Device Connector）は DevEco Studio に同梱されているコマンドラインツールです。  
+まず hdc のパスを確認します：
+
+- **DevEco Studio でパスを調べる：**  
+  `File → Settings → HarmonyOS SDK` → 表示される SDK Location を確認  
+  hdc は `<SDK Location>/default/openharmony/toolchains/hdc`（Windows は `.exe`）にあります
+
+- **よくあるデフォルトパス：**
+  - Mac: `~/Library/Huawei/Sdk/default/openharmony/toolchains/hdc`
+  - Windows: `C:\Users\<ユーザー名>\AppData\Local\Huawei\Sdk\default\openharmony\toolchains\hdc.exe`
+
+毎回フルパスを打つのが面倒な場合は、上記ディレクトリを環境変数 `PATH` に追加してください。
+
+**インストール手順：**
+
 ```sh
+# 1. デバイスが認識されているか確認（デバイス名が表示されれば OK）
+hdc list targets
+
+# 2. .app をインストール
 hdc install JapaneseIMEforHarmonyOSnext-default-signed.app
 ```
 
-> hdc は DevEco Studio に同梱されています（`sdk/default/openharmony/toolchains/hdc`）
+> `[FAIL]` が出る場合は USB ケーブルを抜き差しして再試行してください。  
+> それでも失敗する場合、端末側に「USB デバッグを許可しますか？」のダイアログが出ていないか確認してください。
 
 **有効化：**  
 設定 → 言語と入力 → キーボードの管理 → **shunti IME** をオン
