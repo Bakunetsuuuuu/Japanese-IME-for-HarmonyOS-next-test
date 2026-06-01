@@ -208,9 +208,7 @@ export struct FlickKeyboardView {
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
         })
     } else {
-      Text(this.inputMode === InputMode.HIRAGANA ? 'あa1'
-        : this.inputMode === InputMode.KATAKANA ? 'アa1'
-        : 'Aあ')
+      Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
         .fontSize(12).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height(this.rowH())
         .backgroundColor('#ADB5BD').fontColor(Color.White)
@@ -218,9 +216,7 @@ export struct FlickKeyboardView {
         .onClick(() => {
           this.h().commitTopCandidate();
           const cur = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
-          const next = cur === InputMode.HIRAGANA ? InputMode.KATAKANA
-            : cur === InputMode.KATAKANA ? InputMode.ALPHANUMERIC
-            : InputMode.HIRAGANA;
+          const next = cur === InputMode.HIRAGANA ? InputMode.ALPHANUMERIC : InputMode.HIRAGANA;
           AppStorage.setOrCreate('inputMode', next);
         })
     }
