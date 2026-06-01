@@ -660,6 +660,7 @@ export class KeyboardController {
     this.initPanel();
     this.registerListeners();
     this.loadDictionary();
+    this.loadGlobalDictionary();
   }
 
   onDestroy(): void {
@@ -679,6 +680,20 @@ export class KeyboardController {
         KanaKanjiConverter.loadDictionary(dict);
       })
       .catch((_e: Error) => { /* fall back to inline static dict */ });
+  }
+
+  // Developer-curated dictionary bundled as rawfile/global_dict.json.
+  // Edited via the hidden DevDict screen, exported, and committed to the repo;
+  // applies to all users from the next patch. Highest conversion priority.
+  private loadGlobalDictionary(): void {
+    this.context.resourceManager.getRawFileContent('global_dict.json')
+      .then((data: Uint8Array) => {
+        const decoder = new util.TextDecoder('utf-8');
+        const text = decoder.decode(data);
+        const dict = JSON.parse(text) as Record<string, string[]>;
+        KanaKanjiConverter.setGlobalDict(dict);
+      })
+      .catch((_e: Error) => { /* no global dict bundled yet */ });
   }
 
   private computeKeyWidths(dis: display.Display): void {

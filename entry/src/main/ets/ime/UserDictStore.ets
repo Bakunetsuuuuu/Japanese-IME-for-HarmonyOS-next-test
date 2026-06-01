@@ -1,24 +1,27 @@
 import dataPreferences from '@ohos.data.preferences';
 import type common from '@ohos.app.ability.common';
 
-// User-registered dictionary, shared between the main app (registration UI)
-// and the IME extension (conversion) via @ohos.data.preferences.
-// Storage: store 'shunti_userdict', key 'v1' = JSON of Record<よみ, 単語[]>.
+// Reading→word dictionary persisted via @ohos.data.preferences, shared between
+// the main app (registration UI) and the IME extension (conversion).
+// The store name is parameterised so the same API backs both the public user
+// dictionary ('shunti_userdict') and the hidden developer dictionary
+// ('shunti_globaldict'). key 'v1' = JSON of Record<よみ, 単語[]>.
 export class UserDictStore {
   private static readonly STORE: string = 'shunti_userdict';
   private static readonly KEY: string = 'v1';
 
-  // Load the user dictionary fresh from disk. forceReload drops the in-process
-  // cache so writes made by the other process (app ⇄ IME) are picked up.
+  // Load a dictionary fresh from disk. forceReload drops the in-process cache so
+  // writes made by the other process (app ⇄ IME) are picked up.
   static async load(
     context: common.Context,
-    forceReload: boolean = false
+    forceReload: boolean = false,
+    storeName: string = UserDictStore.STORE
   ): Promise<Record<string, string[]>> {
     try {
       if (forceReload) {
-        await dataPreferences.removePreferencesFromCache(context, UserDictStore.STORE);
+        await dataPreferences.removePreferencesFromCache(context, storeName);
       }
-      const prefs = await dataPreferences.getPreferences(context, UserDictStore.STORE);
+      const prefs = await dataPreferences.getPreferences(context, storeName);
       const raw = await prefs.get(UserDictStore.KEY, '{}');
       return JSON.parse(String(raw)) as Record<string, string[]>;
     } catch (_e) {
@@ -28,10 +31,11 @@ export class UserDictStore {
 
   static async save(
     context: common.Context,
-    dict: Record<string, string[]>
+    dict: Record<string, string[]>,
+    storeName: string = UserDictStore.STORE
   ): Promise<void> {
     try {
-      const prefs = await dataPreferences.getPreferences(context, UserDictStore.STORE);
+      const prefs = await dataPreferences.getPreferences(context, storeName);
       await prefs.put(UserDictStore.KEY, JSON.stringify(dict));
       await prefs.flush();
     } catch (_e) {}
