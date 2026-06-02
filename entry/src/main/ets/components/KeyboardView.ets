@@ -186,7 +186,7 @@ export struct KeyboardView {
       .borderRadius(5)
       .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
       .onClick(() => {
-        this.getHandler().commitTopCandidate();
+        this.getHandler().commitRaw();
         const current = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
         const next = current === InputMode.HIRAGANA ? InputMode.ALPHANUMERIC : InputMode.HIRAGANA;
         AppStorage.setOrCreate('inputMode', next);
