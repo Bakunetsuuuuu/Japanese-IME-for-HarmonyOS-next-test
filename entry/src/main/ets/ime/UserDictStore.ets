@@ -23,7 +23,12 @@ export class UserDictStore {
       }
       const prefs = await dataPreferences.getPreferences(context, storeName);
       const raw = await prefs.get(UserDictStore.KEY, '{}');
-      return JSON.parse(String(raw)) as Record<string, string[]>;
+      const parsed = JSON.parse(String(raw)) as Record<string, string[]>;
+      const clean: Record<string, string[]> = {};
+      for (const k of Object.keys(parsed)) {
+        if (parsed[k].length > 0) { clean[k] = parsed[k]; }
+      }
+      return clean;
     } catch (_e) {
       return {};
     }
@@ -65,11 +70,7 @@ export class UserDictStore {
     const list = dict[yomi];
     if (!list) { return dict; }
     const next = list.filter((w: string) => w !== word);
-    if (next.length === 0) {
-      delete dict[yomi];
-    } else {
-      dict[yomi] = next;
-    }
+    dict[yomi] = next;
     return dict;
   }
 }
