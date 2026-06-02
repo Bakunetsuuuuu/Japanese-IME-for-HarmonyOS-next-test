@@ -176,8 +176,8 @@ export struct KeyboardView {
   }
 
   @Builder ModeKey() {
-    Text(this.inputMode === InputMode.HIRAGANA ? 'あ' : 'A')
-      .fontSize(15)
+    Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
+      .fontSize(12)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height(44)
