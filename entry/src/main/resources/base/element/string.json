@@ -1,10 +1,10 @@
 {
   "string": [
-    { "name": "entry_desc",          "value": "shunti IME" },
+    { "name": "entry_desc",          "value": "フリック／QWERTYに対応した日本語入力メソッド。SKK辞書ベースの高精度かな漢字変換、変換学習、ユーザー辞書登録機能を搭載。" },
     { "name": "app_name",            "value": "shunti IME" },
-    { "name": "entry_ability_desc",  "value": "shunti IME ユーザー辞書" },
+    { "name": "entry_ability_desc",  "value": "ユーザー辞書の管理（読み・単語の登録・削除）" },
     { "name": "extension_label",     "value": "shunti IME" },
-    { "name": "extension_desc",      "value": "Japanese Input Method by shunti" },
+    { "name": "extension_desc",      "value": "フリック・QWERTY対応の日本語入力メソッド（IME）。高精度Viterbiかな漢字変換搭載。" },
     { "name": "subtype_hiragana",    "value": "日本語（ひらがな）" },
     { "name": "subtype_katakana",    "value": "カタカナ" },
     { "name": "subtype_alphanumeric","value": "英数字" }

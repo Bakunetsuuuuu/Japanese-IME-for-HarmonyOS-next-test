@@ -174,6 +174,22 @@ struct Index {
         .layoutWeight(1)
         .divider({ strokeWidth: 1, color: '#EEEEEE' })
       }
+      // Footer
+      Row() {
+        Text('プライバシーポリシー')
+          .fontSize(12)
+          .fontColor('#4A90E2')
+          .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
+        Text('  ·  ')
+          .fontSize(12)
+          .fontColor('#BBBBBB')
+        Text('v1.0.0')
+          .fontSize(12)
+          .fontColor('#BBBBBB')
+      }
+      .width('100%')
+      .justifyContent(FlexAlign.Center)
+      .padding({ top: 12, bottom: 16 })
     }
     .width('100%')
     .height('100%')
