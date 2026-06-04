@@ -1,16 +1,26 @@
 #!/usr/bin/env python3
 """
-Convert SKK-JISYO.L (EUC-JP) to dict.json for shunti IME.
+Convert SKK-JISYO files (EUC-JP) to dict.json for shunti IME.
 
 Usage:
-    python3 tools/skk_convert.py [input] [output]
+    python3 tools/skk_convert.py [input1 input2 ...] [output.json]
 
-Defaults:
-    input  = /tmp/SKK-JISYO.L  (download from skk-dev/dict on GitHub)
-    output = entry/src/main/resources/rawfile/dict.json
+    - Arguments ending in .json are treated as the output path.
+    - All other arguments are treated as input SKK dict files.
+    - Defaults: input = /tmp/SKK-JISYO.L, output = entry/.../dict.json
+
+Recommended multi-dict invocation (download from skk-dev/dict on GitHub):
+    python3 tools/skk_convert.py \\
+        /tmp/SKK-JISYO.L \\
+        /tmp/SKK-JISYO.geo \\
+        /tmp/SKK-JISYO.propernoun
+
+    SKK-JISYO.L       — main dictionary (~200K entries)
+    SKK-JISYO.geo     — geographic proper nouns (ニューヨーク, ロンドン …)
+    SKK-JISYO.propernoun — company/brand names (アイコム, エディオン …)
 
 License note:
-    SKK-JISYO is distributed under GPL v2 by the SKK Development Team.
+    All SKK-JISYO files are distributed under GPL v2 by the SKK Development Team.
     Source: https://github.com/skk-dev/dict
 """
 
@@ -64,7 +74,7 @@ COMPOUND_OKURI: list = [
     ('g', 1, ['ぎたい']),    # 泳ぎたい
 ]
 
-HIRAGANA_RE = re.compile(r'^[ぁ-ん]+$')
+HIRAGANA_RE = re.compile(r'^[ぁ-んー]+$')
 MAX_CANDIDATES = 5
 
 
@@ -163,19 +173,41 @@ def convert(src: str) -> dict:
     return result
 
 
+def merge(base: dict, extra: dict) -> dict:
+    """Merge extra into base; base candidates take priority up to MAX_CANDIDATES."""
+    for reading, cands in extra.items():
+        if reading not in base:
+            base[reading] = []
+        for c in cands:
+            if c not in base[reading] and len(base[reading]) < MAX_CANDIDATES:
+                base[reading].append(c)
+    return base
+
+
 if __name__ == '__main__':
-    src = sys.argv[1] if len(sys.argv) > 1 else '/tmp/SKK-JISYO.L'
-    dst = sys.argv[2] if len(sys.argv) > 2 else os.path.join(
+    args = sys.argv[1:]
+    src_files = [a for a in args if not a.endswith('.json')]
+    dst_args  = [a for a in args if a.endswith('.json')]
+
+    if not src_files:
+        src_files = ['/tmp/SKK-JISYO.L']
+    dst = dst_args[0] if dst_args else os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         'entry/src/main/resources/rawfile/dict.json'
     )
 
-    print(f'Input:  {src}')
+    print(f'Inputs: {src_files}')
     print(f'Output: {dst}')
     print('Converting ...')
 
-    d = convert(src)
-    print(f'Entries: {len(d):,}')
+    d: dict = {}
+    for src in src_files:
+        extra = convert(src)
+        before = len(d)
+        d = merge(d, extra)
+        print(f'  {src}: {len(extra):,} entries → merged total {len(d):,} (+{len(d)-before:,})')
+
+    print(f'Total entries: {len(d):,}')
 
     out = json.dumps(d, ensure_ascii=False, separators=(',', ':'), sort_keys=True)
     with open(dst, 'w', encoding='utf-8') as f:
