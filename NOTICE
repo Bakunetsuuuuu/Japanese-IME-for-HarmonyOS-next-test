@@ -40,3 +40,30 @@ published by the Free Software Foundation; either version 2, or
 The full text of the GNU General Public License version 2 is available
 at: https://www.gnu.org/licenses/old-licenses/gpl-2.0.html
 and in the file LICENSES/GPL-2.0.txt in this repository.
+
+──────────────────────────────────────────────────────────────────────
+2. mecab-ipadic (Japanese morphological analysis dictionary)
+──────────────────────────────────────────────────────────────────────
+
+The files entry/src/main/resources/rawfile/reading_cost.json and
+entry/src/main/resources/rawfile/matrix.json are derived from
+mecab-ipadic 2.7.0-20070801 (word costs, part-of-speech information,
+and the connection-cost matrix), used by the Viterbi segmentation in
+KanaKanjiConverter.ets.
+
+  Source : https://taku910.github.io/mecab/
+  Format : EUC-JP CSV / matrix.def → UTF-8 JSON
+           (converted by tools/build_viterbi_dict.py)
+
+Copyright 2000, 2001, 2002, 2003 Nara Institute of Science
+and Technology (NAIST). All Rights Reserved.
+A large portion of the dictionary entries originate from ICOT Free
+Software; the ICOT Free Software conditions apply as well.
+
+Use, reproduction, and distribution of this software is permitted.
+Any copy, whether in its original form or modified, must include the
+NAIST copyright notice and the NO WARRANTY provisions. The software is
+provided without any warranty whatsoever.
+
+The full license text is available in the file
+LICENSES/mecab-ipadic-COPYING.txt in this repository.
