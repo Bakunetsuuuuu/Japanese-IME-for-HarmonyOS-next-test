@@ -122,6 +122,106 @@ tools/
 
 ---
 
+## AppGallery リリース手順
+
+### 1. リリース署名の準備
+
+DevEco Studio でリリース用署名を設定します。
+
+1. **AppGallery Connect** → アカウントセンター → 証明書管理 → 証明書を作成
+   - アルゴリズム: RSA 2048 または SM2
+   - `.cer`（公開証明書）と `.p7b`（署名プロファイル）をダウンロード
+2. DevEco Studio → File → Project Structure → Signing Configs → release
+   - `storeFile`, `storePassword`, `keyAlias`, `keyPassword` を設定
+3. **Build → Build Hap(s)/APP(s) → Build Release Hap(s)** でリリース HAP を生成
+
+> ⚠️ `.p7b` は秘密鍵に相当します。リポジトリにコミットしないでください。
+
+---
+
+### 2. AppGallery Connect への提出
+
+AppGallery Connect（[https://developer.huawei.com/consumer/jp/console](https://developer.huawei.com/consumer/jp/console)）にログインし、以下の情報を入力します。
+
+#### アプリ基本情報
+
+| 項目 | 推奨値 / 注意点 |
+|------|----------------|
+| アプリ名 | shunti IME |
+| カテゴリ | ツール |
+| 対象年齢 | 3歳以上 |
+| プライバシーポリシー URL | **必須** — 下記参照 |
+| 対応言語 | 日本語、英語 |
+
+#### アプリ説明文（例）
+
+```
+フリック入力・QWERTY ローマ字入力に両対応した日本語IME。
+
+【主な機能】
+・フリック入力（50音配列）とQWERTYローマ字入力
+・SKK辞書ベース（20万エントリ超）のかな漢字変換
+・Viterbiアルゴリズムによる高精度な文節分割
+・変換履歴学習（選択した変換先を優先表示）
+・ユーザー辞書登録（よみ→単語）
+・カタカナ変換・記号・絵文字パネル搭載
+
+【プライバシー】
+すべての変換処理はデバイス内で完結します。
+入力内容・変換履歴は外部サーバーへ送信されません。
+```
+
+#### スクリーンショット要件
+- 最低 2枚、最大 5枚
+- 推奨解像度: 1260×2720 px（または端末のネイティブ解像度）
+- フリック入力画面、QWERTY画面、変換候補画面、ユーザー辞書画面 などを撮影
+
+---
+
+### 3. プライバシーポリシー URL の準備
+
+AppGallery はプライバシーポリシーの HTTPS URL が**必須**です（IMEは特に厳しく審査されます）。
+
+**最も手軽な方法（GitHub Pages を使う）**:
+
+1. このリポジトリの GitHub Pages を有効化（Settings → Pages → branch: main, folder: /docs）
+2. `docs/privacy-policy.md` を作成（内容は下記参照）
+3. URL: `https://<username>.github.io/<repo>/privacy-policy`
+
+**プライバシーポリシーの最低記載事項（IME必須）**:
+- キーストロークを外部に送信しないこと
+- 変換履歴・ユーザー辞書はデバイス内のみに保存すること
+- 第三者へのデータ提供をしないこと
+- データの削除方法（アンインストールで削除）
+
+> アプリ内にはプライバシーポリシー画面を実装済みです（`pages/PrivacyPolicy.ets`）。
+> AppGallery 用には別途 HTTPS URL が必要です。
+
+---
+
+### 4. IME アプリ特有の審査ポイント
+
+- **権限の説明**: IME は入力内容へアクセスする性質上、プライバシーポリシーの記述が審査で重点チェックされます
+- **クラッシュゼロ**: 審査員が実機でテストします。特に初回起動・IME切り替え時の動作を十分確認してください
+- **`requestPermissions` 不使用**: 本アプリは IME フレームワーク外の権限を要求しません（問題なし）
+
+---
+
+### 5. バージョン管理
+
+`AppScope/app.json5` の `versionCode` / `versionName` を更新してリリースします。
+
+```json
+{
+  "app": {
+    "versionCode": 1000000,   // 整数。毎リリースごとに増加させること
+    "versionName": "1.0.0"    // ユーザーに表示されるバージョン
+  }
+}
+```
+
+---
+
 ## ライセンス
 
 ### アプリコード

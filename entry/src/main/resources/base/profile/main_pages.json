@@ -2,6 +2,7 @@
   "src": [
     "pages/KeyboardPage",
     "pages/Index",
-    "pages/DevDict"
+    "pages/DevDict",
+    "pages/PrivacyPolicy"
   ]
 }
