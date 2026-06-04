@@ -8,29 +8,23 @@ Last updated: June 2026
 
 ## Introduction
 
-shunti IME ("the App") is a Japanese input method (IME) for HarmonyOS NEXT. This policy explains what information the App collects and how it is used.
+shunti IME ("the App") is a Japanese input method (IME) for HarmonyOS NEXT. This policy explains how the App handles data.
 
 ---
 
-## Information We Process
+## Data Collection
 
-The App processes the following information **only on your device**.
-
-- **Input text** — Processed on-device only for conversion and candidate display; never sent externally.
-- **Conversion history** — Stored only in on-device Preferences (local storage) to improve conversion accuracy.
-- **User-registered words** — "Reading → word" pairs you optionally register (stored on-device only).
-
-**None of the above information is ever transmitted or uploaded to any external server.**
+**The App does not collect any personal information.** It does not transmit, upload, or collect your input, conversion history, registered words, or any other data to any external server. All processing takes place entirely on your device.
 
 ---
 
-## How We Use Information
+## Data Processed On Your Device
 
-The information is used solely for the following purposes.
+To provide its Japanese input functionality, the App processes the following data **only on your device**. This data is never sent externally.
 
-- Generating kana-to-kanji conversion candidates
-- Learning to improve conversion accuracy (on-device only)
-- Providing the user dictionary feature
+- **Input text** — Processed on-device to generate kana-to-kanji conversions and candidates. It is not retained after a conversion is committed.
+- **Conversion history** — Stored only in on-device Preferences (local storage) to learn and improve conversion accuracy.
+- **User-registered words** — "Reading → word" pairs you optionally register, stored only on your device.
 
 ---
 
@@ -68,7 +62,7 @@ The App does not use any analytics tools, crash-reporting services, or advertisi
 
 ## Children's Privacy
 
-The App does not knowingly collect personal information from children under the age of 13.
+Because the App does not collect personal information from any user, it does not collect personal information from children under the age of 13 either.
 
 ---
 
