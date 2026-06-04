@@ -330,7 +330,11 @@ export class InputHandler {
     } else if (state === InputState.COMPOSING) {
       this.commitRaw();
     } else {
-      this.inputClient?.sendKeyFunction(0);
+      this.inputClient?.getEditorAttribute().then((attr: inputMethodEngine.EditorAttribute) => {
+        this.inputClient?.sendKeyFunction(attr.enterKeyType);
+      }).catch((_e: Error) => {
+        this.inputClient?.sendKeyFunction(0);
+      });
     }
   }
 
