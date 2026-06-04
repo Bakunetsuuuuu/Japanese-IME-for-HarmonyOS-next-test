@@ -17,7 +17,7 @@ HarmonyOS NEXT (API 12 / 6.1) 向けの日本語 IME です。フリック入力
 ### 変換
 | 機能 | 説明 |
 |---|---|
-| **リアルタイム候補表示** | 入力中にDP文節分割で自動変換候補を更新 |
+| **リアルタイム候補表示** | 入力中にViterbi文節分割で自動変換候補を更新 |
 | **スペース変換** | スペースで候補一覧表示 → 繰り返しで次候補へ |
 | **文節変換モード** | 文全体を文節に分割して個別に変換先を選択 |
 | **カタカナ変換** | 全文をカタカナに変換する候補を常に提供 |
@@ -101,7 +101,7 @@ entry/src/main/ets/
 ├── ime/
 │   ├── KeyboardController.ets      ← パネル管理・InputHandler・状態管理
 │   ├── JapaneseConverter.ets       ← ローマ字→かな FSM
-│   ├── KanaKanjiConverter.ets      ← かな→漢字変換・DP文節分割・学習
+│   ├── KanaKanjiConverter.ets      ← かな→漢字変換・Viterbi文節分割・学習
 │   ├── UserDictStore.ets           ← ユーザー辞書の永続化（preferences）
 │   └── JapaneseConverter.ets       ← toKatakana などユーティリティ
 ├── pages/
@@ -116,7 +116,8 @@ entry/src/main/ets/
     └── EmojiView.ets                ← 絵文字入力パネル
 
 tools/
-└── skk_convert.py                  ← SKK-JISYO.L → dict.json 変換スクリプト
+├── skk_convert.py                  ← SKK-JISYO.L → dict.json 変換スクリプト
+└── build_viterbi_dict.py           ← mecab-ipadic → reading_cost.json / matrix.json 生成
 ```
 
 ---
@@ -139,3 +140,15 @@ tools/
 > Source: https://github.com/skk-dev/dict
 
 詳細は [NOTICE](./NOTICE) および [LICENSES/GPL-2.0.txt](./LICENSES/GPL-2.0.txt) を参照してください。
+
+### 文節分割データ (reading_cost.json / matrix.json)
+
+`reading_cost.json`（単語コスト・品詞）と `matrix.json`（品詞接続コスト行列）は
+[mecab-ipadic](https://taku910.github.io/mecab/) 2.7.0 を加工したもので、Viterbi 文節分割に使用します。
+
+**NAIST License**（商用利用可）が適用されます。
+
+> Copyright 2000–2003 Nara Institute of Science and Technology (NAIST). All Rights Reserved.  
+> 辞書エントリの大部分は ICOT Free Software に由来します。
+
+詳細は [NOTICE](./NOTICE) および [LICENSES/mecab-ipadic-COPYING.txt](./LICENSES/mecab-ipadic-COPYING.txt) を参照してください。

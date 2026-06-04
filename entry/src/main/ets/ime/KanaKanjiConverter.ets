@@ -599,9 +599,11 @@ export class KanaKanjiConverter {
   private static readonly VC_PARTICLE = 6;
   private static readonly VC_BOS      = 14;
   // Fallback node costs when reading_cost.json is not loaded or reading is not found.
-  private static readonly VN_UNKNOWN_SINGLE = 4000; // single unknown char — heavy penalty
-  private static readonly VN_FUNCTION_WORD  = 500;  // known function word
-  private static readonly VN_DEFAULT        = 1500; // known dict entry without cost data
+  // Calibrated to the IPAdic cost scale (median content word ≈ 5600, particles ≈ 4000,
+  // p90 ≈ 8500, max ≈ 15000) so words with real cost data and fallback words compete fairly.
+  private static readonly VN_UNKNOWN_SINGLE = 13000; // single unknown char — heavy penalty
+  private static readonly VN_FUNCTION_WORD  = 4000;  // known function word (particle scale)
+  private static readonly VN_DEFAULT        = 6000;  // known dict entry without cost data (≈ median)
 
   // Returns [nodeCost, leftMacroClass, rightMacroClass] for a kana segment.
   private getWordInfo(sub: string): number[] {

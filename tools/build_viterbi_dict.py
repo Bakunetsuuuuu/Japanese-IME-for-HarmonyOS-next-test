@@ -81,6 +81,31 @@ def pos_to_class(pos1: str, pos2: str) -> int:
     return mapping.get(None, 0)
 
 
+# Selection penalty (added to cost when choosing the best entry per reading).
+# Without this, a common particle reading like を/に/と can be shadowed by a
+# rare homograph proper-noun/number/symbol that happens to have a lower raw cost,
+# which then breaks the connection-cost signal (content→particle boundaries).
+# Closed-class words (particles/auxiliaries) are strongly preferred for their
+# readings; proper nouns / numbers / symbols / affixes are de-prioritised.
+def pos_penalty(macro_class: int) -> int:
+    if macro_class in (6, 7):       # 助詞 / 助動詞
+        return -3000
+    if macro_class in (1, 3, 4, 5): # 名詞-一般 / 動詞 / 形容(動)詞 / 副詞
+        return 0
+    if macro_class == 8:            # 接続詞
+        return -1000
+    if macro_class == 11:           # 名詞-数
+        return 1000
+    if macro_class in (12, 13):     # 接尾詞 / 接頭詞
+        return 1500
+    if macro_class == 2:            # 名詞-固有名詞 (over-matches; push down)
+        return 2000
+    if macro_class == 10:           # 記号
+        return 3000
+    return 1000                     # unknown / other
+
+
+
 # ---------- katakana → hiragana ----------
 def kata_to_hira(s: str) -> str:
     result = []
@@ -97,13 +122,15 @@ def kata_to_hira(s: str) -> str:
 def parse_ipadic_csvs(ipadic_dir: str) -> dict:
     """
     Returns: {reading_hira: (min_cost, left_id, right_id, pos1, pos2)}
-    We keep only the lowest-cost entry per reading.
+    For each reading we keep the entry with the best effective score
+    (raw cost + pos_penalty); the stored node cost is the chosen entry's RAW cost.
     """
     csv_files = glob.glob(os.path.join(ipadic_dir, '*.csv'))
     if not csv_files:
         raise FileNotFoundError(f'No CSV files found in {ipadic_dir}')
 
-    entries: dict = {}
+    entries: dict = {}       # reading → (raw_cost, left_id, right_id, pos1, pos2)
+    best_score: dict = {}    # reading → effective score of the chosen entry
     total = 0
     for csv_path in csv_files:
         with open(csv_path, encoding='euc-jp', errors='replace') as f:
@@ -123,8 +150,9 @@ def parse_ipadic_csvs(ipadic_dir: str) -> dict:
                 if not kata_reading:
                     continue
                 reading = kata_to_hira(kata_reading)
-                # Keep the lowest-cost entry per reading
-                if reading not in entries or cost < entries[reading][0]:
+                score = cost + pos_penalty(pos_to_class(pos1, pos2))
+                if reading not in best_score or score < best_score[reading]:
+                    best_score[reading] = score
                     entries[reading] = (cost, left_id, right_id, pos1, pos2)
                 total += 1
 
