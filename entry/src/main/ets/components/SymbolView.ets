@@ -86,6 +86,13 @@ const LICENSE_TEXT: string =
   'SKK Development Team <skk@ring.gr.jp>\n\n' +
   'ライセンス: GNU General Public License v2.0 以降\n' +
   'ソース: https://github.com/skk-dev/dict\n\n' +
+  '■ 文節分割データ (reading_cost.json, matrix.json)\n' +
+  'mecab-ipadic 2.7.0 を変換して使用しています。\n\n' +
+  'Copyright 2000, 2001, 2002, 2003\n' +
+  'Nara Institute of Science and Technology (NAIST).\n' +
+  'All Rights Reserved.\n\n' +
+  'ライセンス: NAIST License（商用利用可）\n' +
+  'ソース: https://taku910.github.io/mecab/\n\n' +
   '■ アプリコード\n' +
   'MIT License';
 
