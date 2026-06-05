@@ -25,7 +25,10 @@ struct PrivacyPolicy {
       Scroll() {
         Column({ space: 20 }) {
           this.Section('はじめに',
-            'shunti IME（以下「本アプリ」）は、HarmonyOS NEXT 向けの日本語入力メソッド（IME）です。本アプリをご利用いただく前に、このプライバシーポリシーをよくお読みください。')
+            'shunti Japanese IME（以下「本アプリ」）は、開発者 shunti が提供する HarmonyOS NEXT 向けの日本語入力メソッド（IME）です。\n\n' +
+            'アプリ名：shunti Japanese IME\n' +
+            '開発者名：shunti\n\n' +
+            '本アプリをご利用いただく前に、このプライバシーポリシーをよくお読みください。')
 
           this.Section('収集する情報',
             '本アプリは、以下の情報をお客様のデバイス上でのみ処理します。\n\n' +
@@ -63,7 +66,7 @@ struct PrivacyPolicy {
           this.Section('お問い合わせ',
             'プライバシーに関するご質問は、AppGallery の開発者情報に記載のメールアドレスまでお問い合わせください。')
 
-          Text('最終更新: 2025年6月')
+          Text('最終更新: 2026年6月')
             .fontSize(12)
             .fontColor('#999999')
             .width('100%')

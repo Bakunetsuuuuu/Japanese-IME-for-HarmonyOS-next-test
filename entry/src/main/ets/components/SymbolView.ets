@@ -72,7 +72,7 @@ const SYMBOL_CATEGORIES: string[][][] = [
 ];
 
 const LICENSE_TEXT: string =
-  'shunti IME\n\n' +
+  'shunti Japanese IME\n\n' +
   '■ 変換辞書 (dict.json)\n' +
   'SKK-JISYO.L を変換して使用しています。\n\n' +
   'Copyright (C) 1988-1995, 1997, 1999-2014\n' +

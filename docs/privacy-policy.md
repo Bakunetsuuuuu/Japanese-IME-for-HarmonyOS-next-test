@@ -1,14 +1,17 @@
-# shunti IME プライバシーポリシー
+# shunti Japanese IME プライバシーポリシー
 
 **日本語** | [English](privacy-policy-en) | [中文](privacy-policy-zh)
 
 最終更新: 2026年6月
 
+- **アプリ名**: shunti Japanese IME
+- **開発者名**: shunti
+
 ---
 
 ## はじめに
 
-shunti IME（以下「本アプリ」）は、HarmonyOS NEXT 向けの日本語入力メソッド（IME）です。本ポリシーは、本アプリにおけるデータの取り扱いについて説明します。
+shunti Japanese IME（以下「本アプリ」）は、開発者 shunti が提供する HarmonyOS NEXT 向けの日本語入力メソッド（IME）です。本ポリシーは、本アプリにおけるデータの取り扱いについて説明します。
 
 ---
 
@@ -78,4 +81,4 @@ shunti IME（以下「本アプリ」）は、HarmonyOS NEXT 向けの日本語�
 
 ---
 
-*このページは [shunti IME GitHub リポジトリ](https://github.com/shuntilettuce/japanese-ime-for-harmonyos-next) により管理されています。*
+*このページは [shunti Japanese IME GitHub リポジトリ](https://github.com/shuntilettuce/japanese-ime-for-harmonyos-next) により管理されています。*
