@@ -25,9 +25,9 @@ struct PrivacyPolicy {
       Scroll() {
         Column({ space: 20 }) {
           this.Section('はじめに',
-            'shunti Japanese IME（以下「本アプリ」）は、開発者 shunti が提供する HarmonyOS NEXT 向けの日本語入力メソッド（IME）です。\n\n' +
+            'shunti Japanese IME（以下「本アプリ」）は、開発者 shuntilettuce が提供する HarmonyOS NEXT 向けの日本語入力メソッド（IME）です。\n\n' +
             'アプリ名：shunti Japanese IME\n' +
-            '開発者名：shunti\n\n' +
+            '開発者名：shuntilettuce\n\n' +
             '本アプリをご利用いただく前に、このプライバシーポリシーをよくお読みください。')
 
           this.Section('収集する情報',
