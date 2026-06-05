@@ -1,5 +1,10 @@
 import { UserDictStore } from '../ime/UserDictStore';
 import { promptAction, router } from '@kit.ArkUI';
+import dataPreferences from '@ohos.data.preferences';
+import { common } from '@kit.AbilityKit';
+
+const CONSENT_STORE: string = 'shunti_consent';
+const CONSENT_KEY: string = 'privacy_agreed';
 
 interface DictRow {
   yomi: string;
@@ -13,6 +18,8 @@ struct Index {
   @State rows: DictRow[] = [];
   @State yomiInput: string = '';
   @State wordInput: string = '';
+  // First-launch privacy consent gate. true = block UI until the user agrees.
+  @State showConsent: boolean = false;
 
   // Hidden access to the developer dictionary: 7 quick taps on the title.
   private titleTapCount: number = 0;
@@ -20,6 +27,33 @@ struct Index {
 
   aboutToAppear(): void {
     this.reload();
+    this.checkConsent();
+  }
+
+  private checkConsent(): void {
+    dataPreferences.getPreferences(getContext(this), CONSENT_STORE)
+      .then((prefs: dataPreferences.Preferences) => {
+        prefs.get(CONSENT_KEY, false).then((agreed: dataPreferences.ValueType) => {
+          this.showConsent = (agreed !== true);
+        });
+      })
+      .catch((_e: Error) => { this.showConsent = true; });
+  }
+
+  private acceptConsent(): void {
+    dataPreferences.getPreferences(getContext(this), CONSENT_STORE)
+      .then((prefs: dataPreferences.Preferences) => {
+        prefs.put(CONSENT_KEY, true).then(() => {
+          prefs.flush();
+          this.showConsent = false;
+        });
+      })
+      .catch((_e: Error) => { this.showConsent = false; });
+  }
+
+  private declineConsent(): void {
+    const ctx = getContext(this) as common.UIAbilityContext;
+    ctx.terminateSelf();
   }
 
   private onTitleTap(): void {
@@ -84,6 +118,7 @@ struct Index {
   }
 
   build() {
+    Stack() {
     Column() {
       // ── Header ──────────────────────────────────────────────
       Row() {
@@ -183,7 +218,7 @@ struct Index {
         Text('  ·  ')
           .fontSize(12)
           .fontColor('#BBBBBB')
-        Text('v1.0.0')
+        Text('v1.1.0')
           .fontSize(12)
           .fontColor('#BBBBBB')
       }
@@ -194,5 +229,59 @@ struct Index {
     .width('100%')
     .height('100%')
     .backgroundColor('#F5F5F5')
+
+      if (this.showConsent) {
+        this.ConsentOverlay()
+      }
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  @Builder ConsentOverlay() {
+    Column() {
+      Column({ space: 14 }) {
+        Text('プライバシーポリシーへの同意')
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor('#222222')
+
+        Text('shunti Japanese IME をご利用いただく前に、プライバシーポリシーをお読みください。\n\n' +
+             '・入力内容・変換履歴はすべて端末内でのみ処理されます\n' +
+             '・外部サーバーへの送信は一切行いません\n' +
+             '・分析ツールや広告 SDK は使用していません')
+          .fontSize(14)
+          .fontColor('#555555')
+          .lineHeight(22)
+          .width('100%')
+
+        Text('プライバシーポリシー全文を読む')
+          .fontSize(14)
+          .fontColor('#4A90E2')
+          .decoration({ type: TextDecorationType.Underline, color: '#4A90E2' })
+          .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
+
+        Button('同意して始める')
+          .width('100%')
+          .height(46)
+          .fontSize(16)
+          .backgroundColor('#4A90E2')
+          .onClick(() => { this.acceptConsent(); })
+
+        Text('同意しない（アプリを終了）')
+          .fontSize(13)
+          .fontColor('#999999')
+          .onClick(() => { this.declineConsent(); })
+      }
+      .width('86%')
+      .padding(24)
+      .backgroundColor('#FFFFFF')
+      .borderRadius(16)
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor('#99000000')
   }
 }
