@@ -5,13 +5,13 @@
 最后更新：2026年6月
 
 - **应用名称**：shunti Japanese IME
-- **开发者名称**：shunti
+- **开发者名称**：shuntilettuce
 
 ---
 
 ## 前言
 
-shunti Japanese IME（以下简称“本应用”），由开发者 shunti 提供，是一款面向 HarmonyOS NEXT 的日语输入法（IME）。本政策说明本应用对数据的处理方式。
+shunti Japanese IME（以下简称“本应用”），由开发者 shuntilettuce 提供，是一款面向 HarmonyOS NEXT 的日语输入法（IME）。本政策说明本应用对数据的处理方式。
 
 ---
 

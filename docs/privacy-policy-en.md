@@ -5,13 +5,13 @@
 Last updated: June 2026
 
 - **App name**: shunti Japanese IME
-- **Developer**: shunti
+- **Developer**: shuntilettuce
 
 ---
 
 ## Introduction
 
-shunti Japanese IME ("the App"), provided by the developer shunti, is a Japanese input method (IME) for HarmonyOS NEXT. This policy explains how the App handles data.
+shunti Japanese IME ("the App"), provided by the developer shuntilettuce, is a Japanese input method (IME) for HarmonyOS NEXT. This policy explains how the App handles data.
 
 ---
 

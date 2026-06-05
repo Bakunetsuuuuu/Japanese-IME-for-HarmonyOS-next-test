@@ -5,8 +5,7 @@
     "description": "$string:entry_desc",
     "mainElement": "InputMethodExtAbility",
     "deviceTypes": [
-      "default",
-      "tablet"
+      "default"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,
@@ -20,6 +19,7 @@
         "label": "$string:app_name",
         "startWindowIcon": "$media:icon",
         "startWindowBackground": "$color:start_window_background",
+        "orientation": "portrait",
         "exported": true,
         "skills": [
           {
