@@ -75,7 +75,16 @@ COMPOUND_OKURI: list = [
 ]
 
 HIRAGANA_RE = re.compile(r'^[ぁ-んー]+$')
+
+# Candidate caps. Short readings (1-2 morae) cover single-kanji on-yomi
+# (き/こう/しん/せい) and basic nouns (なつ/はる/あき); SKK lists 60-240 kanji
+# for these, so we keep many. Longer readings (compounds) stay tight for size.
 MAX_CANDIDATES = 5
+MAX_CANDIDATES_SHORT = 60
+
+
+def cap_for(reading: str) -> int:
+    return MAX_CANDIDATES_SHORT if len(reading) <= 2 else MAX_CANDIDATES
 
 
 def strip_annotation(candidate: str) -> str:
@@ -103,7 +112,8 @@ def parse_entry(line: str):
         c = strip_annotation(c)
         if c:
             candidates.append(c)
-    return (reading, candidates[:MAX_CANDIDATES])
+    # No cap here; the final cap is applied per-reading after nasi/ari merge.
+    return (reading, candidates)
 
 
 def convert(src: str) -> dict:
@@ -111,7 +121,12 @@ def convert(src: str) -> dict:
         raw = f.read()
     text = raw.decode('euc-jp', errors='replace')
 
-    result: dict = {}
+    # Two separate buckets. okuri-nasi holds real dictionary words (nouns,
+    # single kanji); okuri-ari holds synthetic conjugation expansions. They are
+    # merged nasi-first so real words (夏) always rank above conjugation noise
+    # (鳴つ) that happens to collide on the same reading.
+    nasi: dict = {}
+    ari: dict = {}
     in_okuri_nasi = False
 
     for line in text.split('\n'):
@@ -136,11 +151,10 @@ def convert(src: str) -> dict:
             # Keep only pure hiragana readings
             if not HIRAGANA_RE.match(reading):
                 continue
-            if reading not in result:
-                result[reading] = []
+            bucket = nasi.setdefault(reading, [])
             for c in candidates:
-                if c not in result[reading]:
-                    result[reading].append(c)
+                if c not in bucket:
+                    bucket.append(c)
         else:
             # okuri-ari: reading = stem_kana + consonant_letter
             if not reading or not reading[-1].isascii() or reading[-1].isdigit():
@@ -151,13 +165,11 @@ def convert(src: str) -> dict:
                 continue
             def add_expansion(stem: str, suf: str, cands: list) -> None:
                 reading_key = stem + suf
-                full_cands = [c + suf for c in cands]
-                if reading_key not in result:
-                    result[reading_key] = []
-                for fc in full_cands:
-                    if fc not in result[reading_key]:
-                        result[reading_key].append(fc)
-                result[reading_key] = result[reading_key][:MAX_CANDIDATES]
+                bucket = ari.setdefault(reading_key, [])
+                for c in cands:
+                    fc = c + suf
+                    if fc not in bucket:
+                        bucket.append(fc)
 
             expansions = OKURI_EXPANSIONS.get(consonant, [])
             for kana_suffix in expansions:
@@ -170,16 +182,26 @@ def convert(src: str) -> dict:
                     for kana_suffix in suffixes:
                         add_expansion(stem_kana, kana_suffix, candidates)
 
+    # Merge: real words first, conjugations appended, then cap per reading.
+    result: dict = {}
+    for reading in set(list(nasi.keys()) + list(ari.keys())):
+        merged: list = []
+        for c in nasi.get(reading, []) + ari.get(reading, []):
+            if c not in merged:
+                merged.append(c)
+        result[reading] = merged[:cap_for(reading)]
+
     return result
 
 
 def merge(base: dict, extra: dict) -> dict:
-    """Merge extra into base; base candidates take priority up to MAX_CANDIDATES."""
+    """Merge extra into base; base candidates take priority up to cap_for(reading)."""
     for reading, cands in extra.items():
         if reading not in base:
             base[reading] = []
+        cap = cap_for(reading)
         for c in cands:
-            if c not in base[reading] and len(base[reading]) < MAX_CANDIDATES:
+            if c not in base[reading] and len(base[reading]) < cap:
                 base[reading].append(c)
     return base
 
