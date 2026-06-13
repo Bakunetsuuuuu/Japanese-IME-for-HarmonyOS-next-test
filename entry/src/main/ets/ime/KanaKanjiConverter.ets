@@ -601,7 +601,7 @@ export class KanaKanjiConverter {
 
   // Returns true for kana that cannot start a Japanese word/morpheme.
   private static isNoStarter(c: string): boolean {
-    return 'っゃゅょぁぃぅぇぉゎん'.indexOf(c) >= 0;
+    return 'っゃゅょぁぃぅぇぉゎんー'.indexOf(c) >= 0;
   }
 
   // Viterbi macro-class IDs (must match tools/build_viterbi_dict.py)
