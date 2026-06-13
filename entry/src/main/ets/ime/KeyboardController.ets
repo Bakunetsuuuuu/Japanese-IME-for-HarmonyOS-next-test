@@ -628,8 +628,18 @@ export class InputHandler {
     }
   }
 
+  private static readonly BRACKET_PAIRS: Set<string> =
+    new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
+
   insertText(text: string): void {
-    this.inputClient?.insertText(text);
+    if (KeyboardController.BRACKET_PAIRS.has(text) && this.inputClient) {
+      const client = this.inputClient;
+      client.insertText(text).then(() => {
+        client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT).catch((_e: Error) => {});
+      }).catch((_e: Error) => {});
+    } else {
+      this.inputClient?.insertText(text);
+    }
     if (text.length > 0) {
       for (let i = 0; i < text.length; i++) {
         this.insertedBuffer.push(text[i]);
