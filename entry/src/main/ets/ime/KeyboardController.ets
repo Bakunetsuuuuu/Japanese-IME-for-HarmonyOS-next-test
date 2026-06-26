@@ -416,27 +416,39 @@ export class InputHandler {
       return;
     }
 
+    const fullKatakana = KanaKanjiConverter.toKatakana(composing);
     const segs = this.kanjiConverter.segment(composing);
     let candidates: string[];
 
     if (segs.length <= 1) {
-      // Single word: lookup already appends katakana and raw kana
       candidates = this.kanjiConverter.lookup(composing);
     } else {
-      // Multi-segment: auto-convert prefix, show variants for last segment
-      const prefixText = segs.slice(0, -1)
-        .map((s: string) => this.kanjiConverter.autoConvert(s))
-        .join('');
-      const lastSeg = segs[segs.length - 1];
-      const lastCands = this.kanjiConverter.lookup(lastSeg);
-      candidates = lastCands.map((c: string) => prefixText + c);
-      // Full katakana of entire composing text (before raw kana fallback)
-      const fullKatakana = KanaKanjiConverter.toKatakana(composing);
-      if (!candidates.includes(fullKatakana)) {
-        candidates.push(fullKatakana);
-      }
-      if (!candidates.includes(composing)) {
-        candidates.push(composing);
+      // Try full-text lookup first. If it returns a real dictionary hit
+      // (not just the katakana/kana fallback), use it — this prevents
+      // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
+      const fullCands = this.kanjiConverter.lookup(composing);
+      const fullFirst = fullCands[0];
+      const hasRealHit = fullFirst !== fullKatakana && fullFirst !== composing;
+
+      if (hasRealHit) {
+        candidates = fullCands;
+      } else {
+        // Multi-segment: auto-convert prefix, show variants for last segment.
+        // Put fullKatakana first so loanwords (アシスト etc.) are always top.
+        const prefixText = segs.slice(0, -1)
+          .map((s: string) => this.kanjiConverter.autoConvert(s))
+          .join('');
+        const lastSeg = segs[segs.length - 1];
+        const lastCands = this.kanjiConverter.lookup(lastSeg);
+        const segCands = lastCands.map((c: string) => prefixText + c);
+        candidates = [];
+        if (!segCands.includes(fullKatakana)) {
+          candidates.push(fullKatakana);
+        }
+        for (const c of segCands) {
+          if (!candidates.includes(c)) { candidates.push(c); }
+        }
+        if (!candidates.includes(composing)) { candidates.push(composing); }
       }
     }
 

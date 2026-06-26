@@ -182,14 +182,22 @@ def convert(src: str) -> dict:
                     for kana_suffix in suffixes:
                         add_expansion(stem_kana, kana_suffix, candidates)
 
-    # Merge: real words first, conjugations appended, then cap per reading.
+    # Merge: interleave nasi and ari so verb/adj forms are always reachable.
+    # For short readings (cap=60), naively appending ari after 60 nasi entries
+    # would evict all verb forms (e.g. おう→追う/負う gone behind 60 single-kanji).
+    # Strategy: first MAX_CANDIDATES nasi, then first MAX_CANDIDATES ari, then
+    # the rest of nasi, then the rest of ari — all deduped, then capped.
     result: dict = {}
     for reading in set(list(nasi.keys()) + list(ari.keys())):
-        merged: list = []
-        for c in nasi.get(reading, []) + ari.get(reading, []):
-            if c not in merged:
-                merged.append(c)
-        result[reading] = merged[:cap_for(reading)]
+        nasi_cands = nasi.get(reading, [])
+        ari_all    = ari.get(reading, [])
+        ari_cands  = [c for c in ari_all if c not in nasi_cands]
+        interleaved: list = []
+        for c in (nasi_cands[:MAX_CANDIDATES] + ari_cands[:MAX_CANDIDATES]
+                  + nasi_cands[MAX_CANDIDATES:] + ari_cands[MAX_CANDIDATES:]):
+            if c not in interleaved:
+                interleaved.append(c)
+        result[reading] = interleaved[:cap_for(reading)]
 
     return result
 
