@@ -358,6 +358,7 @@ export class InputHandler {
     if (text.length > 0) {
       KanaKanjiConverter.recordChoice(composing, text);
       this.insertText(text);
+      KanaKanjiConverter.addContext(text);
       this.saveLearning();
     }
     this.resetComposition();
@@ -375,6 +376,7 @@ export class InputHandler {
     if (candidates.length > 0) {
       KanaKanjiConverter.recordChoice(composing, candidates[idx]);
       this.insertText(candidates[idx]);
+      KanaKanjiConverter.addContext(candidates[idx]);
       this.resetComposition();
       this.saveLearning();
       return;
