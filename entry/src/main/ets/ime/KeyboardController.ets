@@ -434,7 +434,9 @@ export class InputHandler {
         candidates = fullCands;
       } else {
         // Multi-segment: auto-convert prefix, show variants for last segment.
-        // Put fullKatakana first so loanwords (アシスト etc.) are always top.
+        // Viterbi result goes to position 0; katakana is position 1.
+        // Putting katakana at 0 unconditionally causes long natural Japanese
+        // (e.g. きょうはいいてんきですね) to always show all-katakana first.
         const prefixText = segs.slice(0, -1)
           .map((s: string) => this.kanjiConverter.autoConvert(s))
           .join('');
@@ -442,11 +444,17 @@ export class InputHandler {
         const lastCands = this.kanjiConverter.lookup(lastSeg);
         const segCands = lastCands.map((c: string) => prefixText + c);
         candidates = [];
-        if (!segCands.includes(fullKatakana)) {
+        // Position 0: best Viterbi candidate
+        if (segCands.length > 0) {
+          candidates.push(segCands[0]);
+        }
+        // Position 1: katakana (loanwords reachable with one Space tap)
+        if (!candidates.includes(fullKatakana)) {
           candidates.push(fullKatakana);
         }
-        for (const c of segCands) {
-          if (!candidates.includes(c)) { candidates.push(c); }
+        // Remaining Viterbi variants
+        for (let i = 1; i < segCands.length; i++) {
+          if (!candidates.includes(segCands[i])) { candidates.push(segCands[i]); }
         }
         if (!candidates.includes(composing)) { candidates.push(composing); }
       }
