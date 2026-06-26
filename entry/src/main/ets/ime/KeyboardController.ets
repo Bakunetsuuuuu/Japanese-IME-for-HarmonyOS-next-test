@@ -654,7 +654,7 @@ export class InputHandler {
     new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
 
   insertText(text: string): void {
-    if (KeyboardController.BRACKET_PAIRS.has(text) && this.inputClient) {
+    if (InputHandler.BRACKET_PAIRS.has(text) && this.inputClient) {
       const client = this.inputClient;
       client.insertText(text).then(() => {
         client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT).catch((_e: Error) => {});
