@@ -12,6 +12,8 @@ import { KbTheme, kbTheme } from '../components/Theme';
 
 let _inputStartRegistered = false;
 let _dictLoaded = false;
+// Mirror of KeyboardController.USE_SKK_DICT — must match.
+const USE_SKK_DICT: boolean = true;
 
 @Entry
 @Component
@@ -35,7 +37,7 @@ struct KeyboardPage {
   }
 
   aboutToAppear(): void {
-    if (!_dictLoaded) {
+    if (!_dictLoaded && USE_SKK_DICT) {
       _dictLoaded = true;
       getContext(this).resourceManager.getRawFileContent('dict.json')
         .then((data: Uint8Array) => {

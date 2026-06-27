@@ -681,6 +681,10 @@ export class InputHandler {
 
 // ---------- KeyboardController ----------
 
+// Set to false to use the inline DICTIONARY only (no dict.json / SKK dependency).
+// Flip back to true to restore the SKK-based fallback dictionary.
+const USE_SKK_DICT: boolean = true;
+
 export class KeyboardController {
   private panel: inputMethodEngine.Panel | undefined;
   private inputHandle: InputHandler = InputHandler.getInstance();
@@ -722,6 +726,7 @@ export class KeyboardController {
   }
 
   private loadDictionary(): void {
+    if (!USE_SKK_DICT) { return; }
     this.context.resourceManager.getRawFileContent('dict.json')
       .then((data: Uint8Array) => {
         const decoder = new util.TextDecoder('utf-8');
