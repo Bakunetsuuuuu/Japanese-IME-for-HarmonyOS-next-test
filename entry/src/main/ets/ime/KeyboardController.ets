@@ -705,12 +705,12 @@ export class KeyboardController {
     this.loadViterbiData();
   }
 
-  // Detect system dark mode via display.getDefaultDisplaySync().
-  // display.ColorMode enum: COLOR_MODE_LIGHT=0, COLOR_MODE_DARK=1.
+  // Detect system dark mode via the extension context configuration.
+  // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
   applyColorMode(): void {
     try {
-      const dis = display.getDefaultDisplaySync();
-      AppStorage.setOrCreate('isDark', (dis as Record<string, number>)['colorMode'] === 1);
+      const cm = (this.context.config as ESObject)['colorMode'] as number;
+      AppStorage.setOrCreate('isDark', cm === 0);
     } catch (_e) {
       AppStorage.setOrCreate('isDark', false);
     }
