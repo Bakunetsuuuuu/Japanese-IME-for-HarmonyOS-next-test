@@ -800,93 +800,113 @@ export class KeyboardController {
   }
 
   private initPanel(): void {
-    const dis = display.getDefaultDisplaySync();
-    const isLandscape = dis.width > dis.height;
-    // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
-    // content: 48vp bar + 5×44vp rows + 4×5vp gaps + 12vp padding = 300vp portrait
-    const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-    const contentPx = Math.ceil((isLandscape ? 310 : 360) * density);
-    // clamp to 25–60% of screen height in case densityDPI returns an odd value
-    const keyHeight = Math.max(
-      Math.floor(dis.height * 0.25),
-      Math.min(contentPx, Math.floor(dis.height * 0.60))
-    );
+    try {
+      const dis = display.getDefaultDisplaySync();
+      const isLandscape = dis.width > dis.height;
+      // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
+      // content: 48vp bar + 5×44vp rows + 4×5vp gaps + 12vp padding = 300vp portrait
+      const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
+      const contentPx = Math.ceil((isLandscape ? 310 : 360) * density);
+      // clamp to 25–60% of screen height in case densityDPI returns an odd value
+      const keyHeight = Math.max(
+        Math.floor(dis.height * 0.25),
+        Math.min(contentPx, Math.floor(dis.height * 0.60))
+      );
 
-    AppStorage.setOrCreate('isLandscape', isLandscape);
-    AppStorage.setOrCreate('displayWidth', dis.width);
-    AppStorage.setOrCreate('keyboardHeight', keyHeight);
-    this.computeKeyWidths(dis);
+      AppStorage.setOrCreate('isLandscape', isLandscape);
+      AppStorage.setOrCreate('displayWidth', dis.width);
+      AppStorage.setOrCreate('keyboardHeight', keyHeight);
+      this.computeKeyWidths(dis);
 
-    const panelInfo: inputMethodEngine.PanelInfo = {
-      type: inputMethodEngine.PanelType.SOFT_KEYBOARD,
-      flag: inputMethodEngine.PanelFlag.FLG_FIXED,
-    };
+      const panelInfo: inputMethodEngine.PanelInfo = {
+        type: inputMethodEngine.PanelType.SOFT_KEYBOARD,
+        flag: inputMethodEngine.PanelFlag.FLG_FIXED,
+      };
 
-    IMEAbility.createPanel(this.context, panelInfo)
-      .then((panel: inputMethodEngine.Panel) => {
-        this.panel = panel;
-        panel.resize(dis.width, keyHeight)
-          .then(() => panel.moveTo(0, dis.height - keyHeight))
-          .then(() => panel.setUiContent('pages/KeyboardPage'))
-          .catch((err: Error) => console.error('shuntiIME panel init error', err));
-      })
-      .catch((err: Error) => console.error('shuntiIME createPanel error', err));
+      IMEAbility.createPanel(this.context, panelInfo)
+        .then((panel: inputMethodEngine.Panel) => {
+          this.panel = panel;
+          panel.resize(dis.width, keyHeight)
+            .then(() => panel.moveTo(0, dis.height - keyHeight))
+            .then(() => panel.setUiContent('pages/KeyboardPage'))
+            .catch((err: Error) => console.error('shuntiIME panel init error', err));
+        })
+        .catch((err: Error) => console.error('shuntiIME createPanel error', err));
+    } catch (err) {
+      console.error('shuntiIME initPanel error', err);
+    }
   }
 
   private resizePanel(): void {
-    const dis = display.getDefaultDisplaySync();
-    const isLandscape = dis.width > dis.height;
-    const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-    const contentPx = Math.ceil((isLandscape ? 310 : 360) * density);
-    const keyHeight = Math.max(
-      Math.floor(dis.height * 0.25),
-      Math.min(contentPx, Math.floor(dis.height * 0.60))
-    );
+    try {
+      const dis = display.getDefaultDisplaySync();
+      const isLandscape = dis.width > dis.height;
+      const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
+      const contentPx = Math.ceil((isLandscape ? 310 : 360) * density);
+      const keyHeight = Math.max(
+        Math.floor(dis.height * 0.25),
+        Math.min(contentPx, Math.floor(dis.height * 0.60))
+      );
 
-    AppStorage.setOrCreate('isLandscape', isLandscape);
-    AppStorage.setOrCreate('displayWidth', dis.width);
-    AppStorage.setOrCreate('keyboardHeight', keyHeight);
-    this.computeKeyWidths(dis);
+      AppStorage.setOrCreate('isLandscape', isLandscape);
+      AppStorage.setOrCreate('displayWidth', dis.width);
+      AppStorage.setOrCreate('keyboardHeight', keyHeight);
+      this.computeKeyWidths(dis);
 
-    this.panel?.resize(dis.width, keyHeight)
-      .then(() => this.panel?.moveTo(0, dis.height - keyHeight));
+      this.panel?.resize(dis.width, keyHeight)
+        .then(() => this.panel?.moveTo(0, dis.height - keyHeight));
+    } catch (err) {
+      console.error('shuntiIME resizePanel error', err);
+    }
   }
 
   private registerListeners(): void {
-    display.on('change', () => this.resizePanel());
+    try {
+      display.on('change', () => this.resizePanel());
+    } catch (err) {
+      console.error('shuntiIME display.on error', err);
+    }
 
-    IMEAbility.on('inputStart', (
-      kbCtrl: inputMethodEngine.KeyboardController,
-      client: inputMethodEngine.InputClient
-    ) => {
-      this.inputHandle.onInputStart(kbCtrl, client);
-      this.panel?.show();
-    });
+    try {
+      IMEAbility.on('inputStart', (
+        kbCtrl: inputMethodEngine.KeyboardController,
+        client: inputMethodEngine.InputClient
+      ) => {
+        this.inputHandle.onInputStart(kbCtrl, client);
+        this.panel?.show();
+      });
 
-    IMEAbility.on('inputStop', () => {
-      this.inputHandle.onInputStop();
-      this.panel?.hide();
-      this.onDestroy();
-      this.context.destroy();
-    });
+      IMEAbility.on('inputStop', () => {
+        this.inputHandle.onInputStop();
+        this.panel?.hide();
+        this.onDestroy();
+        this.context.destroy();
+      });
 
-    IMEAbility.on('setSubtype', (subtype: InputMethodSubtype) => {
-      const modeMap: Record<string, string> = {
-        'hiragana': InputMode.HIRAGANA,
-        'katakana': InputMode.KATAKANA,
-        'alphanumeric': InputMode.ALPHANUMERIC,
-      };
-      const mode = modeMap[subtype.id];
-      if (mode) {
-        this.inputHandle.commitTopCandidate();
-        AppStorage.setOrCreate('inputMode', mode);
-      }
-    });
+      IMEAbility.on('setSubtype', (subtype: InputMethodSubtype) => {
+        const modeMap: Record<string, string> = {
+          'hiragana': InputMode.HIRAGANA,
+          'katakana': InputMode.KATAKANA,
+          'alphanumeric': InputMode.ALPHANUMERIC,
+        };
+        const mode = modeMap[subtype.id];
+        if (mode) {
+          this.inputHandle.commitTopCandidate();
+          AppStorage.setOrCreate('inputMode', mode);
+        }
+      });
+    } catch (err) {
+      console.error('shuntiIME IMEAbility.on error', err);
+    }
 
-    this.kbDelegate = inputMethodEngine.getKeyboardDelegate();
-    this.kbDelegate.on('keyDown', (_keyEvent: inputMethodEngine.KeyEvent) => {
-      return false;
-    });
+    try {
+      this.kbDelegate = inputMethodEngine.getKeyboardDelegate();
+      this.kbDelegate.on('keyDown', (_keyEvent: inputMethodEngine.KeyEvent) => {
+        return false;
+      });
+    } catch (err) {
+      console.error('shuntiIME getKeyboardDelegate error', err);
+    }
   }
 
   private unregisterListeners(): void {
