@@ -706,12 +706,11 @@ export class KeyboardController {
   }
 
   // Detect system dark mode via display.getDefaultDisplaySync().
-  // colorMode: 0 = dark, 1 = light (HarmonyOS display API).
+  // display.ColorMode enum: COLOR_MODE_LIGHT=0, COLOR_MODE_DARK=1.
   applyColorMode(): void {
     try {
       const dis = display.getDefaultDisplaySync();
-      // colorMode 0 = dark, 1 = light in HarmonyOS display API
-      AppStorage.setOrCreate('isDark', (dis as Record<string, number>)['colorMode'] === 0);
+      AppStorage.setOrCreate('isDark', (dis as Record<string, number>)['colorMode'] === 1);
     } catch (_e) {
       AppStorage.setOrCreate('isDark', false);
     }
@@ -862,7 +861,7 @@ export class KeyboardController {
 
   private registerListeners(): void {
     try {
-      display.on('change', () => this.resizePanel());
+      display.on('change', () => { this.resizePanel(); this.applyColorMode(); });
     } catch (err) {
       console.error('shuntiIME display.on error', err);
     }

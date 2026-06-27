@@ -32,7 +32,8 @@ struct Index {
     this.checkConsent();
     try {
       const dis = display.getDefaultDisplaySync();
-      this.isDark = (dis as Record<string, number>)['colorMode'] === 0;
+      // display.ColorMode: COLOR_MODE_LIGHT=0, COLOR_MODE_DARK=1
+      this.isDark = (dis as Record<string, number>)['colorMode'] === 1;
     } catch (_e) {
       this.isDark = false;
     }
