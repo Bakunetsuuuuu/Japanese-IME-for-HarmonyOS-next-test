@@ -1,6 +1,5 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
-import { ConfigurationConstant } from '@kit.AbilityKit';
 import display from '@ohos.display';
 import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
@@ -706,15 +705,16 @@ export class KeyboardController {
     this.loadViterbiData();
   }
 
-  // Mirror the system color mode into AppStorage so keyboard components can
-  // pick the matching theme. Re-invoked from onConfigurationUpdate when the
-  // user toggles dark mode while the keyboard is visible.
+  // Detect system dark mode via display.getDefaultDisplaySync().
+  // colorMode: 0 = dark, 1 = light (HarmonyOS display API).
   applyColorMode(): void {
-    const colorMode = this.context.config?.colorMode;
-    AppStorage.setOrCreate(
-      'isDark',
-      colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
-    );
+    try {
+      const dis = display.getDefaultDisplaySync();
+      // colorMode 0 = dark, 1 = light in HarmonyOS display API
+      AppStorage.setOrCreate('isDark', (dis as Record<string, number>)['colorMode'] === 0);
+    } catch (_e) {
+      AppStorage.setOrCreate('isDark', false);
+    }
   }
 
   onDestroy(): void {
