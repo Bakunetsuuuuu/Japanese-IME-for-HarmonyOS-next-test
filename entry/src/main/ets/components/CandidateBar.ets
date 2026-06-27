@@ -1,9 +1,15 @@
 import { InputHandler } from '../ime/KeyboardController';
+import { KbTheme, kbTheme } from './Theme';
 
 @Component
 export struct CandidateBar {
   @Prop candidates: string[] = [];
   @Prop selectedIndex: number = 0;
+  @StorageLink('isDark') isDark: boolean = false;
+
+  private get t(): KbTheme {
+    return kbTheme(this.isDark);
+  }
 
   build() {
     Scroll() {
@@ -13,8 +19,8 @@ export struct CandidateBar {
             .fontSize(16)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .borderRadius(4)
-            .backgroundColor(index === this.selectedIndex ? '#4A90E2' : '#FFFFFF')
-            .fontColor(index === this.selectedIndex ? Color.White : Color.Black)
+            .backgroundColor(index === this.selectedIndex ? this.t.accentBg : this.t.candidateBg)
+            .fontColor(index === this.selectedIndex ? this.t.onAccentText : this.t.keyText)
             .onClick(() => {
               InputHandler.getInstance().commitCandidate(index);
             })
@@ -26,6 +32,6 @@ export struct CandidateBar {
     .scrollBar(BarState.Off)
     .width('100%')
     .height(48)
-    .backgroundColor('#E0E3E8')
+    .backgroundColor(this.t.selectingBarBg)
   }
 }

@@ -1,4 +1,5 @@
 import { InputHandler } from '../ime/KeyboardController';
+import { KbTheme, kbTheme } from './Theme';
 
 const SYM_TABS: string[] = ['🕐', '1?#', '( )', '→', '⊞', '①', '◇', '[全]'];
 
@@ -99,8 +100,13 @@ const LICENSE_TEXT: string =
 @Component
 export struct SymbolView {
   @StorageLink('symKeyWidthVp') symKeyWidthVp: number = 46;
+  @StorageLink('isDark') isDark: boolean = false;
   @State currentTab: number = 1;
   @State showLicense: boolean = false;
+
+  private get t(): KbTheme {
+    return kbTheme(this.isDark);
+  }
 
   private h(): InputHandler { return InputHandler.getInstance(); }
 
@@ -118,8 +124,8 @@ export struct SymbolView {
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(48).height(40)
-          .fontColor(Color.White)
-          .backgroundColor('#ADB5BD')
+          .fontColor(this.t.onAccentText)
+          .backgroundColor(this.t.specialKeyBg)
           .borderRadius(20)
           .onClick(() => {
             this.showLicense = false;
@@ -133,8 +139,8 @@ export struct SymbolView {
               .fontSize(i === 1 ? 12 : 13)
               .textAlign(TextAlign.Center)
               .width(38).height(32)
-              .fontColor(this.currentTab === i ? Color.White : '#444444')
-              .backgroundColor(this.currentTab === i ? '#6C757D' : '#C8CDD4')
+              .fontColor(this.currentTab === i ? this.t.onAccentText : this.t.subText)
+              .backgroundColor(this.currentTab === i ? '#6C757D' : this.t.funcKeyBg)
               .borderRadius(8)
               .onClick(() => {
                 this.currentTab = i;
@@ -143,7 +149,7 @@ export struct SymbolView {
         } else {
           Text('ⓘ ライセンス')
             .fontSize(13)
-            .fontColor('#444444')
+            .fontColor(this.t.subText)
             .padding({ left: 8 })
         }
       }
@@ -157,14 +163,14 @@ export struct SymbolView {
         Scroll() {
           Text(LICENSE_TEXT)
             .fontSize(12)
-            .fontColor('#222222')
+            .fontColor(this.t.previewText)
             .lineHeight(20)
             .width('100%')
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
         }
         .width('100%')
         .height(252)
-        .backgroundColor('#F5F5F5')
+        .backgroundColor(this.t.composingBarBg)
       } else {
         // ── Symbol grid (scrollable) ──────────────────────────────
         Scroll() {
@@ -178,10 +184,10 @@ export struct SymbolView {
                       .textAlign(TextAlign.Center)
                       .width(this.symKeyWidthVp)
                       .height(34)
-                      .fontColor(Color.Black)
-                      .backgroundColor('#FFFFFF')
+                      .fontColor(this.t.keyText)
+                      .backgroundColor(this.t.keyBg)
                       .borderRadius(6)
-                      .shadow({ radius: 1, color: '#33000000', offsetY: 1 })
+                      .shadow({ radius: 1, color: this.t.shadowColor, offsetY: 1 })
                       .onClick(() => { this.insert(sym); })
                   }, (sym: string) => String(this.currentTab) + sym)
                 }
@@ -203,7 +209,7 @@ export struct SymbolView {
         Text('あいう')
           .fontSize(13).textAlign(TextAlign.Center)
           .width(68).height(44)
-          .fontColor('#444444')
+          .fontColor(this.t.subText)
           .onClick(() => {
             this.showLicense = false;
             AppStorage.setOrCreate('keyboardSubMode', 'kana');
@@ -214,8 +220,8 @@ export struct SymbolView {
           .fontSize(17)
           .textAlign(TextAlign.Center)
           .width(46).height(44)
-          .fontColor('#444444')
-          .backgroundColor('#C8CDD4')
+          .fontColor(this.t.subText)
+          .backgroundColor(this.t.funcKeyBg)
           .borderRadius(8)
           .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'emoji'); })
 
@@ -223,8 +229,8 @@ export struct SymbolView {
         Text('ⓘ')
           .fontSize(18).textAlign(TextAlign.Center)
           .width(46).height(44)
-          .fontColor(this.showLicense ? Color.White : '#444444')
-          .backgroundColor(this.showLicense ? '#6C757D' : '#B0B7BF')
+          .fontColor(this.showLicense ? this.t.onAccentText : this.t.subText)
+          .backgroundColor(this.showLicense ? '#6C757D' : this.t.funcKeyBg)
           .borderRadius(8)
           .onClick(() => { this.showLicense = !this.showLicense; })
 
@@ -232,8 +238,8 @@ export struct SymbolView {
         Text('⌫')
           .fontSize(18).textAlign(TextAlign.Center)
           .width(52).height(44)
-          .fontColor(Color.White)
-          .backgroundColor('#ADB5BD')
+          .fontColor(this.t.onAccentText)
+          .backgroundColor(this.t.specialKeyBg)
           .borderRadius(8)
           .onClick(() => { this.h().handleBackspace(); })
       }
@@ -245,6 +251,6 @@ export struct SymbolView {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#D1D5DB')
+    .backgroundColor(this.t.panelBg)
   }
 }
