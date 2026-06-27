@@ -41,7 +41,7 @@ struct DevDict {
   aboutToAppear(): void {
     try {
       const dis = display.getDefaultDisplaySync();
-      this.isDark = (dis as Record<string, number>)['colorMode'] === 0;
+      this.isDark = (dis as ESObject)['colorMode'] === 0;
     } catch (_e) {
       this.isDark = false;
     }

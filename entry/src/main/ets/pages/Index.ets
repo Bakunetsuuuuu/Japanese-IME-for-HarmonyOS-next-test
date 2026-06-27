@@ -33,7 +33,7 @@ struct Index {
     try {
       const dis = display.getDefaultDisplaySync();
       // display.ColorMode: COLOR_MODE_LIGHT=0, COLOR_MODE_DARK=1
-      this.isDark = (dis as Record<string, number>)['colorMode'] === 1;
+      this.isDark = (dis as ESObject)['colorMode'] === 1;
     } catch (_e) {
       this.isDark = false;
     }
