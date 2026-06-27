@@ -2,6 +2,7 @@ import { UserDictStore } from '../ime/UserDictStore';
 import { promptAction, router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common } from '@kit.AbilityKit';
+import display from '@ohos.display';
 
 const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
@@ -20,6 +21,7 @@ struct Index {
   @State wordInput: string = '';
   // First-launch privacy consent gate. true = block UI until the user agrees.
   @State showConsent: boolean = false;
+  @State isDark: boolean = false;
 
   // Hidden access to the developer dictionary: 7 quick taps on the title.
   private titleTapCount: number = 0;
@@ -28,6 +30,12 @@ struct Index {
   aboutToAppear(): void {
     this.reload();
     this.checkConsent();
+    try {
+      const dis = display.getDefaultDisplaySync();
+      this.isDark = (dis as Record<string, number>)['colorMode'] === 0;
+    } catch (_e) {
+      this.isDark = false;
+    }
   }
 
   private checkConsent(): void {
@@ -138,13 +146,15 @@ struct Index {
         TextInput({ placeholder: 'よみ（ひらがな）', text: this.yomiInput })
           .onChange((v: string) => { this.yomiInput = v; })
           .height(44)
-          .backgroundColor('#FFFFFF')
+          .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
+          .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
           .borderRadius(8)
 
         TextInput({ placeholder: '単語', text: this.wordInput })
           .onChange((v: string) => { this.wordInput = v; })
           .height(44)
-          .backgroundColor('#FFFFFF')
+          .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
+          .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
           .borderRadius(8)
 
         Button('登録')
@@ -157,7 +167,7 @@ struct Index {
       .width('100%')
       .padding(16)
 
-      Divider().color('#E0E0E0')
+      Divider().color(this.isDark ? '#333333' : '#E0E0E0')
 
       // ── Registered list ─────────────────────────────────────
       Row() {
@@ -184,7 +194,7 @@ struct Index {
                 Column({ space: 2 }) {
                   Text(row.word)
                     .fontSize(17)
-                    .fontColor(Color.Black)
+                    .fontColor(this.isDark ? '#F0F0F0' : Color.Black)
                   Text(row.yomi)
                     .fontSize(13)
                     .fontColor('#999999')
@@ -195,19 +205,19 @@ struct Index {
                 Button('削除')
                   .fontSize(14)
                   .height(34)
-                  .backgroundColor('#F0F0F0')
+                  .backgroundColor(this.isDark ? '#3A3A3A' : '#F0F0F0')
                   .fontColor('#D9534F')
                   .onClick(() => { this.removeEntry(row); })
               }
               .width('100%')
               .padding({ left: 16, right: 16, top: 10, bottom: 10 })
-              .backgroundColor('#FFFFFF')
+              .backgroundColor(this.isDark ? '#252525' : '#FFFFFF')
             }
           }, (row: DictRow) => row.yomi + '' + row.word)
         }
         .width('100%')
         .layoutWeight(1)
-        .divider({ strokeWidth: 1, color: '#EEEEEE' })
+        .divider({ strokeWidth: 1, color: this.isDark ? '#333333' : '#EEEEEE' })
       }
       // Footer
       Row() {
@@ -228,7 +238,7 @@ struct Index {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor(this.isDark ? '#121212' : '#F5F5F5')
 
       if (this.showConsent) {
         this.ConsentOverlay()
@@ -244,14 +254,14 @@ struct Index {
         Text('プライバシーポリシーへの同意')
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
-          .fontColor('#222222')
+          .fontColor(this.isDark ? '#F0F0F0' : '#222222')
 
         Text('shunti Japanese IME をご利用いただく前に、プライバシーポリシーをお読みください。\n\n' +
              '・入力内容・変換履歴はすべて端末内でのみ処理されます\n' +
              '・外部サーバーへの送信は一切行いません\n' +
              '・分析ツールや広告 SDK は使用していません')
           .fontSize(14)
-          .fontColor('#555555')
+          .fontColor(this.isDark ? '#AAAAAA' : '#555555')
           .lineHeight(22)
           .width('100%')
 
@@ -275,7 +285,7 @@ struct Index {
       }
       .width('86%')
       .padding(24)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor(this.isDark ? '#252525' : '#FFFFFF')
       .borderRadius(16)
     }
     .width('100%')

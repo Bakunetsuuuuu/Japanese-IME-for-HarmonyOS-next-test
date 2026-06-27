@@ -1,6 +1,7 @@
 import { UserDictStore } from '../ime/UserDictStore';
 import { promptAction, router } from '@kit.ArkUI';
 import pasteboard from '@ohos.pasteboard';
+import display from '@ohos.display';
 
 interface DictRow {
   yomi: string;
@@ -35,6 +36,16 @@ struct DevDict {
   @State rows: DictRow[] = [];
   @State yomiInput: string = '';
   @State wordInput: string = '';
+  @State isDark: boolean = false;
+
+  aboutToAppear(): void {
+    try {
+      const dis = display.getDefaultDisplaySync();
+      this.isDark = (dis as Record<string, number>)['colorMode'] === 0;
+    } catch (_e) {
+      this.isDark = false;
+    }
+  }
 
   private tryUnlock(): void {
     if (devHash(this.passwordInput) === PASSWORD_HASH) {
@@ -131,13 +142,14 @@ struct DevDict {
         Column({ space: 14 }) {
           Text('開発者用パスワードを入力')
             .fontSize(15)
-            .fontColor('#666666')
+            .fontColor(this.isDark ? '#AAAAAA' : '#666666')
           TextInput({ placeholder: 'パスワード', text: this.passwordInput })
             .type(InputType.Password)
             .onChange((v: string) => { this.passwordInput = v; })
             .onSubmit(() => { this.tryUnlock(); })
             .height(44)
-            .backgroundColor('#FFFFFF')
+            .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
+            .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
             .borderRadius(8)
           Button('解錠')
             .width('100%')
@@ -154,13 +166,15 @@ struct DevDict {
           TextInput({ placeholder: 'よみ（ひらがな）', text: this.yomiInput })
             .onChange((v: string) => { this.yomiInput = v; })
             .height(44)
-            .backgroundColor('#FFFFFF')
+            .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
+            .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
             .borderRadius(8)
 
           TextInput({ placeholder: '単語', text: this.wordInput })
             .onChange((v: string) => { this.wordInput = v; })
             .height(44)
-            .backgroundColor('#FFFFFF')
+            .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
+            .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
             .borderRadius(8)
 
           Row({ space: 10 }) {
@@ -181,7 +195,7 @@ struct DevDict {
         .width('100%')
         .padding(16)
 
-        Divider().color('#E0E0E0')
+        Divider().color(this.isDark ? '#333333' : '#E0E0E0')
 
         Row() {
           Text(`登録済み（${this.rows.length}件）`)
@@ -207,7 +221,7 @@ struct DevDict {
                   Column({ space: 2 }) {
                     Text(row.word)
                       .fontSize(17)
-                      .fontColor(Color.Black)
+                      .fontColor(this.isDark ? '#F0F0F0' : Color.Black)
                     Text(row.yomi)
                       .fontSize(13)
                       .fontColor('#999999')
@@ -218,24 +232,24 @@ struct DevDict {
                   Button('削除')
                     .fontSize(14)
                     .height(34)
-                    .backgroundColor('#F0F0F0')
+                    .backgroundColor(this.isDark ? '#3A3A3A' : '#F0F0F0')
                     .fontColor('#D9534F')
                     .onClick(() => { this.removeEntry(row); })
                 }
                 .width('100%')
                 .padding({ left: 16, right: 16, top: 10, bottom: 10 })
-                .backgroundColor('#FFFFFF')
+                .backgroundColor(this.isDark ? '#252525' : '#FFFFFF')
               }
             }, (row: DictRow) => row.yomi + '' + row.word)
           }
           .width('100%')
           .layoutWeight(1)
-          .divider({ strokeWidth: 1, color: '#EEEEEE' })
+          .divider({ strokeWidth: 1, color: this.isDark ? '#333333' : '#EEEEEE' })
         }
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor(this.isDark ? '#121212' : '#F5F5F5')
   }
 }

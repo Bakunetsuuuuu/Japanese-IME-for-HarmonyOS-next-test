@@ -1,8 +1,20 @@
 import { router } from '@kit.ArkUI';
+import display from '@ohos.display';
 
 @Entry
 @Component
 struct PrivacyPolicy {
+  @State isDark: boolean = false;
+
+  aboutToAppear(): void {
+    try {
+      const dis = display.getDefaultDisplaySync();
+      this.isDark = (dis as Record<string, number>)['colorMode'] === 0;
+    } catch (_e) {
+      this.isDark = false;
+    }
+  }
+
   build() {
     Column() {
       // Header
@@ -81,7 +93,7 @@ struct PrivacyPolicy {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#F5F5F5')
+    .backgroundColor(this.isDark ? '#121212' : '#F5F5F5')
   }
 
   @Builder Section(title: string, body: string) {
@@ -89,17 +101,17 @@ struct PrivacyPolicy {
       Text(title)
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
-        .fontColor('#333333')
+        .fontColor(this.isDark ? '#E0E0E0' : '#333333')
         .width('100%')
       Text(body)
         .fontSize(14)
-        .fontColor('#555555')
+        .fontColor(this.isDark ? '#AAAAAA' : '#555555')
         .lineHeight(22)
         .width('100%')
     }
     .width('100%')
     .padding(16)
-    .backgroundColor('#FFFFFF')
+    .backgroundColor(this.isDark ? '#252525' : '#FFFFFF')
     .borderRadius(8)
   }
 }
