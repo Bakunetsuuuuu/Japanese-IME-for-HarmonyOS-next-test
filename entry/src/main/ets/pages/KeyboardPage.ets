@@ -8,6 +8,7 @@ import { FlickKeyboardView } from '../components/FlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
 import { EmojiView } from '../components/EmojiView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
+import { KbTheme, kbTheme } from '../components/Theme';
 
 let _inputStartRegistered = false;
 let _dictLoaded = false;
@@ -27,6 +28,11 @@ struct KeyboardPage {
   @StorageLink('bunsetsuTexts') bunsetsuTexts: string[] = [];
   @StorageLink('bunsetsuRaw') bunsetsuRaw: string[] = [];
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
+  @StorageLink('isDark') isDark: boolean = false;
+
+  private get t(): KbTheme {
+    return kbTheme(this.isDark);
+  }
 
   aboutToAppear(): void {
     if (!_dictLoaded) {
@@ -77,16 +83,16 @@ struct KeyboardPage {
             })
           }
           .width('100%')
-          .backgroundColor('#E0E3E8')
+          .backgroundColor(this.t.selectingBarBg)
           .borderWidth({ bottom: 1 })
-          .borderColor('#CCCCCC')
+          .borderColor(this.t.borderColor)
         } else {
           Column() {
             // Composing kana strip — always visible to prevent layout shifts
             Row() {
               Text(this.composingText + this.pendingRomaji)
                 .fontSize(16)
-                .fontColor('#111111')
+                .fontColor(this.t.previewText)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .padding({ left: 12, right: 8 })
@@ -94,9 +100,9 @@ struct KeyboardPage {
             }
             .width('100%')
             .height(28)
-            .backgroundColor('#FAFAFA')
+            .backgroundColor(this.t.composingBarBg)
             .borderWidth({ bottom: 1 })
-            .borderColor('#DDDDDD')
+            .borderColor(this.t.borderColor)
             .alignItems(VerticalAlign.Center)
 
             // Candidate bar row + layout toggle
@@ -116,11 +122,11 @@ struct KeyboardPage {
               // Layout toggle: フ = switch to flick, Q = switch to QWERTY
               Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
                 .fontSize(14)
-                .fontColor('#444444')
+                .fontColor(this.t.subText)
                 .textAlign(TextAlign.Center)
                 .width(50)
                 .height(40)
-                .backgroundColor('#C0C5CC')
+                .backgroundColor(this.t.funcKeyBg)
                 .borderRadius(6)
                 .onClick(() => {
                   const next = this.keyboardLayout === 'FLICK' ? 'QWERTY' : 'FLICK';
@@ -130,10 +136,10 @@ struct KeyboardPage {
             .width('100%')
             .height(48)
             .backgroundColor(
-              this.inputState === InputState.SELECTING ? '#E0E3E8' : '#F0F2F5'
+              this.inputState === InputState.SELECTING ? this.t.selectingBarBg : this.t.previewBarBg
             )
             .borderWidth({ bottom: 1 })
-            .borderColor('#CCCCCC')
+            .borderColor(this.t.borderColor)
             .alignItems(VerticalAlign.Center)
             .padding({ right: 4 })
           }
@@ -156,6 +162,6 @@ struct KeyboardPage {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor('#D1D5DB')
+    .backgroundColor(this.t.panelBg)
   }
 }

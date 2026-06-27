@@ -1,5 +1,6 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
+import { ConfigurationConstant } from '@kit.AbilityKit';
 import display from '@ohos.display';
 import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
@@ -693,11 +694,23 @@ export class KeyboardController {
 
   onCreate(): void {
     this.inputHandle.setContext(this.context);
+    this.applyColorMode();
     this.initPanel();
     this.registerListeners();
     this.loadDictionary();
     this.loadGlobalDictionary();
     this.loadViterbiData();
+  }
+
+  // Mirror the system color mode into AppStorage so keyboard components can
+  // pick the matching theme. Re-invoked from onConfigurationUpdate when the
+  // user toggles dark mode while the keyboard is visible.
+  applyColorMode(): void {
+    const colorMode = this.context.config?.colorMode;
+    AppStorage.setOrCreate(
+      'isDark',
+      colorMode === ConfigurationConstant.ColorMode.COLOR_MODE_DARK
+    );
   }
 
   onDestroy(): void {
@@ -756,7 +769,15 @@ export class KeyboardController {
   private computeKeyWidths(dis: display.Display): void {
     const safeDPI = dis.densityDPI > 0 ? dis.densityDPI : 460;
     const density = safeDPI / 160;
-    const screenVp = dis.width / density;
+    const fullVp = dis.width / density;
+    // On foldables/tablets the unfolded inner screen is very wide; stretching
+    // 10 keys across it makes each key huge and hard to reach. Cap the keyboard
+    // content width and let the rows center themselves (justifyContent.Center),
+    // matching how phone-style keyboards float centered on large displays.
+    const MAX_KB_VP = 620;
+    const screenVp = Math.min(fullVp, MAX_KB_VP);
+    AppStorage.setOrCreate('isWideScreen', fullVp > MAX_KB_VP);
+    AppStorage.setOrCreate('keyboardContentVp', screenVp);
     // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead
     const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
     const skwVp = Math.round(kwVp * 1.2);

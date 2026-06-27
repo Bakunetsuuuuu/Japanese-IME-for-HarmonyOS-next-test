@@ -1,4 +1,5 @@
 import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
+import { KbTheme, kbTheme } from './Theme';
 
 const ROWS: string[][] = [
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -18,6 +19,11 @@ export struct KeyboardView {
   @StorageLink('keyWidthVp') keyWidthVp: number = 36;
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
   @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
+  @StorageLink('isDark') isDark: boolean = false;
+
+  private get t(): KbTheme {
+    return kbTheme(this.isDark);
+  }
 
   private getHandler(): InputHandler {
     return InputHandler.getInstance();
@@ -51,6 +57,7 @@ export struct KeyboardView {
         }, (key: string) => key)
       }
       .width('100%')
+      .justifyContent(FlexAlign.Center)
 
       // QWERTY rows 0 and 1
       ForEach([0, 1], (rowIdx: number) => {
@@ -104,13 +111,13 @@ export struct KeyboardView {
     // so the label re-renders when the shift state changes.
     Text((this.isShift || this.isCapsLock) ? value.toUpperCase() : value)
       .fontSize(17)
-      .fontColor(Color.Black)
+      .fontColor(this.t.keyText)
       .textAlign(TextAlign.Center)
       .width(this.keyWidthVp)
       .height(44)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor(this.t.keyBg)
       .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+      .shadow({ radius: 1, color: this.t.shadowColor, offsetY: 2 })
       .onClick(() => {
         const key = (this.isShift || this.isCapsLock) ? value.toUpperCase() : value;
         this.getHandler().handleKeyPress(key);
@@ -126,10 +133,10 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height(44)
-      .backgroundColor(this.isShift || this.isCapsLock ? '#4A90E2' : '#ADB5BD')
-      .fontColor(Color.White)
+      .backgroundColor(this.isShift || this.isCapsLock ? this.t.accentBg : this.t.specialKeyBg)
+      .fontColor(this.t.onAccentText)
       .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+      .shadow({ radius: 1, color: this.t.shadowColor, offsetY: 2 })
       .onClick(() => {
         if (this.isCapsLock) {
           this.isCapsLock = false;
@@ -148,10 +155,10 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height(44)
-      .backgroundColor('#ADB5BD')
-      .fontColor(Color.White)
+      .backgroundColor(this.t.specialKeyBg)
+      .fontColor(this.t.onAccentText)
       .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+      .shadow({ radius: 1, color: this.t.shadowColor, offsetY: 2 })
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) {
           this.startBsRepeat();
@@ -164,12 +171,13 @@ export struct KeyboardView {
   @Builder SpaceKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'かな' : 'space')
       .fontSize(14)
+      .fontColor(this.t.keyText)
       .textAlign(TextAlign.Center)
       .width(this.spaceKeyWidthVp)
       .height(44)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor(this.t.keyBg)
       .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+      .shadow({ radius: 1, color: this.t.shadowColor, offsetY: 2 })
       .onClick(() => {
         this.getHandler().handleSpaceKey();
       })
@@ -181,10 +189,10 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height(44)
-      .backgroundColor('#ADB5BD')
-      .fontColor(Color.White)
+      .backgroundColor(this.t.specialKeyBg)
+      .fontColor(this.t.onAccentText)
       .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+      .shadow({ radius: 1, color: this.t.shadowColor, offsetY: 2 })
       .onClick(() => {
         this.getHandler().commitRaw();
         const current = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
@@ -196,12 +204,13 @@ export struct KeyboardView {
   @Builder FuncKey(label: string, action: () => void) {
     Text(label)
       .fontSize(17)
+      .fontColor(this.t.keyText)
       .textAlign(TextAlign.Center)
       .width(this.keyWidthVp)
       .height(44)
-      .backgroundColor('#FFFFFF')
+      .backgroundColor(this.t.keyBg)
       .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+      .shadow({ radius: 1, color: this.t.shadowColor, offsetY: 2 })
       .onClick(action)
   }
 
@@ -211,10 +220,10 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height(44)
-      .backgroundColor('#4A90E2')
-      .fontColor(Color.White)
+      .backgroundColor(this.t.accentBg)
+      .fontColor(this.t.onAccentText)
       .borderRadius(5)
-      .shadow({ radius: 1, color: '#33000000', offsetY: 2 })
+      .shadow({ radius: 1, color: this.t.shadowColor, offsetY: 2 })
       .onClick(() => {
         this.getHandler().handleEnterKey();
       })
