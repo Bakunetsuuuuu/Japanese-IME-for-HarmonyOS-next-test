@@ -633,6 +633,25 @@ export class InputHandler {
 
   handleUndo(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.BUNSETSU) {
+      const composing = this.bSegs.join('');
+      this.bSegs = [];
+      this.bChosen = [];
+      this.bCur = 0;
+      AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
+      AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
+      AppStorage.setOrCreate('bunsetsuDisplay', '');
+      AppStorage.setOrCreate('bunsetsuCurrent', 0);
+      AppStorage.setOrCreate('composingText', composing);
+      AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+      this.updateCandidates();
+      return;
+    }
+    if (state === InputState.SELECTING) {
+      AppStorage.setOrCreate('candidates', [] as string[]);
+      AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+      return;
+    }
     if (state === InputState.COMPOSING) {
       if (this.lastDeletedChar.length === 0) { return; }
       const composing = AppStorage.get<string>('composingText') ?? '';
@@ -801,13 +820,13 @@ export class KeyboardController {
       const dis = display.getDefaultDisplaySync();
       const isLandscape = dis.width > dis.height;
       // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
-      // content: 48vp bar + 5×44vp rows + 4×5vp gaps + 12vp padding = 300vp portrait
       const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-      const contentPx = Math.ceil((isLandscape ? 310 : 360) * density);
-      // clamp to 25–60% of screen height in case densityDPI returns an odd value
+      const contentPx = Math.ceil((isLandscape ? 380 : 360) * density);
+      // portrait: clamp 25–60%; landscape: allow up to 75% so rows fit without overflow
+      const maxFrac = isLandscape ? 0.75 : 0.60;
       const keyHeight = Math.max(
         Math.floor(dis.height * 0.25),
-        Math.min(contentPx, Math.floor(dis.height * 0.60))
+        Math.min(contentPx, Math.floor(dis.height * maxFrac))
       );
 
       AppStorage.setOrCreate('isLandscape', isLandscape);
@@ -839,10 +858,11 @@ export class KeyboardController {
       const dis = display.getDefaultDisplaySync();
       const isLandscape = dis.width > dis.height;
       const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-      const contentPx = Math.ceil((isLandscape ? 310 : 360) * density);
+      const contentPx = Math.ceil((isLandscape ? 380 : 360) * density);
+      const maxFrac = isLandscape ? 0.75 : 0.60;
       const keyHeight = Math.max(
         Math.floor(dis.height * 0.25),
-        Math.min(contentPx, Math.floor(dis.height * 0.60))
+        Math.min(contentPx, Math.floor(dis.height * maxFrac))
       );
 
       AppStorage.setOrCreate('isLandscape', isLandscape);
