@@ -52,7 +52,7 @@ shunti Japanese IME（以下「本アプリ」）は、開発者 shuntilettuce �
 
 | ファイル | 出典 | ライセンス |
 |---------|------|-----------|
-| dict.json | SKK-JISYO.L | GPL v2 |
+| dict.json | 常用漢字（文部科学省告示）／Unicode Unihan データベース／独自収録の語彙・読み | パブリックドメイン／自作 |
 | reading_cost.json, matrix.json | mecab-ipadic | NAIST License |
 
 ---
