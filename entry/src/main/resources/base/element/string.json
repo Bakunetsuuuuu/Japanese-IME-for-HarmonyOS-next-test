@@ -1,6 +1,6 @@
 {
   "string": [
-    { "name": "entry_desc",          "value": "フリック／QWERTYに対応した日本語入力メソッド。SKK辞書ベースの高精度かな漢字変換、変換学習、ユーザー辞書登録機能を搭載。" },
+    { "name": "entry_desc",          "value": "フリック／QWERTYに対応した日本語入力メソッド。高精度Viterbiかな漢字変換、変換学習、ユーザー辞書登録機能を搭載。" },
     { "name": "app_name",            "value": "shunti Japanese IME" },
     { "name": "entry_ability_desc",  "value": "ユーザー辞書の管理（読み・単語の登録・削除）" },
     { "name": "extension_label",     "value": "shunti Japanese IME" },

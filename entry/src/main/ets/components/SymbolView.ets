@@ -75,25 +75,16 @@ const SYMBOL_CATEGORIES: string[][][] = [
 const LICENSE_TEXT: string =
   'shunti Japanese IME\n\n' +
   '■ 変換辞書 (dict.json)\n' +
-  'SKK-JISYO.L を変換して使用しています。\n\n' +
-  'Copyright (C) 1988-1995, 1997, 1999-2014\n' +
-  'Masahiko Sato <masahiko@kuis.kyoto-u.ac.jp>\n' +
-  'Hironobu Takahashi <takahasi@tiny.or.jp>\n' +
-  'Masahiro Doteguchi, Miki Inooka,\n' +
-  'Yukiyoshi Kameyama, Akihiko Sasaki,\n' +
-  'Dai Ando, Junichi Okukawa,\n' +
-  'Katsushi Sato, Nobuhiro Yamagishi,\n' +
-  'NAKAJIMA Mikio, MITA Yuusuke,\n' +
-  'SKK Development Team <skk@ring.gr.jp>\n\n' +
-  'ライセンス: GNU General Public License v2.0 以降\n' +
-  'ソース: https://github.com/skk-dev/dict\n\n' +
-  '■ 文節分割データ (reading_cost.json, matrix.json)\n' +
+  '独自収集データを使用しています。\n' +
+  '・常用漢字（文部科学省告示、パブリックドメイン）\n' +
+  '・Unicode Unihan データベース（パブリックドメイン）\n' +
+  '・独自収録語彙（global_dict）\n\n' +
+  '■ 文節分割コストデータ (reading_cost.json)\n' +
   'mecab-ipadic 2.7.0 を変換して使用しています。\n\n' +
   'Copyright 2000, 2001, 2002, 2003\n' +
   'Nara Institute of Science and Technology (NAIST).\n' +
   'All Rights Reserved.\n\n' +
-  'ライセンス: NAIST License（商用利用可）\n' +
-  'ソース: https://taku910.github.io/mecab/\n\n' +
+  'ライセンス: NAIST License（商用利用可）\n\n' +
   '■ アプリコード\n' +
   'MIT License';
 

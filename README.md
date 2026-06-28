@@ -1,6 +1,6 @@
 # shunti Japanese IME — HarmonyOS NEXT 日本語入力
 
-HarmonyOS NEXT (API 12+) 向けの日本語 IME です。フリック入力・QWERTY ローマ字入力の両方に対応し、SKK-JISYO.L ベースの大規模辞書による高精度な漢字変換を提供します。
+HarmonyOS NEXT (API 12+) 向けの日本語 IME です。フリック入力・QWERTY ローマ字入力の両方に対応し、独自辞書による高精度な漢字変換を提供します。
 
 > **開発者**: shuntilettuce
 
@@ -35,7 +35,7 @@ AppGallery で「shunti Japanese IME」を検索してインストール後、�
 | **スペース変換** | スペースで候補一覧表示 → 繰り返しで次候補へ |
 | **文節変換モード** | 文全体を文節に分割して個別に変換先を選択 |
 | **カタカナ変換** | 全文をカタカナに変換する候補を常に提供 |
-| **大規模辞書** | SKK-JISYO.L 由来 30 万エントリ超（地名・固有名詞辞書含む） |
+| **独自辞書** | 常用漢字・Unicode Unihan・独自収集データによる変換辞書 |
 | **変換学習** | 選んだ変換先の優先度を自動で上げ、次回から上位表示 |
 | **ユーザー辞書** | アプリ本体から「よみ→単語」を登録、変換候補の先頭に表示 |
 | **括弧変換** | 「かっこ」で `()` `「」` `【】` 等を入力。確定後カーソルが内側へ移動 |
@@ -65,20 +65,15 @@ AppGallery で「shunti Japanese IME」を検索してインストール後、�
 
 ### アプリコード
 
-`.ets` ファイル等のアプリ独自コードは **MIT License** で提供します。  
-ただし dict.json を含む配布物全体は GPL v2 の制約を受けます（下記参照）。
+`.ets` ファイル等のアプリ独自コードは **MIT License** で提供します。
 
 ### 変換辞書 (dict.json)
 
-`entry/src/main/resources/rawfile/dict.json` は [SKK-JISYO.L](https://github.com/skk-dev/dict) / SKK-JISYO.geo / SKK-JISYO.propernoun を変換・加工したものです。
+`entry/src/main/resources/rawfile/dict.json` は以下のパブリックドメイン／独自データから構築した自作辞書です。
 
-**GNU General Public License v2.0 以降** が適用されます。
-
-> Copyright (C) 1988-1995, 1997, 1999-2014  
-> Masahiko Sato, Hironobu Takahashi, and SKK Development Team \<skk@ring.gr.jp\>  
-> Source: https://github.com/skk-dev/dict
-
-詳細は [NOTICE](./NOTICE) および [LICENSES/GPL-2.0.txt](./LICENSES/GPL-2.0.txt) を参照してください。
+- 常用漢字（文部科学省告示）— パブリックドメイン
+- Unicode Unihan データベース — パブリックドメイン
+- 独自収録語彙（global_dict）
 
 ### 文節分割データ (reading_cost.json / matrix.json)
 
