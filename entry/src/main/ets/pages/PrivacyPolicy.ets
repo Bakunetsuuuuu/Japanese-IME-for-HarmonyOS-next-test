@@ -64,7 +64,7 @@ struct PrivacyPolicy {
 
           this.Section('バンドルデータについて',
             '本アプリには変換辞書データ（dict.json）および文節分割用コストデータ（reading_cost.json, matrix.json）が含まれています。これらは読み取り専用のデータファイルであり、お客様の入力内容とは独立しています。\n\n' +
-            '辞書データの出典：SKK-JISYO.L（GPL v2）、mecab-ipadic（NAIST License）')
+            '辞書データの出典：常用漢字（パブリックドメイン）、Unicode Unihan（パブリックドメイン）、独自収集データ、mecab-ipadic（NAIST License）')
 
           this.Section('クラッシュレポート・分析',
             '本アプリは分析ツールやクラッシュレポートサービスを使用していません。')
