@@ -175,7 +175,7 @@ export struct FlickKeyboardView {
   }
 
   build() {
-    Column({ space: 3 }) {
+    Column({ space: 2 }) {
       // 4 rows × 5 columns (Gboard layout)
       ForEach([0, 1, 2, 3], (rowIdx: number) => {
         Row({ space: 3 }) {
@@ -187,9 +187,11 @@ export struct FlickKeyboardView {
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
+        .layoutWeight(1)
       }, (rowIdx: number) => String(rowIdx))
     }
     .width('100%')
+    .height('100%')
     .padding({ bottom: 8, top: 4 })
   }
 
@@ -198,21 +200,21 @@ export struct FlickKeyboardView {
     if (rowIdx === 0) {
       Text('取消')
         .fontSize(13).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height(this.rowH())
+        .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
         .onClick(() => { this.h().handleUndo(); })
     } else if (rowIdx === 1) {
       Text('◄')
         .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height(this.rowH())
+        .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
         .onClick(() => { this.h().handleCursorLeft(); })
     } else if (rowIdx === 2) {
       Text('記号')
         .fontSize(13).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height(this.rowH())
+        .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
         .onClick(() => {
@@ -221,7 +223,7 @@ export struct FlickKeyboardView {
     } else {
       Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
         .fontSize(12).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height(this.rowH())
+        .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
         .onClick(() => {
@@ -238,7 +240,7 @@ export struct FlickKeyboardView {
     if (rowIdx === 0) {
       Text('⌫')
         .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height(this.rowH())
+        .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
         .onTouch((event: TouchEvent) => {
@@ -251,7 +253,7 @@ export struct FlickKeyboardView {
     } else if (rowIdx === 1) {
       Text('►')
         .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height(this.rowH())
+        .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
         .onClick(() => { this.h().handleCursorRight(); })
@@ -259,7 +261,7 @@ export struct FlickKeyboardView {
       Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
         .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
         .textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height(this.rowH())
+        .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
         .onClick(() => {
@@ -273,7 +275,7 @@ export struct FlickKeyboardView {
     } else {
       Text('→')
         .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height(this.rowH())
+        .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).accentBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
         .onClick(() => {
@@ -325,7 +327,7 @@ export struct FlickKeyboardView {
         .textAlign(TextAlign.Center)
     }
     .width(this.flickKeyWidthVp)
-    .height(this.rowH())
+    .height('100%')
     .backgroundColor(this.keyBg(rowIdx, colIdx, key))
     .borderRadius(8)
     .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })

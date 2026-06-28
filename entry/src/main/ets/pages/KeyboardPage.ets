@@ -143,17 +143,19 @@ struct KeyboardPage {
           .width('100%')
         }
 
-        // Keyboard
+        // Keyboard — fills all height remaining after the preview bar
         if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
           FlickKeyboardView({
             inputMode: this.inputMode,
             isLandscape: this.isLandscape
           })
+            .layoutWeight(1)
         } else {
           KeyboardView({
             inputMode: this.inputMode,
             isLandscape: this.isLandscape
           })
+            .layoutWeight(1)
         }
       }
     }

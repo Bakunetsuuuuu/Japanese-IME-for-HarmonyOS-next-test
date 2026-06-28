@@ -45,7 +45,7 @@ export struct KeyboardView {
   }
 
   build() {
-    Column({ space: 5 }) {
+    Column({ space: 2 }) {
       // Number row
       Row({ space: 2 }) {
         ForEach(NUMBER_ROW, (key: string) => {
@@ -54,6 +54,7 @@ export struct KeyboardView {
       }
       .width('100%')
       .justifyContent(FlexAlign.Center)
+      .layoutWeight(1)
 
       // QWERTY rows 0 and 1
       ForEach([0, 1], (rowIdx: number) => {
@@ -64,6 +65,7 @@ export struct KeyboardView {
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
+        .layoutWeight(1)
       }, (rowIdx: number) => String(rowIdx))
 
       // Bottom letter row (z-m) with shift and backspace
@@ -76,6 +78,7 @@ export struct KeyboardView {
       }
       .width('100%')
       .justifyContent(FlexAlign.Center)
+      .layoutWeight(1)
 
       // Function row
       Row({ space: 2 }) {
@@ -97,8 +100,10 @@ export struct KeyboardView {
       }
       .width('100%')
       .justifyContent(FlexAlign.Center)
+      .layoutWeight(1)
     }
     .width('100%')
+    .height('100%')
     .padding({ bottom: 8, top: 4, left: 2, right: 2 })
   }
 
@@ -110,7 +115,7 @@ export struct KeyboardView {
       .fontColor(kbTheme(this.isDark).keyText)
       .textAlign(TextAlign.Center)
       .width(this.keyWidthVp)
-      .height(44)
+      .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(5)
       .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
@@ -128,7 +133,7 @@ export struct KeyboardView {
       .fontSize(17)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
-      .height(44)
+      .height('100%')
       .backgroundColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark).accentBg : kbTheme(this.isDark).specialKeyBg)
       .fontColor(kbTheme(this.isDark).onAccentText)
       .borderRadius(5)
@@ -150,7 +155,7 @@ export struct KeyboardView {
       .fontSize(17)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
-      .height(44)
+      .height('100%')
       .backgroundColor(kbTheme(this.isDark).specialKeyBg)
       .fontColor(kbTheme(this.isDark).onAccentText)
       .borderRadius(5)
@@ -170,7 +175,7 @@ export struct KeyboardView {
       .fontColor(kbTheme(this.isDark).keyText)
       .textAlign(TextAlign.Center)
       .width(this.spaceKeyWidthVp)
-      .height(44)
+      .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(5)
       .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
@@ -184,7 +189,7 @@ export struct KeyboardView {
       .fontSize(12)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
-      .height(44)
+      .height('100%')
       .backgroundColor(kbTheme(this.isDark).specialKeyBg)
       .fontColor(kbTheme(this.isDark).onAccentText)
       .borderRadius(5)
@@ -203,7 +208,7 @@ export struct KeyboardView {
       .fontColor(kbTheme(this.isDark).keyText)
       .textAlign(TextAlign.Center)
       .width(this.keyWidthVp)
-      .height(44)
+      .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(5)
       .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
@@ -215,7 +220,7 @@ export struct KeyboardView {
       .fontSize(17)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
-      .height(44)
+      .height('100%')
       .backgroundColor(kbTheme(this.isDark).accentBg)
       .fontColor(kbTheme(this.isDark).onAccentText)
       .borderRadius(5)
