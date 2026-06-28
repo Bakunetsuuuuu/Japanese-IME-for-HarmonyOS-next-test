@@ -52,7 +52,7 @@ The App includes the following conversion dictionary data. These are **read-only
 
 | File | Source | License |
 |------|--------|---------|
-| dict.json | SKK-JISYO.L | GPL v2 |
+| dict.json | Jōyō kanji (MEXT notification) / Unicode Unihan database / original vocabulary & readings | Public domain / original |
 | reading_cost.json, matrix.json | mecab-ipadic | NAIST License |
 
 ---
