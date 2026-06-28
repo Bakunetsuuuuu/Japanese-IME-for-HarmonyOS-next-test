@@ -9,7 +9,7 @@ const DICTIONARY: Record<string, string[]> = {
   'きゅう': ['九', '旧', '急', '球'],
   'じゅう': ['十', '住', '重'],
   'ひゃく': ['百'],
-  'せん': ['千', '先', '選', '専', '線'],
+  'せん': ['線', '先', '選', '専', '千'],
   'まん': ['万'],
   'わたし': ['私', 'わたし'],
   'わたくし': ['私'],
@@ -25303,6 +25303,11 @@ export class KanaKanjiConverter {
       cands = [...ext];
       if (kata !== kana && !cands.includes(kata)) { cands.push(kata); }
       if (!cands.includes(kana)) { cands.push(kana); }
+      // Loanwords (no kanji candidates): katakana is the canonical form, promote it.
+      const hasKanji = cands.some((c: string) => /[一-鿿]/.test(c));
+      if (!hasKanji && kata !== kana && cands[0] !== kata) {
+        cands = [kata, ...cands.filter((c: string) => c !== kata)];
+      }
     } else if ((user && user.length > 0) || (global && global.length > 0)) {
       // Only a registered dictionary (user/global) knows this reading.
       cands = [];
@@ -25317,20 +25322,22 @@ export class KanaKanjiConverter {
     }
 
     const filtered = KanaKanjiConverter.filterCandidates(kana, cands);
-    // Function words (particles/auxiliaries) default to hiragana, not rare kanji
-    // (e.g. ない should lead with かな, not 綯い).
-    let ordered: string[];
-    if (KanaKanjiConverter.FUNCTION_WORDS[kana] && filtered[0] !== kana) {
-      const reordered = filtered.filter((c: string) => c !== kana);
-      reordered.unshift(kana);
-      ordered = KanaKanjiConverter.applyLearning(kana, reordered);
-    } else {
-      ordered = KanaKanjiConverter.applyLearning(kana, filtered);
-    }
+    const ordered = KanaKanjiConverter.applyLearning(kana, filtered);
     // Registered words always lead: global first, then user prepended → user wins.
     const withGlobal = KanaKanjiConverter.withRegisteredWords(global, ordered);
-    const final = KanaKanjiConverter.withRegisteredWords(user, withGlobal);
-    return KanaKanjiConverter.contextRerank(kana, final);
+    const withUser = KanaKanjiConverter.withRegisteredWords(user, withGlobal);
+    let result = KanaKanjiConverter.contextRerank(kana, withUser);
+    // Function words (particles/auxiliaries) must stay as hiragana by default
+    // even after global/user overrides, unless the user has explicitly learned a kanji form.
+    if (KanaKanjiConverter.FUNCTION_WORDS[kana] && result[0] !== kana) {
+      const hasLearned = KanaKanjiConverter.learned[kana] &&
+                         Object.keys(KanaKanjiConverter.learned[kana]).length > 0;
+      if (!hasLearned) {
+        const rest = result.filter((c: string) => c !== kana);
+        result = [kana, ...rest];
+      }
+    }
+    return result;
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
