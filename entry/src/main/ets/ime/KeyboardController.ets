@@ -3,6 +3,7 @@ import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
 import display from '@ohos.display';
 import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
+import pasteboard from '@ohos.pasteboard';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
@@ -180,6 +181,7 @@ export class InputHandler {
     if (!AppStorage.has('inputMode')) {
       AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
     }
+    this.refreshClipboardPreview();
   }
 
   onInputStop(): void {
@@ -409,6 +411,41 @@ export class InputHandler {
     AppStorage.setOrCreate('bunsetsuDisplay', '');
     AppStorage.setOrCreate('bunsetsuCurrent', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
+    this.refreshClipboardPreview();
+  }
+
+  private refreshClipboardPreview(): void {
+    pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
+      if (!data || data.getRecordCount() === 0) {
+        AppStorage.setOrCreate('clipboardPreview', '');
+        AppStorage.setOrCreate('clipboardIsImage', false);
+        return;
+      }
+      if (data.hasType(pasteboard.MIMETYPE_PIXELMAP)) {
+        AppStorage.setOrCreate('clipboardPreview', '画像');
+        AppStorage.setOrCreate('clipboardIsImage', true);
+      } else {
+        const text = data.getPrimaryText();
+        AppStorage.setOrCreate('clipboardPreview', text ?? '');
+        AppStorage.setOrCreate('clipboardIsImage', false);
+      }
+    }).catch((_e: Error) => {
+      AppStorage.setOrCreate('clipboardPreview', '');
+      AppStorage.setOrCreate('clipboardIsImage', false);
+    });
+  }
+
+  pasteClipboard(): void {
+    const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
+    if (isImage) {
+      return;
+    }
+    const text = AppStorage.get<string>('clipboardPreview') ?? '';
+    if (text.length === 0) {
+      return;
+    }
+    this.insertText(text);
+    this.refreshClipboardPreview();
   }
 
   private updateCandidates(): void {

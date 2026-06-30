@@ -30,6 +30,8 @@ struct KeyboardPage {
   @StorageLink('bunsetsuRaw') bunsetsuRaw: string[] = [];
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('clipboardPreview') clipboardPreview: string = '';
+  @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -110,6 +112,20 @@ struct KeyboardPage {
                     candidates: this.candidates,
                     selectedIndex: this.selectedIndex
                   })
+                } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
+                  this.clipboardPreview.length > 0) {
+                  Text(this.clipboardPreview)
+                    .fontSize(16)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                    .borderRadius(4)
+                    .backgroundColor(kbTheme(this.isDark).candidateBg)
+                    .fontColor(kbTheme(this.isDark).subText)
+                    .margin({ left: 4 })
+                    .onClick(() => {
+                      InputHandler.getInstance().pasteClipboard();
+                    })
                 }
               }
               .width('82%')
