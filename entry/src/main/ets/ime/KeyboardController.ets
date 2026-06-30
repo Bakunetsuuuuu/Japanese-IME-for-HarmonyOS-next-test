@@ -726,6 +726,7 @@ export class InputHandler {
         this.insertedBuffer = this.insertedBuffer.slice(-50);
       }
       this.restoreStack = [];
+      KanaKanjiConverter.setLastCommitText(text);
     }
   }
 

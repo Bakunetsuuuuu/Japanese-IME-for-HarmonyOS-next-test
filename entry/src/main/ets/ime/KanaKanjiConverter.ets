@@ -25127,6 +25127,18 @@ export class KanaKanjiConverter {
   private static connectionMatrix: number[][] = [];
   // Ring buffer of up to 15 recently confirmed output strings for context re-ranking.
   private static contextBuffer: string[] = [];
+  // True when the most recently committed text ended in an Arabic digit (half- or full-width).
+  // Used to boost 助数詞 (counter word) candidates, since a number is almost always followed
+  // by a counter (10 → かい should favor 回/階 over unrelated homophones like 会/貝).
+  private static lastCommitWasDigit: boolean = false;
+
+  private static readonly COUNTER_WORDS: Set<string> = new Set([
+    '回', '階', '個', '本', '匹', '頭', '羽', '枚', '台', '冊', '杯', '軒', '丁', '膳',
+    '足', '着', '基', '席', '歳', '才', '度', '点', '行', '曲', '話', '巻', '部', '通',
+    '件', '社', '校', '株', '票', '発', '便', '年', '月', '時', '分', '秒', '円', 'ヶ月',
+    '人', '名', '番', '号', '丁目', '坪', '畳', '尾', '粒', '滴', '房', '玉', '切れ', '服',
+    '艘', '棟', '戸', '室', '面', '局', '品', '種類', '日間', '週間', '年間',
+  ]);
 
   // Particles and auxiliaries kept as kana in auto-convert and preferred during DP traceback
   private static readonly FUNCTION_WORDS: Record<string, boolean> = {
@@ -25245,6 +25257,21 @@ export class KanaKanjiConverter {
     }
   }
 
+  // Called from InputHandler.insertText() with the text that was just committed,
+  // so subsequent lookups know whether they immediately follow a confirmed Arabic digit.
+  static setLastCommitText(text: string): void {
+    if (text.length === 0) { return; }
+    KanaKanjiConverter.lastCommitWasDigit = /[0-9０-９]$/.test(text);
+  }
+
+  private static boostCounterWords(cands: string[]): string[] {
+    if (!KanaKanjiConverter.lastCommitWasDigit || cands.length < 2) { return cands; }
+    const boosted = cands.filter((c: string) => KanaKanjiConverter.COUNTER_WORDS.has(c));
+    if (boosted.length === 0) { return cands; }
+    const rest = cands.filter((c: string) => !KanaKanjiConverter.COUNTER_WORDS.has(c));
+    return [...boosted, ...rest];
+  }
+
   private static contextRerank(reading: string, cands: string[]): string[] {
     const buffer = KanaKanjiConverter.contextBuffer;
     if (buffer.length === 0) { return cands; }
@@ -25315,10 +25342,12 @@ export class KanaKanjiConverter {
       if (!cands.includes(kana)) { cands.push(kana); }
       // user leads global; both prepended ahead of the katakana/kana fallback.
       const withGlobal = KanaKanjiConverter.withRegisteredWords(global, cands);
-      return KanaKanjiConverter.withRegisteredWords(user, withGlobal);
+      const withUserOnly = KanaKanjiConverter.withRegisteredWords(user, withGlobal);
+      return KanaKanjiConverter.boostCounterWords(withUserOnly);
     } else {
       // Not in any dict: katakana first (handles loanwords not yet in dict)
-      return kata !== kana ? [kata, kana] : [kana];
+      const fallback = kata !== kana ? [kata, kana] : [kana];
+      return KanaKanjiConverter.boostCounterWords(fallback);
     }
 
     const filtered = KanaKanjiConverter.filterCandidates(kana, cands);
@@ -25337,7 +25366,7 @@ export class KanaKanjiConverter {
         result = [kana, ...rest];
       }
     }
-    return result;
+    return KanaKanjiConverter.boostCounterWords(result);
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
