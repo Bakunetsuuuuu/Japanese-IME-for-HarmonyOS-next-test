@@ -795,9 +795,18 @@ export class KeyboardController {
     // 10 keys across it makes each key huge and hard to reach. Cap the keyboard
     // content width and let the rows center themselves (justifyContent.Center),
     // matching how phone-style keyboards float centered on large displays.
+    // Detect tablet/foldable class by the device's SHORTER physical dimension,
+    // not by whichever dimension is currently "width" — a normal phone rotated
+    // to landscape also reports a large dis.width, but its narrow dimension
+    // (the portrait width) is still phone-sized, so it must NOT be capped like
+    // a tablet. Without this, every phone in landscape rendered a narrow,
+    // centered keyboard with large empty margins on both sides (looked tiny,
+    // unlike Gboard which fills the full landscape width).
+    const shortVp = Math.min(dis.width, dis.height) / density;
     const MAX_KB_VP = 620;
-    const screenVp = Math.min(fullVp, MAX_KB_VP);
-    AppStorage.setOrCreate('isWideScreen', fullVp > MAX_KB_VP);
+    const isTabletClass = shortVp > 600;
+    const screenVp = isTabletClass ? Math.min(fullVp, MAX_KB_VP) : fullVp;
+    AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
     AppStorage.setOrCreate('keyboardContentVp', screenVp);
     // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead
     const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
@@ -815,19 +824,25 @@ export class KeyboardController {
     AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
   }
 
+  // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
+  private computeKeyHeight(dis: display.Display, isLandscape: boolean): number {
+    const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
+    // Landscape screens are short, so the keyboard needs a larger share of that
+    // short dimension to stay comfortably tappable (Gboard-style) rather than
+    // shrinking rows down — portrait: clamp 25–60%; landscape: allow up to 80%.
+    const contentPx = Math.ceil((isLandscape ? 420 : 360) * density);
+    const maxFrac = isLandscape ? 0.80 : 0.60;
+    return Math.max(
+      Math.floor(dis.height * 0.25),
+      Math.min(contentPx, Math.floor(dis.height * maxFrac))
+    );
+  }
+
   private initPanel(): void {
     try {
       const dis = display.getDefaultDisplaySync();
       const isLandscape = dis.width > dis.height;
-      // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
-      const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-      const contentPx = Math.ceil((isLandscape ? 380 : 360) * density);
-      // portrait: clamp 25–60%; landscape: allow up to 75% so rows fit without overflow
-      const maxFrac = isLandscape ? 0.75 : 0.60;
-      const keyHeight = Math.max(
-        Math.floor(dis.height * 0.25),
-        Math.min(contentPx, Math.floor(dis.height * maxFrac))
-      );
+      const keyHeight = this.computeKeyHeight(dis, isLandscape);
 
       AppStorage.setOrCreate('isLandscape', isLandscape);
       AppStorage.setOrCreate('displayWidth', dis.width);
@@ -857,13 +872,7 @@ export class KeyboardController {
     try {
       const dis = display.getDefaultDisplaySync();
       const isLandscape = dis.width > dis.height;
-      const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
-      const contentPx = Math.ceil((isLandscape ? 380 : 360) * density);
-      const maxFrac = isLandscape ? 0.75 : 0.60;
-      const keyHeight = Math.max(
-        Math.floor(dis.height * 0.25),
-        Math.min(contentPx, Math.floor(dis.height * maxFrac))
-      );
+      const keyHeight = this.computeKeyHeight(dis, isLandscape);
 
       AppStorage.setOrCreate('isLandscape', isLandscape);
       AppStorage.setOrCreate('displayWidth', dis.width);
