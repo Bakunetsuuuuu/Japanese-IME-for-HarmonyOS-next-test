@@ -25140,6 +25140,20 @@ export class KanaKanjiConverter {
     '艘', '棟', '戸', '室', '面', '局', '品', '種類', '日間', '週間', '年間',
   ]);
 
+  // 口語縮約形 → 標準形。lookup() 冒頭で評価し、標準形で再帰検索してから結果を口語形に戻す。
+  private static readonly COLLOQUIAL_SUFFIXES: string[] = [
+    'てた', 'ちゃった', 'ちゃって', 'ちゃう', 'とく', 'とった', 'とって', 'てなかった',
+  ];
+  private static readonly COLLOQUIAL_STANDARD: string[] = [
+    'ていた', 'てしまった', 'てしまって', 'てしまう', 'ておく', 'ておいた', 'ておいて', 'ていなかった',
+  ];
+
+  // 格助詞・接続助詞セット。直前コンテキストがこれらで終わる場合、漢字候補を前方に寄せる。
+  private static readonly CASE_PARTICLES: Set<string> = new Set([
+    'は', 'が', 'を', 'に', 'で', 'へ', 'と', 'も',
+    'から', 'まで', 'より', 'のに', 'ので', 'ながら',
+  ]);
+
   // Particles and auxiliaries kept as kana in auto-convert and preferred during DP traceback
   private static readonly FUNCTION_WORDS: Record<string, boolean> = {
     'は': true, 'が': true, 'を': true, 'に': true, 'で': true,
@@ -25272,6 +25286,40 @@ export class KanaKanjiConverter {
     return [...boosted, ...rest];
   }
 
+  // 直前コンテキストが格助詞の場合、漢字を含む候補（名詞・動詞）を前方に寄せる。
+  // 例:「は」確定後「かいて」→「書いて」「描いて」が「買い手」より前に来る。
+  private static postParticleBoost(cands: string[]): string[] {
+    const buf = KanaKanjiConverter.contextBuffer;
+    if (buf.length === 0 || cands.length < 2) { return cands; }
+    const last = buf[buf.length - 1];
+    if (!KanaKanjiConverter.CASE_PARTICLES.has(last)) { return cands; }
+    const withKanji = cands.filter((c: string) => /[一-鿿]/.test(c));
+    if (withKanji.length < 2) { return cands; }
+    const rest = cands.filter((c: string) => !/[一-鿿]/.test(c));
+    return [...withKanji, ...rest];
+  }
+
+  // 辞書未登録の連続読みに対してViterbi分割→各セグメント変換→結合を試みる。
+  // lookup() 内から fromNorm=false の場合のみ呼ぶ（無限ループ回避）。
+  private segmentJoinFallback(kana: string): string | null {
+    const segs = this.segment(kana);
+    if (segs.length < 2) { return null; }
+    let joined = '';
+    for (const seg of segs) {
+      const g = KanaKanjiConverter.globalDict[seg];
+      const e = DICTIONARY[seg];
+      const s = KanaKanjiConverter.supplementaryDict[seg];
+      const fw = KanaKanjiConverter.FUNCTION_WORDS[seg];
+      const best = (g && g.length > 0) ? g[0]
+                 : (e && e.length > 0) ? e[0]
+                 : (s && s.length > 0) ? s[0]
+                 : fw ? seg
+                 : seg;
+      joined += best;
+    }
+    return /[一-鿿]/.test(joined) ? joined : null;
+  }
+
   private static contextRerank(reading: string, cands: string[]): string[] {
     const buffer = KanaKanjiConverter.contextBuffer;
     if (buffer.length === 0) { return cands; }
@@ -25309,7 +25357,32 @@ export class KanaKanjiConverter {
     return result;
   }
 
-  lookup(kana: string): string[] {
+  lookup(kana: string, fromNorm: boolean = false): string[] {
+    // 口語縮約形 → 標準形で再帰検索し、結果を口語形に変換して先頭候補にする（深さ1限定）。
+    if (!fromNorm) {
+      const colSuf = KanaKanjiConverter.COLLOQUIAL_SUFFIXES;
+      const colStd = KanaKanjiConverter.COLLOQUIAL_STANDARD;
+      for (let ci = 0; ci < colSuf.length; ci++) {
+        const suffixColloquial = colSuf[ci];
+        const norm = colStd[ci];
+        if (kana.endsWith(suffixColloquial)) {
+          const stem = kana.slice(0, kana.length - suffixColloquial.length);
+          const normalizedKana = stem + norm;
+          const normalizedCands = this.lookup(normalizedKana, true);
+          const colloquial: string[] = [];
+          for (const c of normalizedCands) {
+            if (/[一-鿿]/.test(c) && c.endsWith(norm)) {
+              colloquial.push(c.slice(0, c.length - norm.length) + suffixColloquial);
+            }
+          }
+          if (colloquial.length > 0) {
+            const rest = normalizedCands.filter((c: string) => !colloquial.includes(c));
+            return KanaKanjiConverter.boostCounterWords([...colloquial, ...rest]);
+          }
+        }
+      }
+    }
+
     const entry = DICTIONARY[kana];
     const ext = KanaKanjiConverter.supplementaryDict[kana];
     const user = KanaKanjiConverter.userDict[kana];
@@ -25345,8 +25418,14 @@ export class KanaKanjiConverter {
       const withUserOnly = KanaKanjiConverter.withRegisteredWords(user, withGlobal);
       return KanaKanjiConverter.boostCounterWords(withUserOnly);
     } else {
-      // Not in any dict: katakana first (handles loanwords not yet in dict)
+      // Not in any dict: try Viterbi segment→convert→join first, then katakana fallback.
       const fallback = kata !== kana ? [kata, kana] : [kana];
+      if (!fromNorm) {
+        const joined = this.segmentJoinFallback(kana);
+        if (joined !== null && !fallback.includes(joined)) {
+          return KanaKanjiConverter.boostCounterWords([joined, ...fallback]);
+        }
+      }
       return KanaKanjiConverter.boostCounterWords(fallback);
     }
 
@@ -25366,6 +25445,7 @@ export class KanaKanjiConverter {
         result = [kana, ...rest];
       }
     }
+    result = KanaKanjiConverter.postParticleBoost(result);
     return KanaKanjiConverter.boostCounterWords(result);
   }
 
