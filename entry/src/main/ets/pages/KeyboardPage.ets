@@ -78,13 +78,13 @@ struct KeyboardPage {
           .maxLines(2)
           .width('100%')
       }
-      // Symbol/Emoji/Numeric views take the full panel (no preview bar)
+      // Symbol/Emoji views take the full panel (no preview bar). Numeric keeps
+      // the preview bar — without it the pad's rows stretch to fill the whole
+      // panel height and end up uncomfortably tall.
       if (this.keyboardSubMode === 'symbol') {
         SymbolView()
       } else if (this.keyboardSubMode === 'emoji') {
         EmojiView()
-      } else if (this.keyboardSubMode === 'numeric') {
-        NumericPadView()
       } else {
         // Preview bar
         if (this.inputState === InputState.BUNSETSU) {
@@ -182,7 +182,10 @@ struct KeyboardPage {
         }
 
         // Keyboard — fills all height remaining after the preview bar
-        if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
+        if (this.keyboardSubMode === 'numeric') {
+          NumericPadView()
+            .layoutWeight(1)
+        } else if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
           FlickKeyboardView({
             inputMode: this.inputMode,
             isLandscape: this.isLandscape

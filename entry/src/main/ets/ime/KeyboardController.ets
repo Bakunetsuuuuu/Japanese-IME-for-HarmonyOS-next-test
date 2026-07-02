@@ -952,10 +952,18 @@ export class KeyboardController {
       });
 
       IMEAbility.on('inputStop', () => {
+        // Only hide — don't tear down the context/panel here. initPanel()
+        // (which creates this.panel) only runs once, from onCreate(), so
+        // destroying the context on every inputStop left no panel to show()
+        // for the *next* inputStart unless the OS happened to fully restart
+        // the extension in between. That's what made the keyboard vanish
+        // after a couple of show/hide cycles until something (e.g. rotating
+        // back to portrait and switching IME) forced a fresh restart.
+        // The real teardown belongs in the ability's own onDestroy(), which
+        // already calls KeyboardController.onDestroy() when the IME service
+        // is actually shut down.
         this.inputHandle.onInputStop();
         this.panel?.hide();
-        this.onDestroy();
-        this.context.destroy();
       });
 
       IMEAbility.on('setSubtype', (subtype: InputMethodSubtype) => {
