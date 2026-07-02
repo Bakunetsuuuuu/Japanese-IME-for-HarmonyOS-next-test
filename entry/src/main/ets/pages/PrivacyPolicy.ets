@@ -64,7 +64,7 @@ struct PrivacyPolicy {
 
           this.Section('バンドルデータについて',
             '本アプリには変換辞書データ（dict.json, global_dict.json）が含まれています。これらは読み取り専用のデータファイルであり、お客様の入力内容とは独立しています。文節分割は外部データファイルに依存せず、文法ルールをアプリ内に実装した独自のアルゴリズムで行っています。\n\n' +
-            '辞書データの出典：常用漢字（パブリックドメイン）、Unicode Unihan（パブリックドメイン）、Wikipedia日本語版（CC BY-SA）、日本郵便 郵便番号データ、独自収集データ')
+            '辞書データの出典：常用漢字（パブリックドメイン）、Unicode Unihan（パブリックドメイン）、Wikipedia日本語版（CC BY-SA 4.0）、Wiktionary日本語版（CC BY-SA 4.0 / GFDL）、JMdict/EDICT（CC BY-SA 4.0、https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project）、日本郵便 郵便番号データ、独自収集データ。詳細はリポジトリ内 DATA_SOURCES.md を参照。')
 
           this.Section('クラッシュレポート・分析',
             '本アプリは分析ツールやクラッシュレポートサービスを使用していません。')

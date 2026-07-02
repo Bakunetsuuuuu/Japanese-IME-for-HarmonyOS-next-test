@@ -79,9 +79,13 @@ const LICENSE_TEXT: string =
   '・常用漢字（文部科学省告示、パブリックドメイン）\n' +
   '・Unicode Unihan データベース（パブリックドメイン）\n' +
   '・Weblio辞書から収集した読み情報\n' +
-  '・Wikipedia日本語版から収集した読み情報（CC BY-SA）\n' +
+  '・Wikipedia日本語版から収集した読み情報（CC BY-SA 4.0）\n' +
+  '・Wiktionary日本語版から収集した読み情報（CC BY-SA 4.0 / GFDL）\n' +
+  '・JMdict/EDICT（電子化辞書研究開発グループ、CC BY-SA 4.0）\n' +
+  '  https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project\n' +
   '・日本郵便 郵便番号データ\n' +
   '・独自収録語彙（global_dict）\n\n' +
+  '詳細な出典一覧は DATA_SOURCES.md を参照してください。\n\n' +
   '■ 文節分割\n' +
   '外部データファイルには依存せず、文法ルールをアプリ内に実装した\n' +
   '独自のViterbiアルゴリズムで分割しています。\n\n' +
