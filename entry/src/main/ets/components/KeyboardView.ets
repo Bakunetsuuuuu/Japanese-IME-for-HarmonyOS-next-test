@@ -46,15 +46,18 @@ export struct KeyboardView {
 
   build() {
     Column({ space: 2 }) {
-      // Number row
-      Row({ space: 2 }) {
-        ForEach(NUMBER_ROW, (key: string) => {
-          this.RegularKey(key)
-        }, (key: string) => key)
+      // Number row — dropped in landscape to give the letter rows more height;
+      // vertical space is tight there and this row is the least-used one.
+      if (!this.isLandscape) {
+        Row({ space: 2 }) {
+          ForEach(NUMBER_ROW, (key: string) => {
+            this.RegularKey(key)
+          }, (key: string) => key)
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .layoutWeight(1)
       }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .layoutWeight(1)
 
       // QWERTY rows 0 and 1
       ForEach([0, 1], (rowIdx: number) => {
