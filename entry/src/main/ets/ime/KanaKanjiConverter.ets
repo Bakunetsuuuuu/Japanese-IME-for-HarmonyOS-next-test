@@ -25325,15 +25325,24 @@ export class KanaKanjiConverter {
 
   // 辞書未登録の連続読みに対してViterbi分割→各セグメント変換→結合を試みる。
   // lookup() 内から fromNorm=false の場合のみ呼ぶ（無限ループ回避）。
+  //
+  // 漢字を含む結合結果は常に信頼できる（例: たべ+てた→食べてた）。
+  // 漢字が無い場合でも、全セグメントが実際の辞書エントリまたは機能語（助詞・助動詞）で
+  // 説明できるなら、それは「してね」＝して(する)+ね(終助詞) のような正当な口語表現であり、
+  // 単なる未知語のカタカナ化より優先されるべき。1文字でも正体不明（辞書にもFUNCTION_WORDSにも
+  // 無く、生の読みをそのままechoしただけ）のセグメントが混じる場合は信頼しない。
   private segmentJoinFallback(kana: string): string | null {
     const segs = this.segment(kana);
     if (segs.length < 2) { return null; }
     let joined = '';
+    let allRecognized = true;
     for (const seg of segs) {
       const g = KanaKanjiConverter.globalDict[seg];
       const e = DICTIONARY[seg];
       const s = KanaKanjiConverter.supplementaryDict[seg];
       const fw = KanaKanjiConverter.FUNCTION_WORDS[seg];
+      const hasDictHit = !!((g && g.length > 0) || (e && e.length > 0) || (s && s.length > 0));
+      if (!hasDictHit && !fw) { allRecognized = false; }
       const best = (g && g.length > 0) ? g[0]
                  : (e && e.length > 0) ? e[0]
                  : (s && s.length > 0) ? s[0]
@@ -25341,7 +25350,8 @@ export class KanaKanjiConverter {
                  : seg;
       joined += best;
     }
-    return /[一-鿿]/.test(joined) ? joined : null;
+    if (/[一-鿿]/.test(joined)) { return joined; }
+    return allRecognized ? joined : null;
   }
 
   private static contextRerank(reading: string, cands: string[]): string[] {
@@ -25446,8 +25456,12 @@ export class KanaKanjiConverter {
       const fallback = kata !== kana ? [kata, kana] : [kana];
       if (!fromNorm) {
         const joined = this.segmentJoinFallback(kana);
-        if (joined !== null && !fallback.includes(joined)) {
-          return KanaKanjiConverter.boostCounterWords([joined, ...fallback]);
+        if (joined !== null) {
+          // Multi-morpheme phrase recognized by the segmenter (e.g. してね = して+ね)
+          // always outranks a blind katakana guess, even when joined has no kanji and
+          // happens to equal the plain kana form itself.
+          const rest = fallback.filter((c: string) => c !== joined);
+          return KanaKanjiConverter.boostCounterWords([joined, ...rest]);
         }
       }
       return KanaKanjiConverter.boostCounterWords(fallback);
