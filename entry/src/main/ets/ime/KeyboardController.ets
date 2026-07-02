@@ -858,36 +858,19 @@ export class KeyboardController {
     const isTabletClass = shortVp > 600;
     AppStorage.setOrCreate('isTabletClass', isTabletClass);
     AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
+    // This is only a best-effort guess for the first frame, before the panel has
+    // actually been laid out. On-device diagnostics confirmed this device's IME
+    // panel framework silently shrinks the panel to a fraction of the width/height
+    // requested via panel.resize() (~76% width, ~48% height observed, with no
+    // corresponding cutout reported — a software policy, not a hardware inset),
+    // so display metrics alone can't be trusted. KeyboardPage.onAreaChange
+    // re-applies applyKeyboardWidthsForVp() from the actually measured width once
+    // the panel is laid out, which is the authoritative correction.
     applyKeyboardWidthsForVp(fullVp, isTabletClass);
 
-    // TEMP DIAGNOSTIC — the landscape width bug has survived two targeted fixes
-    // (measured-layout correction, then waterfall-cutout correction), so instead
-    // of guessing a third time, surface the raw numbers on-screen (see the debug
-    // strip in KeyboardPage) so the next fix can be aimed at the real cause.
+    // TEMP DIAGNOSTIC — see the debug strip in KeyboardPage.
     AppStorage.setOrCreate('dbgPreCutout',
-      `W${dis.width}xH${dis.height} den${density.toFixed(2)} full${fullVp.toFixed(0)} short${shortVp.toFixed(0)} tab${isTabletClass ? 1 : 0} kw${AppStorage.get<number>('keyWidthVp')}`);
-
-    // Curved-edge ("waterfall") screens (e.g. Pura 70 in landscape) reserve an
-    // unusable strip on the left and right of the physical display — dis.width
-    // includes that strip, but it's where the system parks its own IME-switcher/
-    // assistant icons, not usable panel content. Not accounting for it made keys
-    // sized for the full width overflow off the real right edge while leaving a
-    // dead band on the left. Correct once the async cutout query resolves.
-    dis.getCutoutInfo()
-      .then((info: display.CutoutInfo) => {
-        const waterfall = info.waterfallDisplayAreaRects;
-        const leftPx = waterfall?.left?.width ?? 0;
-        const rightPx = waterfall?.right?.width ?? 0;
-        const correctedVp = (dis.width - leftPx - rightPx) / density;
-        if (leftPx > 0 || rightPx > 0) {
-          applyKeyboardWidthsForVp(correctedVp, isTabletClass);
-        }
-        AppStorage.setOrCreate('dbgCutout',
-          `cutL${leftPx} cutR${rightPx} corr${correctedVp.toFixed(0)} kw${AppStorage.get<number>('keyWidthVp')}`);
-      })
-      .catch((_e: Error) => {
-        AppStorage.setOrCreate('dbgCutout', 'cutout:ERR');
-      });
+      `W${dis.width}xH${dis.height} den${density.toFixed(2)} full${fullVp.toFixed(0)} short${shortVp.toFixed(0)} tab${isTabletClass ? 1 : 0}`);
   }
 
   // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)

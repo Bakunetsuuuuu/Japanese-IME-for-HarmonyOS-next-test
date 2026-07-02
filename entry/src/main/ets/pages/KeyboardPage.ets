@@ -1,6 +1,6 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import util from '@ohos.util';
-import { InputHandler, InputState, InputMode } from '../ime/KeyboardController';
+import { InputHandler, InputState, InputMode, applyKeyboardWidthsForVp } from '../ime/KeyboardController';
 import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
 import { KeyboardView } from '../components/KeyboardView';
@@ -34,8 +34,8 @@ struct KeyboardPage {
   @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
   // TEMP DIAGNOSTIC — see matching comment in KeyboardController.computeKeyWidths.
   @StorageLink('dbgPreCutout') dbgPreCutout: string = '';
-  @StorageLink('dbgCutout') dbgCutout: string = '';
   @State dbgMeasured: string = '';
+  @StorageLink('keyWidthVp') dbgAppliedKw: number = 0;
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -70,7 +70,7 @@ struct KeyboardPage {
       // fixed. Shows the raw numbers behind key sizing so a screenshot tells us
       // exactly what's wrong instead of guessing again.
       if (this.isLandscape) {
-        Text(`${this.dbgPreCutout} | ${this.dbgCutout} | measured${this.dbgMeasured}`)
+        Text(`${this.dbgPreCutout} | measured${this.dbgMeasured} kw${this.dbgAppliedKw}`)
           .fontSize(9)
           .fontColor('#FF5555')
           .backgroundColor('#000000')
@@ -198,10 +198,19 @@ struct KeyboardPage {
     .height('100%')
     .backgroundColor(kbTheme(this.isDark).panelBg)
     .onAreaChange((_oldArea: Area, newArea: Area) => {
-      // TEMP DIAGNOSTIC only — records what this root view actually measures,
-      // for comparison against the display-metrics numbers above. Does not
-      // feed back into key sizing (that's fully owned by KeyboardController now).
+      // Confirmed via on-device diagnostics: this device's IME panel framework
+      // silently shrinks the panel to a fraction of the width/height requested
+      // via panel.resize() (observed ~76% width, ~48% height of the request,
+      // with no corresponding cutout/waterfall reported) — a software policy,
+      // not a hardware inset, so it isn't queryable up front. Key widths must
+      // be driven by what this root view actually measures, not by display
+      // metrics or the resize request.
       this.dbgMeasured = `${newArea.width}x${newArea.height}`;
+      const measuredVp = Number(newArea.width);
+      if (measuredVp > 0) {
+        const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
+        applyKeyboardWidthsForVp(measuredVp, isTabletClass);
+      }
     })
   }
 }
