@@ -1,6 +1,6 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import util from '@ohos.util';
-import { InputHandler, InputState, InputMode } from '../ime/KeyboardController';
+import { InputHandler, InputState, InputMode, applyKeyboardWidthsForVp } from '../ime/KeyboardController';
 import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
 import { KeyboardView } from '../components/KeyboardView';
@@ -178,5 +178,17 @@ struct KeyboardPage {
     .width('100%')
     .height('100%')
     .backgroundColor(kbTheme(this.isDark).panelBg)
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      // display.getDefaultDisplaySync() (used for the initial key-width guess in
+      // KeyboardController) can be off from the panel's actual drawable width on some
+      // devices/orientations (e.g. a landscape cutout or nav-bar inset it doesn't know
+      // about), which cut keys off on one side while leaving a dead band on the other.
+      // Correct the key widths from what this root view actually measured on screen.
+      const measuredVp = Number(newArea.width);
+      if (measuredVp > 0) {
+        const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
+        applyKeyboardWidthsForVp(measuredVp, isTabletClass);
+      }
+    })
   }
 }

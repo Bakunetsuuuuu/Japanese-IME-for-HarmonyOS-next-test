@@ -15,6 +15,35 @@ interface InputMethodSubtype {
   mode?: string;
 }
 
+// Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
+const MAX_KB_VP = 620;
+
+// Pure width math shared by the display-metrics-based initial guess (computeKeyWidths)
+// and the live layout correction (KeyboardPage.onAreaChange). display.getDefaultDisplaySync()
+// can under- or over-report the actually drawable panel width on some devices (e.g. a
+// landscape cutout/nav-bar inset it doesn't account for), which made keys sized from the
+// raw display metrics alone overflow past the real edge on one side while leaving a dead
+// band on the other. Recomputing from the *measured* on-screen width — whatever the true
+// source of the discrepancy — self-corrects regardless of cause.
+export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boolean): void {
+  const screenVp = isTabletClass ? Math.min(rawScreenVp, MAX_KB_VP) : rawScreenVp;
+  AppStorage.setOrCreate('keyboardContentVp', screenVp);
+  // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead
+  const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
+  const skwVp = Math.round(kwVp * 1.2);
+  // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
+  const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
+  // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
+  const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
+  AppStorage.setOrCreate('keyWidthVp', kwVp);
+  AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
+  AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
+  AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
+  // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
+  const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
+  AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
+}
+
 export const enum InputState {
   IDLE = 'IDLE',
   COMPOSING = 'COMPOSING',
@@ -826,25 +855,10 @@ export class KeyboardController {
     // centered keyboard with large empty margins on both sides (looked tiny,
     // unlike Gboard which fills the full landscape width).
     const shortVp = Math.min(dis.width, dis.height) / density;
-    const MAX_KB_VP = 620;
     const isTabletClass = shortVp > 600;
-    const screenVp = isTabletClass ? Math.min(fullVp, MAX_KB_VP) : fullVp;
+    AppStorage.setOrCreate('isTabletClass', isTabletClass);
     AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
-    AppStorage.setOrCreate('keyboardContentVp', screenVp);
-    // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead
-    const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
-    const skwVp = Math.round(kwVp * 1.2);
-    // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
-    const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
-    // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
-    const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
-    AppStorage.setOrCreate('keyWidthVp', kwVp);
-    AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
-    AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
-    AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
-    // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
-    const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
-    AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
+    applyKeyboardWidthsForVp(fullVp, isTabletClass);
   }
 
   // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
