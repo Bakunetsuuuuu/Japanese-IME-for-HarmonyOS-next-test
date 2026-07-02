@@ -78,7 +78,6 @@ const LICENSE_TEXT: string =
   '独自収集データを使用しています。\n' +
   '・常用漢字（文部科学省告示、パブリックドメイン）\n' +
   '・Unicode Unihan データベース（パブリックドメイン）\n' +
-  '・Weblio辞書から収集した読み情報\n' +
   '・Wikipedia日本語版から収集した読み情報（CC BY-SA 4.0）\n' +
   '・Wiktionary日本語版から収集した読み情報（CC BY-SA 4.0 / GFDL）\n' +
   '・JMdict/EDICT（電子化辞書研究開発グループ、CC BY-SA 4.0）\n' +

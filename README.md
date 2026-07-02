@@ -67,20 +67,18 @@ AppGallery で「shunti Japanese IME」を検索してインストール後、�
 
 `.ets` ファイル等のアプリ独自コードは **MIT License** で提供します。
 
-### 変換辞書 (dict.json)
+### 変換辞書 (dict.json, global_dict.json)
 
-`entry/src/main/resources/rawfile/dict.json` は以下のパブリックドメイン／独自データから構築した自作辞書です。
+`entry/src/main/resources/rawfile/dict.json` / `global_dict.json` は以下のパブリックドメイン／独自データから構築した自作辞書です。詳細な出典は `DATA_SOURCES.md` を参照してください。
 
 - 常用漢字（文部科学省告示）— パブリックドメイン
 - Unicode Unihan データベース — パブリックドメイン
+- Wikipedia日本語版から収集した読み情報 — CC BY-SA 4.0
 - 独自収録語彙（global_dict）
-- Weblio 辞書から収集した読み情報
 
-### 文節分割データ (reading_cost.json / matrix.json)
+### 文節分割
 
-[mecab-ipadic](https://taku910.github.io/mecab/) 2.7.0 を加工したもので、Viterbi 文節分割に使用します。
-
-**NAIST License**（商用利用可）が適用されます。
+外部データファイルには依存せず、文法ルールをアプリ内に実装した独自のViterbiアルゴリズムで分割しています。
 
 > Copyright 2000–2003 Nara Institute of Science and Technology (NAIST). All Rights Reserved.
 
