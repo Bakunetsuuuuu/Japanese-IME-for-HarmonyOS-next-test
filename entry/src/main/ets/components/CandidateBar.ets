@@ -13,9 +13,9 @@ export struct CandidateBar {
       Row({ space: 4 }) {
         ForEach(this.candidates, (candidate: string, index: number) => {
           Text(candidate)
-            .fontSize(this.isLandscape ? 14 : 16)
+            .fontSize(this.isLandscape ? 12 : 16)
             .padding(this.isLandscape ?
-              { left: 10, right: 10, top: 3, bottom: 3 } :
+              { left: 8, right: 8, top: 2, bottom: 2 } :
               { left: 12, right: 12, top: 6, bottom: 6 })
             .borderRadius(4)
             .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accentBg : kbTheme(this.isDark).candidateBg)
@@ -30,7 +30,7 @@ export struct CandidateBar {
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
     .width('100%')
-    .height(this.isLandscape ? 32 : 48)
+    .height(this.isLandscape ? 22 : 48)
     .backgroundColor(kbTheme(this.isDark).selectingBarBg)
   }
 }

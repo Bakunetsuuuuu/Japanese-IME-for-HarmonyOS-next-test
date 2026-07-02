@@ -46,7 +46,10 @@ export const LIGHT_THEME: KbTheme = {
 };
 
 export const DARK_THEME: KbTheme = {
-  panelBg: '#161618',
+  // Matches HUAWEI's stock keyboard panel background so there's no visible
+  // seam where the system draws around/behind this panel (e.g. the reserved
+  // strip alongside a landscape panel — see KeyboardController.computeKeyWidths).
+  panelBg: '#242424',
   previewBarBg: '#202022',
   composingBarBg: '#242426',
   selectingBarBg: '#2C2C2E',

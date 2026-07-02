@@ -13,9 +13,9 @@ export struct BunsetsuBar {
       Row({ space: 2 }) {
         ForEach(this.segments, (seg: string, idx: number) => {
           Text(seg)
-            .fontSize(this.isLandscape ? 14 : 16)
+            .fontSize(this.isLandscape ? 12 : 16)
             .padding(this.isLandscape ?
-              { left: 8, right: 8, top: 2, bottom: 2 } :
+              { left: 6, right: 6, top: 1, bottom: 1 } :
               { left: 10, right: 10, top: 4, bottom: 4 })
             .borderRadius(4)
             .backgroundColor(idx === this.currentIndex ? kbTheme(this.isDark).accentStrongBg : kbTheme(this.isDark).candidateBg)
@@ -31,7 +31,7 @@ export struct BunsetsuBar {
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
     .width('100%')
-    .height(this.isLandscape ? 32 : 48)
+    .height(this.isLandscape ? 22 : 48)
     .backgroundColor(kbTheme(this.isDark).selectingBarBg)
   }
 }
