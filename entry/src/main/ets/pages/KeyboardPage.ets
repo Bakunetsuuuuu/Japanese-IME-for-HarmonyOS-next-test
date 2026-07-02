@@ -87,10 +87,12 @@ struct KeyboardPage {
           .borderColor(kbTheme(this.isDark).borderColor)
         } else {
           Column() {
-            // Composing kana strip — always visible to prevent layout shifts
+            // Composing kana strip — always visible to prevent layout shifts.
+            // Landscape has much less vertical room to spare for the keys below,
+            // so this strip and the candidate row underneath both run compact.
             Row() {
               Text(this.composingText + this.pendingRomaji)
-                .fontSize(16)
+                .fontSize(this.isLandscape ? 13 : 16)
                 .fontColor(kbTheme(this.isDark).previewText)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -98,7 +100,7 @@ struct KeyboardPage {
                 .layoutWeight(1)
             }
             .width('100%')
-            .height(28)
+            .height(this.isLandscape ? 18 : 28)
             .backgroundColor(kbTheme(this.isDark).composingBarBg)
             .borderWidth({ bottom: 1 })
             .borderColor(kbTheme(this.isDark).borderColor)
@@ -115,10 +117,12 @@ struct KeyboardPage {
                 } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
                   this.clipboardPreview.length > 0) {
                   Text(this.clipboardPreview)
-                    .fontSize(16)
+                    .fontSize(this.isLandscape ? 13 : 16)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+                    .padding(this.isLandscape ?
+                      { left: 10, right: 10, top: 3, bottom: 3 } :
+                      { left: 12, right: 12, top: 6, bottom: 6 })
                     .borderRadius(4)
                     .backgroundColor(kbTheme(this.isDark).candidateBg)
                     .fontColor(kbTheme(this.isDark).subText)
@@ -129,16 +133,16 @@ struct KeyboardPage {
                 }
               }
               .width('82%')
-              .height(48)
+              .height(this.isLandscape ? 32 : 48)
               .alignItems(VerticalAlign.Center)
 
               // Layout toggle: フ = switch to flick, Q = switch to QWERTY
               Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
-                .fontSize(14)
+                .fontSize(this.isLandscape ? 12 : 14)
                 .fontColor(kbTheme(this.isDark).subText)
                 .textAlign(TextAlign.Center)
-                .width(50)
-                .height(40)
+                .width(this.isLandscape ? 38 : 50)
+                .height(this.isLandscape ? 26 : 40)
                 .backgroundColor(kbTheme(this.isDark).funcKeyBg)
                 .borderRadius(6)
                 .onClick(() => {
@@ -147,7 +151,7 @@ struct KeyboardPage {
                 })
             }
             .width('100%')
-            .height(48)
+            .height(this.isLandscape ? 32 : 48)
             .backgroundColor(
               this.inputState === InputState.SELECTING ? kbTheme(this.isDark).selectingBarBg : kbTheme(this.isDark).previewBarBg
             )
