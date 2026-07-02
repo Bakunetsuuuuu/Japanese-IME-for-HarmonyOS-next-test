@@ -860,6 +860,13 @@ export class KeyboardController {
     AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
     applyKeyboardWidthsForVp(fullVp, isTabletClass);
 
+    // TEMP DIAGNOSTIC — the landscape width bug has survived two targeted fixes
+    // (measured-layout correction, then waterfall-cutout correction), so instead
+    // of guessing a third time, surface the raw numbers on-screen (see the debug
+    // strip in KeyboardPage) so the next fix can be aimed at the real cause.
+    AppStorage.setOrCreate('dbgPreCutout',
+      `W${dis.width}xH${dis.height} den${density.toFixed(2)} full${fullVp.toFixed(0)} short${shortVp.toFixed(0)} tab${isTabletClass ? 1 : 0} kw${AppStorage.get<number>('keyWidthVp')}`);
+
     // Curved-edge ("waterfall") screens (e.g. Pura 70 in landscape) reserve an
     // unusable strip on the left and right of the physical display — dis.width
     // includes that strip, but it's where the system parks its own IME-switcher/
@@ -871,12 +878,16 @@ export class KeyboardController {
         const waterfall = info.waterfallDisplayAreaRects;
         const leftPx = waterfall?.left?.width ?? 0;
         const rightPx = waterfall?.right?.width ?? 0;
+        const correctedVp = (dis.width - leftPx - rightPx) / density;
         if (leftPx > 0 || rightPx > 0) {
-          const correctedVp = (dis.width - leftPx - rightPx) / density;
           applyKeyboardWidthsForVp(correctedVp, isTabletClass);
         }
+        AppStorage.setOrCreate('dbgCutout',
+          `cutL${leftPx} cutR${rightPx} corr${correctedVp.toFixed(0)} kw${AppStorage.get<number>('keyWidthVp')}`);
       })
-      .catch((_e: Error) => { /* no cutout info available on this device */ });
+      .catch((_e: Error) => {
+        AppStorage.setOrCreate('dbgCutout', 'cutout:ERR');
+      });
   }
 
   // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)

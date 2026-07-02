@@ -294,34 +294,38 @@ export struct FlickKeyboardView {
   }
 
   @Builder KeyCell(rowIdx: number, colIdx: number, key: FlickKeyDef) {
+    // Landscape rows are shorter (rowH ~50vp vs ~64vp portrait); the portrait font
+    // sizes don't leave enough line-height within the 28%/44%/28% split, so the
+    // up/down hint labels visually collide with the center glyph. Shrink both in
+    // landscape to keep them cleanly separated.
     Column({ space: 0 }) {
       Text(key.up !== undefined ? this.toMode(key.up) : ' ')
-        .fontSize(11)
+        .fontSize(this.isLandscape ? 9 : 11)
         .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
         .width('100%').height('28%')
         .textAlign(TextAlign.Center)
 
       Row({ space: 0 }) {
         Text(key.left !== undefined ? this.toMode(key.left) : ' ')
-          .fontSize(11)
+          .fontSize(this.isLandscape ? 9 : 11)
           .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
           .width('25%').textAlign(TextAlign.Center)
 
         Text(this.centerLabel(rowIdx, colIdx, key))
-          .fontSize(this.isActive(rowIdx, colIdx) ? 20 : 17)
+          .fontSize(this.isActive(rowIdx, colIdx) ? (this.isLandscape ? 17 : 20) : (this.isLandscape ? 14 : 17))
           .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
           .fontWeight(FontWeight.Medium)
           .width('50%').textAlign(TextAlign.Center)
 
         Text(key.right !== undefined ? this.toMode(key.right) : ' ')
-          .fontSize(11)
+          .fontSize(this.isLandscape ? 9 : 11)
           .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
           .width('25%').textAlign(TextAlign.Center)
       }
       .width('100%').height('44%')
 
       Text(key.down !== undefined ? this.toMode(key.down) : ' ')
-        .fontSize(11)
+        .fontSize(this.isLandscape ? 9 : 11)
         .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
         .width('100%').height('28%')
         .textAlign(TextAlign.Center)

@@ -32,6 +32,10 @@ struct KeyboardPage {
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
   @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
+  // TEMP DIAGNOSTIC — see matching comment in KeyboardController.computeKeyWidths.
+  @StorageLink('dbgPreCutout') dbgPreCutout: string = '';
+  @StorageLink('dbgCutout') dbgCutout: string = '';
+  @State dbgMeasured: string = '';
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -62,6 +66,17 @@ struct KeyboardPage {
 
   build() {
     Column() {
+      // TEMP DIAGNOSTIC STRIP — remove once the landscape width bug is confirmed
+      // fixed. Shows the raw numbers behind key sizing so a screenshot tells us
+      // exactly what's wrong instead of guessing again.
+      if (this.isLandscape) {
+        Text(`${this.dbgPreCutout} | ${this.dbgCutout} | measured${this.dbgMeasured}`)
+          .fontSize(9)
+          .fontColor('#FF5555')
+          .backgroundColor('#000000')
+          .maxLines(2)
+          .width('100%')
+      }
       // Symbol/Emoji views take the full panel (no preview bar)
       if (this.keyboardSubMode === 'symbol') {
         SymbolView()
@@ -182,5 +197,11 @@ struct KeyboardPage {
     .width('100%')
     .height('100%')
     .backgroundColor(kbTheme(this.isDark).panelBg)
+    .onAreaChange((_oldArea: Area, newArea: Area) => {
+      // TEMP DIAGNOSTIC only — records what this root view actually measures,
+      // for comparison against the display-metrics numbers above. Does not
+      // feed back into key sizing (that's fully owned by KeyboardController now).
+      this.dbgMeasured = `${newArea.width}x${newArea.height}`;
+    })
   }
 }
