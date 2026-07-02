@@ -25129,6 +25129,10 @@ export class KanaKanjiConverter {
   // Used to boost 助数詞 (counter word) candidates, since a number is almost always followed
   // by a counter (10 → かい should favor 回/階 over unrelated homophones like 会/貝).
   private static lastCommitWasDigit: boolean = false;
+  // True when the most recently committed text contained at least one kanji character.
+  // Used to boost 駅/空港 etc. after what looks like a place name, without needing an explicit
+  // dictionary entry for every "placename+駅" compound (しんじゅく確定後の「えき」→駅 を優先).
+  private static lastCommitHadKanji: boolean = false;
 
   private static readonly COUNTER_WORDS: Set<string> = new Set([
     '回', '階', '個', '本', '匹', '頭', '羽', '枚', '台', '冊', '杯', '軒', '丁', '膳',
@@ -25136,6 +25140,12 @@ export class KanaKanjiConverter {
     '件', '社', '校', '株', '票', '発', '便', '年', '月', '時', '分', '秒', '円', 'ヶ月',
     '人', '名', '番', '号', '丁目', '坪', '畳', '尾', '粒', '滴', '房', '玉', '切れ', '服',
     '艘', '棟', '戸', '室', '面', '局', '品', '種類', '日間', '週間', '年間',
+  ]);
+
+  // 地名の直後に来やすい接尾語。駅名を「新宿駅」のような複合語として辞書登録しなくても、
+  // 「新宿」確定後に「えき」等と打てば「駅」が優先されるようにする。
+  private static readonly PLACE_SUFFIX_WORDS: Set<string> = new Set([
+    '駅', '空港', '港', '公園', '大学', '病院', '神社', '寺', '城', '橋', '湖', 'ダム',
   ]);
 
   // 口語縮約形 → 標準形。lookup() 冒頭で評価し、標準形で再帰検索してから結果を口語形に戻す。
@@ -25271,13 +25281,30 @@ export class KanaKanjiConverter {
   static setLastCommitText(text: string): void {
     if (text.length === 0) { return; }
     KanaKanjiConverter.lastCommitWasDigit = /[0-9０-９]$/.test(text);
+    KanaKanjiConverter.lastCommitHadKanji = /[一-鿿]/.test(text);
   }
 
+  // Applies both post-lookup context boosts (助数詞 after digits, 地名接尾語 after kanji words).
+  // Named boostCounterWords for historical reasons; all call sites route through here.
   private static boostCounterWords(cands: string[]): string[] {
+    return KanaKanjiConverter.boostPlaceSuffixWords(
+      KanaKanjiConverter.applyCounterBoost(cands));
+  }
+
+  private static applyCounterBoost(cands: string[]): string[] {
     if (!KanaKanjiConverter.lastCommitWasDigit || cands.length < 2) { return cands; }
     const boosted = cands.filter((c: string) => KanaKanjiConverter.COUNTER_WORDS.has(c));
     if (boosted.length === 0) { return cands; }
     const rest = cands.filter((c: string) => !KanaKanjiConverter.COUNTER_WORDS.has(c));
+    return [...boosted, ...rest];
+  }
+
+  // 直前に地名らしい語（漢字を含む語）が確定していた場合、駅・空港等の地名接尾語候補を前方に寄せる。
+  private static boostPlaceSuffixWords(cands: string[]): string[] {
+    if (!KanaKanjiConverter.lastCommitHadKanji || cands.length < 2) { return cands; }
+    const boosted = cands.filter((c: string) => KanaKanjiConverter.PLACE_SUFFIX_WORDS.has(c));
+    if (boosted.length === 0) { return cands; }
+    const rest = cands.filter((c: string) => !KanaKanjiConverter.PLACE_SUFFIX_WORDS.has(c));
     return [...boosted, ...rest];
   }
 
