@@ -198,12 +198,14 @@ export struct FlickKeyboardView {
   // Left column keys per row
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
-      Text('取消')
+      Text('123')
         .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
-        .onClick(() => { this.h().handleUndo(); })
+        .onClick(() => {
+          AppStorage.setOrCreate('keyboardSubMode', 'numeric');
+        })
     } else if (rowIdx === 1) {
       Text('◄')
         .fontSize(16).textAlign(TextAlign.Center)

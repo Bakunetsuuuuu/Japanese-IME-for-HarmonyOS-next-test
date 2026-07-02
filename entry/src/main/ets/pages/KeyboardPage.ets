@@ -7,6 +7,7 @@ import { KeyboardView } from '../components/KeyboardView';
 import { FlickKeyboardView } from '../components/FlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
 import { EmojiView } from '../components/EmojiView';
+import { NumericPadView } from '../components/NumericPadView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
 import { kbTheme } from '../components/Theme';
 
@@ -77,11 +78,13 @@ struct KeyboardPage {
           .maxLines(2)
           .width('100%')
       }
-      // Symbol/Emoji views take the full panel (no preview bar)
+      // Symbol/Emoji/Numeric views take the full panel (no preview bar)
       if (this.keyboardSubMode === 'symbol') {
         SymbolView()
       } else if (this.keyboardSubMode === 'emoji') {
         EmojiView()
+      } else if (this.keyboardSubMode === 'numeric') {
+        NumericPadView()
       } else {
         // Preview bar
         if (this.inputState === InputState.BUNSETSU) {
