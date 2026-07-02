@@ -25221,6 +25221,12 @@ export class KanaKanjiConverter {
     'ても': true, 'でも': true, 'のような': true, 'のように': true,
     'ながらも': true, 'つつも': true, 'からこそ': true, 'ばこそ': true,
     'やつ': true, 'もん': true, 'わけではない': true, 'というか': true,
+    // 文末表現（推量・伝聞・婉曲・確認等の口語語尾）
+    'んだろう': true, 'ったら': true, 'いいのかな': true, 'かもよ': true,
+    'なのかも': true, 'んじゃない': true, 'んじゃないか': true, 'んじゃないの': true,
+    'たっけ': true, 'かったっけ': true, 'だといいな': true, 'そうだといいな': true,
+    'でしょうかね': true, 'かしらね': true, 'かもしれないな': true, 'だといいけど': true,
+    'んだけどね': true, 'ですけどね': true, 'もんね': true,
   };
 
   static loadDictionary(dict: Record<string, string[]>): void {
