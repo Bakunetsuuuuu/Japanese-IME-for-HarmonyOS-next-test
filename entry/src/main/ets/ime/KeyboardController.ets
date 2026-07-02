@@ -858,19 +858,30 @@ export class KeyboardController {
     const isTabletClass = shortVp > 600;
     AppStorage.setOrCreate('isTabletClass', isTabletClass);
     AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
-    // This is only a best-effort guess for the first frame, before the panel has
-    // actually been laid out. On-device diagnostics confirmed this device's IME
-    // panel framework silently shrinks the panel to a fraction of the width/height
-    // requested via panel.resize() (~76% width, ~48% height observed, with no
-    // corresponding cutout reported — a software policy, not a hardware inset),
-    // so display metrics alone can't be trusted. KeyboardPage.onAreaChange
-    // re-applies applyKeyboardWidthsForVp() from the actually measured width once
-    // the panel is laid out, which is the authoritative correction.
-    applyKeyboardWidthsForVp(fullVp, isTabletClass);
 
-    // TEMP DIAGNOSTIC — see the debug strip in KeyboardPage.
-    AppStorage.setOrCreate('dbgPreCutout',
-      `W${dis.width}xH${dis.height} den${density.toFixed(2)} full${fullVp.toFixed(0)} short${shortVp.toFixed(0)} tab${isTabletClass ? 1 : 0}`);
+    // This is only a best-effort guess from raw display metrics — on-device
+    // diagnostics confirmed this device's IME panel framework silently shrinks
+    // the panel to a fraction of the width requested via panel.resize() (~76%
+    // observed, with no corresponding cutout reported — a software policy, not
+    // a hardware inset), so display metrics alone can't be trusted.
+    // KeyboardPage.onAreaChange measures the real width and both applies the
+    // correction AND records a scale factor (measured/guessed) here, per
+    // orientation. Apply that learned scale up front: after the very first
+    // launch, this panel is reused across show/hide (see the 'inputStop'
+    // handler), so initPanel() never runs again and a later resizePanel() call
+    // (e.g. from a display 'change' event that doesn't actually alter the
+    // panel's on-screen size) may not be followed by a fresh onAreaChange —
+    // without this, that would silently overwrite the corrected widths with
+    // the raw (wrong) guess again, with nothing left to re-correct them.
+    // Tablet-class devices are excluded: their narrower width there is our own
+    // deliberate MAX_KB_VP cap, not the shrink bug, so it shouldn't be learned
+    // as a scale factor.
+    const isLandscape = dis.width > dis.height;
+    const scaleKey = isLandscape ? 'widthScaleLandscape' : 'widthScalePortrait';
+    const learnedScale = isTabletClass ? 1 : (AppStorage.get<number>(scaleKey) ?? 1);
+    AppStorage.setOrCreate('lastRawFullVp', fullVp);
+    AppStorage.setOrCreate('lastRawFullVpIsLandscape', isLandscape);
+    applyKeyboardWidthsForVp(fullVp * learnedScale, isTabletClass);
   }
 
   // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)

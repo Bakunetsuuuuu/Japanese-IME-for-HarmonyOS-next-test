@@ -33,10 +33,6 @@ struct KeyboardPage {
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
   @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
-  // TEMP DIAGNOSTIC — see matching comment in KeyboardController.computeKeyWidths.
-  @StorageLink('dbgPreCutout') dbgPreCutout: string = '';
-  @State dbgMeasured: string = '';
-  @StorageLink('keyWidthVp') dbgAppliedKw: number = 0;
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -67,17 +63,6 @@ struct KeyboardPage {
 
   build() {
     Column() {
-      // TEMP DIAGNOSTIC STRIP — remove once the landscape width bug is confirmed
-      // fixed. Shows the raw numbers behind key sizing so a screenshot tells us
-      // exactly what's wrong instead of guessing again.
-      if (this.isLandscape) {
-        Text(`${this.dbgPreCutout} | measured${this.dbgMeasured} kw${this.dbgAppliedKw}`)
-          .fontSize(9)
-          .fontColor('#FF5555')
-          .backgroundColor('#000000')
-          .maxLines(2)
-          .width('100%')
-      }
       // Symbol/Emoji views take the full panel (no preview bar). Numeric keeps
       // the preview bar — without it the pad's rows stretch to fill the whole
       // panel height and end up uncomfortably tall.
@@ -205,17 +190,27 @@ struct KeyboardPage {
     .backgroundColor(kbTheme(this.isDark).panelBg)
     .onAreaChange((_oldArea: Area, newArea: Area) => {
       // Confirmed via on-device diagnostics: this device's IME panel framework
-      // silently shrinks the panel to a fraction of the width/height requested
-      // via panel.resize() (observed ~76% width, ~48% height of the request,
-      // with no corresponding cutout/waterfall reported) — a software policy,
-      // not a hardware inset, so it isn't queryable up front. Key widths must
-      // be driven by what this root view actually measures, not by display
-      // metrics or the resize request.
-      this.dbgMeasured = `${newArea.width}x${newArea.height}`;
+      // silently shrinks the panel to a fraction of the width requested via
+      // panel.resize() (~76% observed, with no corresponding cutout reported —
+      // a software policy, not a hardware inset), so it isn't queryable up
+      // front. Correct key widths from what this root view actually measures,
+      // and also record the (measured / raw guess) ratio as a learned scale
+      // factor — see KeyboardController.computeKeyWidths for why: this panel
+      // is reused across show/hide, so a later resize may not be followed by
+      // a fresh onAreaChange, and the learned scale lets that next guess
+      // start out already corrected instead of reverting to the raw width.
       const measuredVp = Number(newArea.width);
       if (measuredVp > 0) {
         const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
         applyKeyboardWidthsForVp(measuredVp, isTabletClass);
+        if (!isTabletClass) {
+          const rawFullVp = AppStorage.get<number>('lastRawFullVp') ?? 0;
+          if (rawFullVp > 0) {
+            const ratio = Math.min(1, Math.max(0.3, measuredVp / rawFullVp));
+            const isLand = AppStorage.get<boolean>('lastRawFullVpIsLandscape') ?? this.isLandscape;
+            AppStorage.setOrCreate(isLand ? 'widthScaleLandscape' : 'widthScalePortrait', ratio);
+          }
+        }
       }
     })
   }
