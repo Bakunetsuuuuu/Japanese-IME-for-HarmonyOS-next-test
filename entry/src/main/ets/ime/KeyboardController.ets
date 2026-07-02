@@ -859,6 +859,24 @@ export class KeyboardController {
     AppStorage.setOrCreate('isTabletClass', isTabletClass);
     AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
     applyKeyboardWidthsForVp(fullVp, isTabletClass);
+
+    // Curved-edge ("waterfall") screens (e.g. Pura 70 in landscape) reserve an
+    // unusable strip on the left and right of the physical display — dis.width
+    // includes that strip, but it's where the system parks its own IME-switcher/
+    // assistant icons, not usable panel content. Not accounting for it made keys
+    // sized for the full width overflow off the real right edge while leaving a
+    // dead band on the left. Correct once the async cutout query resolves.
+    dis.getCutoutInfo()
+      .then((info: display.CutoutInfo) => {
+        const waterfall = info.waterfallDisplayAreaRects;
+        const leftPx = waterfall?.left?.width ?? 0;
+        const rightPx = waterfall?.right?.width ?? 0;
+        if (leftPx > 0 || rightPx > 0) {
+          const correctedVp = (dis.width - leftPx - rightPx) / density;
+          applyKeyboardWidthsForVp(correctedVp, isTabletClass);
+        }
+      })
+      .catch((_e: Error) => { /* no cutout info available on this device */ });
   }
 
   // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
