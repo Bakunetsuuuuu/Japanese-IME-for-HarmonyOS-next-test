@@ -74,17 +74,16 @@ const SYMBOL_CATEGORIES: string[][][] = [
 
 const LICENSE_TEXT: string =
   'shunti Japanese IME\n\n' +
-  '■ 変換辞書 (dict.json)\n' +
+  '■ 変換辞書 (dict.json, global_dict.json)\n' +
   '独自収集データを使用しています。\n' +
   '・常用漢字（文部科学省告示、パブリックドメイン）\n' +
   '・Unicode Unihan データベース（パブリックドメイン）\n' +
+  '・Wikipedia日本語版から収集した読み情報（CC BY-SA）\n' +
+  '・日本郵便 郵便番号データ\n' +
   '・独自収録語彙（global_dict）\n\n' +
-  '■ 文節分割コストデータ (reading_cost.json)\n' +
-  'mecab-ipadic 2.7.0 を変換して使用しています。\n\n' +
-  'Copyright 2000, 2001, 2002, 2003\n' +
-  'Nara Institute of Science and Technology (NAIST).\n' +
-  'All Rights Reserved.\n\n' +
-  'ライセンス: NAIST License（商用利用可）\n\n' +
+  '■ 文節分割\n' +
+  '外部データファイルには依存せず、文法ルールをアプリ内に実装した\n' +
+  '独自のViterbiアルゴリズムで分割しています。\n\n' +
   '■ アプリコード\n' +
   'MIT License';
 
