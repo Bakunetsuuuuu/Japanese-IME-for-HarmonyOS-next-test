@@ -25551,7 +25551,14 @@ export class KanaKanjiConverter {
       }
     }
     result = KanaKanjiConverter.postParticleBoost(result);
-    return KanaKanjiConverter.boostCounterWords(result);
+    result = KanaKanjiConverter.boostCounterWords(result);
+    // Final safety net: global/user dict entries are merged in after
+    // filterCandidates already ran, so a markup artifact contributed only by
+    // one of those (e.g. global_dict's own "[[錦]]"/"{{w|甲賀}}") would
+    // otherwise slip through untouched. Only drop them if something clean
+    // remains — never return an empty candidate list.
+    const clean = result.filter((c: string) => !KanaKanjiConverter.isMarkupArtifact(c));
+    return clean.length > 0 ? clean : result;
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
@@ -25574,12 +25581,32 @@ export class KanaKanjiConverter {
     return result;
   }
 
+  // dict.json was scraped from Wikipedia/Wiktionary and a few hundred entries
+  // still carry raw wiki markup or disambiguation glosses instead of plain
+  // Japanese text — e.g. "[[謎]]" (wikilink), "{{ruby|区々|まちまち}}"
+  // (template), "'''祭'''（り）" (bold + optional-okurigana notation), or
+  // "中国（地方）" (a parenthetical gloss disambiguating a sense, not part of
+  // the actual word). None of these are valid to insert as-is, and the plain
+  // form is always available separately in the same candidate list, so they're
+  // dropped rather than just deprioritized.
+  private static isMarkupArtifact(c: string): boolean {
+    if (/\[\[|\]\]/.test(c)) { return true; }       // [[wikilink]]
+    if (/\{\{|\}\}/.test(c)) { return true; }        // {{template}}
+    if (/'''/.test(c)) { return true; }              // '''bold'''
+    if (/<[a-zA-Z/]/.test(c)) { return true; }       // stray <html> tag
+    // Trailing short parenthetical gloss/optional-okurigana, e.g. 長持（ち）,
+    // 中国（地方）, 関（せき）— real words don't end in a bare "（…）" like this.
+    if (/^.+（[^（）]{1,6}）$/.test(c)) { return true; }
+    return false;
+  }
+
   // Remove half-width katakana and pure-ASCII romaji only.
   // Full-width katakana is always kept (loanwords need カタカナ even when kanji exists).
   private static filterCandidates(kana: string, cands: string[]): string[] {
     const filtered = cands.filter(c => {
       if (/^[ｦ-ﾟ]+$/.test(c)) { return false; } // half-width katakana
       if (/^[A-Za-zÀ-ɏ]+$/.test(c)) { return false; } // romaji / latin
+      if (KanaKanjiConverter.isMarkupArtifact(c)) { return false; }
       return true;
     });
     return filtered.length > 0 ? filtered : [kana];
