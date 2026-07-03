@@ -5,29 +5,48 @@ import { kbTheme } from './Theme';
 export struct CandidateBar {
   @Prop candidates: string[] = [];
   @Prop selectedIndex: number = 0;
+  @Prop showExpand: boolean = false;
   @StorageLink('isDark') isDark: boolean = false;
+  @State pressedIdx: number = -1;
+  private startX: number = 0;
+  private startY: number = 0;
 
   build() {
-    Scroll() {
-      Row({ space: 4 }) {
-        ForEach(this.candidates, (candidate: string, index: number) => {
-          Text(candidate)
-            .fontSize(16)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(4)
-            .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accentBg : kbTheme(this.isDark).candidateBg)
-            .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
-            .onClick(() => {
-              InputHandler.getInstance().commitCandidate(index);
-            })
-        }, (candidate: string, index: number) => `${index}-${candidate}`)
+    Row() {
+      Scroll() {
+        Row({ space: 4 }) {
+          ForEach(this.candidates, (candidate: string, index: number) => {
+            Text(candidate)
+              .fontSize(16).fontWeight(index === this.selectedIndex ? FontWeight.Medium : FontWeight.Normal)
+              .padding({ left: 12, right: 12, top: 6, bottom: 6 }).borderRadius(12)
+              .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accentBg :
+                this.pressedIdx === index ? '#D0D0D2' : kbTheme(this.isDark).candidateBg)
+              .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
+              .animation({ duration: 80 })
+              .onTouch((e: TouchEvent) => {
+                if (e.type === TouchType.Down) {
+                  this.pressedIdx = index; const t = e.touches[0]; this.startX = t.x; this.startY = t.y;
+                } else if (e.type === TouchType.Up) {
+                  if (this.pressedIdx === index &&
+                      Math.abs(e.changedTouches[0].x - this.startX) < 10 &&
+                      Math.abs(e.changedTouches[0].y - this.startY) < 10) {
+                    InputHandler.getInstance().commitCandidate(index);
+                  }
+                  this.pressedIdx = -1;
+                } else if (e.type === TouchType.Cancel) { this.pressedIdx = -1; }
+              })
+          }, (candidate: string, index: number) => `${index}-${candidate}`)
+        }.padding({ left: 4, right: 4 })
       }
-      .padding({ left: 4, right: 4 })
+      .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).layoutWeight(1).height(48)
+
+      if (this.showExpand && this.candidates.length > 1) {
+        Text('∨').fontSize(18).fontWeight(FontWeight.Bold).fontColor(kbTheme(this.isDark).accentBg)
+          .textAlign(TextAlign.Center).width(40).height(36).borderRadius(12)
+          .backgroundColor(kbTheme(this.isDark).funcKeyBg).margin({ right: 4 })
+          .onClick(() => { AppStorage.setOrCreate('candidateExpanded', true); })
+      }
     }
-    .scrollable(ScrollDirection.Horizontal)
-    .scrollBar(BarState.Off)
-    .width('100%')
-    .height(48)
-    .backgroundColor(kbTheme(this.isDark).selectingBarBg)
+    .width('100%').height(48).backgroundColor(kbTheme(this.isDark).selectingBarBg)
   }
 }

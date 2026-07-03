@@ -5,9 +5,11 @@ import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
 import { KeyboardView } from '../components/KeyboardView';
 import { FlickKeyboardView } from '../components/FlickKeyboardView';
+import { AlphabetFlickKeyboardView } from '../components/AlphabetFlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
 import { EmojiView } from '../components/EmojiView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
+import { ExpandedCandidateView } from '../components/ExpandedCandidateView';
 import { kbTheme } from '../components/Theme';
 
 let _inputStartRegistered = false;
@@ -30,6 +32,7 @@ struct KeyboardPage {
   @StorageLink('bunsetsuRaw') bunsetsuRaw: string[] = [];
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
   @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
 
@@ -44,7 +47,6 @@ struct KeyboardPage {
         })
         .catch((_e: Error) => {});
     }
-
     if (_inputStartRegistered) { return; }
     _inputStartRegistered = true;
     inputMethodEngine.getInputMethodAbility().on('inputStart', (
@@ -62,121 +64,75 @@ struct KeyboardPage {
 
   build() {
     Column() {
-      // Symbol/Emoji views take the full panel (no preview bar)
       if (this.keyboardSubMode === 'symbol') {
         SymbolView()
       } else if (this.keyboardSubMode === 'emoji') {
         EmojiView()
       } else {
-        // Preview bar
         if (this.inputState === InputState.BUNSETSU) {
-          // Two-row preview: segment chips on top, candidates below
           Column() {
-            BunsetsuBar({
-              segments: this.bunsetsuTexts,
-              currentIndex: this.bunsetsuCurrent
-            })
-            CandidateBar({
-              candidates: this.candidates,
-              selectedIndex: this.selectedIndex
-            })
+            BunsetsuBar({ segments: this.bunsetsuTexts, currentIndex: this.bunsetsuCurrent })
+            CandidateBar({ candidates: this.candidates, selectedIndex: this.selectedIndex, showExpand: true })
           }
-          .width('100%')
-          .backgroundColor(kbTheme(this.isDark).selectingBarBg)
-          .borderWidth({ bottom: 1 })
-          .borderColor(kbTheme(this.isDark).borderColor)
+          .width('100%').backgroundColor(kbTheme(this.isDark).selectingBarBg)
+          .borderWidth({ bottom: 1 }).borderColor(kbTheme(this.isDark).borderColor)
         } else {
           Column() {
-            // Composing kana strip — always visible to prevent layout shifts
             Row() {
-              Text(this.composingText + this.pendingRomaji)
-                .fontSize(16)
-                .fontColor(kbTheme(this.isDark).previewText)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .padding({ left: 12, right: 8 })
-                .layoutWeight(1)
+              if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
+                Text(this.composingText).fontSize(18).fontWeight(FontWeight.Medium)
+                  .fontColor(kbTheme(this.isDark).previewText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                Text(this.pendingRomaji).fontSize(16)
+                  .fontColor(kbTheme(this.isDark).subText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+              }
             }
-            .width('100%')
-            .height(28)
-            .backgroundColor(kbTheme(this.isDark).composingBarBg)
-            .borderWidth({ bottom: 1 })
-            .borderColor(kbTheme(this.isDark).borderColor)
-            .alignItems(VerticalAlign.Center)
+            .width('100%').height(32).backgroundColor(kbTheme(this.isDark).composingBarBg)
+            .borderRadius({ topLeft: 8, topRight: 8 }).padding({ left: 12, right: 8 }).alignItems(VerticalAlign.Center)
 
-            // Candidate bar row + layout toggle
             Row() {
               Row() {
                 if (this.candidates.length > 0) {
-                  CandidateBar({
-                    candidates: this.candidates,
-                    selectedIndex: this.selectedIndex
-                  })
+                  CandidateBar({ candidates: this.candidates, selectedIndex: this.selectedIndex, showExpand: true })
                 } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
                   this.clipboardPreview.length > 0) {
-                  Text(this.clipboardPreview)
-                    .fontSize(16)
-                    .maxLines(1)
+                  Text(this.clipboardPreview).fontSize(16).maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-                    .borderRadius(4)
-                    .backgroundColor(kbTheme(this.isDark).candidateBg)
-                    .fontColor(kbTheme(this.isDark).subText)
-                    .margin({ left: 4 })
-                    .onClick(() => {
-                      InputHandler.getInstance().pasteClipboard();
-                    })
+                    .padding({ left: 12, right: 12, top: 6, bottom: 6 }).borderRadius(10)
+                    .backgroundColor(kbTheme(this.isDark).candidateBg).fontColor(kbTheme(this.isDark).subText).margin({ left: 4 })
+                    .onClick(() => { InputHandler.getInstance().pasteClipboard(); })
                 }
               }
-              .width('82%')
-              .height(48)
-              .alignItems(VerticalAlign.Center)
+              .width('82%').height(48).alignItems(VerticalAlign.Center)
 
-              // Layout toggle: フ = switch to flick, Q = switch to QWERTY
               Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
-                .fontSize(14)
-                .fontColor(kbTheme(this.isDark).subText)
-                .textAlign(TextAlign.Center)
-                .width(50)
-                .height(40)
-                .backgroundColor(kbTheme(this.isDark).funcKeyBg)
-                .borderRadius(6)
+                .fontSize(14).fontWeight(FontWeight.Bold).fontColor(kbTheme(this.isDark).subText)
+                .textAlign(TextAlign.Center).width(50).height(40)
+                .backgroundColor(kbTheme(this.isDark).funcKeyBg).borderRadius(10)
+                .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
                 .onClick(() => {
                   const next = this.keyboardLayout === 'FLICK' ? 'QWERTY' : 'FLICK';
                   AppStorage.setOrCreate('keyboardLayout', next);
                 })
             }
-            .width('100%')
-            .height(48)
-            .backgroundColor(
-              this.inputState === InputState.SELECTING ? kbTheme(this.isDark).selectingBarBg : kbTheme(this.isDark).previewBarBg
-            )
-            .borderWidth({ bottom: 1 })
-            .borderColor(kbTheme(this.isDark).borderColor)
-            .alignItems(VerticalAlign.Center)
-            .padding({ right: 4 })
+            .width('100%').height(48)
+            .backgroundColor(this.inputState === InputState.SELECTING ? kbTheme(this.isDark).selectingBarBg : kbTheme(this.isDark).previewBarBg)
+            .borderWidth({ bottom: 1 }).borderColor(kbTheme(this.isDark).borderColor)
+            .alignItems(VerticalAlign.Center).padding({ right: 4 })
           }
           .width('100%')
         }
 
-        // Keyboard — fills all height remaining after the preview bar
-        if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
-          FlickKeyboardView({
-            inputMode: this.inputMode,
-            isLandscape: this.isLandscape
-          })
-            .layoutWeight(1)
+        if (this.candidateExpanded && this.candidates.length > 0) {
+          ExpandedCandidateView({ candidates: this.candidates, selectedIndex: this.selectedIndex }).layoutWeight(1)
+        } else if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
+          FlickKeyboardView({ inputMode: this.inputMode, isLandscape: this.isLandscape }).layoutWeight(1)
+        } else if (this.keyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
+          AlphabetFlickKeyboardView({ inputMode: this.inputMode, isLandscape: this.isLandscape }).layoutWeight(1)
         } else {
-          KeyboardView({
-            inputMode: this.inputMode,
-            isLandscape: this.isLandscape
-          })
-            .layoutWeight(1)
+          KeyboardView({ inputMode: this.inputMode, isLandscape: this.isLandscape }).layoutWeight(1)
         }
       }
     }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(kbTheme(this.isDark).panelBg)
+    .width('100%').height('100%').backgroundColor(kbTheme(this.isDark).panelBg)
   }
 }

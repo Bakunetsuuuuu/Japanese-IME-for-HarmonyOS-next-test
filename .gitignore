@@ -1,0 +1,6 @@
+local.properties
+build/
+.hvigor/
+.idea/
+*.iml
+.DS_Store
