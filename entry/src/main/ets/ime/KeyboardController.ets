@@ -144,6 +144,12 @@ export class InputHandler {
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
+  private symbolPrefs: dataPreferences.Preferences | undefined = undefined;
+  private symbolSaveTimer: number = -1;
+  // Per-symbol tap counts, used to rank the symbol panel's "recent" tab by
+  // actual usage instead of a fixed guess. Static so SymbolView's AppStorage
+  // read and InputHandler's own updates always see the same data.
+  private static symbolFreq: Record<string, number> = {};
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
@@ -167,7 +173,42 @@ export class InputHandler {
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, 'shunti_symbol_freq')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.symbolPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          InputHandler.symbolFreq = JSON.parse(String(val)) as Record<string, number>;
+          InputHandler.publishFrequentSymbols();
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
     this.reloadUserDict();
+  }
+
+  // Called whenever the user taps a symbol in SymbolView, so its "recent" tab
+  // can be ranked by what this user actually reaches for instead of a fixed
+  // guess at common punctuation.
+  recordSymbolUse(sym: string): void {
+    InputHandler.symbolFreq[sym] = (InputHandler.symbolFreq[sym] ?? 0) + 1;
+    InputHandler.publishFrequentSymbols();
+    clearTimeout(this.symbolSaveTimer);
+    this.symbolSaveTimer = setTimeout(() => {
+      const prefs = this.symbolPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(InputHandler.symbolFreq))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 2000);
+  }
+
+  private static publishFrequentSymbols(): void {
+    const syms = Object.keys(InputHandler.symbolFreq);
+    syms.sort((a: string, b: string) =>
+      (InputHandler.symbolFreq[b] ?? 0) - (InputHandler.symbolFreq[a] ?? 0));
+    AppStorage.setOrCreate('frequentSymbols', syms.slice(0, 24));
   }
 
   // Reload the user dictionary from disk (picks up words added in the main app).
