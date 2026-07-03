@@ -109,6 +109,8 @@ export class InputHandler {
   private bSegs: string[] = [];
   private bChosen: string[] = [];
   private bCur: number = 0;
+  private conversionEnd: number = 0;
+  private conversionSuffix: string = '';
   private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
@@ -220,6 +222,8 @@ export class InputHandler {
         : result.committed;
       const current = AppStorage.get<string>('composingText') ?? '';
       AppStorage.setOrCreate('composingText', current + kana);
+      this.conversionEnd = (current + kana).length;
+      AppStorage.setOrCreate('convEnd', this.conversionEnd);
       this.updateCandidates();
     }
 
@@ -254,9 +258,7 @@ export class InputHandler {
         AppStorage.setOrCreate('composingText', composing);
         AppStorage.setOrCreate('pendingRomaji', '');
       }
-      const candidates = this.kanjiConverter.lookup(composing);
-      AppStorage.setOrCreate('candidates', candidates);
-      AppStorage.setOrCreate('selectedCandidateIndex', 0);
+      this.updateCandidates();
       AppStorage.setOrCreate('inputState', InputState.SELECTING);
       return;
     }
@@ -311,6 +313,10 @@ export class InputHandler {
         if (composing.length > 0) {
           this.lastDeletedChar = composing.slice(-1);
           AppStorage.setOrCreate('composingText', composing.slice(0, -1));
+          if (this.conversionEnd > composing.length - 1) {
+            this.conversionEnd = composing.length - 1;
+            AppStorage.setOrCreate('convEnd', this.conversionEnd);
+          }
         }
       }
 
@@ -356,12 +362,21 @@ export class InputHandler {
     }
     const composing = AppStorage.get<string>('composingText') ?? '';
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
-    const text = index < candidates.length ? candidates[index] : '';
+    let text = index < candidates.length ? candidates[index] : '';
     if (text.length > 0) {
-      KanaKanjiConverter.recordChoice(composing, text);
+      KanaKanjiConverter.recordChoice(composing, text + this.conversionSuffix);
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
       this.saveLearning();
+      if (this.conversionSuffix.length > 0) {
+        AppStorage.setOrCreate('composingText', this.conversionSuffix);
+        this.conversionEnd = this.conversionSuffix.length;
+        this.conversionSuffix = '';
+        AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+        this.updateCandidates();
+        return;
+      }
     }
     this.resetComposition();
   }
@@ -376,9 +391,20 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
-      KanaKanjiConverter.recordChoice(composing, candidates[idx]);
+      const text = candidates[idx] + this.conversionSuffix;
+      KanaKanjiConverter.recordChoice(composing, text);
       this.insertText(candidates[idx]);
       KanaKanjiConverter.addContext(candidates[idx]);
+      if (this.conversionSuffix.length > 0) {
+        AppStorage.setOrCreate('composingText', this.conversionSuffix);
+        this.conversionEnd = this.conversionSuffix.length;
+        this.conversionSuffix = '';
+        AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+        this.updateCandidates();
+        this.saveLearning();
+        return;
+      }
       this.resetComposition();
       this.saveLearning();
       return;
@@ -399,6 +425,8 @@ export class InputHandler {
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
+    this.conversionEnd = 0;
+    this.conversionSuffix = '';
     this.lastDeletedChar = '';
     this.insertedBuffer = [];
     this.restoreStack = [];
@@ -410,6 +438,8 @@ export class InputHandler {
     AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
     AppStorage.setOrCreate('bunsetsuDisplay', '');
     AppStorage.setOrCreate('bunsetsuCurrent', 0);
+    AppStorage.setOrCreate('convEnd', 0);
+    AppStorage.setOrCreate('candidateExpanded', false);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     this.refreshClipboardPreview();
   }
@@ -455,47 +485,27 @@ export class InputHandler {
       return;
     }
 
-    const fullKatakana = KanaKanjiConverter.toKatakana(composing);
-    const segs = this.kanjiConverter.segment(composing);
+    const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
+    const target = composing.slice(0, rangeEnd);
+    const suffix = composing.slice(rangeEnd);
+    this.conversionSuffix = suffix;
+
+    const fullKatakana = KanaKanjiConverter.toKatakana(target);
+    const segs = this.kanjiConverter.segment(target);
     let candidates: string[];
 
     if (segs.length <= 1) {
-      candidates = this.kanjiConverter.lookup(composing);
+      candidates = this.kanjiConverter.lookup(target);
     } else {
-      // Try full-text lookup first. If it returns a real dictionary hit
-      // (not just the katakana/kana fallback), use it — this prevents
-      // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
-      const fullCands = this.kanjiConverter.lookup(composing);
+      const fullCands = this.kanjiConverter.lookup(target);
       const fullFirst = fullCands[0];
-      const hasRealHit = fullFirst !== fullKatakana && fullFirst !== composing;
+      const hasRealHit = fullFirst !== fullKatakana && fullFirst !== target;
 
       if (hasRealHit) {
         candidates = fullCands;
       } else {
-        // Multi-segment: auto-convert prefix, show variants for last segment.
-        // Viterbi result goes to position 0; katakana is position 1.
-        // Putting katakana at 0 unconditionally causes long natural Japanese
-        // (e.g. きょうはいいてんきですね) to always show all-katakana first.
-        const prefixText = segs.slice(0, -1)
-          .map((s: string) => this.kanjiConverter.autoConvert(s))
-          .join('');
-        const lastSeg = segs[segs.length - 1];
-        const lastCands = this.kanjiConverter.lookup(lastSeg);
-        const segCands = lastCands.map((c: string) => prefixText + c);
-        candidates = [];
-        // Position 0: best Viterbi candidate
-        if (segCands.length > 0) {
-          candidates.push(segCands[0]);
-        }
-        // Position 1: katakana (loanwords reachable with one Space tap)
-        if (!candidates.includes(fullKatakana)) {
-          candidates.push(fullKatakana);
-        }
-        // Remaining Viterbi variants
-        for (let i = 1; i < segCands.length; i++) {
-          if (!candidates.includes(segCands[i])) { candidates.push(segCands[i]); }
-        }
-        if (!candidates.includes(composing)) { candidates.push(composing); }
+        candidates = [target, ...fullCands.filter((c: string) => c !== fullKatakana && c !== target), fullKatakana];
+        if (!candidates.includes(target)) { candidates.push(target); }
       }
     }
 
@@ -518,8 +528,15 @@ export class InputHandler {
 
   handleCursorLeft(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    const composing = AppStorage.get<string>('composingText') ?? '';
     if (state === InputState.BUNSETSU) {
       this.selectBunsetsuSegment(this.bCur - 1);
+    } else if ((state === InputState.COMPOSING || state === InputState.SELECTING) && composing.length > 0) {
+      if (this.conversionEnd > 1) {
+        this.conversionEnd--;
+        AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        this.updateCandidates();
+      }
     } else {
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
         .catch((_e: Error) => {});
@@ -528,8 +545,15 @@ export class InputHandler {
 
   handleCursorRight(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    const composing = AppStorage.get<string>('composingText') ?? '';
     if (state === InputState.BUNSETSU) {
       this.selectBunsetsuSegment(this.bCur + 1);
+    } else if ((state === InputState.COMPOSING || state === InputState.SELECTING) && composing.length > 0) {
+      if (this.conversionEnd < composing.length) {
+        this.conversionEnd++;
+        AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        this.updateCandidates();
+      }
     } else {
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
         .catch((_e: Error) => {});
@@ -554,6 +578,8 @@ export class InputHandler {
     AppStorage.setOrCreate('composingText', current + kana);
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    this.conversionEnd = (current + kana).length;
+    AppStorage.setOrCreate('convEnd', this.conversionEnd);
     this.lastDeletedChar = '';
     this.restoreStack = [];
     this.updateCandidates();

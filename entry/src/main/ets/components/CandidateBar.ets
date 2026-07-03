@@ -7,6 +7,7 @@ export struct CandidateBar {
   @Prop selectedIndex: number = 0;
   @Prop showExpand: boolean = false;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
   @State pressedIdx: number = -1;
   private startX: number = 0;
   private startY: number = 0;
@@ -41,10 +42,11 @@ export struct CandidateBar {
       .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).layoutWeight(1).height(48)
 
       if (this.showExpand && this.candidates.length > 1) {
-        Text('∨').fontSize(18).fontWeight(FontWeight.Bold).fontColor(kbTheme(this.isDark).accentBg)
-          .textAlign(TextAlign.Center).width(40).height(36).borderRadius(12)
-          .backgroundColor(kbTheme(this.isDark).funcKeyBg).margin({ right: 4 })
-          .onClick(() => { AppStorage.setOrCreate('candidateExpanded', true); })
+        Text(this.candidateExpanded ? '▲' : '▼')
+          .fontSize(14).fontWeight(FontWeight.Bold).fontColor(kbTheme(this.isDark).subText)
+          .textAlign(TextAlign.Center).width(40).height(36)
+          .margin({ right: 4 })
+          .onClick(() => { AppStorage.setOrCreate('candidateExpanded', !this.candidateExpanded); })
       }
     }
     .width('100%').height(48).backgroundColor(kbTheme(this.isDark).selectingBarBg)

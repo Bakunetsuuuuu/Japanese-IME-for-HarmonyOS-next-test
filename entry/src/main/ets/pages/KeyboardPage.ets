@@ -32,6 +32,7 @@ struct KeyboardPage {
   @StorageLink('bunsetsuRaw') bunsetsuRaw: string[] = [];
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('convEnd') convEnd: number = 0;
   @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
   @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
@@ -80,8 +81,16 @@ struct KeyboardPage {
           Column() {
             Row() {
               if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
-                Text(this.composingText).fontSize(18).fontWeight(FontWeight.Medium)
-                  .fontColor(kbTheme(this.isDark).previewText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
+                  Text(this.composingText.slice(0, this.convEnd))
+                    .fontSize(18).fontWeight(FontWeight.Medium)
+                    .fontColor(kbTheme(this.isDark).previewText).maxLines(1).decoration({ type: TextDecorationType.Underline })
+                  Text(this.composingText.slice(this.convEnd))
+                    .fontSize(16).fontColor(kbTheme(this.isDark).subText).maxLines(1)
+                } else {
+                  Text(this.composingText).fontSize(18).fontWeight(FontWeight.Medium)
+                    .fontColor(kbTheme(this.isDark).previewText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                }
                 Text(this.pendingRomaji).fontSize(16)
                   .fontColor(kbTheme(this.isDark).subText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               }
@@ -102,17 +111,7 @@ struct KeyboardPage {
                     .onClick(() => { InputHandler.getInstance().pasteClipboard(); })
                 }
               }
-              .width('82%').height(48).alignItems(VerticalAlign.Center)
-
-              Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
-                .fontSize(14).fontWeight(FontWeight.Bold).fontColor(kbTheme(this.isDark).subText)
-                .textAlign(TextAlign.Center).width(50).height(40)
-                .backgroundColor(kbTheme(this.isDark).funcKeyBg).borderRadius(10)
-                .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-                .onClick(() => {
-                  const next = this.keyboardLayout === 'FLICK' ? 'QWERTY' : 'FLICK';
-                  AppStorage.setOrCreate('keyboardLayout', next);
-                })
+              .width('100%').height(48).alignItems(VerticalAlign.Center)
             }
             .width('100%').height(48)
             .backgroundColor(this.inputState === InputState.SELECTING ? kbTheme(this.isDark).selectingBarBg : kbTheme(this.isDark).previewBarBg)

@@ -11,10 +11,6 @@ export struct ExpandedCandidateView {
     Column() {
       Row() {
         Text('候補一覧').fontSize(14).fontColor(kbTheme(this.isDark).subText).layoutWeight(1)
-        Text('閉じる').fontSize(14).fontColor(kbTheme(this.isDark).accentBg)
-          .padding({ left: 12, right: 12, top: 4, bottom: 4 }).borderRadius(8)
-          .backgroundColor(kbTheme(this.isDark).candidateBg)
-          .onClick(() => { AppStorage.setOrCreate('candidateExpanded', false); })
       }
       .width('100%').height(36).padding({ left: 12, right: 8 }).alignItems(VerticalAlign.Center)
       .backgroundColor(kbTheme(this.isDark).composingBarBg)
