@@ -25400,16 +25400,15 @@ export class KanaKanjiConverter {
       const fw = KanaKanjiConverter.FUNCTION_WORDS[seg];
       const hasDictHit = !!((g && g.length > 0) || (e && e.length > 0) || (s && s.length > 0));
       if (!hasDictHit && !fw) { allRecognized = false; }
-      // Function words win outright — same rule as the main lookup() pipeline.
-      // Without this, a curated FUNCTION_WORDS entry (e.g. くれ, したい) could
-      // still be shadowed here by a rarer kanji homograph from global/DICTIONARY/
-      // dict.json, since this fallback reads those sources directly rather than
-      // going through lookup()'s own FUNCTION_WORDS override.
-      const best = fw ? seg
-                 : (g && g.length > 0) ? g[0]
-                 : (e && e.length > 0) ? e[0]
-                 : (s && s.length > 0) ? s[0]
-                 : seg;
+      // Route through the full lookup() pipeline rather than re-deriving a
+      // priority order here from raw g/e/s access. That hand-rolled version
+      // (global > DICTIONARY > dict.json) drifted out of sync with every
+      // dict-ranking fix made to lookup() itself (global demotion,
+      // COMMON_WORDS boost, markup-artifact filtering) — e.g. it kept
+      // picking 括弧 over the symbol candidates for かっこ here even after
+      // lookup('かっこ') was fixed directly, because this loop never called
+      // lookup() at all.
+      const best = fw ? seg : hasDictHit ? this.lookup(seg, true)[0] : seg;
       joined += best;
     }
     if (/[一-鿿]/.test(joined)) { return joined; }
