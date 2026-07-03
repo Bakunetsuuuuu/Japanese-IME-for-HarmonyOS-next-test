@@ -6,6 +6,7 @@ export struct BunsetsuBar {
   @Prop segments: string[] = [];
   @Prop currentIndex: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('themeVariant') themeVariant: string = 'original';
   @State pressedIdx: number = -1;
   private startX: number = 0;
   private startY: number = 0;
@@ -17,9 +18,9 @@ export struct BunsetsuBar {
           Text(seg)
             .fontSize(16).fontWeight(idx === this.currentIndex ? FontWeight.Bold : FontWeight.Normal)
             .padding({ left: 14, right: 14, top: 6, bottom: 6 }).borderRadius(12)
-            .backgroundColor(idx === this.currentIndex ? kbTheme(this.isDark).accentStrongBg :
-              this.pressedIdx === idx ? '#D0D0D2' : kbTheme(this.isDark).candidateBg)
-            .fontColor(idx === this.currentIndex ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
+            .backgroundColor(idx === this.currentIndex ? kbTheme(this.isDark, this.themeVariant).accentStrongBg :
+              this.pressedIdx === idx ? '#D0D0D2' : kbTheme(this.isDark, this.themeVariant).candidateBg)
+            .fontColor(idx === this.currentIndex ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
             .animation({ duration: 150 })
             .onTouch((e: TouchEvent) => {
               if (e.type === TouchType.Down) {
@@ -37,6 +38,6 @@ export struct BunsetsuBar {
       }.padding({ left: 4, right: 4 })
     }
     .scrollable(ScrollDirection.Horizontal).scrollBar(BarState.Off).width('100%').height(48)
-    .backgroundColor(kbTheme(this.isDark).selectingBarBg)
+    .backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
   }
 }

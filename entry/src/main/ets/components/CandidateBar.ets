@@ -8,6 +8,7 @@ export struct CandidateBar {
   @Prop showExpand: boolean = false;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
+  @StorageLink('themeVariant') themeVariant: string = 'original';
   @State pressedIdx: number = -1;
   private startX: number = 0;
   private startY: number = 0;
@@ -20,9 +21,9 @@ export struct CandidateBar {
             Text(candidate)
               .fontSize(16).fontWeight(index === this.selectedIndex ? FontWeight.Medium : FontWeight.Normal)
               .padding({ left: 12, right: 12, top: 6, bottom: 6 }).borderRadius(12)
-              .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accentBg :
-                this.pressedIdx === index ? '#D0D0D2' : kbTheme(this.isDark).candidateBg)
-              .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
+              .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark, this.themeVariant).accentBg :
+                this.pressedIdx === index ? '#D0D0D2' : kbTheme(this.isDark, this.themeVariant).candidateBg)
+              .fontColor(index === this.selectedIndex ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
               .animation({ duration: 80 })
               .onTouch((e: TouchEvent) => {
                 if (e.type === TouchType.Down) {
@@ -43,12 +44,12 @@ export struct CandidateBar {
 
       if (this.showExpand && this.candidates.length > 1) {
         Text(this.candidateExpanded ? '▲' : '▼')
-          .fontSize(14).fontWeight(FontWeight.Bold).fontColor(kbTheme(this.isDark).subText)
+          .fontSize(14).fontWeight(FontWeight.Bold).fontColor(kbTheme(this.isDark, this.themeVariant).subText)
           .textAlign(TextAlign.Center).width(40).height(36)
           .margin({ right: 4 })
           .onClick(() => { AppStorage.setOrCreate('candidateExpanded', !this.candidateExpanded); })
       }
     }
-    .width('100%').height(48).backgroundColor(kbTheme(this.isDark).selectingBarBg)
+    .width('100%').height(48).backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
   }
 }

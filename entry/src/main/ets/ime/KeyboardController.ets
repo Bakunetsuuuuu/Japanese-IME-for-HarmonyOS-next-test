@@ -779,6 +779,7 @@ export class KeyboardController {
   onCreate(): void {
     this.inputHandle.setContext(this.context);
     this.applyColorMode();
+    if (!AppStorage.has('themeVariant')) { AppStorage.setOrCreate('themeVariant', 'original'); }
     this.initPanel();
     this.registerListeners();
     this.loadDictionary();
@@ -797,6 +798,7 @@ export class KeyboardController {
     }
   }
 
+  // Periodically poll for theme changes (user may switch in companion app)
   onDestroy(): void {
     this.unregisterListeners();
     if (this.panel) {

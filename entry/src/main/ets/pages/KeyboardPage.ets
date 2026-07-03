@@ -36,6 +36,7 @@ struct KeyboardPage {
   @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
   @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
+  @StorageLink('themeVariant') themeVariant: string = 'original';
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -75,8 +76,8 @@ struct KeyboardPage {
             BunsetsuBar({ segments: this.bunsetsuTexts, currentIndex: this.bunsetsuCurrent })
             CandidateBar({ candidates: this.candidates, selectedIndex: this.selectedIndex, showExpand: true })
           }
-          .width('100%').backgroundColor(kbTheme(this.isDark).selectingBarBg)
-          .borderWidth({ bottom: 1 }).borderColor(kbTheme(this.isDark).borderColor)
+          .width('100%').backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
+          .borderWidth({ bottom: 1 }).borderColor(kbTheme(this.isDark, this.themeVariant).borderColor)
         } else {
           Column() {
             Row() {
@@ -84,18 +85,18 @@ struct KeyboardPage {
                 if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
                   Text(this.composingText.slice(0, this.convEnd))
                     .fontSize(18).fontWeight(FontWeight.Medium)
-                    .fontColor(kbTheme(this.isDark).previewText).maxLines(1).decoration({ type: TextDecorationType.Underline })
+                    .fontColor(kbTheme(this.isDark, this.themeVariant).previewText).maxLines(1).decoration({ type: TextDecorationType.Underline })
                   Text(this.composingText.slice(this.convEnd))
-                    .fontSize(16).fontColor(kbTheme(this.isDark).subText).maxLines(1)
+                    .fontSize(16).fontColor(kbTheme(this.isDark, this.themeVariant).subText).maxLines(1)
                 } else {
                   Text(this.composingText).fontSize(18).fontWeight(FontWeight.Medium)
-                    .fontColor(kbTheme(this.isDark).previewText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .fontColor(kbTheme(this.isDark, this.themeVariant).previewText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
                 }
                 Text(this.pendingRomaji).fontSize(16)
-                  .fontColor(kbTheme(this.isDark).subText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
+                  .fontColor(kbTheme(this.isDark, this.themeVariant).subText).maxLines(1).textOverflow({ overflow: TextOverflow.Ellipsis })
               }
             }
-            .width('100%').height(32).backgroundColor(kbTheme(this.isDark).composingBarBg)
+            .width('100%').height(32).backgroundColor(kbTheme(this.isDark, this.themeVariant).composingBarBg)
             .borderRadius({ topLeft: 8, topRight: 8 }).padding({ left: 12, right: 8 }).alignItems(VerticalAlign.Center)
 
             Row() {
@@ -107,15 +108,15 @@ struct KeyboardPage {
                   Text(this.clipboardPreview).fontSize(16).maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
                     .padding({ left: 12, right: 12, top: 6, bottom: 6 }).borderRadius(10)
-                    .backgroundColor(kbTheme(this.isDark).candidateBg).fontColor(kbTheme(this.isDark).subText).margin({ left: 4 })
+                    .backgroundColor(kbTheme(this.isDark, this.themeVariant).candidateBg).fontColor(kbTheme(this.isDark, this.themeVariant).subText).margin({ left: 4 })
                     .onClick(() => { InputHandler.getInstance().pasteClipboard(); })
                 }
               }
               .width('100%').height(48).alignItems(VerticalAlign.Center)
             }
             .width('100%').height(48)
-            .backgroundColor(this.inputState === InputState.SELECTING ? kbTheme(this.isDark).selectingBarBg : kbTheme(this.isDark).previewBarBg)
-            .borderWidth({ bottom: 1 }).borderColor(kbTheme(this.isDark).borderColor)
+            .backgroundColor(this.inputState === InputState.SELECTING ? kbTheme(this.isDark, this.themeVariant).selectingBarBg : kbTheme(this.isDark, this.themeVariant).previewBarBg)
+            .borderWidth({ bottom: 1 }).borderColor(kbTheme(this.isDark, this.themeVariant).borderColor)
             .alignItems(VerticalAlign.Center).padding({ right: 4 })
           }
           .width('100%')
@@ -132,6 +133,6 @@ struct KeyboardPage {
         }
       }
     }
-    .width('100%').height('100%').backgroundColor(kbTheme(this.isDark).panelBg)
+    .width('100%').height('100%').backgroundColor(kbTheme(this.isDark, this.themeVariant).panelBg)
   }
 }

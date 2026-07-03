@@ -98,6 +98,7 @@ const EMOJI_CATEGORIES: string[][][] = [
 export struct EmojiView {
   @StorageLink('symKeyWidthVp') symKeyWidthVp: number = 46;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('themeVariant') themeVariant: string = 'original';
   @State currentTab: number = 0;
 
 
@@ -111,8 +112,8 @@ export struct EmojiView {
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(44).height(40)
-          .fontColor(kbTheme(this.isDark).onAccentText)
-          .backgroundColor(kbTheme(this.isDark).specialKeyBg)
+          .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
+          .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
           .borderRadius(20)
           .onClick(() => {
             AppStorage.setOrCreate('keyboardSubMode', 'symbol');
@@ -123,7 +124,7 @@ export struct EmojiView {
             .fontSize(16)
             .textAlign(TextAlign.Center)
             .width(34).height(32)
-            .backgroundColor(this.currentTab === i ? '#6C757D' : kbTheme(this.isDark).funcKeyBg)
+            .backgroundColor(this.currentTab === i ? '#6C757D' : kbTheme(this.isDark, this.themeVariant).funcKeyBg)
             .borderRadius(8)
             .onClick(() => { this.currentTab = i; })
         }, (i: number) => String(i))
@@ -145,9 +146,9 @@ export struct EmojiView {
                     .textAlign(TextAlign.Center)
                     .width(this.symKeyWidthVp)
                     .height(36)
-                    .backgroundColor(kbTheme(this.isDark).keyBg)
+                    .backgroundColor(kbTheme(this.isDark, this.themeVariant).keyBg)
                     .borderRadius(6)
-                    .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+                    .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 1 })
                     .onClick(() => {
                       this.h().commitTopCandidate();
                       this.h().insertText(emoji);
@@ -170,7 +171,7 @@ export struct EmojiView {
         Text('あいう')
           .fontSize(13).textAlign(TextAlign.Center)
           .width(68).height(44)
-          .fontColor(kbTheme(this.isDark).subText)
+          .fontColor(kbTheme(this.isDark, this.themeVariant).subText)
           .onClick(() => {
             AppStorage.setOrCreate('keyboardSubMode', 'kana');
           })
@@ -178,8 +179,8 @@ export struct EmojiView {
         Text('←記')
           .fontSize(13).textAlign(TextAlign.Center)
           .width(60).height(44)
-          .fontColor(kbTheme(this.isDark).subText)
-          .backgroundColor(kbTheme(this.isDark).funcKeyBg)
+          .fontColor(kbTheme(this.isDark, this.themeVariant).subText)
+          .backgroundColor(kbTheme(this.isDark, this.themeVariant).funcKeyBg)
           .borderRadius(8)
           .onClick(() => {
             AppStorage.setOrCreate('keyboardSubMode', 'symbol');
@@ -188,8 +189,8 @@ export struct EmojiView {
         Text('⌫')
           .fontSize(18).textAlign(TextAlign.Center)
           .width(52).height(44)
-          .fontColor(kbTheme(this.isDark).onAccentText)
-          .backgroundColor(kbTheme(this.isDark).specialKeyBg)
+          .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
+          .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
           .borderRadius(8)
           .onClick(() => { this.h().handleBackspace(); })
       }
@@ -201,6 +202,6 @@ export struct EmojiView {
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(kbTheme(this.isDark).panelBg)
+    .backgroundColor(kbTheme(this.isDark, this.themeVariant).panelBg)
   }
 }
