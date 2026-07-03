@@ -25409,6 +25409,11 @@ export class KanaKanjiConverter {
       // lookup('かっこ') was fixed directly, because this loop never called
       // lookup() at all.
       const best = fw ? seg : hasDictHit ? this.lookup(seg, true)[0] : seg;
+      // A segment that resolves to a bare symbol (e.g. かっこ→"()") means the
+      // segmenter split a casual string across a symbol "word"; the joined
+      // phrase would be nonsense like "()よ". Abandon the join so the plain
+      // hiragana leads instead.
+      if (KanaKanjiConverter.isSymbolOnly(best)) { return null; }
       joined += best;
     }
     if (/[一-鿿]/.test(joined)) { return joined; }
@@ -25498,9 +25503,19 @@ export class KanaKanjiConverter {
       cands = [...ext];
       if (kata !== kana && !cands.includes(kata)) { cands.push(kata); }
       if (!cands.includes(kana)) { cands.push(kana); }
-      // Loanwords (no kanji candidates): katakana is the canonical form, promote it.
+      // Loanwords: promote katakana to the front — but ONLY when the dictionary
+      // itself authored a katakana form for this reading (a real loanword like
+      // ぱそこん→パソコン). Native all-kana words (どうしよう, なんとか) have no
+      // authored katakana and must keep their as-typed hiragana on top instead
+      // of an auto-generated katakana transcription.
       const hasKanji = cands.some((c: string) => /[一-鿿]/.test(c));
-      if (!hasKanji && kata !== kana && cands[0] !== kata) {
+      const dictHasKatakana = ext.some((c: string) => KanaKanjiConverter.isPureKatakana(c));
+      // ...but not when the dictionary ALSO authored the plain hiragana form:
+      // that marks a word writable both ways (slang like わろた/ワロタ), where
+      // the as-typed hiragana is the better default. A true loanword lists only
+      // its katakana (パソコン), never the ぱそこん hiragana.
+      const dictHasHiragana = ext.some((c: string) => c === kana);
+      if (!hasKanji && dictHasKatakana && !dictHasHiragana && kata !== kana && cands[0] !== kata) {
         cands = [kata, ...cands.filter((c: string) => c !== kata)];
       }
     } else if ((user && user.length > 0) || (global && global.length > 0)) {
@@ -25514,7 +25529,7 @@ export class KanaKanjiConverter {
       return KanaKanjiConverter.boostCounterWords(withUserOnly);
     } else {
       // Not in any dict: try Viterbi segment→convert→join first, then katakana fallback.
-      const fallback = kata !== kana ? [kata, kana] : [kana];
+      const fallback = kata !== kana ? [kana, kata] : [kana];
       if (!fromNorm) {
         const joined = this.segmentJoinFallback(kana);
         if (joined !== null) {
@@ -25551,6 +25566,28 @@ export class KanaKanjiConverter {
     }
     result = KanaKanjiConverter.postParticleBoost(result);
     result = KanaKanjiConverter.boostCounterWords(result);
+    // Prefer the as-typed hiragana over an odd leading candidate in two cases:
+    if (result.length > 0 && result[0] !== kana && result.includes(kana)) {
+      const top = result[0];
+      const authored = entry ?? ext ?? [];
+      // (a) mixedKana: leading form mixes hiragana+katakana with no kanji, e.g.
+      //     "マジか" (=マジ+か). A raw script-mix of the reading is never a good
+      //     default. Deliberately does NOT touch pure-symbol leads (かっこ→"()"
+      //     is an intended shortcut) or latin-bearing forms (Tシャツ).
+      // (b) writableBothWays: nothing converts to kanji and the dictionary
+      //     itself authored BOTH a katakana and the plain hiragana — a word
+      //     writable both ways, e.g. slang わろた/ワロタ. A genuine loanword
+      //     authors only its katakana (テレビ) and is left leading.
+      const mixedKana = !KanaKanjiConverter.hasKanjiChar(top) &&
+          /[ぁ-ん]/.test(top) && /[ァ-ヶ]/.test(top);
+      const noKanjiAnywhere = !result.some((c: string) => KanaKanjiConverter.hasKanjiChar(c));
+      const writableBothWays = noKanjiAnywhere &&
+          authored.indexOf(kana) >= 0 &&
+          authored.some((c: string) => KanaKanjiConverter.isPureKatakana(c));
+      if (mixedKana || writableBothWays) {
+        result = [kana, ...result.filter((c: string) => c !== kana)];
+      }
+    }
     // Final safety net: global/user dict entries are merged in after
     // filterCandidates already ran, so a markup artifact contributed only by
     // one of those (e.g. global_dict's own "[[錦]]"/"{{w|甲賀}}") would
@@ -25597,6 +25634,21 @@ export class KanaKanjiConverter {
     // 中国（地方）, 関（せき）— real words don't end in a bare "（…）" like this.
     if (/^.+（[^（）]{1,6}）$/.test(c)) { return true; }
     return false;
+  }
+
+  private static hasKanjiChar(c: string): boolean {
+    return /[一-鿿々〆〇]/.test(c);
+  }
+
+  // A candidate with no kana, kanji, or alphanumerics — i.e. only brackets /
+  // arrows / punctuation, like "()" or "→". Used to keep such symbol "words"
+  // (e.g. かっこ→"()") out of joined multi-segment phrases.
+  private static isSymbolOnly(c: string): boolean {
+    return c.length > 0 && !/[ぁ-んァ-ヶ一-鿿々〆〇ーA-Za-z0-9０-９]/.test(c);
+  }
+
+  private static isPureKatakana(c: string): boolean {
+    return /^[ァ-ヶーヽヾ・゠]+$/.test(c);
   }
 
   // Remove half-width katakana and pure-ASCII romaji only.
