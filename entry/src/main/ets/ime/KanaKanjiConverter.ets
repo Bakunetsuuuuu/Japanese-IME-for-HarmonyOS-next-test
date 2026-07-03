@@ -25190,6 +25190,10 @@ export class KanaKanjiConverter {
     'しよう': true, 'こよう': true,
     'こと': true, 'もの': true, 'とき': true, 'ところ': true, 'ほう': true,
     'これ': true, 'それ': true, 'あれ': true, 'どれ': true,
+    // Imperative/auxiliary readings that collide with rarer kanji homographs
+    // (暮れ, 屍体/死体/etc.) — see appendRegisteredWords/boostCommonWords above
+    // for the same problem at the dictionary-ordering level.
+    'くれ': true, 'したい': true,
     'この': true, 'その': true, 'あの': true, 'どの': true,
     'です': true, 'ます': true, 'ません': true, 'でした': true, 'ました': true,
     'でしょう': true, 'ましょう': true, 'だろう': true, 'だろ': true,
@@ -25286,6 +25290,43 @@ export class KanaKanjiConverter {
     return [...registered, ...rest];
   }
 
+  // Folds a registered dictionary's words in as *additional* candidates without
+  // letting them jump ahead of already-ordered results. global_dict.json is a
+  // bulk-synced ~150k-entry corpus, not hand-ranked per reading, and blindly
+  // prepending it (the old withRegisteredWords behavior) let obscure entries
+  // (e.g. 太作 for たいさく, 屍体 for したい, 丹後 for たんご) bury common,
+  // correctly-ordered candidates already produced by DICTIONARY/dict.json.
+  private static appendRegisteredWords(
+    registered: string[] | undefined,
+    list: string[]
+  ): string[] {
+    if (!registered || registered.length === 0) { return list; }
+    const extra = registered.filter((c: string) => !list.includes(c));
+    return [...list, ...extra];
+  }
+
+  // Known-common words/readings that should outrank obscure homographs
+  // regardless of which dictionary source contributed them (see
+  // appendRegisteredWords above for why global_dict order can't be trusted).
+  // Not exhaustive — extend as more mis-rankings are reported.
+  private static readonly COMMON_WORDS: Set<string> = new Set([
+    // Bracket/punctuation symbols (かっこ family)
+    '()', '（）', '「」', '『』', '【】', '｛｝', '{}', '[]', '〔〕', '［］',
+    // Reported mis-rankings
+    '対策', '単語', '返事', '期待',
+    // Common "want to ~" verb forms often buried by obscure homographs
+    '会いたい', '買いたい', '書きたい', '行きたい', '来たい',
+  ]);
+
+  private static boostCommonWords(cands: string[]): string[] {
+    const common: string[] = [];
+    const rest: string[] = [];
+    for (const c of cands) {
+      if (KanaKanjiConverter.COMMON_WORDS.has(c)) { common.push(c); } else { rest.push(c); }
+    }
+    return common.length > 0 ? [...common, ...rest] : cands;
+  }
+
   static addContext(text: string): void {
     if (text.length === 0) { return; }
     KanaKanjiConverter.contextBuffer.push(text);
@@ -25359,10 +25400,15 @@ export class KanaKanjiConverter {
       const fw = KanaKanjiConverter.FUNCTION_WORDS[seg];
       const hasDictHit = !!((g && g.length > 0) || (e && e.length > 0) || (s && s.length > 0));
       if (!hasDictHit && !fw) { allRecognized = false; }
-      const best = (g && g.length > 0) ? g[0]
+      // Function words win outright — same rule as the main lookup() pipeline.
+      // Without this, a curated FUNCTION_WORDS entry (e.g. くれ, したい) could
+      // still be shadowed here by a rarer kanji homograph from global/DICTIONARY/
+      // dict.json, since this fallback reads those sources directly rather than
+      // going through lookup()'s own FUNCTION_WORDS override.
+      const best = fw ? seg
+                 : (g && g.length > 0) ? g[0]
                  : (e && e.length > 0) ? e[0]
                  : (s && s.length > 0) ? s[0]
-                 : fw ? seg
                  : seg;
       joined += best;
     }
@@ -25484,10 +25530,15 @@ export class KanaKanjiConverter {
     }
 
     const filtered = KanaKanjiConverter.filterCandidates(kana, cands);
-    const ordered = KanaKanjiConverter.applyLearning(kana, filtered);
-    // Registered words always lead: global first, then user prepended → user wins.
-    const withGlobal = KanaKanjiConverter.withRegisteredWords(global, ordered);
-    const withUser = KanaKanjiConverter.withRegisteredWords(user, withGlobal);
+    // global folds in as extra candidates (see appendRegisteredWords) rather
+    // than jumping the queue, then known-common words get pulled back to the
+    // front ahead of whatever obscure entry either dict source led with, and
+    // finally the user's own learned/registered choices — the most explicit
+    // signal of intent — take priority over all of the above.
+    const withGlobal = KanaKanjiConverter.appendRegisteredWords(global, filtered);
+    const boosted = KanaKanjiConverter.boostCommonWords(withGlobal);
+    const ordered = KanaKanjiConverter.applyLearning(kana, boosted);
+    const withUser = KanaKanjiConverter.withRegisteredWords(user, ordered);
     let result = KanaKanjiConverter.contextRerank(kana, withUser);
     // Function words (particles/auxiliaries) must stay as hiragana by default
     // even after global/user overrides, unless the user has explicitly learned a kanji form.
