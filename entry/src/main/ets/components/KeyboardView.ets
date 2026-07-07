@@ -28,6 +28,7 @@ export struct KeyboardView {
   @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('themeVariant') themeVariant: string = 'original';
+  @StorageLink('displayWidth') displayWidth: number = 360;
 
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
@@ -51,6 +52,10 @@ export struct KeyboardView {
     this.bsDelayTimer = -1; this.bsRepeatTimer = -1;
   }
 
+  private scaleW(w: number): number {
+    if (!this.oneHandMode) return w;
+    return Math.floor(w * (this.displayWidth - 56) / this.displayWidth);
+  }
   build() {
     Stack() {
             if (this.oneHandMode) {
@@ -180,7 +185,7 @@ export struct KeyboardView {
     Text((this.isShift || this.isCapsLock) ? value.toUpperCase() : value)
       .fontSize(17).fontColor(kbTheme(this.isDark, this.themeVariant).keyText)
       .fontWeight(this.pressedKey === value ? FontWeight.Bold : FontWeight.Normal)
-      .textAlign(TextAlign.Center).width(this.keyWidthVp).height('100%')
+      .textAlign(TextAlign.Center).width(this.scaleW(this.keyWidthVp)).height('100%')
       .backgroundColor(this.pressedKey === value ? '#D0D0D2' : kbTheme(this.isDark, this.themeVariant).keyBg)
       .borderRadius(12)
       .shadow({ radius: this.pressedKey === value ? 0 : 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: this.pressedKey === value ? 0 : 2 })
@@ -209,7 +214,7 @@ export struct KeyboardView {
   @Builder ShiftKey() {
     Text(this.isCapsLock ? '⇪' : '⇧')
       .fontSize(17).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-      .width(this.specialKeyWidthVp).height('100%')
+      .width(this.scaleW(this.specialKeyWidthVp)).height('100%')
       .backgroundColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
       .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
       .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -223,7 +228,7 @@ export struct KeyboardView {
 
   @Builder BackspaceKey() {
     Text('⌫').fontSize(17).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-      .width(this.specialKeyWidthVp).height('100%')
+      .width(this.scaleW(this.specialKeyWidthVp)).height('100%')
       .backgroundColor(this.pressedKey === '⌫' ? kbTheme(this.isDark, this.themeVariant).keyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
       .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
       .shadow({ radius: this.pressedKey === '⌫' ? 0 : 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: this.pressedKey === '⌫' ? 0 : 2 })
@@ -237,7 +242,7 @@ export struct KeyboardView {
   @Builder SpaceKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'かな' : 'space')
       .fontSize(14).fontColor(kbTheme(this.isDark, this.themeVariant).keyText).textAlign(TextAlign.Center)
-      .width(this.spaceKeyWidthVp - this.keyWidthVp - 15).height('100%')
+      .width(this.scaleW(this.spaceKeyWidthVp) - this.scaleW(this.keyWidthVp) - 15).height('100%')
       .backgroundColor(this.pressedKey === 'space' ? '#D0D0D2' : kbTheme(this.isDark, this.themeVariant).keyBg)
       .borderRadius(12)
       .shadow({ radius: this.pressedKey === 'space' ? 0 : 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: this.pressedKey === 'space' ? 0 : 2 })
@@ -283,7 +288,7 @@ export struct KeyboardView {
   @Builder ModeKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
       .fontSize(12).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-      .width(this.specialKeyWidthVp).height('100%')
+      .width(this.scaleW(this.specialKeyWidthVp)).height('100%')
       .backgroundColor(this.pressedKey === 'mode' ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
       .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
       .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -324,7 +329,7 @@ export struct KeyboardView {
 
   @Builder FuncKey(label: string, action: () => void) {
     Text(label).fontSize(17).fontColor(kbTheme(this.isDark, this.themeVariant).keyText).textAlign(TextAlign.Center)
-      .width(this.keyWidthVp).height('100%')
+      .width(this.scaleW(this.keyWidthVp)).height('100%')
       .backgroundColor(this.pressedKey === label ? '#D0D0D2' : kbTheme(this.isDark, this.themeVariant).keyBg)
       .borderRadius(12)
       .shadow({ radius: this.pressedKey === label ? 0 : 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: this.pressedKey === label ? 0 : 2 })
@@ -340,7 +345,7 @@ export struct KeyboardView {
 
   @Builder SymbolKey() {
     Text('記号').fontSize(13).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
-      .width(this.keyWidthVp).height('100%')
+      .width(this.scaleW(this.keyWidthVp)).height('100%')
       .backgroundColor(kbTheme(this.isDark, this.themeVariant).keyBg)
       .fontColor(kbTheme(this.isDark, this.themeVariant).keyText).borderRadius(12)
       .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -349,7 +354,7 @@ export struct KeyboardView {
 
   @Builder EnterKey() {
     Text('⏎').fontSize(17).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-      .width(this.specialKeyWidthVp).height('100%')
+      .width(this.scaleW(this.specialKeyWidthVp)).height('100%')
       .backgroundColor(this.pressedKey === 'enter' ? kbTheme(this.isDark, this.themeVariant).accentStrongBg : kbTheme(this.isDark, this.themeVariant).accentBg)
       .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
       .shadow({ radius: this.pressedKey === 'enter' ? 0 : 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: this.pressedKey === 'enter' ? 0 : 2 })
@@ -507,7 +512,7 @@ Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyTe
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).accentBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .onClick(() => { this.oneHandMode = false; })
+        .onClick(() => { this.oneHandMode = false; InputHandler.toggleOneHand(false); })
     }
     .width(56).height('100%')
     .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)

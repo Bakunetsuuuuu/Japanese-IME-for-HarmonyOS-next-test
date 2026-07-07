@@ -52,6 +52,7 @@ export struct AlphabetFlickKeyboardView {
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('themeVariant') themeVariant: string = 'original';
+  @StorageLink('displayWidth') displayWidth: number = 360;
   @State showLayoutPopup: boolean = false;
   @State hoveredOption: string = '';
   @State showSettingsPopup: boolean = false;
@@ -154,6 +155,10 @@ export struct AlphabetFlickKeyboardView {
 
   @State lastChar: string = '';
 
+  private scaleW(w: number): number {
+    if (!this.oneHandMode) return w;
+    return Math.floor(w * (this.displayWidth - 56) / this.displayWidth);
+  }
   build() {
     Stack() {
       Column({ space: 2 }) {
@@ -219,7 +224,7 @@ export struct AlphabetFlickKeyboardView {
     if (rowIdx === 0) {
       Text('取消')
         .fontSize(13).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
         .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -227,7 +232,7 @@ export struct AlphabetFlickKeyboardView {
     } else if (rowIdx === 1) {
       Text('◄')
         .fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
         .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -235,7 +240,7 @@ export struct AlphabetFlickKeyboardView {
     } else if (rowIdx === 2) {
       Text('記号')
         .fontSize(13).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
         .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -243,7 +248,7 @@ export struct AlphabetFlickKeyboardView {
     } else {
       Text('あA')
         .fontSize(12).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
         .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -287,7 +292,7 @@ export struct AlphabetFlickKeyboardView {
     if (rowIdx === 0) {
       Text('⌫')
         .fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
         .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -303,7 +308,7 @@ export struct AlphabetFlickKeyboardView {
     } else if (rowIdx === 1) {
       Text('►')
         .fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
         .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -319,7 +324,7 @@ export struct AlphabetFlickKeyboardView {
       Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
         .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
         .fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
         .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -365,7 +370,7 @@ export struct AlphabetFlickKeyboardView {
     } else {
       Text('→')
         .fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).accentBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
         .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -409,7 +414,7 @@ export struct AlphabetFlickKeyboardView {
         .fontSize(11).fontColor(this.hintColor(rowIdx, colIdx, 'down'))
         .width('100%').height('28%').textAlign(TextAlign.Center)
     }
-    .width(this.flickKeyWidthVp).height('100%')
+    .width(this.scaleW(this.flickKeyWidthVp)).height('100%')
     .backgroundColor(this.keyBg(rowIdx, colIdx, key))
     .borderRadius(14)
     .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
@@ -565,7 +570,7 @@ Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyTe
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).accentBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .onClick(() => { this.oneHandMode = false; })
+        .onClick(() => { this.oneHandMode = false; InputHandler.toggleOneHand(false); })
     }
     .width(56).height('100%')
     .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)

@@ -775,6 +775,15 @@ export class InputHandler {
       }).catch((_e: Error) => {});
     } catch (_e) {}
   }
+
+  static toggleOneHand(enabled: boolean): void {
+    const dw = AppStorage.get<number>('displayWidth') ?? 360;
+    const panelW = 56;
+    const scale = enabled ? (dw - panelW) / dw : 1.0;
+    AppStorage.setOrCreate('keyWidthVp', Math.floor((AppStorage.get<number>('originalKeyWidth') ?? 36) * scale));
+    AppStorage.setOrCreate('specialKeyWidthVp', Math.floor((AppStorage.get<number>('originalSpecialKeyWidth') ?? 44) * scale));
+    AppStorage.setOrCreate('spaceKeyWidthVp', Math.floor((AppStorage.get<number>('originalSpaceKeyWidth') ?? 160) * scale));
+  }
 }
 
 // ---------- KeyboardController ----------
@@ -885,6 +894,10 @@ export class KeyboardController {
     AppStorage.setOrCreate('keyWidthVp', kwVp);
     AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
     AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
+    // Save originals for one-hand mode restoration
+    AppStorage.setOrCreate('originalKeyWidth', kwVp);
+    AppStorage.setOrCreate('originalSpecialKeyWidth', skwVp);
+    AppStorage.setOrCreate('originalSpaceKeyWidth', spaceVp);
     AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
     // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
     const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
