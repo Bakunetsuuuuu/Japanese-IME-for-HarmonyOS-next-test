@@ -21,7 +21,8 @@ export struct KeyboardView {
   @State hoveredSetting: string = '';
   @State showSettingsPanel: boolean = false;
   @State showThemePicker: boolean = false;
-  
+  @State oneHandMode: boolean = false;
+  @State oneHandSide: boolean = false;
   @StorageLink('keyWidthVp') keyWidthVp: number = 36;
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
   @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
@@ -52,11 +53,17 @@ export struct KeyboardView {
   }
 
   private scaleW(w: number): number {
+    if (!this.oneHandMode) return w;
     return Math.floor(w * (this.displayWidth - 56) / this.displayWidth);
   }
   build() {
     Stack() {
-       Column({ space: 3 }) {
+            if (this.oneHandMode) {
+        Row() {
+          if (!this.oneHandSide) {
+            this.OneHandPanel()
+          }
+          Column({ space: 3 }) {
         Row({ space: 3 }) {
           ForEach(NUMBER_ROW, (key: string) => { this.RegularKey(key) }, (key: string) => key)
         }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
@@ -92,7 +99,54 @@ export struct KeyboardView {
           this.EnterKey()
         }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
       }
-      .width('100%').height('100%')      if (this.showLayoutPopup) {
+      .width('100%').height('100%')
+      .padding({ bottom: 8, top: 4, left: 2, right: 2 })
+          .layoutWeight(1)
+          if (this.oneHandSide) {
+            this.OneHandPanel()
+          }
+        }
+        .width('100%').height('100%')
+      } else Column({ space: 3 }) {
+        Row({ space: 3 }) {
+          ForEach(NUMBER_ROW, (key: string) => { this.RegularKey(key) }, (key: string) => key)
+        }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
+
+        ForEach([0, 1], (rowIdx: number) => {
+          Row({ space: 3 }) {
+            ForEach(ROWS[rowIdx], (key: string) => { this.RegularKey(key) }, (key: string) => key)
+          }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
+        }, (rowIdx: number) => String(rowIdx))
+
+        Row({ space: 3 }) {
+          this.ShiftKey()
+          ForEach(ROWS[2], (key: string) => { this.RegularKey(key) }, (key: string) => key)
+          this.BackspaceKey()
+        }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
+
+        Row({ space: 3 }) {
+          this.ModeKey()
+          this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
+            const ch = this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、';
+            const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+            if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+            else { this.getHandler().handleDirectKana(ch); }
+          })
+          this.SymbolKey()
+          this.SpaceKey()
+          this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
+            const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
+            const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+            if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+            else { this.getHandler().handleDirectKana(ch); }
+          })
+          this.EnterKey()
+        }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
+      }
+      .width('100%').height('100%')
+      .padding({ bottom: 8, top: 4, left: 2, right: 2 })
+
+      if (this.showLayoutPopup) {
         Column().width('100%').height('100%')
           .onClick(() => { this.showLayoutPopup = false; })
         Column() { this.layoutPopup() }
@@ -219,6 +273,7 @@ export struct KeyboardView {
               this.showSettingsPopup = false;
               this.showSettingsPanel = true;
             } else if (this.hoveredSetting === 'onehand') {
+              this.oneHandMode = !this.oneHandMode;
               this.showSettingsPopup = false;
             }
             this.showSettingsPopup = false; this.hoveredSetting = '';
@@ -343,6 +398,13 @@ export struct KeyboardView {
           .fontColor(this.hoveredSetting === 'settings' ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
           .width('100%')
       }
+      Row() {
+        Text('片手キーボード').fontSize(15).textAlign(TextAlign.Center)
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+          .backgroundColor(this.hoveredSetting === 'onehand' ? kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
+          .fontColor(this.hoveredSetting === 'onehand' ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
+          .width('100%')
+      }
     }
     .padding(6).width(180).backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
     .borderRadius(22).shadow({ radius: 6, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 4 })
@@ -436,6 +498,25 @@ Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyTe
     .borderRadius(22).shadow({ radius: 6, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 4 })
   }
 
-  
+  @Builder OneHandPanel() {
+    Column() {
+      Text('⇄').fontSize(18).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .width(48).height('35%')
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
+        .margin({ bottom: 4 })
+        .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .onClick(() => { this.oneHandSide = !this.oneHandSide; })
+      Text('×').fontSize(18).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .width(48).height('35%')
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).accentBg)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
+        .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .onClick(() => { this.oneHandMode = false; InputHandler.toggleOneHand(false); })
+    }
+    .width(56).height('100%')
+    .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+    .padding({ top: 8, bottom: 8 })
+  }
 
 }

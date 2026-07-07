@@ -59,7 +59,8 @@ export struct AlphabetFlickKeyboardView {
   @State hoveredSetting: string = '';
   @State showSettingsPanel: boolean = false;
   @State showThemePicker: boolean = false;
-  
+  @State oneHandMode: boolean = false;
+  @State oneHandSide: boolean = false;
 
   @State activeRow: number = -1;
   @State activeCol: number = -1;
@@ -155,6 +156,7 @@ export struct AlphabetFlickKeyboardView {
   @State lastChar: string = '';
 
   private scaleW(w: number): number {
+    if (!this.oneHandMode) return w;
     return Math.floor(w * (this.displayWidth - 56) / this.displayWidth);
   }
   build() {
@@ -350,7 +352,8 @@ export struct AlphabetFlickKeyboardView {
             if (this.showSettingsPopup) {
               if (this.hoveredSetting === 'settings') {
                 this.showSettingsPopup = false; this.showSettingsPanel = true;
-              }
+              } else if (this.hoveredSetting === 'onehand') {
+                this.oneHandMode = !this.oneHandMode; this.showSettingsPopup = false;
               }
               this.showSettingsPopup = false; this.hoveredSetting = '';
               this.activeRow = -1; this.activeCol = -1; return;
@@ -455,6 +458,13 @@ export struct AlphabetFlickKeyboardView {
           .fontColor(this.hoveredSetting === 'settings' ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
           .width('100%')
       }
+      Row() {
+        Text('片手キーボード').fontSize(15).textAlign(TextAlign.Center)
+          .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+          .backgroundColor(this.hoveredSetting === 'onehand' ? kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
+          .fontColor(this.hoveredSetting === 'onehand' ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
+          .width('100%')
+      }
     }
     .padding(6).width(180).backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
     .borderRadius(22).shadow({ radius: 6, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 4 })
@@ -545,3 +555,26 @@ Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyTe
     .backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
     .borderRadius(22).shadow({ radius: 6, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 4 })
   }
+
+  @Builder OneHandPanel() {
+    Column() {
+      Text('⇄').fontSize(18).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .width(48).height('35%')
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
+        .margin({ bottom: 4 })
+        .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .onClick(() => { this.oneHandSide = !this.oneHandSide; })
+      Text('×').fontSize(18).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .width(48).height('35%')
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).accentBg)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
+        .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .onClick(() => { this.oneHandMode = false; InputHandler.toggleOneHand(false); })
+    }
+    .width(56).height('100%')
+    .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+    .padding({ top: 8, bottom: 8 })
+  }
+
+}
