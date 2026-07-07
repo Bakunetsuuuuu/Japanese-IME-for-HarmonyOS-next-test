@@ -32,7 +32,6 @@ struct Index {
     this.checkConsent();
     try {
       const dis = display.getDefaultDisplaySync();
-      // display.ColorMode: COLOR_MODE_LIGHT=0, COLOR_MODE_DARK=1
       this.isDark = (dis as ESObject)['colorMode'] === 1;
     } catch (_e) {
       this.isDark = false;
@@ -40,7 +39,7 @@ struct Index {
   }
 
   private checkConsent(): void {
-    dataPreferences.getPreferences(getContext(this), CONSENT_STORE)
+    dataPreferences.getPreferences(getContext(this).getApplicationContext(), CONSENT_STORE)
       .then((prefs: dataPreferences.Preferences) => {
         prefs.get(CONSENT_KEY, false).then((agreed: dataPreferences.ValueType) => {
           this.showConsent = (agreed !== true);
@@ -50,7 +49,7 @@ struct Index {
   }
 
   private acceptConsent(): void {
-    dataPreferences.getPreferences(getContext(this), CONSENT_STORE)
+    dataPreferences.getPreferences(getContext(this).getApplicationContext(), CONSENT_STORE)
       .then((prefs: dataPreferences.Preferences) => {
         prefs.put(CONSENT_KEY, true).then(() => {
           prefs.flush();

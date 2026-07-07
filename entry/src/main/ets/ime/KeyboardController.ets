@@ -184,6 +184,12 @@ export class InputHandler {
       AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
     }
     this.refreshClipboardPreview();
+    if (!AppStorage.has('defaultLayout')) {
+      AppStorage.setOrCreate('defaultLayout', 'FLICK');
+    }
+    if (!AppStorage.has('keyboardLayout')) {
+      AppStorage.setOrCreate('keyboardLayout', AppStorage.get<string>('defaultLayout') ?? 'FLICK');
+    }
   }
 
   onInputStop(): void {
@@ -758,6 +764,16 @@ export class InputHandler {
 
   hideKeyboard(): void {
     this.kbController?.hide();
+  }
+
+  openUserDict(): void {
+    if (!this.imeContext) { return; }
+    try {
+      this.imeContext.startAbility({
+        bundleName: 'com.shunti.japaneseime',
+        abilityName: 'EntryAbility',
+      }).catch((_e: Error) => {});
+    } catch (_e) {}
   }
 }
 

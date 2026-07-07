@@ -52,7 +52,9 @@ export struct FlickKeyboardView {
   @State showSettingsPopup: boolean = false;
   @State hoveredSetting: string = '';
   @State showSettingsPanel: boolean = false;
+  @State showThemePicker: boolean = false;
   @State oneHandMode: boolean = false;
+  @State oneHandSide: boolean = false;
 
   @State activeRow: number = -1;
   @State activeCol: number = -1;
@@ -193,6 +195,14 @@ export struct FlickKeyboardView {
           .backgroundColor(kbTheme(this.isDark, this.themeVariant).panelBg)
       }
 
+      if (this.showThemePicker) {
+        Column().width('100%').height('100%')
+          .onClick(() => { this.showThemePicker = false; })
+        Column() { this.themePicker() }
+          .width('100%').alignItems(HorizontalAlign.Center)
+          .justifyContent(FlexAlign.Center)
+      }
+
     }
     .width('100%').height('100%')
   }
@@ -201,7 +211,7 @@ export struct FlickKeyboardView {
     if (rowIdx === 0) {
       Text('取消').fontSize(13).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(14)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 }).animation({ duration: 80 })
         .onTouch((e: TouchEvent) => {
@@ -214,7 +224,7 @@ export struct FlickKeyboardView {
     } else if (rowIdx === 1) {
       Text('◄').fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(14)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 }).animation({ duration: 80 })
         .onTouch((e: TouchEvent) => {
@@ -227,7 +237,7 @@ export struct FlickKeyboardView {
     } else if (rowIdx === 2) {
       Text('記号').fontSize(13).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(14)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 }).animation({ duration: 80 })
         .onTouch((e: TouchEvent) => {
@@ -241,7 +251,7 @@ export struct FlickKeyboardView {
       Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
         .fontSize(12).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(14)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 }).animation({ duration: 80 })
         .onTouch((e: TouchEvent) => {
@@ -283,7 +293,7 @@ export struct FlickKeyboardView {
     if (rowIdx === 0) {
       Text('⌫').fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(14)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 }).animation({ duration: 80 })
         .onTouch((event: TouchEvent) => {
@@ -295,7 +305,7 @@ export struct FlickKeyboardView {
     } else if (rowIdx === 1) {
       Text('►').fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(14)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 }).animation({ duration: 80 })
         .onTouch((e: TouchEvent) => {
@@ -309,7 +319,7 @@ export struct FlickKeyboardView {
       Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
         .fontSize(this.inputState === 'COMPOSING' ? 13 : 12).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(14)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 }).animation({ duration: 80 })
         .onTouch((e: TouchEvent) => {
@@ -326,8 +336,8 @@ export struct FlickKeyboardView {
             if (dx > 15) { clearTimeout(this.spaceMenuTimer); this.spaceMenuTimer = -1; }
             if (this.showSettingsPopup) {
               const hdy = e.touches[0].y - this.spaceTouchDownY;
-              if (hdy < -180) { this.hoveredSetting = 'onehand'; }
-              else if (hdy < -120) { this.hoveredSetting = 'settings'; }
+              if (hdy < -80) { this.hoveredSetting = 'settings'; }
+              else if (hdy < -40) { this.hoveredSetting = 'onehand'; }
               else { this.hoveredSetting = ''; }
             }
           } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
@@ -352,7 +362,7 @@ export struct FlickKeyboardView {
     } else {
       Text('→').fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).accentStrongBg : kbTheme(this.isDark, this.themeVariant).accentBg)
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).accentBg)
         .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(14)
         .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 }).animation({ duration: 80 })
         .onTouch((e: TouchEvent) => {
@@ -451,10 +461,7 @@ export struct FlickKeyboardView {
       Scroll() {
         Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
           this.SettingItem('テーマ', '🎨')
-          this.SettingItem('デフォルトレイアウト', '⌨')
           this.SettingItem('ユーザ辞書', '📕')
-          this.SettingItem('サウンド', '🔈')
-          this.SettingItem('入力設定', '⚙')
         }
         .padding(12)
       }
@@ -472,7 +479,7 @@ export struct FlickKeyboardView {
   @Builder SettingItem(label: string, icon: string) {
     Column() {
       Text(icon).fontSize(28).margin({ bottom: 4 })
-      Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyText)
+Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyText)
     }
     .width(100).height(90).justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
     .borderRadius(14).backgroundColor(kbTheme(this.isDark, this.themeVariant).keyBg)
@@ -480,11 +487,74 @@ export struct FlickKeyboardView {
     .margin(6)
     .onClick(() => {
       if (label === 'テーマ') {
-        const next = AppStorage.get<string>('themeVariant') === 'glass' ? 'original' : 'glass';
-        AppStorage.setOrCreate('themeVariant', next);
+        this.showThemePicker = true;
+      } else if (label === 'ユーザ辞書') {
+        InputHandler.getInstance().openUserDict();
       }
       this.showSettingsPanel = false;
     })
+  }
+
+  @Builder themePicker() {
+    Column() {
+      Text('テーマ').fontSize(16).fontWeight(FontWeight.Bold)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).previewText)
+        .padding({ bottom: 8 })
+      Row() {
+        Column() {
+          Text('クラシック').fontSize(15).textAlign(TextAlign.Center)
+            .padding({ left: 24, right: 24, top: 12, bottom: 12 }).borderRadius(16)
+            .backgroundColor(AppStorage.get<string>('themeVariant') === 'original' || AppStorage.get<string>('themeVariant') === undefined ?
+              kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
+            .fontColor(AppStorage.get<string>('themeVariant') === 'original' || AppStorage.get<string>('themeVariant') === undefined ?
+              kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
+        }
+        .onClick(() => {
+          AppStorage.setOrCreate('themeVariant', 'original');
+          this.showThemePicker = false;
+          this.showSettingsPanel = false;
+        })
+      }
+      Row() {
+        Column() {
+          Text('モダン').fontSize(15).textAlign(TextAlign.Center)
+            .padding({ left: 24, right: 24, top: 12, bottom: 12 }).borderRadius(16)
+            .backgroundColor(AppStorage.get<string>('themeVariant') === 'glass' ?
+              kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
+            .fontColor(AppStorage.get<string>('themeVariant') === 'glass' ?
+              kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
+        }
+        .onClick(() => {
+          AppStorage.setOrCreate('themeVariant', 'glass');
+          this.showThemePicker = false;
+          this.showSettingsPanel = false;
+        })
+      }
+    }
+    .padding(16).width(200)
+    .backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
+    .borderRadius(22).shadow({ radius: 6, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 4 })
+  }
+
+  @Builder OneHandPanel() {
+    Column() {
+      Text('⇄').fontSize(18).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .width(48).height('35%')
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
+        .margin({ bottom: 4 })
+        .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .onClick(() => { this.oneHandSide = !this.oneHandSide; })
+      Text('×').fontSize(18).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .width(48).height('35%')
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).accentBg)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
+        .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .onClick(() => { this.oneHandMode = false; })
+    }
+    .width(56).height('100%')
+    .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+    .padding({ top: 8, bottom: 8 })
   }
 
 }

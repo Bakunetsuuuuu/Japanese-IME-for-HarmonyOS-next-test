@@ -3,7 +3,7 @@ import { kbTheme } from './Theme';
 
 const ROWS: string[][] = [
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', 'ー'],
   ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
 ];
 const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
@@ -20,7 +20,9 @@ export struct KeyboardView {
   @State showSettingsPopup: boolean = false;
   @State hoveredSetting: string = '';
   @State showSettingsPanel: boolean = false;
+  @State showThemePicker: boolean = false;
   @State oneHandMode: boolean = false;
+  @State oneHandSide: boolean = false;
   @StorageLink('keyWidthVp') keyWidthVp: number = 36;
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
   @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
@@ -51,7 +53,12 @@ export struct KeyboardView {
 
   build() {
     Stack() {
-      Column({ space: 3 }) {
+            if (this.oneHandMode) {
+        Row() {
+          if (!this.oneHandSide) {
+            this.OneHandPanel()
+          }
+          Column({ space: 3 }) {
         Row({ space: 3 }) {
           ForEach(NUMBER_ROW, (key: string) => { this.RegularKey(key) }, (key: string) => key)
         }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
@@ -76,6 +83,51 @@ export struct KeyboardView {
             if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
             else { this.getHandler().handleDirectKana(ch); }
           })
+          this.SymbolKey()
+          this.SpaceKey()
+          this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
+            const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
+            const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+            if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+            else { this.getHandler().handleDirectKana(ch); }
+          })
+          this.EnterKey()
+        }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
+      }
+      .width('100%').height('100%')
+      .padding({ bottom: 8, top: 4, left: 2, right: 2 })
+          .layoutWeight(1)
+          if (this.oneHandSide) {
+            this.OneHandPanel()
+          }
+        }
+        .width('100%').height('100%')
+      } else Column({ space: 3 }) {
+        Row({ space: 3 }) {
+          ForEach(NUMBER_ROW, (key: string) => { this.RegularKey(key) }, (key: string) => key)
+        }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
+
+        ForEach([0, 1], (rowIdx: number) => {
+          Row({ space: 3 }) {
+            ForEach(ROWS[rowIdx], (key: string) => { this.RegularKey(key) }, (key: string) => key)
+          }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
+        }, (rowIdx: number) => String(rowIdx))
+
+        Row({ space: 3 }) {
+          this.ShiftKey()
+          ForEach(ROWS[2], (key: string) => { this.RegularKey(key) }, (key: string) => key)
+          this.BackspaceKey()
+        }.width('100%').justifyContent(FlexAlign.Center).layoutWeight(1)
+
+        Row({ space: 3 }) {
+          this.ModeKey()
+          this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
+            const ch = this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、';
+            const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+            if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+            else { this.getHandler().handleDirectKana(ch); }
+          })
+          this.SymbolKey()
           this.SpaceKey()
           this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
             const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
@@ -112,6 +164,14 @@ export struct KeyboardView {
         .width('100%').height('100%')
         .backgroundColor(kbTheme(this.isDark, this.themeVariant).panelBg)
       }
+
+      if (this.showThemePicker) {
+        Column().width('100%').height('100%')
+          .onClick(() => { this.showThemePicker = false; })
+        Column() { this.themePicker() }
+          .width('100%').alignItems(HorizontalAlign.Center)
+          .justifyContent(FlexAlign.Center)
+      }
     }
     .width('100%').height('100%')
   }
@@ -128,8 +188,18 @@ export struct KeyboardView {
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) { this.pressedKey = value; }
         else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-          const key = (this.isShift || this.isCapsLock) ? value.toUpperCase() : value;
-          if (this.pressedKey === value) { this.getHandler().handleKeyPress(key); }
+          if (this.pressedKey === value) {
+            if (value === 'ー') {
+              const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
+              const ch = mode === InputMode.ALPHANUMERIC ? '-' : 'ー';
+              const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+              if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+              else { this.getHandler().handleDirectKana(ch); }
+            } else {
+              const key = (this.isShift || this.isCapsLock) ? value.toUpperCase() : value;
+              this.getHandler().handleKeyPress(key);
+            }
+          }
           this.pressedKey = '';
           if (this.isShift && !this.isCapsLock) { this.isShift = false; }
         }
@@ -167,7 +237,7 @@ export struct KeyboardView {
   @Builder SpaceKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'かな' : 'space')
       .fontSize(14).fontColor(kbTheme(this.isDark, this.themeVariant).keyText).textAlign(TextAlign.Center)
-      .width(this.spaceKeyWidthVp).height('100%')
+      .width(this.spaceKeyWidthVp - this.keyWidthVp - 15).height('100%')
       .backgroundColor(this.pressedKey === 'space' ? '#D0D0D2' : kbTheme(this.isDark, this.themeVariant).keyBg)
       .borderRadius(12)
       .shadow({ radius: this.pressedKey === 'space' ? 0 : 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: this.pressedKey === 'space' ? 0 : 2 })
@@ -187,8 +257,8 @@ export struct KeyboardView {
           if (dx > 15) { clearTimeout(this.spaceMenuTimer); this.spaceMenuTimer = -1; }
           if (this.showSettingsPopup) {
             const hdy = event.touches[0].y - this.spaceTouchDownY;
-            if (hdy < -180) { this.hoveredSetting = 'onehand'; }
-            else if (hdy < -120) { this.hoveredSetting = 'settings'; }
+            if (hdy < -180) { this.hoveredSetting = 'settings'; }
+            else if (hdy < -120) { this.hoveredSetting = 'onehand'; }
             else { this.hoveredSetting = ''; }
           }
         } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
@@ -268,6 +338,15 @@ export struct KeyboardView {
       })
   }
 
+  @Builder SymbolKey() {
+    Text('記号').fontSize(13).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
+      .width(this.keyWidthVp).height('100%')
+      .backgroundColor(kbTheme(this.isDark, this.themeVariant).keyBg)
+      .fontColor(kbTheme(this.isDark, this.themeVariant).keyText).borderRadius(12)
+      .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+      .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'symbol'); })
+  }
+
   @Builder EnterKey() {
     Text('⏎').fontSize(17).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp).height('100%')
@@ -339,10 +418,7 @@ export struct KeyboardView {
       Scroll() {
         Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
           this.SettingItem('テーマ', '🎨')
-          this.SettingItem('デフォルトレイアウト', '⌨️')
           this.SettingItem('ユーザ辞書', '📕')
-          this.SettingItem('サウンド', '🔈')
-          this.SettingItem('入力設定', '⚙️')
         }
         .padding(12)
       }
@@ -361,7 +437,7 @@ export struct KeyboardView {
   @Builder SettingItem(label: string, icon: string) {
     Column() {
       Text(icon).fontSize(28).margin({ bottom: 4 })
-      Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyText)
+Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyText)
     }
     .width(100).height(90).justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
     .borderRadius(14).backgroundColor(kbTheme(this.isDark, this.themeVariant).keyBg)
@@ -369,11 +445,73 @@ export struct KeyboardView {
     .margin(6)
     .onClick(() => {
       if (label === 'テーマ') {
-        // Toggle theme
-        const next = AppStorage.get<string>('themeVariant') === 'glass' ? 'original' : 'glass';
-        AppStorage.setOrCreate('themeVariant', next);
+        this.showThemePicker = true;
+      } else if (label === 'ユーザ辞書') {
+        InputHandler.getInstance().openUserDict();
       }
       this.showSettingsPanel = false;
     })
   }
+  @Builder themePicker() {
+    Column() {
+      Text('テーマ').fontSize(16).fontWeight(FontWeight.Bold)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).previewText)
+        .padding({ bottom: 8 })
+      Row() {
+        Column() {
+          Text('クラシック').fontSize(15).textAlign(TextAlign.Center)
+            .padding({ left: 24, right: 24, top: 12, bottom: 12 }).borderRadius(16)
+            .backgroundColor(AppStorage.get<string>('themeVariant') === 'original' || AppStorage.get<string>('themeVariant') === undefined ?
+              kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
+            .fontColor(AppStorage.get<string>('themeVariant') === 'original' || AppStorage.get<string>('themeVariant') === undefined ?
+              kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
+        }
+        .onClick(() => {
+          AppStorage.setOrCreate('themeVariant', 'original');
+          this.showThemePicker = false;
+          this.showSettingsPanel = false;
+        })
+      }
+      Row() {
+        Column() {
+          Text('モダン').fontSize(15).textAlign(TextAlign.Center)
+            .padding({ left: 24, right: 24, top: 12, bottom: 12 }).borderRadius(16)
+            .backgroundColor(AppStorage.get<string>('themeVariant') === 'glass' ?
+              kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
+            .fontColor(AppStorage.get<string>('themeVariant') === 'glass' ?
+              kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
+        }
+        .onClick(() => {
+          AppStorage.setOrCreate('themeVariant', 'glass');
+          this.showThemePicker = false;
+          this.showSettingsPanel = false;
+        })
+      }
+    }
+    .padding(16).width(200)
+    .backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
+    .borderRadius(22).shadow({ radius: 6, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 4 })
+  }
+
+  @Builder OneHandPanel() {
+    Column() {
+      Text('⇄').fontSize(18).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .width(48).height('35%')
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
+        .margin({ bottom: 4 })
+        .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .onClick(() => { this.oneHandSide = !this.oneHandSide; })
+      Text('×').fontSize(18).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .width(48).height('35%')
+        .backgroundColor(kbTheme(this.isDark, this.themeVariant).accentBg)
+        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText).borderRadius(12)
+        .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .onClick(() => { this.oneHandMode = false; })
+    }
+    .width(56).height('100%')
+    .justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
+    .padding({ top: 8, bottom: 8 })
+  }
+
 }

@@ -10,8 +10,27 @@
       }
     ],
     "buildModeSet": [
-      { "name": "debug" },
-      { "name": "release" }
+      {
+        "name": "debug"
+      },
+      {
+        "name": "release"
+      }
+    ],
+    "signingConfigs": [
+      {
+        "name": "default",
+        "type": "HarmonyOS",
+        "material": {
+          "certpath": "/Users/ootakaito/.ohos/config/default_Japanese-IME-for-HarmonyOS-next-claude-harmonyos-japanese-ime-app-3OaxO_CLoxeqgRHw3YbaZiV5FUZ2HGbpJ0i6KCgoE5x3SO1Lc=.cer",
+          "keyAlias": "debugKey",
+          "keyPassword": "0000001B15BB5B07D79EF09FF7D5B4BC9DE85B6864AFBE2F0C72677BAD1DAEFCDD82A451CDCBF14DABD05F",
+          "profile": "/Users/ootakaito/.ohos/config/default_Japanese-IME-for-HarmonyOS-next-claude-harmonyos-japanese-ime-app-3OaxO_CLoxeqgRHw3YbaZiV5FUZ2HGbpJ0i6KCgoE5x3SO1Lc=.p7b",
+          "signAlg": "SHA256withECDSA",
+          "storeFile": "/Users/ootakaito/.ohos/config/default_Japanese-IME-for-HarmonyOS-next-claude-harmonyos-japanese-ime-app-3OaxO_CLoxeqgRHw3YbaZiV5FUZ2HGbpJ0i6KCgoE5x3SO1Lc=.p12",
+          "storePassword": "0000001B295F3A5BC1AE82D3EF9B267E5C9DBCFE0A724698AF35E5DEF1B2E8161381BD855BFF2C8A251130"
+        }
+      }
     ]
   },
   "modules": [
@@ -21,7 +40,9 @@
       "targets": [
         {
           "name": "default",
-          "applyToProducts": ["default"]
+          "applyToProducts": [
+            "default"
+          ]
         }
       ]
     }
