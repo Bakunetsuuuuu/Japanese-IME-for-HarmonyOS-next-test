@@ -25809,7 +25809,19 @@ export class KanaKanjiConverter {
       return [KanaKanjiConverter.VN_UNKNOWN_SINGLE,
               KanaKanjiConverter.VC_UNKNOWN, KanaKanjiConverter.VC_UNKNOWN];
     }
-    return [KanaKanjiConverter.VN_DEFAULT,
+    // Longest-match preference: discount a dictionary word's node cost by its
+    // length. Node cost was previously a flat VN_DEFAULT regardless of length,
+    // so the connection matrix's strong noun→particle bonus could make splitting
+    // a real word to manufacture a trailing particle cheaper than keeping the
+    // word whole (とった→とっ+た→"十た", こども→こど+も→"弧度も",
+    // すんで→すん+で→"吋で", じゃけっと→じゃ+けっと→"じゃ決と"). Rewarding
+    // longer spans counteracts that. K=400 was tuned against a 130-sentence
+    // corpus: it sits in the middle of the zero-regression plateau (K 350–450),
+    // fixed 7 sentences with 0 regressions, and changed only 8/4000 random
+    // dictionary readings — all of them from garbage kanji to cleaner output
+    // (e.g. じゃけっと→ジャケット). Floor keeps the cost at ≥500.
+    const lenBonus = Math.min((sub.length - 1) * 400, KanaKanjiConverter.VN_DEFAULT - 500);
+    return [KanaKanjiConverter.VN_DEFAULT - lenBonus,
             KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
   }
 
