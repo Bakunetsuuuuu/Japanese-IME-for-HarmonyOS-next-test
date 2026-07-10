@@ -125,6 +125,11 @@ struct KeyboardPage {
                     .fontSize(this.isLandscape ? 11 : 16)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    // Cap how wide the chip can grow instead of letting it stretch to
+                    // fill the row — short clips hug their text, long ones truncate
+                    // with "…" at the cap instead of a background that runs on past
+                    // where the (ellipsized) text actually ends.
+                    .constraintSize({ maxWidth: '90%' })
                     .padding(this.isLandscape ?
                       { left: 8, right: 8, top: 2, bottom: 2 } :
                       { left: 12, right: 12, top: 6, bottom: 6 })
