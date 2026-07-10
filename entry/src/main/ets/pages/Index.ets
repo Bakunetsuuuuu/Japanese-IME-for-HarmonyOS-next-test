@@ -1,7 +1,7 @@
 import { UserDictStore } from '../ime/UserDictStore';
 import { promptAction, router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
-import { common } from '@kit.AbilityKit';
+import { common, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
 import display from '@ohos.display';
 
 const CONSENT_STORE: string = 'shunti_consent';
@@ -44,6 +44,7 @@ struct Index {
       .then((prefs: dataPreferences.Preferences) => {
         prefs.get(CONSENT_KEY, false).then((agreed: dataPreferences.ValueType) => {
           this.showConsent = (agreed !== true);
+          if (agreed === true) { this.requestClipboardPermission(); }
         });
       })
       .catch((_e: Error) => { this.showConsent = true; });
@@ -55,9 +56,23 @@ struct Index {
         prefs.put(CONSENT_KEY, true).then(() => {
           prefs.flush();
           this.showConsent = false;
+          this.requestClipboardPermission();
         });
       })
       .catch((_e: Error) => { this.showConsent = false; });
+  }
+
+  // The keyboard extension reads the system pasteboard to show a paste
+  // suggestion in the candidate bar (see KeyboardController.refreshClipboardPreview).
+  // ohos.permission.READ_PASTEBOARD is user_grant and can only be requested
+  // from a UIAbility with a window — the InputMethodExtAbility itself can't
+  // prompt for it, so this app's own settings screen is the only place to ask.
+  // Safe to call unconditionally: it resolves immediately if already granted.
+  private requestClipboardPermission(): void {
+    const permissions: Array<Permissions> = ['ohos.permission.READ_PASTEBOARD'];
+    abilityAccessCtrl.createAtManager()
+      .requestPermissionsFromUser(getContext(this) as common.UIAbilityContext, permissions)
+      .catch((_e: Error) => {});
   }
 
   private declineConsent(): void {

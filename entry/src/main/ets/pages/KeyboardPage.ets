@@ -119,7 +119,9 @@ struct KeyboardPage {
                   })
                 } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
                   this.clipboardPreview.length > 0) {
-                  Text(this.clipboardPreview)
+                  // Gboard-style: centered paste suggestion when nothing is composing,
+                  // rather than left-aligned like an actual conversion candidate.
+                  Text('📋 ' + this.clipboardPreview)
                     .fontSize(this.isLandscape ? 11 : 16)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -129,7 +131,6 @@ struct KeyboardPage {
                     .borderRadius(4)
                     .backgroundColor(kbTheme(this.isDark).candidateBg)
                     .fontColor(kbTheme(this.isDark).subText)
-                    .margin({ left: 4 })
                     .onClick(() => {
                       InputHandler.getInstance().pasteClipboard();
                     })
@@ -137,6 +138,7 @@ struct KeyboardPage {
               }
               .width('82%')
               .height(this.isLandscape ? 22 : 48)
+              .justifyContent(FlexAlign.Center)
               .alignItems(VerticalAlign.Center)
 
               // Layout toggle: フ = switch to flick, Q = switch to QWERTY
