@@ -25,6 +25,9 @@ Requires a local `typescript` (`npx tsc`).
   to surface garbage candidates.
 - `corpus2.js` — additional held-out sentences used to validate that a change
   generalizes rather than overfitting.
+- `corpus3.js` — a larger, independently-authored held-out corpus (news/forum
+  register plus more grammar patterns: passive/causative/potential forms,
+  questions, counters) for the same generalization check at greater scale.
 - `accept.js` — per-reading map of *additional* valid natural-Japanese outputs
   (okurigana / kana-kanji / standard homophones the IME can't disambiguate
   without context). Garbage is never listed here.

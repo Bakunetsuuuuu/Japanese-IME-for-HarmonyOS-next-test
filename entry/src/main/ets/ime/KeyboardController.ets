@@ -546,15 +546,23 @@ export class InputHandler {
         // Viterbi result goes to position 0; katakana is position 1.
         // Putting katakana at 0 unconditionally causes long natural Japanese
         // (e.g. きょうはいいてんきですね) to always show all-katakana first.
-        const prefixText = segs.slice(0, -1)
-          .map((s: string) => this.kanjiConverter.autoConvert(s))
-          .join('');
+        // A prefix segment that resolves to a bare symbol (e.g. かっこ→"()")
+        // means Viterbi split a casual word across a symbol "word" — joining
+        // it would produce nonsense like "()よ" for かっこよ. Fall back to the
+        // plain kana/katakana candidates instead of using that prefix.
+        const prefixParts = segs.slice(0, -1).map((s: string) => this.kanjiConverter.autoConvert(s));
+        const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
+        const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
         const lastSeg = segs[segs.length - 1];
         const lastCands = this.kanjiConverter.lookup(lastSeg);
-        const segCands = lastCands.map((c: string) => prefixText + c);
+        const segCands = hasSymbolPrefix ? [] : lastCands.map((c: string) => prefixText + c);
         candidates = [];
-        // Position 0: best Viterbi candidate
-        if (segCands.length > 0) {
+        if (hasSymbolPrefix) {
+          // No usable kanji join — plain kana leads, same as the
+          // segmentJoinFallback bail-out for single-lookup composing text.
+          candidates.push(composing);
+        } else if (segCands.length > 0) {
+          // Position 0: best Viterbi candidate
           candidates.push(segCands[0]);
         }
         // Position 1: katakana (loanwords reachable with one Space tap)

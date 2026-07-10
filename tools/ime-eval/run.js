@@ -54,7 +54,7 @@ function main() {
     return prefix + conv.lookup(segs[segs.length - 1])[0];
   };
 
-  const corpus = [...require('./corpus.js'), ...require('./corpus2.js')];
+  const corpus = [...require('./corpus.js'), ...require('./corpus2.js'), ...require('./corpus3.js')];
   // accept.js lists additional *valid* natural-Japanese outputs per reading
   // (okurigana/kana-kanji/homophone variation the IME can't disambiguate). The
   // lenient score counts those as correct; garbage never appears there.
