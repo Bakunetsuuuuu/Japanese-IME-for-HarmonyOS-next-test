@@ -499,7 +499,8 @@ export class InputHandler {
         AppStorage.setOrCreate('clipboardPreview', text ?? '');
         AppStorage.setOrCreate('clipboardIsImage', false);
       }
-    }).catch((_e: Error) => {
+    }).catch((err: Error) => {
+      console.error('shuntiIME refreshClipboardPreview error', JSON.stringify(err));
       AppStorage.setOrCreate('clipboardPreview', '');
       AppStorage.setOrCreate('clipboardIsImage', false);
     });

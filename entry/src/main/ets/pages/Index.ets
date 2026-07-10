@@ -1,7 +1,7 @@
 import { UserDictStore } from '../ime/UserDictStore';
 import { promptAction, router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
-import { common, abilityAccessCtrl, Permissions } from '@kit.AbilityKit';
+import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import display from '@ohos.display';
 
 const CONSENT_STORE: string = 'shunti_consent';
@@ -72,7 +72,10 @@ struct Index {
     const permissions: Array<Permissions> = ['ohos.permission.READ_PASTEBOARD'];
     abilityAccessCtrl.createAtManager()
       .requestPermissionsFromUser(getContext(this) as common.UIAbilityContext, permissions)
-      .catch((_e: Error) => {});
+      .then((result: PermissionRequestResult) => {
+        console.info('shuntiIME clipboard permission result', JSON.stringify(result.authResults));
+      })
+      .catch((err: Error) => console.error('shuntiIME requestPermissionsFromUser error', JSON.stringify(err)));
   }
 
   private declineConsent(): void {
