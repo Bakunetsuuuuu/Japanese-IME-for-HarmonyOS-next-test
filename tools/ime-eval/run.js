@@ -55,13 +55,21 @@ function main() {
   };
 
   const corpus = [...require('./corpus.js'), ...require('./corpus2.js')];
-  let ok = 0;
+  // accept.js lists additional *valid* natural-Japanese outputs per reading
+  // (okurigana/kana-kanji/homophone variation the IME can't disambiguate). The
+  // lenient score counts those as correct; garbage never appears there.
+  const accept = require('./accept.js');
+  let strict = 0, lenient = 0;
   const misses = [];
   for (const [reading, gold] of corpus) {
     const got = convert(reading);
-    if (got === gold) ok++; else misses.push([reading, gold, got]);
+    const okSet = [gold, ...(accept[reading] || [])];
+    if (got === gold) strict++;
+    if (okSet.includes(got)) lenient++; else misses.push([reading, gold, got]);
   }
-  console.log(`sentence accuracy: ${ok}/${corpus.length} (${(100 * ok / corpus.length).toFixed(1)}%)`);
+  const n = corpus.length;
+  console.log(`strict accuracy : ${strict}/${n} (${(100 * strict / n).toFixed(1)}%)  [exact gold match]`);
+  console.log(`lenient accuracy: ${lenient}/${n} (${(100 * lenient / n).toFixed(1)}%)  [any valid natural output]`);
   if (showMisses) {
     for (const [r, g, got] of misses) {
       console.log(`\n${r}\n  gold: ${g}\n  got : ${got}`);
