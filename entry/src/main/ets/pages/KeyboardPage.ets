@@ -121,7 +121,7 @@ struct KeyboardPage {
                   this.clipboardPreview.length > 0) {
                   // Gboard-style: centered paste suggestion when nothing is composing,
                   // rather than left-aligned like an actual conversion candidate.
-                  Text('📋 ' + this.clipboardPreview)
+                  Text(this.clipboardPreview)
                     .fontSize(this.isLandscape ? 11 : 16)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
