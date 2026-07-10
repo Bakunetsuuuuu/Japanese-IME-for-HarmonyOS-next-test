@@ -238,7 +238,7 @@ struct KeyboardPage {
     })
 
     if (this.showSettingsBar) {
-      SettingsBar({ visible: $$this.showSettingsBar })
+      SettingsBar({ visible: this.showSettingsBar })
     }
     }
     .width('100%')
