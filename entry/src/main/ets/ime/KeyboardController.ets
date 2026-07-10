@@ -1,5 +1,6 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
+import type { Want } from '@kit.AbilityKit';
 import display from '@ohos.display';
 import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
@@ -7,6 +8,7 @@ import pasteboard from '@ohos.pasteboard';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
+import { SettingsStore, KeyboardSettings } from './SettingsStore';
 
 interface InputMethodSubtype {
   id: string;
@@ -186,6 +188,7 @@ export class InputHandler {
       })
       .catch((_e: Error) => {});
     this.reloadUserDict();
+    this.reloadSettings();
   }
 
   // Called whenever the user taps a symbol in SymbolView, so its "recent" tab
@@ -220,6 +223,28 @@ export class InputHandler {
       });
   }
 
+  // Reload keyboard-wide settings from disk (picks up the layout choice made
+  // in the main app's settings screen, since that's a separate process).
+  private reloadSettings(): void {
+    if (!this.imeContext) { return; }
+    SettingsStore.load(this.imeContext, true)
+      .then((s: KeyboardSettings) => {
+        AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
+        AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
+        AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
+      });
+  }
+
+  // One-handed mode is toggled from the keyboard's own settings panel, so it
+  // can persist AppStorage's current value directly rather than re-reading it.
+  setOneHandedMode(enabled: boolean, side: string): void {
+    AppStorage.setOrCreate('oneHandedMode', enabled);
+    AppStorage.setOrCreate('oneHandedSide', side);
+    if (this.imeContext) {
+      SettingsStore.saveOneHanded(this.imeContext, enabled, side);
+    }
+  }
+
   private saveLearning(): void {
     clearTimeout(this.learningSaveTimer);
     this.learningSaveTimer = setTimeout(() => {
@@ -239,6 +264,7 @@ export class InputHandler {
     this.inputClient = client;
     this.converter.reset();
     this.reloadUserDict();
+    this.reloadSettings();
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -484,6 +510,12 @@ export class InputHandler {
     this.refreshClipboardPreview();
   }
 
+  // Kept in-memory only (AppStorage), not persisted to disk — clipboard
+  // contents can be sensitive, and this app's privacy stance is to keep data
+  // on-device only for as long as actually needed. History resets when the
+  // keyboard extension process restarts.
+  private static readonly MAX_CLIPBOARD_HISTORY = 8;
+
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
       if (!data || data.getRecordCount() === 0) {
@@ -498,12 +530,22 @@ export class InputHandler {
         const text = data.getPrimaryText();
         AppStorage.setOrCreate('clipboardPreview', text ?? '');
         AppStorage.setOrCreate('clipboardIsImage', false);
+        this.recordClipboardHistory(text ?? '');
       }
     }).catch((err: Error) => {
       console.error('shuntiIME refreshClipboardPreview error', JSON.stringify(err));
       AppStorage.setOrCreate('clipboardPreview', '');
       AppStorage.setOrCreate('clipboardIsImage', false);
     });
+  }
+
+  private recordClipboardHistory(text: string): void {
+    if (text.length === 0) { return; }
+    const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
+    if (history[0] === text) { return; }
+    const next = [text, ...history.filter((t: string) => t !== text)]
+      .slice(0, InputHandler.MAX_CLIPBOARD_HISTORY);
+    AppStorage.setOrCreate('clipboardHistory', next);
   }
 
   pasteClipboard(): void {
@@ -517,6 +559,48 @@ export class InputHandler {
     }
     this.insertText(text);
     this.refreshClipboardPreview();
+  }
+
+  // Paste an arbitrary entry from clipboard history (not necessarily the
+  // current system clipboard contents).
+  pasteFromHistory(index: number): void {
+    const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
+    const text = history[index];
+    if (text === undefined || text.length === 0) { return; }
+    this.insertText(text);
+  }
+
+  clearClipboardHistory(): void {
+    AppStorage.setOrCreate('clipboardHistory', [] as string[]);
+  }
+
+  // Launches the main app (settings / user dictionary screen) from the
+  // keyboard's own settings panel. InputMethodExtensionContext extends
+  // ExtensionContext, which supports startAbility for abilities in the same
+  // bundle.
+  openMainApp(): void {
+    if (!this.imeContext) { return; }
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+    };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openMainApp error', JSON.stringify(err)));
+  }
+
+  // AppGallery's review deep link needs this app's AppGallery Connect app ID,
+  // which only exists once it has been published there — until then this
+  // stays empty and the caller should show a "not published yet" message
+  // instead of firing a broken want.
+  private static readonly APP_GALLERY_APP_ID = '';
+
+  openAppGalleryReview(): boolean {
+    const id = InputHandler.APP_GALLERY_APP_ID;
+    if (id.length === 0 || !this.imeContext) { return false; }
+    const want: Want = { uri: `store://appgallery.huawei.com/app/detail?id=${id}` };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openAppGalleryReview error', JSON.stringify(err)));
+    return true;
   }
 
   private updateCandidates(): void {

@@ -9,6 +9,7 @@ import { SymbolView } from '../components/SymbolView';
 import { EmojiView } from '../components/EmojiView';
 import { NumericPadView } from '../components/NumericPadView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
+import { SettingsBar } from '../components/SettingsBar';
 import { kbTheme } from '../components/Theme';
 
 let _inputStartRegistered = false;
@@ -33,6 +34,10 @@ struct KeyboardPage {
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
   @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
+  @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
+  @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
+  @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
+  @State showSettingsBar: boolean = false;
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -62,6 +67,7 @@ struct KeyboardPage {
   }
 
   build() {
+    Stack() {
     Column() {
       // Symbol/Emoji views take the full panel (no preview bar). Numeric keeps
       // the preview bar — without it the pad's rows stretch to fill the whole
@@ -146,9 +152,11 @@ struct KeyboardPage {
               .justifyContent(FlexAlign.Center)
               .alignItems(VerticalAlign.Center)
 
-              // Layout toggle: フ = switch to flick, Q = switch to QWERTY
-              Text(this.keyboardLayout === 'FLICK' ? 'Q' : 'フ')
-                .fontSize(this.isLandscape ? 10 : 14)
+              // Settings bar: clipboard history, app shortcut, one-handed mode,
+              // AppGallery review. The flick/QWERTY toggle that used to live here
+              // moved into the main app's settings screen (SettingsStore-backed).
+              Text('⚙')
+                .fontSize(this.isLandscape ? 12 : 16)
                 .fontColor(kbTheme(this.isDark).subText)
                 .textAlign(TextAlign.Center)
                 .width(this.isLandscape ? 32 : 50)
@@ -156,8 +164,7 @@ struct KeyboardPage {
                 .backgroundColor(kbTheme(this.isDark).funcKeyBg)
                 .borderRadius(6)
                 .onClick(() => {
-                  const next = this.keyboardLayout === 'FLICK' ? 'QWERTY' : 'FLICK';
-                  AppStorage.setOrCreate('keyboardLayout', next);
+                  this.showSettingsBar = !this.showSettingsBar;
                 })
             }
             .width('100%')
@@ -173,23 +180,32 @@ struct KeyboardPage {
           .width('100%')
         }
 
-        // Keyboard — fills all height remaining after the preview bar
-        if (this.keyboardSubMode === 'numeric') {
-          NumericPadView()
-            .layoutWeight(1)
-        } else if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
-          FlickKeyboardView({
-            inputMode: this.inputMode,
-            isLandscape: this.isLandscape
-          })
-            .layoutWeight(1)
-        } else {
-          KeyboardView({
-            inputMode: this.inputMode,
-            isLandscape: this.isLandscape
-          })
-            .layoutWeight(1)
+        // Keyboard — fills all height remaining after the preview bar.
+        // One-handed mode shrinks+docks this via a scale transform anchored to
+        // an edge, rather than touching the pixel-tuned computeKeyWidths /
+        // applyKeyboardWidthsForVp system: each inner view still measures and
+        // lays out its keys at full intended size, then this wrapper visually
+        // (and for hit-testing) scales the whole thing down toward one side.
+        Column() {
+          if (this.keyboardSubMode === 'numeric') {
+            NumericPadView()
+          } else if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
+            FlickKeyboardView({
+              inputMode: this.inputMode,
+              isLandscape: this.isLandscape
+            })
+          } else {
+            KeyboardView({
+              inputMode: this.inputMode,
+              isLandscape: this.isLandscape
+            })
+          }
         }
+        .width('100%')
+        .layoutWeight(1)
+        .scale(this.oneHandedMode ?
+          { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
+          { x: 1, y: 1 })
       }
     }
     .width('100%')
@@ -220,5 +236,12 @@ struct KeyboardPage {
         }
       }
     })
+
+    if (this.showSettingsBar) {
+      SettingsBar({ visible: $$this.showSettingsBar })
+    }
+    }
+    .width('100%')
+    .height('100%')
   }
 }
