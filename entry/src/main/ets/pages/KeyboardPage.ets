@@ -10,6 +10,7 @@ import { EmojiView } from '../components/EmojiView';
 import { NumericPadView } from '../components/NumericPadView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
 import { SettingsBar } from '../components/SettingsBar';
+import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
 
 let _inputStartRegistered = false;
@@ -64,6 +65,19 @@ struct KeyboardPage {
   onBackPress(): boolean {
     InputHandler.getInstance().hideKeyboard();
     return true;
+  }
+
+  // onInputStart only fires for a genuinely new input session — switching to
+  // the main app to change the keyboard layout and back doesn't necessarily
+  // trigger one if the panel itself just gets hidden/reshown, which made the
+  // switch feel like it needed a second attempt. onPageShow fires every time
+  // this panel becomes visible again, so re-pull the setting there too.
+  onPageShow(): void {
+    SettingsStore.load(getContext(this), true).then((s: KeyboardSettings) => {
+      AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
+      AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
+      AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
+    });
   }
 
   build() {
