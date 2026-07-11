@@ -14,6 +14,7 @@ export struct SettingsBar {
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
+  @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
   @State showHistory: boolean = false;
 
   private close(): void {
@@ -49,6 +50,41 @@ export struct SettingsBar {
   }
 
   @Builder MenuView() {
+    // Switches immediately (same process as the keyboard itself) — more
+    // reliable than the main app's copy of this same toggle, which has to
+    // round-trip through shared preferences for the extension to pick it up.
+    Row() {
+      Text('キーボード')
+        .fontSize(14)
+        .fontColor(kbTheme(this.isDark).previewText)
+        .layoutWeight(1)
+
+      Row() {
+        Text('QWERTY')
+          .fontSize(12)
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .borderRadius(6)
+          .backgroundColor(this.keyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accentBg : 'transparent')
+          .fontColor(this.keyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).subText)
+          .onClick(() => { InputHandler.getInstance().setKeyboardLayout('QWERTY'); })
+
+        Text('フリック')
+          .fontSize(12)
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .borderRadius(6)
+          .backgroundColor(this.keyboardLayout === 'FLICK' ? kbTheme(this.isDark).accentBg : 'transparent')
+          .fontColor(this.keyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).subText)
+          .onClick(() => { InputHandler.getInstance().setKeyboardLayout('FLICK'); })
+      }
+      .backgroundColor(kbTheme(this.isDark).funcKeyBg)
+      .borderRadius(8)
+      .padding(2)
+    }
+    .width('100%')
+    .padding(10)
+
+    Divider().color(kbTheme(this.isDark).borderColor)
+
     Text('アプリを開く')
       .fontSize(14)
       .fontColor(kbTheme(this.isDark).previewText)

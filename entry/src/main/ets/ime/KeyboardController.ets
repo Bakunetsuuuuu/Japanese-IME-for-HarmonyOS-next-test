@@ -252,6 +252,17 @@ export class InputHandler {
     }
   }
 
+  // Switching the keyboard layout from the keyboard's own settings panel
+  // takes effect immediately (same process, no reload round-trip needed) —
+  // more reliable than the main-app toggle, which depends on the extension
+  // picking the change back up on its own next reload.
+  setKeyboardLayout(layout: string): void {
+    AppStorage.setOrCreate('keyboardLayout', layout);
+    if (this.imeContext) {
+      SettingsStore.saveKeyboardLayout(this.imeContext, layout);
+    }
+  }
+
   private saveLearning(): void {
     clearTimeout(this.learningSaveTimer);
     this.learningSaveTimer = setTimeout(() => {
