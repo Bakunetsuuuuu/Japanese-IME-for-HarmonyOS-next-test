@@ -32,12 +32,15 @@ export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boo
   AppStorage.setOrCreate('keyboardContentVp', screenVp);
   // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead. The
   // middle letter row (asdfghjkl + ー) and bottom row (shift + zxcvbnm +
-  // backspace + 文節) also reuse this width; they aren't a fixed-width fit
-  // like this row, just centered, so a different key count is harmless.
+  // backspace) also reuse this width; they aren't a fixed-width fit like
+  // this row, just centered, so a different key count is harmless.
   const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
   const skwVp = Math.round(kwVp * 1.2);
-  // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
-  const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
+  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps
+  // (文節 sits right after space, at the same special-key width as
+  // mode/enter — the row would overflow if it were sized on top of them
+  // instead of space giving up the room).
+  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 10), 60);
   // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
   const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
   AppStorage.setOrCreate('keyWidthVp', kwVp);

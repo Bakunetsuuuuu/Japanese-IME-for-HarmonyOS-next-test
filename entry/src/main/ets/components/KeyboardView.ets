@@ -75,23 +75,23 @@ export struct KeyboardView {
         .layoutWeight(1)
       }, (rowIdx: number) => String(rowIdx))
 
-      // Bottom letter row (z-m) with shift, backspace, and 文節 (per-segment
-      // conversion — lets you fix up individual bunsetsu of a converted
-      // sentence instead of only ever choosing among whole-sentence candidates;
-      // FlickKeyboardView already exposes this via its own dedicated key).
+      // Bottom letter row (z-m) with shift and backspace
       Row({ space: 2 }) {
         this.ShiftKey()
         ForEach(ROWS[2], (key: string) => {
           this.RegularKey(key, this.keyWidthVp)
         }, (key: string) => key)
         this.BackspaceKey()
-        this.BunsetsuKey()
       }
       .width('100%')
       .justifyContent(FlexAlign.Center)
       .layoutWeight(1)
 
-      // Function row
+      // Function row. 文節 (per-segment conversion — lets you fix up
+      // individual bunsetsu of a converted sentence instead of only ever
+      // choosing among whole-sentence candidates; FlickKeyboardView already
+      // exposes this via its own dedicated key) sits right after the space
+      // key, which is sized shorter to make room for it.
       Row({ space: 2 }) {
         this.ModeKey()
         this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
@@ -101,6 +101,7 @@ export struct KeyboardView {
           else { this.getHandler().handleDirectKana(ch); }
         })
         this.SpaceKey()
+        this.BunsetsuKey()
         this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
           const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
           const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
