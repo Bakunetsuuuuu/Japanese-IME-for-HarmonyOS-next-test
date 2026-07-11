@@ -29,12 +29,14 @@ export class SettingsStore {
       const layout = await prefs.get('keyboardLayout', DEFAULTS.keyboardLayout);
       const oneHanded = await prefs.get('oneHandedMode', DEFAULTS.oneHandedMode);
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, forceReload }));
       return {
         keyboardLayout: String(layout),
         oneHandedMode: oneHanded === true,
         oneHandedSide: String(side),
       };
-    } catch (_e) {
+    } catch (e) {
+      console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
       return { keyboardLayout: DEFAULTS.keyboardLayout, oneHandedMode: DEFAULTS.oneHandedMode, oneHandedSide: DEFAULTS.oneHandedSide };
     }
   }
@@ -44,7 +46,10 @@ export class SettingsStore {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('keyboardLayout', layout);
       await prefs.flush();
-    } catch (_e) {}
+      console.info('shuntiIME SettingsStore.saveKeyboardLayout ok', layout);
+    } catch (e) {
+      console.error('shuntiIME SettingsStore.saveKeyboardLayout error', JSON.stringify(e));
+    }
   }
 
   static async saveOneHanded(context: common.Context, enabled: boolean, side: string): Promise<void> {

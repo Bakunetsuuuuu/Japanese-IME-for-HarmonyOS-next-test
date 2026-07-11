@@ -52,6 +52,14 @@ struct KeyboardPage {
         .catch((_e: Error) => {});
     }
 
+    // aboutToAppear runs every time this panel's content is (re)constructed —
+    // a more reliable reload point than onPageShow, which per ArkUI docs is a
+    // Navigation/Router page-lifecycle hook and may never fire for content
+    // hosted in an InputMethodExtensionAbility's Panel (a window, not a routed
+    // page). Kept unguarded (unlike the inputStart listener below) since
+    // rereading a small preferences store is cheap.
+    this.reloadSettingsIntoStorage();
+
     if (_inputStartRegistered) { return; }
     _inputStartRegistered = true;
     inputMethodEngine.getInputMethodAbility().on('inputStart', (
@@ -69,11 +77,17 @@ struct KeyboardPage {
 
   // onInputStart only fires for a genuinely new input session — switching to
   // the main app to change the keyboard layout and back doesn't necessarily
-  // trigger one if the panel itself just gets hidden/reshown, which made the
-  // switch feel like it needed a second attempt. onPageShow fires every time
-  // this panel becomes visible again, so re-pull the setting there too.
+  // trigger one if the panel itself just gets hidden/reshown. Kept alongside
+  // aboutToAppear's call in case this panel *is* managed as a routed page on
+  // some devices/OS versions after all.
   onPageShow(): void {
+    console.info('shuntiIME KeyboardPage.onPageShow fired');
+    this.reloadSettingsIntoStorage();
+  }
+
+  private reloadSettingsIntoStorage(): void {
     SettingsStore.load(getContext(this), true).then((s: KeyboardSettings) => {
+      console.info('shuntiIME KeyboardPage settings reload applied', JSON.stringify(s));
       AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
       AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
       AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);

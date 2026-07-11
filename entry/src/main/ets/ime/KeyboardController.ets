@@ -229,9 +229,13 @@ export class InputHandler {
   // Reload keyboard-wide settings from disk (picks up the layout choice made
   // in the main app's settings screen, since that's a separate process).
   private reloadSettings(): void {
-    if (!this.imeContext) { return; }
+    if (!this.imeContext) {
+      console.error('shuntiIME reloadSettings: no imeContext');
+      return;
+    }
     SettingsStore.load(this.imeContext, true)
       .then((s: KeyboardSettings) => {
+        console.info('shuntiIME reloadSettings applied', JSON.stringify(s));
         AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
         AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
