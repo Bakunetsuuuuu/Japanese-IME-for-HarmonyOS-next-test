@@ -1,5 +1,4 @@
 import { UserDictStore } from '../ime/UserDictStore';
-import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { promptAction, router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
@@ -23,10 +22,6 @@ struct Index {
   // First-launch privacy consent gate. true = block UI until the user agrees.
   @State showConsent: boolean = false;
   @State isDark: boolean = false;
-  // Moved here from the in-keyboard toggle so switching layout doesn't cost a
-  // candidate-bar button; the IME extension picks this up via SettingsStore
-  // (a separate process, so it re-reads from disk rather than sharing AppStorage).
-  @State keyboardLayout: string = 'QWERTY';
 
   // Hidden access to the developer dictionary: 7 quick taps on the title.
   private titleTapCount: number = 0;
@@ -35,7 +30,6 @@ struct Index {
   aboutToAppear(): void {
     this.reload();
     this.checkConsent();
-    SettingsStore.load(getContext(this), true).then((s: KeyboardSettings) => { this.keyboardLayout = s.keyboardLayout; });
     try {
       const dis = display.getDefaultDisplaySync();
       // display.ColorMode: COLOR_MODE_LIGHT=0, COLOR_MODE_DARK=1
@@ -43,11 +37,6 @@ struct Index {
     } catch (_e) {
       this.isDark = false;
     }
-  }
-
-  private setKeyboardLayout(layout: string): void {
-    this.keyboardLayout = layout;
-    SettingsStore.saveKeyboardLayout(getContext(this), layout);
   }
 
   private checkConsent(): void {
@@ -196,39 +185,6 @@ struct Index {
       }
       .width('100%')
       .padding(16)
-
-      Divider().color(this.isDark ? '#333333' : '#E0E0E0')
-
-      // ── キーボード設定 ───────────────────────────────────
-      Row() {
-        Text('キーボードレイアウト')
-          .fontSize(15)
-          .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
-          .layoutWeight(1)
-
-        Row() {
-          Text('QWERTY')
-            .fontSize(13)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .backgroundColor(this.keyboardLayout === 'QWERTY' ? '#4A90E2' : 'transparent')
-            .fontColor(this.keyboardLayout === 'QWERTY' ? Color.White : (this.isDark ? '#AAAAAA' : '#888888'))
-            .borderRadius(6)
-            .onClick(() => { this.setKeyboardLayout('QWERTY'); })
-
-          Text('フリック')
-            .fontSize(13)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .backgroundColor(this.keyboardLayout === 'FLICK' ? '#4A90E2' : 'transparent')
-            .fontColor(this.keyboardLayout === 'FLICK' ? Color.White : (this.isDark ? '#AAAAAA' : '#888888'))
-            .borderRadius(6)
-            .onClick(() => { this.setKeyboardLayout('FLICK'); })
-        }
-        .backgroundColor(this.isDark ? '#2A2A2A' : '#EEEEEE')
-        .borderRadius(8)
-        .padding(2)
-      }
-      .width('100%')
-      .padding({ left: 16, right: 16, top: 14, bottom: 14 })
 
       Divider().color(this.isDark ? '#333333' : '#E0E0E0')
 
