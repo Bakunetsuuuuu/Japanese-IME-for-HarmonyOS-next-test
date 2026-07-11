@@ -3,14 +3,15 @@ import { kbTheme } from './Theme';
 
 const ROWS: string[][] = [
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+  // '-' always inserts ー (the long-vowel mark) via ROMAJI_TABLE — romaji kana
+  // input has no other reachable key for it, since it isn't part of any
+  // romaji consonant sequence. Tacked onto the middle row rather than the
+  // number row so it still shares the same 10-key width as row 0.
+  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '-'],
   ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
 ];
 
-// '-' always inserts ー (the long-vowel mark) via ROMAJI_TABLE — romaji kana
-// input has no other reachable key for it, since it isn't part of any
-// romaji consonant sequence.
-const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'];
+const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
 @Component
 export struct KeyboardView {
@@ -20,7 +21,6 @@ export struct KeyboardView {
   @State isCapsLock: boolean = false;
   // Key widths pre-computed from screen density in KeyboardController
   @StorageLink('keyWidthVp') keyWidthVp: number = 36;
-  @StorageLink('numberKeyWidthVp') numberKeyWidthVp: number = 32;
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
   @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
   @StorageLink('isDark') isDark: boolean = false;
@@ -55,7 +55,7 @@ export struct KeyboardView {
       if (!this.isLandscape) {
         Row({ space: 2 }) {
           ForEach(NUMBER_ROW, (key: string) => {
-            this.RegularKey(key, this.numberKeyWidthVp)
+            this.RegularKey(key, this.keyWidthVp)
           }, (key: string) => key)
         }
         .width('100%')
@@ -75,13 +75,17 @@ export struct KeyboardView {
         .layoutWeight(1)
       }, (rowIdx: number) => String(rowIdx))
 
-      // Bottom letter row (z-m) with shift and backspace
+      // Bottom letter row (z-m) with shift, backspace, and 文節 (per-segment
+      // conversion — lets you fix up individual bunsetsu of a converted
+      // sentence instead of only ever choosing among whole-sentence candidates;
+      // FlickKeyboardView already exposes this via its own dedicated key).
       Row({ space: 2 }) {
         this.ShiftKey()
         ForEach(ROWS[2], (key: string) => {
           this.RegularKey(key, this.keyWidthVp)
         }, (key: string) => key)
         this.BackspaceKey()
+        this.BunsetsuKey()
       }
       .width('100%')
       .justifyContent(FlexAlign.Center)
@@ -173,6 +177,21 @@ export struct KeyboardView {
         } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
           this.stopBsRepeat();
         }
+      })
+  }
+
+  @Builder BunsetsuKey() {
+    Text('文節')
+      .fontSize(13)
+      .textAlign(TextAlign.Center)
+      .width(this.specialKeyWidthVp)
+      .height('100%')
+      .backgroundColor(kbTheme(this.isDark).specialKeyBg)
+      .fontColor(kbTheme(this.isDark).onAccentText)
+      .borderRadius(5)
+      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .onClick(() => {
+        this.getHandler().handleBunsetsu();
       })
   }
 
