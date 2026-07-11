@@ -9,6 +9,10 @@ export const ROMAJI_TABLE: Record<string, string> = {
   // Vowels
   'a': 'あ', 'i': 'い', 'u': 'う', 'e': 'え', 'o': 'お',
 
+  // Long vowel mark — the "-" key always inserts ー directly in kana mode
+  // (koohii is never typed as こおひい; こーひー comes from ko-hi-).
+  '-': 'ー',
+
   // K row
   'ka': 'か', 'ki': 'き', 'ku': 'く', 'ke': 'け', 'ko': 'こ',
   'kya': 'きゃ', 'kyi': 'きぃ', 'kyu': 'きゅ', 'kye': 'きぇ', 'kyo': 'きょ',

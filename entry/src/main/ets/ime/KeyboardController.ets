@@ -33,6 +33,10 @@ export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boo
   // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead
   const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
   const skwVp = Math.round(kwVp * 1.2);
+  // Number row is 11 keys (0-9 + ー, the long-vowel mark — romaji kana input
+  // otherwise has no way to type it): 4vp H-padding + 10 gaps × 2vp = 24vp overhead.
+  const numKwVp = Math.max(Math.floor((screenVp - 24) / 11), 22);
+  AppStorage.setOrCreate('numberKeyWidthVp', numKwVp);
   // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
   const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
   // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding

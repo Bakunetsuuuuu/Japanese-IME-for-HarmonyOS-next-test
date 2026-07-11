@@ -7,7 +7,10 @@ const ROWS: string[][] = [
   ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
 ];
 
-const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
+// '-' always inserts ー (the long-vowel mark) via ROMAJI_TABLE — romaji kana
+// input has no other reachable key for it, since it isn't part of any
+// romaji consonant sequence.
+const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-'];
 
 @Component
 export struct KeyboardView {
@@ -17,6 +20,7 @@ export struct KeyboardView {
   @State isCapsLock: boolean = false;
   // Key widths pre-computed from screen density in KeyboardController
   @StorageLink('keyWidthVp') keyWidthVp: number = 36;
+  @StorageLink('numberKeyWidthVp') numberKeyWidthVp: number = 32;
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
   @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
   @StorageLink('isDark') isDark: boolean = false;
@@ -51,7 +55,7 @@ export struct KeyboardView {
       if (!this.isLandscape) {
         Row({ space: 2 }) {
           ForEach(NUMBER_ROW, (key: string) => {
-            this.RegularKey(key)
+            this.RegularKey(key, this.numberKeyWidthVp)
           }, (key: string) => key)
         }
         .width('100%')
@@ -63,7 +67,7 @@ export struct KeyboardView {
       ForEach([0, 1], (rowIdx: number) => {
         Row({ space: 2 }) {
           ForEach(ROWS[rowIdx], (key: string) => {
-            this.RegularKey(key)
+            this.RegularKey(key, this.keyWidthVp)
           }, (key: string) => key)
         }
         .width('100%')
@@ -75,7 +79,7 @@ export struct KeyboardView {
       Row({ space: 2 }) {
         this.ShiftKey()
         ForEach(ROWS[2], (key: string) => {
-          this.RegularKey(key)
+          this.RegularKey(key, this.keyWidthVp)
         }, (key: string) => key)
         this.BackspaceKey()
       }
@@ -110,14 +114,14 @@ export struct KeyboardView {
     .padding({ bottom: 8, top: 4, left: 2, right: 2 })
   }
 
-  @Builder RegularKey(value: string) {
+  @Builder RegularKey(value: string, width: number) {
     // Read isShift/isCapsLock directly here (not via a by-value Builder param)
     // so the label re-renders when the shift state changes.
     Text((this.isShift || this.isCapsLock) ? value.toUpperCase() : value)
       .fontSize(17)
       .fontColor(kbTheme(this.isDark).keyText)
       .textAlign(TextAlign.Center)
-      .width(this.keyWidthVp)
+      .width(width)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(5)
