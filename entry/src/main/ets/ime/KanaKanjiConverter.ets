@@ -25432,6 +25432,22 @@ export class KanaKanjiConverter {
           /[てで]$/.test(segs[idx - 1])) {
         best = seg;
       }
+      // あい/すい directly before てる/てい(る)/てた/た is the い-form of
+      // 開く/空く ("store's あいてる" = open, "train's すいてる" =
+      // uncrowded), not whichever homograph (合い/会い/愛, 水/吹/推/...)
+      // lookup() would otherwise pick for the bare 2-mora reading on its
+      // own. あいて/すいて (already merged with て by the segmenter, since
+      // あいて/相手 is itself a recognized word) get the same treatment
+      // when followed by past-tense た.
+      if (idx + 1 < segs.length) {
+        const next = segs[idx + 1];
+        if (next === 'た' && (seg === 'あいて' || seg === 'すいて')) {
+          best = seg === 'あいて' ? '開いて' : '空いて';
+        } else if (/^(てる|てい|てた|た)/.test(next)) {
+          if (seg === 'あい') { best = '開い'; }
+          else if (seg === 'すい') { best = '空い'; }
+        }
+      }
       // A segment that resolves to a bare symbol (e.g. かっこ→"()") means the
       // segmenter split a casual string across a symbol "word"; the joined
       // phrase would be nonsense like "()よ". Abandon the join so the plain
