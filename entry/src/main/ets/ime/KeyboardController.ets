@@ -543,22 +543,63 @@ export class InputHandler {
       if (!data || data.getRecordCount() === 0) {
         AppStorage.setOrCreate('clipboardPreview', '');
         AppStorage.setOrCreate('clipboardIsImage', false);
+        AppStorage.setOrCreate('clipboardIsFile', false);
         return;
       }
       if (data.hasType(pasteboard.MIMETYPE_PIXELMAP)) {
         AppStorage.setOrCreate('clipboardPreview', '画像');
         AppStorage.setOrCreate('clipboardIsImage', true);
-      } else {
-        const text = data.getPrimaryText();
-        AppStorage.setOrCreate('clipboardPreview', text ?? '');
-        AppStorage.setOrCreate('clipboardIsImage', false);
-        this.recordClipboardHistory(text ?? '');
+        AppStorage.setOrCreate('clipboardIsFile', false);
+        return;
       }
+      const text = data.getPrimaryText();
+      if (text && text.length > 0) {
+        AppStorage.setOrCreate('clipboardPreview', text);
+        AppStorage.setOrCreate('clipboardIsImage', false);
+        AppStorage.setOrCreate('clipboardIsFile', false);
+        this.recordClipboardHistory(text);
+        return;
+      }
+      // No text/image record -- a copied file (e.g. from Files/a Gallery share
+      // sheet) shows up as a URI record instead. Preview it as a filename
+      // rather than leaving the chip blank or showing the raw URI.
+      const uri = data.getPrimaryUri();
+      if (uri && uri.length > 0) {
+        AppStorage.setOrCreate('clipboardPreview', InputHandler.formatFileClipPreview(uri));
+        AppStorage.setOrCreate('clipboardIsImage', false);
+        AppStorage.setOrCreate('clipboardIsFile', true);
+        return;
+      }
+      AppStorage.setOrCreate('clipboardPreview', '');
+      AppStorage.setOrCreate('clipboardIsImage', false);
+      AppStorage.setOrCreate('clipboardIsFile', false);
     }).catch((err: Error) => {
       console.error('shuntiIME refreshClipboardPreview error', JSON.stringify(err));
       AppStorage.setOrCreate('clipboardPreview', '');
       AppStorage.setOrCreate('clipboardIsImage', false);
+      AppStorage.setOrCreate('clipboardIsFile', false);
     });
+  }
+
+  // "国税庁_請求書テンプレート2026.pdf" -> "国税庁_請求書.pdf": first few
+  // characters of the filename plus its extension, so the chip stays short
+  // without losing the cue of what kind of file it is.
+  private static formatFileClipPreview(uri: string): string {
+    const clean = uri.split('?')[0].split('#')[0];
+    const segments = clean.split('/');
+    let rawName = segments[segments.length - 1] ?? '';
+    try {
+      rawName = decodeURIComponent(rawName);
+    } catch {
+      // Malformed percent-encoding -- fall back to the raw segment.
+    }
+    if (rawName.length === 0) { return 'ファイル'; }
+    const dotIdx = rawName.lastIndexOf('.');
+    const hasExt = dotIdx > 0 && dotIdx < rawName.length - 1;
+    const base = hasExt ? rawName.slice(0, dotIdx) : rawName;
+    const ext = hasExt ? rawName.slice(dotIdx + 1) : '';
+    const truncatedBase = base.length > 8 ? base.slice(0, 8) : base;
+    return hasExt ? `${truncatedBase}.${ext}` : truncatedBase;
   }
 
   private recordClipboardHistory(text: string): void {
@@ -572,7 +613,8 @@ export class InputHandler {
 
   pasteClipboard(): void {
     const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
-    if (isImage) {
+    const isFile = AppStorage.get<boolean>('clipboardIsFile') ?? false;
+    if (isImage || isFile) {
       return;
     }
     const text = AppStorage.get<string>('clipboardPreview') ?? '';
