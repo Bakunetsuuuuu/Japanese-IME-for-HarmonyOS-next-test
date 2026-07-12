@@ -26394,6 +26394,29 @@ export class KanaKanjiConverter {
         merged.push(seg);
       }
     }
-    return merged;
+
+    // Merge adjacent katakana segments back into one loanword token. A
+    // katakana run that isn't a dictionary entry (ネット, ストーカー, ネトウヨ,
+    // …) can only be split into single characters by the DP above, which then
+    // fragments the reading and lets each stray char perturb the conversion of
+    // neighbouring kana. Consecutive katakana is always one token — never a
+    // legitimate word boundary that needs splitting — so glue them back.
+    const merged2: string[] = [];
+    for (const seg of merged) {
+      if (merged2.length > 0 &&
+          KanaKanjiConverter.isKatakanaRun(merged2[merged2.length - 1]) &&
+          KanaKanjiConverter.isKatakanaRun(seg)) {
+        merged2[merged2.length - 1] += seg;
+      } else {
+        merged2.push(seg);
+      }
+    }
+    return merged2;
+  }
+
+  // True for a non-empty run of katakana characters (incl. the ー長音符,
+  // ・middle dot and ヽヾ iteration marks) — i.e. a loanword token.
+  private static isKatakanaRun(s: string): boolean {
+    return s.length > 0 && /^[ァ-ヶーヽヾ・゠]+$/.test(s);
   }
 }
