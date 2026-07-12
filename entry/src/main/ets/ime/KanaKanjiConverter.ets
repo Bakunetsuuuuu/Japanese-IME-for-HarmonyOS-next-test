@@ -25903,6 +25903,30 @@ export class KanaKanjiConverter {
         result = [picked, ...result.filter((c: string) => c !== picked)];
       }
     }
+    // Bare single-kanji lead on an inflected verb/adjective reading is a
+    // dict.json artifact: those entries hold a kanji-dictionary-style list of
+    // single characters (おさめる→乂/乱/収…, のぞむ→希/望/朢…) with no
+    // okurigana, so 乂/希 lead over the real 収める/望む that only global_dict
+    // carries. A single kanji can never spell a 3+-mora inflected verb, so
+    // when result[0] is one and the reading ends in an inflection kana,
+    // promote the first proper okurigana form (kanji + matching final kana).
+    if (result.length > 1 && kana.length >= 3 &&
+        KanaKanjiConverter.INFLECTION_ENDINGS.indexOf(kana[kana.length - 1]) >= 0 &&
+        KanaKanjiConverter.hasKanjiChar(result[0]) && result[0].length === 1) {
+      // Only promote an okurigana form that a *curated* source (global_dict or
+      // the inline DICTIONARY) authored — dict.json's scrape also fabricates
+      // garbage okurigana on obscure kanji (乂める/尹める/甸める for おさめる),
+      // which would otherwise be picked as the first okurigana-ending match.
+      const curated = new Set<string>([...(global ?? []), ...(entry ?? [])]);
+      const okuriIdx = result.findIndex((c: string) =>
+        c.length >= 2 && KanaKanjiConverter.hasKanjiChar(c) &&
+        c[c.length - 1] === kana[kana.length - 1] &&
+        /[ぁ-ん]$/.test(c) && curated.has(c));
+      if (okuriIdx > 0) {
+        const picked = result[okuriIdx];
+        result = [picked, ...result.filter((c: string) => c !== picked)];
+      }
+    }
     // Final safety net: global/user dict entries are merged in after
     // filterCandidates already ran, so a markup artifact contributed only by
     // one of those (e.g. global_dict's own "[[錦]]"/"{{w|甲賀}}") would
@@ -25933,6 +25957,11 @@ export class KanaKanjiConverter {
     'なれる', 'なれた', 'なれて',
     'つづり',
   ];
+
+  // Final kana of an inflected verb/adjective surface (godan/ichidan dict form
+  // endings る/す/く/つ/ぬ/ふ/む/ぐ/う/ぶ and the adjective い). Used to detect
+  // that a reading is an inflected word whose proper surface carries okurigana.
+  private static readonly INFLECTION_ENDINGS: string = 'るすくつぬむぐうぶい';
 
   private static endsWithCompoundVerbSuffix(kana: string): boolean {
     for (const suf of KanaKanjiConverter.COMPOUND_VERB_SUFFIXES) {
