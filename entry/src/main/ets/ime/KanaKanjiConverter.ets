@@ -25223,7 +25223,11 @@ export class KanaKanjiConverter {
   private static readonly ALT_SEG_WORDS: Set<string> = new Set([
     'へんかん', 'せいど', 'りょうきん',
   ]);
-  private static readonly COLLOQUIAL_KANA: Record<string,string> = {'まじ':'まじ','ほんま':'ほんま','なんなん':'なんなん','やば':'やば','ぴえん':'ぴえん','ぱおん':'ぱおん','てか':'てか','なんか':'なんか'};
+  private static readonly COLLOQUIAL_KANA: Record<string,string> = {'まじ':'まじ','ほんま':'ほんま','なんなん':'なんなん','やば':'やば','ぴえん':'ぴえん','ぱおん':'ぱおん','てか':'てか','なんか':'なんか',
+    // 関西弁の文末表現。辞書では地名・名詞に化けやすい（やろ→野路, やん→
+    // 矢文, やねん→…）が、文末では圧倒的に「〜だろう/〜じゃない/〜なんだ」の
+    // 話し言葉なので、かなを既定にする。
+    'やろ':'やろ','やん':'やん','やねん':'やねん','やんけ':'やんけ'};
   private static supplementaryDict: Record<string, string[]> = {};
   private static learned: Record<string, Record<string, number>> = {};
   private static userDict: Record<string, string[]> = {};
@@ -26066,6 +26070,15 @@ export class KanaKanjiConverter {
     // (e.g. じゃけっと→ジャケット). Floor keeps the cost at ≥500.
     const lenBonus = Math.min((sub.length - 1) * 500, KanaKanjiConverter.VN_DEFAULT - 500);
     const commonBonus = KanaKanjiConverter.COMMON_READINGS.has(sub) ? 3000 : 0;
+    // A lone single-character content word (a kanji reading that happens to be
+    // in the dictionary, e.g. き→気/木, と→戸, き as 生) is usually a
+    // mis-split: the segmenter carved one char off a longer common word to
+    // manufacture a cheap trailing particle (かけた+と+き instead of
+    // かけた+とき→時, ゆかた+を+き+て instead of …+きて→着て). Charge lone
+    // content chars extra so a real 2+-mora word wins. Function-word single
+    // chars (particles/auxiliaries は/が/を/て/…) are handled above and never
+    // reach here, so this only touches content readings.
+    const singleContentPenalty = (sub.length === 1) ? 2500 : 0;
     // "様態のそうだ" (Xそう = looks like X): a >=2-char span ending in そう that
     // isn't a known common word is usually [verb/adj-stem]+そう being
     // misparsed as a whole noun (思想, 尾張, etc.), not the auxiliary
@@ -26073,7 +26086,7 @@ export class KanaKanjiConverter {
     // segmenter prefers splitting off そう (already a cheap function word).
     const souPenalty = (sub.length >= 3 && sub.endsWith('そう') &&
         !KanaKanjiConverter.COMMON_READINGS.has(sub)) ? 5000 : 0;
-    return [KanaKanjiConverter.VN_DEFAULT - lenBonus - commonBonus + souPenalty,
+    return [KanaKanjiConverter.VN_DEFAULT - lenBonus - commonBonus + souPenalty + singleContentPenalty,
             KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
   }
 
