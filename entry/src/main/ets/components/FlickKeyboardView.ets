@@ -198,12 +198,14 @@ export struct FlickKeyboardView {
   // Left column keys per row
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
-      Text('取消')
+      Text('123')
         .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
         .borderRadius(8).shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
-        .onClick(() => { this.h().handleUndo(); })
+        .onClick(() => {
+          AppStorage.setOrCreate('keyboardSubMode', 'numeric');
+        })
     } else if (rowIdx === 1) {
       Text('◄')
         .fontSize(16).textAlign(TextAlign.Center)
@@ -294,45 +296,64 @@ export struct FlickKeyboardView {
   }
 
   @Builder KeyCell(rowIdx: number, colIdx: number, key: FlickKeyDef) {
-    Column({ space: 0 }) {
-      Text(key.up !== undefined ? this.toMode(key.up) : ' ')
-        .fontSize(11)
-        .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
-        .width('100%').height('28%')
+    if (this.isLandscape) {
+      // Landscape rows are short on height; drop the flick-direction hints and
+      // just show the center glyph. Flicking itself is unaffected — dirFrom()
+      // reads the touch gesture, not this label.
+      Text(this.centerLabel(rowIdx, colIdx, key))
+        .fontSize(this.isActive(rowIdx, colIdx) ? 17 : 14)
+        .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
+        .fontWeight(FontWeight.Medium)
         .textAlign(TextAlign.Center)
-
-      Row({ space: 0 }) {
-        Text(key.left !== undefined ? this.toMode(key.left) : ' ')
+        .width(this.flickKeyWidthVp)
+        .height('100%')
+        .backgroundColor(this.keyBg(rowIdx, colIdx, key))
+        .borderRadius(8)
+        .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+        .onTouch((e: TouchEvent) => {
+          this.handleTouch(e, rowIdx, colIdx, key);
+        })
+    } else {
+      Column({ space: 0 }) {
+        Text(key.up !== undefined ? this.toMode(key.up) : ' ')
           .fontSize(11)
-          .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
-          .width('25%').textAlign(TextAlign.Center)
+          .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
+          .width('100%').height('28%')
+          .textAlign(TextAlign.Center)
 
-        Text(this.centerLabel(rowIdx, colIdx, key))
-          .fontSize(this.isActive(rowIdx, colIdx) ? 20 : 17)
-          .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
-          .fontWeight(FontWeight.Medium)
-          .width('50%').textAlign(TextAlign.Center)
+        Row({ space: 0 }) {
+          Text(key.left !== undefined ? this.toMode(key.left) : ' ')
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
+            .width('25%').textAlign(TextAlign.Center)
 
-        Text(key.right !== undefined ? this.toMode(key.right) : ' ')
+          Text(this.centerLabel(rowIdx, colIdx, key))
+            .fontSize(this.isActive(rowIdx, colIdx) ? 20 : 17)
+            .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
+            .fontWeight(FontWeight.Medium)
+            .width('50%').textAlign(TextAlign.Center)
+
+          Text(key.right !== undefined ? this.toMode(key.right) : ' ')
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
+            .width('25%').textAlign(TextAlign.Center)
+        }
+        .width('100%').height('44%')
+
+        Text(key.down !== undefined ? this.toMode(key.down) : ' ')
           .fontSize(11)
-          .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
-          .width('25%').textAlign(TextAlign.Center)
+          .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
+          .width('100%').height('28%')
+          .textAlign(TextAlign.Center)
       }
-      .width('100%').height('44%')
-
-      Text(key.down !== undefined ? this.toMode(key.down) : ' ')
-        .fontSize(11)
-        .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
-        .width('100%').height('28%')
-        .textAlign(TextAlign.Center)
+      .width(this.flickKeyWidthVp)
+      .height('100%')
+      .backgroundColor(this.keyBg(rowIdx, colIdx, key))
+      .borderRadius(8)
+      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .onTouch((e: TouchEvent) => {
+        this.handleTouch(e, rowIdx, colIdx, key);
+      })
     }
-    .width(this.flickKeyWidthVp)
-    .height('100%')
-    .backgroundColor(this.keyBg(rowIdx, colIdx, key))
-    .borderRadius(8)
-    .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
-    .onTouch((e: TouchEvent) => {
-      this.handleTouch(e, rowIdx, colIdx, key);
-    })
   }
 }

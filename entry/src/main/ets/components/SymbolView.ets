@@ -3,13 +3,18 @@ import { kbTheme } from './Theme';
 
 const SYM_TABS: string[] = ['🕐', '1?#', '( )', '→', '⊞', '①', '◇', '[全]'];
 
+// Fallback for the 🕐 tab until the user has actually tapped enough symbols
+// for real usage data (see InputHandler.recordSymbolUse/publishFrequentSymbols)
+// to fill it in.
+const DEFAULT_RECENT_SYMBOLS: string[] = [
+  '、', '。', '！', '？', '・', '…', '〜', '―',
+  '「', '」', '『', '』', '【', '】', '（', '）',
+  '♪', '♥', '★', '☆', '◎', '○', '●', '◆',
+];
+
 const SYMBOL_CATEGORIES: string[][][] = [
-  // 0: 🕐 recently used — show subset of common symbols
-  [
-    ['、', '。', '！', '？', '・', '…', '〜', '―'],
-    ['「', '」', '『', '』', '【', '】', '（', '）'],
-    ['♪', '♥', '★', '☆', '◎', '○', '●', '◆'],
-  ],
+  // 0: 🕐 recently used — replaced at render time by SymbolView.recentRows()
+  [],
   // 1: 1?# — ASCII symbols
   [
     ['1', '2', '3', '4', '5', '6', '7', '8'],
@@ -95,6 +100,7 @@ const LICENSE_TEXT: string =
 export struct SymbolView {
   @StorageLink('symKeyWidthVp') symKeyWidthVp: number = 46;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('frequentSymbols') frequentSymbols: string[] = [];
   @State currentTab: number = 1;
   @State showLicense: boolean = false;
 
@@ -103,6 +109,23 @@ export struct SymbolView {
   private insert(sym: string): void {
     this.h().commitTopCandidate();
     this.h().insertText(sym);
+    this.h().recordSymbolUse(sym);
+  }
+
+  // Chunks the user's most-tapped symbols into rows of 8 for the 🕐 tab,
+  // falling back to a fixed common-punctuation set until real usage data
+  // (persisted via InputHandler.recordSymbolUse) has built up.
+  private recentRows(): string[][] {
+    const flat = this.frequentSymbols.length > 0 ? this.frequentSymbols : DEFAULT_RECENT_SYMBOLS;
+    const rows: string[][] = [];
+    for (let i = 0; i < flat.length; i += 8) {
+      rows.push(flat.slice(i, i + 8));
+    }
+    return rows;
+  }
+
+  private currentRows(): string[][] {
+    return this.currentTab === 0 ? this.recentRows() : SYMBOL_CATEGORIES[this.currentTab];
   }
 
   build() {
@@ -166,9 +189,9 @@ export struct SymbolView {
         Scroll() {
           Column({ space: 2 }) {
             ForEach([0, 1, 2, 3, 4, 5, 6], (rowIdx: number) => {
-              if (rowIdx < SYMBOL_CATEGORIES[this.currentTab].length) {
+              if (rowIdx < this.currentRows().length) {
                 Row({ space: 2 }) {
-                  ForEach(SYMBOL_CATEGORIES[this.currentTab][rowIdx], (sym: string) => {
+                  ForEach(this.currentRows()[rowIdx], (sym: string) => {
                     Text(sym)
                       .fontSize(sym.length > 1 ? 12 : 17)
                       .textAlign(TextAlign.Center)

@@ -1,5 +1,6 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
+import type { Want } from '@kit.AbilityKit';
 import display from '@ohos.display';
 import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
@@ -7,12 +8,49 @@ import pasteboard from '@ohos.pasteboard';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
+import { SettingsStore, KeyboardSettings } from './SettingsStore';
+import { findPredictiveCompletion } from './PredictivePhrases';
 
 interface InputMethodSubtype {
   id: string;
   label?: string;
   locale?: string;
   mode?: string;
+}
+
+// Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
+const MAX_KB_VP = 620;
+
+// Pure width math shared by the display-metrics-based initial guess (computeKeyWidths)
+// and the live layout correction (KeyboardPage.onAreaChange). display.getDefaultDisplaySync()
+// can under- or over-report the actually drawable panel width on some devices (e.g. a
+// landscape cutout/nav-bar inset it doesn't account for), which made keys sized from the
+// raw display metrics alone overflow past the real edge on one side while leaving a dead
+// band on the other. Recomputing from the *measured* on-screen width — whatever the true
+// source of the discrepancy — self-corrects regardless of cause.
+export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boolean): void {
+  const screenVp = isTabletClass ? Math.min(rawScreenVp, MAX_KB_VP) : rawScreenVp;
+  AppStorage.setOrCreate('keyboardContentVp', screenVp);
+  // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead. The
+  // middle letter row (asdfghjkl + ー) and bottom row (shift + zxcvbnm +
+  // backspace) also reuse this width; they aren't a fixed-width fit like
+  // this row, just centered, so a different key count is harmless.
+  const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
+  const skwVp = Math.round(kwVp * 1.2);
+  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps
+  // (文節 sits right after space, at the same special-key width as
+  // mode/enter — the row would overflow if it were sized on top of them
+  // instead of space giving up the room).
+  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 10), 60);
+  // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
+  const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
+  AppStorage.setOrCreate('keyWidthVp', kwVp);
+  AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
+  AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
+  AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
+  // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
+  const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
+  AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
 }
 
 export const enum InputState {
@@ -115,6 +153,12 @@ export class InputHandler {
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
+  private symbolPrefs: dataPreferences.Preferences | undefined = undefined;
+  private symbolSaveTimer: number = -1;
+  // Per-symbol tap counts, used to rank the symbol panel's "recent" tab by
+  // actual usage instead of a fixed guess. Static so SymbolView's AppStorage
+  // read and InputHandler's own updates always see the same data.
+  private static symbolFreq: Record<string, number> = {};
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
@@ -138,7 +182,43 @@ export class InputHandler {
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, 'shunti_symbol_freq')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.symbolPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          InputHandler.symbolFreq = JSON.parse(String(val)) as Record<string, number>;
+          InputHandler.publishFrequentSymbols();
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
     this.reloadUserDict();
+    this.reloadSettings();
+  }
+
+  // Called whenever the user taps a symbol in SymbolView, so its "recent" tab
+  // can be ranked by what this user actually reaches for instead of a fixed
+  // guess at common punctuation.
+  recordSymbolUse(sym: string): void {
+    InputHandler.symbolFreq[sym] = (InputHandler.symbolFreq[sym] ?? 0) + 1;
+    InputHandler.publishFrequentSymbols();
+    clearTimeout(this.symbolSaveTimer);
+    this.symbolSaveTimer = setTimeout(() => {
+      const prefs = this.symbolPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(InputHandler.symbolFreq))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 2000);
+  }
+
+  private static publishFrequentSymbols(): void {
+    const syms = Object.keys(InputHandler.symbolFreq);
+    syms.sort((a: string, b: string) =>
+      (InputHandler.symbolFreq[b] ?? 0) - (InputHandler.symbolFreq[a] ?? 0));
+    AppStorage.setOrCreate('frequentSymbols', syms.slice(0, 24));
   }
 
   // Reload the user dictionary from disk (picks up words added in the main app).
@@ -148,6 +228,43 @@ export class InputHandler {
       .then((dict: Record<string, string[]>) => {
         KanaKanjiConverter.setUserDict(dict);
       });
+  }
+
+  // Reload keyboard-wide settings from disk (picks up the layout choice made
+  // in the main app's settings screen, since that's a separate process).
+  private reloadSettings(): void {
+    if (!this.imeContext) {
+      console.error('shuntiIME reloadSettings: no imeContext');
+      return;
+    }
+    SettingsStore.load(this.imeContext, true)
+      .then((s: KeyboardSettings) => {
+        console.info('shuntiIME reloadSettings applied', JSON.stringify(s));
+        AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
+        AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
+        AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
+      });
+  }
+
+  // One-handed mode is toggled from the keyboard's own settings panel, so it
+  // can persist AppStorage's current value directly rather than re-reading it.
+  setOneHandedMode(enabled: boolean, side: string): void {
+    AppStorage.setOrCreate('oneHandedMode', enabled);
+    AppStorage.setOrCreate('oneHandedSide', side);
+    if (this.imeContext) {
+      SettingsStore.saveOneHanded(this.imeContext, enabled, side);
+    }
+  }
+
+  // Switching the keyboard layout from the keyboard's own settings panel
+  // takes effect immediately (same process, no reload round-trip needed) —
+  // more reliable than the main-app toggle, which depends on the extension
+  // picking the change back up on its own next reload.
+  setKeyboardLayout(layout: string): void {
+    AppStorage.setOrCreate('keyboardLayout', layout);
+    if (this.imeContext) {
+      SettingsStore.saveKeyboardLayout(this.imeContext, layout);
+    }
   }
 
   private saveLearning(): void {
@@ -169,6 +286,7 @@ export class InputHandler {
     this.inputClient = client;
     this.converter.reset();
     this.reloadUserDict();
+    this.reloadSettings();
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -414,30 +532,89 @@ export class InputHandler {
     this.refreshClipboardPreview();
   }
 
+  // Kept in-memory only (AppStorage), not persisted to disk — clipboard
+  // contents can be sensitive, and this app's privacy stance is to keep data
+  // on-device only for as long as actually needed. History resets when the
+  // keyboard extension process restarts.
+  private static readonly MAX_CLIPBOARD_HISTORY = 8;
+
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
       if (!data || data.getRecordCount() === 0) {
         AppStorage.setOrCreate('clipboardPreview', '');
         AppStorage.setOrCreate('clipboardIsImage', false);
+        AppStorage.setOrCreate('clipboardIsFile', false);
         return;
       }
       if (data.hasType(pasteboard.MIMETYPE_PIXELMAP)) {
         AppStorage.setOrCreate('clipboardPreview', '画像');
         AppStorage.setOrCreate('clipboardIsImage', true);
-      } else {
-        const text = data.getPrimaryText();
-        AppStorage.setOrCreate('clipboardPreview', text ?? '');
-        AppStorage.setOrCreate('clipboardIsImage', false);
+        AppStorage.setOrCreate('clipboardIsFile', false);
+        return;
       }
-    }).catch((_e: Error) => {
+      const text = data.getPrimaryText();
+      if (text && text.length > 0) {
+        AppStorage.setOrCreate('clipboardPreview', text);
+        AppStorage.setOrCreate('clipboardIsImage', false);
+        AppStorage.setOrCreate('clipboardIsFile', false);
+        this.recordClipboardHistory(text);
+        return;
+      }
+      // No text/image record -- a copied file (e.g. from Files/a Gallery share
+      // sheet) shows up as a URI record instead. Preview it as a filename
+      // rather than leaving the chip blank or showing the raw URI.
+      const uri = data.getPrimaryUri();
+      if (uri && uri.length > 0) {
+        AppStorage.setOrCreate('clipboardPreview', InputHandler.formatFileClipPreview(uri));
+        AppStorage.setOrCreate('clipboardIsImage', false);
+        AppStorage.setOrCreate('clipboardIsFile', true);
+        return;
+      }
       AppStorage.setOrCreate('clipboardPreview', '');
       AppStorage.setOrCreate('clipboardIsImage', false);
+      AppStorage.setOrCreate('clipboardIsFile', false);
+    }).catch((err: Error) => {
+      console.error('shuntiIME refreshClipboardPreview error', JSON.stringify(err));
+      AppStorage.setOrCreate('clipboardPreview', '');
+      AppStorage.setOrCreate('clipboardIsImage', false);
+      AppStorage.setOrCreate('clipboardIsFile', false);
     });
+  }
+
+  // "国税庁_請求書テンプレート2026.pdf" -> "国税庁_請求書.pdf": first few
+  // characters of the filename plus its extension, so the chip stays short
+  // without losing the cue of what kind of file it is.
+  private static formatFileClipPreview(uri: string): string {
+    const clean = uri.split('?')[0].split('#')[0];
+    const segments = clean.split('/');
+    let rawName = segments[segments.length - 1] ?? '';
+    try {
+      rawName = decodeURIComponent(rawName);
+    } catch {
+      // Malformed percent-encoding -- fall back to the raw segment.
+    }
+    if (rawName.length === 0) { return 'ファイル'; }
+    const dotIdx = rawName.lastIndexOf('.');
+    const hasExt = dotIdx > 0 && dotIdx < rawName.length - 1;
+    const base = hasExt ? rawName.slice(0, dotIdx) : rawName;
+    const ext = hasExt ? rawName.slice(dotIdx + 1) : '';
+    const truncatedBase = base.length > 8 ? base.slice(0, 8) : base;
+    return hasExt ? `${truncatedBase}.${ext}` : truncatedBase;
+  }
+
+  private recordClipboardHistory(text: string): void {
+    if (text.length === 0) { return; }
+    const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
+    if (history[0] === text) { return; }
+    const next = [text, ...history.filter((t: string) => t !== text)]
+      .slice(0, InputHandler.MAX_CLIPBOARD_HISTORY);
+    AppStorage.setOrCreate('clipboardHistory', next);
   }
 
   pasteClipboard(): void {
     const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
-    if (isImage) {
+    const isFile = AppStorage.get<boolean>('clipboardIsFile') ?? false;
+    if (isImage || isFile) {
       return;
     }
     const text = AppStorage.get<string>('clipboardPreview') ?? '';
@@ -446,6 +623,48 @@ export class InputHandler {
     }
     this.insertText(text);
     this.refreshClipboardPreview();
+  }
+
+  // Paste an arbitrary entry from clipboard history (not necessarily the
+  // current system clipboard contents).
+  pasteFromHistory(index: number): void {
+    const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
+    const text = history[index];
+    if (text === undefined || text.length === 0) { return; }
+    this.insertText(text);
+  }
+
+  clearClipboardHistory(): void {
+    AppStorage.setOrCreate('clipboardHistory', [] as string[]);
+  }
+
+  // Launches the main app (settings / user dictionary screen) from the
+  // keyboard's own settings panel. InputMethodExtensionContext extends
+  // ExtensionContext, which supports startAbility for abilities in the same
+  // bundle.
+  openMainApp(): void {
+    if (!this.imeContext) { return; }
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+    };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openMainApp error', JSON.stringify(err)));
+  }
+
+  // AppGallery's review deep link needs this app's AppGallery Connect app ID,
+  // which only exists once it has been published there — until then this
+  // stays empty and the caller should show a "not published yet" message
+  // instead of firing a broken want.
+  private static readonly APP_GALLERY_APP_ID = '';
+
+  openAppGalleryReview(): boolean {
+    const id = InputHandler.APP_GALLERY_APP_ID;
+    if (id.length === 0 || !this.imeContext) { return false; }
+    const want: Want = { uri: `store://appgallery.huawei.com/app/detail?id=${id}` };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openAppGalleryReview error', JSON.stringify(err)));
+    return true;
   }
 
   private updateCandidates(): void {
@@ -476,15 +695,23 @@ export class InputHandler {
         // Viterbi result goes to position 0; katakana is position 1.
         // Putting katakana at 0 unconditionally causes long natural Japanese
         // (e.g. きょうはいいてんきですね) to always show all-katakana first.
-        const prefixText = segs.slice(0, -1)
-          .map((s: string) => this.kanjiConverter.autoConvert(s))
-          .join('');
+        // A prefix segment that resolves to a bare symbol (e.g. かっこ→"()")
+        // means Viterbi split a casual word across a symbol "word" — joining
+        // it would produce nonsense like "()よ" for かっこよ. Fall back to the
+        // plain kana/katakana candidates instead of using that prefix.
+        const prefixParts = segs.slice(0, -1).map((s: string) => this.kanjiConverter.autoConvert(s));
+        const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
+        const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
         const lastSeg = segs[segs.length - 1];
         const lastCands = this.kanjiConverter.lookup(lastSeg);
-        const segCands = lastCands.map((c: string) => prefixText + c);
+        const segCands = hasSymbolPrefix ? [] : lastCands.map((c: string) => prefixText + c);
         candidates = [];
-        // Position 0: best Viterbi candidate
-        if (segCands.length > 0) {
+        if (hasSymbolPrefix) {
+          // No usable kanji join — plain kana leads, same as the
+          // segmentJoinFallback bail-out for single-lookup composing text.
+          candidates.push(composing);
+        } else if (segCands.length > 0) {
+          // Position 0: best Viterbi candidate
           candidates.push(segCands[0]);
         }
         // Position 1: katakana (loanwords reachable with one Space tap)
@@ -497,6 +724,23 @@ export class InputHandler {
         }
         if (!candidates.includes(composing)) { candidates.push(composing); }
       }
+    }
+
+    // 自動区切り変更: a second candidate from a differently-segmented parse
+    // of the same reading (へんかんせいど's single whole-compound entry
+    // 変換精度 vs the へんかん+せいど split's 返還制度) — inserted right after
+    // the primary pick, not replacing it.
+    const altSeg = this.kanjiConverter.findAlternateSegmentation(composing);
+    if (altSeg !== null && !candidates.includes(altSeg)) {
+      candidates.splice(1, 0, altSeg);
+    }
+
+    // Predictive completion: once enough of a known common phrase's reading
+    // has been typed to be unambiguous, lead with the whole thing rather than
+    // making the user type out a full greeting/set phrase.
+    const predictive = findPredictiveCompletion(composing);
+    if (predictive !== null && !candidates.includes(predictive)) {
+      candidates = [predictive, ...candidates];
     }
 
     AppStorage.setOrCreate('candidates', candidates);
@@ -826,25 +1070,33 @@ export class KeyboardController {
     // centered keyboard with large empty margins on both sides (looked tiny,
     // unlike Gboard which fills the full landscape width).
     const shortVp = Math.min(dis.width, dis.height) / density;
-    const MAX_KB_VP = 620;
     const isTabletClass = shortVp > 600;
-    const screenVp = isTabletClass ? Math.min(fullVp, MAX_KB_VP) : fullVp;
+    AppStorage.setOrCreate('isTabletClass', isTabletClass);
     AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
-    AppStorage.setOrCreate('keyboardContentVp', screenVp);
-    // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead
-    const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
-    const skwVp = Math.round(kwVp * 1.2);
-    // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
-    const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
-    // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
-    const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
-    AppStorage.setOrCreate('keyWidthVp', kwVp);
-    AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
-    AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
-    AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
-    // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
-    const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
-    AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
+
+    // This is only a best-effort guess from raw display metrics — on-device
+    // diagnostics confirmed this device's IME panel framework silently shrinks
+    // the panel to a fraction of the width requested via panel.resize() (~76%
+    // observed, with no corresponding cutout reported — a software policy, not
+    // a hardware inset), so display metrics alone can't be trusted.
+    // KeyboardPage.onAreaChange measures the real width and both applies the
+    // correction AND records a scale factor (measured/guessed) here, per
+    // orientation. Apply that learned scale up front: after the very first
+    // launch, this panel is reused across show/hide (see the 'inputStop'
+    // handler), so initPanel() never runs again and a later resizePanel() call
+    // (e.g. from a display 'change' event that doesn't actually alter the
+    // panel's on-screen size) may not be followed by a fresh onAreaChange —
+    // without this, that would silently overwrite the corrected widths with
+    // the raw (wrong) guess again, with nothing left to re-correct them.
+    // Tablet-class devices are excluded: their narrower width there is our own
+    // deliberate MAX_KB_VP cap, not the shrink bug, so it shouldn't be learned
+    // as a scale factor.
+    const isLandscape = dis.width > dis.height;
+    const scaleKey = isLandscape ? 'widthScaleLandscape' : 'widthScalePortrait';
+    const learnedScale = isTabletClass ? 1 : (AppStorage.get<number>(scaleKey) ?? 1);
+    AppStorage.setOrCreate('lastRawFullVp', fullVp);
+    AppStorage.setOrCreate('lastRawFullVpIsLandscape', isLandscape);
+    applyKeyboardWidthsForVp(fullVp * learnedScale, isTabletClass);
   }
 
   // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
@@ -926,10 +1178,18 @@ export class KeyboardController {
       });
 
       IMEAbility.on('inputStop', () => {
+        // Only hide — don't tear down the context/panel here. initPanel()
+        // (which creates this.panel) only runs once, from onCreate(), so
+        // destroying the context on every inputStop left no panel to show()
+        // for the *next* inputStart unless the OS happened to fully restart
+        // the extension in between. That's what made the keyboard vanish
+        // after a couple of show/hide cycles until something (e.g. rotating
+        // back to portrait and switching IME) forced a fresh restart.
+        // The real teardown belongs in the ability's own onDestroy(), which
+        // already calls KeyboardController.onDestroy() when the IME service
+        // is actually shut down.
         this.inputHandle.onInputStop();
         this.panel?.hide();
-        this.onDestroy();
-        this.context.destroy();
       });
 
       IMEAbility.on('setSubtype', (subtype: InputMethodSubtype) => {

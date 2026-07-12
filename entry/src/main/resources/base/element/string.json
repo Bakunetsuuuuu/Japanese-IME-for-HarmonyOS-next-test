@@ -7,6 +7,7 @@
     { "name": "extension_desc",      "value": "フリック・QWERTY対応の日本語入力メソッド（IME）。高精度Viterbiかな漢字変換搭載。" },
     { "name": "subtype_hiragana",    "value": "日本語（ひらがな）" },
     { "name": "subtype_katakana",    "value": "カタカナ" },
-    { "name": "subtype_alphanumeric","value": "英数字" }
+    { "name": "subtype_alphanumeric","value": "英数字" },
+    { "name": "clipboard_permission_reason", "value": "コピーした内容を変換候補バーに表示し、タップで貼り付けできるようにするため" }
   ]
 }

@@ -3,7 +3,11 @@ import { kbTheme } from './Theme';
 
 const ROWS: string[][] = [
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
-  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'],
+  // '-' always inserts ー (the long-vowel mark) via ROMAJI_TABLE — romaji kana
+  // input has no other reachable key for it, since it isn't part of any
+  // romaji consonant sequence. Tacked onto the middle row rather than the
+  // number row so it still shares the same 10-key width as row 0.
+  ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '-'],
   ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
 ];
 
@@ -46,21 +50,24 @@ export struct KeyboardView {
 
   build() {
     Column({ space: 2 }) {
-      // Number row
-      Row({ space: 2 }) {
-        ForEach(NUMBER_ROW, (key: string) => {
-          this.RegularKey(key)
-        }, (key: string) => key)
+      // Number row — dropped in landscape to give the letter rows more height;
+      // vertical space is tight there and this row is the least-used one.
+      if (!this.isLandscape) {
+        Row({ space: 2 }) {
+          ForEach(NUMBER_ROW, (key: string) => {
+            this.RegularKey(key, this.keyWidthVp)
+          }, (key: string) => key)
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .layoutWeight(1)
       }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .layoutWeight(1)
 
       // QWERTY rows 0 and 1
       ForEach([0, 1], (rowIdx: number) => {
         Row({ space: 2 }) {
           ForEach(ROWS[rowIdx], (key: string) => {
-            this.RegularKey(key)
+            this.RegularKey(key, this.keyWidthVp)
           }, (key: string) => key)
         }
         .width('100%')
@@ -72,7 +79,7 @@ export struct KeyboardView {
       Row({ space: 2 }) {
         this.ShiftKey()
         ForEach(ROWS[2], (key: string) => {
-          this.RegularKey(key)
+          this.RegularKey(key, this.keyWidthVp)
         }, (key: string) => key)
         this.BackspaceKey()
       }
@@ -80,7 +87,11 @@ export struct KeyboardView {
       .justifyContent(FlexAlign.Center)
       .layoutWeight(1)
 
-      // Function row
+      // Function row. 文節 (per-segment conversion — lets you fix up
+      // individual bunsetsu of a converted sentence instead of only ever
+      // choosing among whole-sentence candidates; FlickKeyboardView already
+      // exposes this via its own dedicated key) sits right after the space
+      // key, which is sized shorter to make room for it.
       Row({ space: 2 }) {
         this.ModeKey()
         this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
@@ -90,6 +101,7 @@ export struct KeyboardView {
           else { this.getHandler().handleDirectKana(ch); }
         })
         this.SpaceKey()
+        this.BunsetsuKey()
         this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
           const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
           const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
@@ -107,14 +119,14 @@ export struct KeyboardView {
     .padding({ bottom: 8, top: 4, left: 2, right: 2 })
   }
 
-  @Builder RegularKey(value: string) {
+  @Builder RegularKey(value: string, width: number) {
     // Read isShift/isCapsLock directly here (not via a by-value Builder param)
     // so the label re-renders when the shift state changes.
     Text((this.isShift || this.isCapsLock) ? value.toUpperCase() : value)
       .fontSize(17)
       .fontColor(kbTheme(this.isDark).keyText)
       .textAlign(TextAlign.Center)
-      .width(this.keyWidthVp)
+      .width(width)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(5)
@@ -166,6 +178,21 @@ export struct KeyboardView {
         } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
           this.stopBsRepeat();
         }
+      })
+  }
+
+  @Builder BunsetsuKey() {
+    Text('文節')
+      .fontSize(13)
+      .textAlign(TextAlign.Center)
+      .width(this.specialKeyWidthVp)
+      .height('100%')
+      .backgroundColor(kbTheme(this.isDark).specialKeyBg)
+      .fontColor(kbTheme(this.isDark).onAccentText)
+      .borderRadius(5)
+      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .onClick(() => {
+        this.getHandler().handleBunsetsu();
       })
   }
 
