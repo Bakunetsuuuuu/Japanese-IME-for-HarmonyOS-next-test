@@ -176,7 +176,7 @@ struct KeyboardPage {
                 }
               }
               .width('82%')
-              .height(this.isLandscape ? 22 : 48)
+              .height(this.isLandscape ? 22 : 84)
               .justifyContent(FlexAlign.Center)
               .alignItems(VerticalAlign.Center)
 
@@ -196,7 +196,7 @@ struct KeyboardPage {
                 })
             }
             .width('100%')
-            .height(this.isLandscape ? 22 : 48)
+            .height(this.isLandscape ? 22 : 84)
             .backgroundColor(
               this.inputState === InputState.SELECTING ? kbTheme(this.isDark).selectingBarBg : kbTheme(this.isDark).previewBarBg
             )
