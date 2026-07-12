@@ -9,6 +9,7 @@ import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { SettingsStore, KeyboardSettings } from './SettingsStore';
+import { findPredictiveCompletion } from './PredictivePhrases';
 
 interface InputMethodSubtype {
   id: string;
@@ -681,6 +682,14 @@ export class InputHandler {
         }
         if (!candidates.includes(composing)) { candidates.push(composing); }
       }
+    }
+
+    // Predictive completion: once enough of a known common phrase's reading
+    // has been typed to be unambiguous, lead with the whole thing rather than
+    // making the user type out a full greeting/set phrase.
+    const predictive = findPredictiveCompletion(composing);
+    if (predictive !== null && !candidates.includes(predictive)) {
+      candidates = [predictive, ...candidates];
     }
 
     AppStorage.setOrCreate('candidates', candidates);
