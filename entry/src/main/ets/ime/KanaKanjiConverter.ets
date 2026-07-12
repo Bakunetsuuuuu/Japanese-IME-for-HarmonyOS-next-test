@@ -25880,6 +25880,29 @@ export class KanaKanjiConverter {
         result = [kana, ...result.filter((c: string) => c !== kana)];
       }
     }
+    // Compound verbs (V連用形+V: 立て直す, 走り回る, 申し込む, 読み終わる…)
+    // are productive and dict.json often lists the bare kana reading first,
+    // so they convert to kana by default even though the kanji form is almost
+    // always wanted. When the reading ends in one of the closed set of
+    // second-verb suffixes AND a kanji candidate spells this exact reading in
+    // okurigana (its trailing kana == the reading's), promote that kanji form.
+    // Restricted to that closed suffix set so kana-convention words
+    // (ありがとう, ございます, ちょっと…) are never touched.
+    if (result.length > 1 && result[0] === kana && kana.length >= 4 &&
+        KanaKanjiConverter.endsWithCompoundVerbSuffix(kana)) {
+      // Promote the first kanji-bearing candidate whose okurigana ending (its
+      // final kana) matches the reading's — for a compound verb that final
+      // char always agrees (…直す/…回る/…込んだ), and it rules out an
+      // unrelated homophone. No subsequence check: internal kanji (立て直す =
+      // て…す, non-contiguous) would otherwise never match.
+      const kanjiIdx = result.findIndex((c: string) =>
+        KanaKanjiConverter.hasKanjiChar(c) &&
+        c[c.length - 1] === kana[kana.length - 1]);
+      if (kanjiIdx > 0) {
+        const picked = result[kanjiIdx];
+        result = [picked, ...result.filter((c: string) => c !== picked)];
+      }
+    }
     // Final safety net: global/user dict entries are merged in after
     // filterCandidates already ran, so a markup artifact contributed only by
     // one of those (e.g. global_dict's own "[[錦]]"/"{{w|甲賀}}") would
@@ -25887,6 +25910,35 @@ export class KanaKanjiConverter {
     // remains — never return an empty candidate list.
     const clean = result.filter((c: string) => !KanaKanjiConverter.isMarkupArtifact(c));
     return clean.length > 0 ? clean : result;
+  }
+
+  // Closed set of compound-verb second elements (as they appear at the end of
+  // a reading, across their common conjugations). Used only to promote the
+  // kanji spelling of a productive compound verb over its kana-lead dict entry.
+  private static readonly COMPOUND_VERB_SUFFIXES: string[] = [
+    'なおす', 'なおし', 'なおした', 'なおして', 'なおせる',
+    'まわる', 'まわった', 'まわって', 'まわり', 'まわす', 'まわした',
+    'はじめる', 'はじめた', 'はじめて', 'はじまる', 'はじまった',
+    'おわる', 'おわった', 'おわって', 'おわり',
+    'つづける', 'つづけた', 'つづけて', 'つづく', 'つづいた',
+    'だす', 'だした', 'だして',
+    'こむ', 'こんだ', 'こんで', 'こみ',
+    'あう', 'あった', 'あって', 'あい',
+    'かえす', 'かえした', 'かえして',
+    'つける', 'つけた', 'つけて',
+    'あげる', 'あげた', 'あげて',
+    'かける', 'かけた', 'かけて',
+    'こなす', 'こなした',
+    'すぎる', 'すぎた', 'すぎて',
+    'なれる', 'なれた', 'なれて',
+    'つづり',
+  ];
+
+  private static endsWithCompoundVerbSuffix(kana: string): boolean {
+    for (const suf of KanaKanjiConverter.COMPOUND_VERB_SUFFIXES) {
+      if (kana.length > suf.length && kana.endsWith(suf)) { return true; }
+    }
+    return false;
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
