@@ -684,6 +684,15 @@ export class InputHandler {
       }
     }
 
+    // 自動区切り変更: a second candidate from a differently-segmented parse
+    // of the same reading (へんかんせいど's single whole-compound entry
+    // 変換精度 vs the へんかん+せいど split's 返還制度) — inserted right after
+    // the primary pick, not replacing it.
+    const altSeg = this.kanjiConverter.findAlternateSegmentation(composing);
+    if (altSeg !== null && !candidates.includes(altSeg)) {
+      candidates.splice(1, 0, altSeg);
+    }
+
     // Predictive completion: once enough of a known common phrase's reading
     // has been typed to be unambiguous, lead with the whole thing rather than
     // making the user type out a full greeting/set phrase.

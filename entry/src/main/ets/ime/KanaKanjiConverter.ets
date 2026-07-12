@@ -13806,7 +13806,7 @@ const DICTIONARY: Record<string, string[]> = {
   'といてみた': ['説いてみた'],
   'といたら': ['説いたら'],
   'とけば': ['説けば'],
-  'とける': ['説ける', '溶ける'],
+  'とける': ['解ける', '溶ける', '説ける'],
   'とかれる': ['説かれる'],
   'とかれた': ['説かれた'],
   'とかれている': ['説かれている'],
@@ -21770,6 +21770,15 @@ const DICTIONARY: Record<string, string[]> = {
   'ぬれない': ['濡れない'],
   'ぬれてしまった': ['濡れてしまった'],
   'かわく': ['乾く'],
+  'かわかない': ['乾かない'],
+  'なれて': ['慣れて', '馴れて'],
+  'なれ': ['慣れ', '馴れ'],
+  'ふられて': ['降られて'],
+  'てもらった': ['てもらった'],
+  'はしって': ['走って'],
+  'おかけします': ['おかけします'],
+  'おかけしますが': ['おかけしますが'],
+  'せんたくものが': ['洗濯物が'],
   'かわいた': ['乾いた'],
   'ほす': ['干す'],
   'ほした': ['干した'],
@@ -25119,8 +25128,47 @@ const CONTEXT_HINTS: Record<string, string[]> = {
   'かんしん|感心': ['感動', '驚き', '素晴らしい', 'すごい', '見事', '尊敬'],
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Object→verb collocation table: which kanji a homograph verb reading should
+// resolve to, given the object noun immediately before it (…を<noun> を
+// <verb-reading>) *within the same phrase* — unlike CONTEXT_HINTS above,
+// this doesn't need anything already committed, just the preceding word in
+// the segmentation currently being joined. Key format: "noun|verbReading".
+// e.g. 「かさをかいた」 → 傘は買うものなので「買った」(not 書いた/飼った);
+// 「りょうきんをへんかんする」→ 料金は返す/戻すものなので「返還」(not 変換,
+// which suits データ/ファイルのようなものを対象とする場合).
+// ─────────────────────────────────────────────────────────────────────────────
+const COLLOCATION_HINTS: Record<string, string> = {
+  'かさ|かいた': '買った', 'ふく|かいた': '買った', 'くつ|かいた': '買った',
+  'うわぎ|きた': '着た', 'ふく|きた': '着た', 'せーたー|きた': '着た',
+  'りょうきん|へんかん': '返還', 'おかね|へんかん': '返還', 'けんり|へんかん': '返還',
+  'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
+};
+
+// Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
+// involved — this is for two segments that sit directly next to each other
+// and, together, form a *different* recognized compound than either word's
+// own default reading would suggest. Used by findAlternateSegmentation,
+// where へんかん+せいど (with nothing else around them) should read as
+// 返還制度, not the default 変換+制度 hybrid. Key format: "seg|nextSeg".
+const ADJACENT_PAIR_HINTS: Record<string, string> = {
+  'へんかん|せいど': '返還',
+};
+
+
 export class KanaKanjiConverter {
-  private static readonly COMMON_READINGS: Set<string> = new Set(['あいする','あう','あおう','あかちゃん','あがる','あける','あさ','あさごはん','あさって','あし','あした','あじ','あじわう','あす','あそこ','あそぶ','あたたかい','あたま','あたらしい','あちら','あつい','あと','あなた','あに','あね','あぶない','あまり','あめ','ありがとう','ある','あるく','あれ','あんしん','あんぜん','いい','いう','いえ','いきる','いく','いしゃ','いす','いそがしい','いそぐ','いただきます','いちにち','いちねん','いっしょ','いつ','いつも','いま','いみ','いもうと','いる','いれる','うごく','うた','うち','うつくしい','うまれる','うみ','うる','うるさい','うれしい','えいが','えき','えらぶ','えんき','えんちょう','えんぴつ','おいしい','おおきい','おかね','おきる','おく','おくれる','おこる','おさけ','おしえる','おそい','おそく','おちゃ','おつかれ','おとうと','おととい','おとな','おどろく','おなか','おねがい','おはよう','おぼえる','おめでとう','おもい','おもう','おもしろい','おやすみ','およぐ','おりる','おわる','おんがく','かいけん','かいしゃ','かいぜん','かいはつ','かいふく','かう','かえる','かお','かぎ','かく','かくだい','かくにん','かさ','かぜ','かぞく','かちょう','かっこいい','かなしい','かなしむ','かのじょ','かばん','かぶか','かみ','かようび','からだ','かるい','かれ','かわ','かわいい','かんがえる','かんきょう','かんじ','かんじゃ','かんじる','かんたん','がくせい','がっこう','がんばる','き','きぎょう','きく','きこえる','きしゃ','きた','きっかけ','きっと','きっぷ','きて','きのう','きぶん','きぼう','きまる','きめる','きもち','きょう','きょうしつ','きょか','きょねん','きれい','きんし','きんようび','ぎじゅつ','くうこう','くすり','くだもの','くち','くつ','くに','くも','くらす','くらべる','くる','くるま','けいかく','けいこう','けいざい','けが','けしごむ','けっか','けっこう','けっこんする','けってい','けど','けはい','けんきゅう','けんとう','げつようび','げんいん','げんき','げんしょう','げんてい','げーむ','こうこう','こうじょう','こうはい','こうひょう','こうふく','こえて','ここ','こころ','こたえ','こちら','こと','ことし','こども','こまる','こめ','これ','これから','こわい','こんげつ','こんにちは','こんばんは','こーひー','ごご','ごぜん','ごちそうさま','ごはん','ごめん','さいふ','さかな','さがす','さがる','さっかー','さっき','さっそく','さびしい','さむい','さようなら','さわる','ざっし','しあわせ','しかし','しけん','しごと','しじょう','しずか','しつもんする','しぬ','しめる','しゃかい','しゃしん','しゃちょう','しゅうかん','しゅうしょく','しゅうまつ','しゅうり','しゅくだい','しゅっちょう','しょうにん','しる','しんかんせん','しんがく','しんこく','しんしゅつ','しんぱい','しんぶん','じかん','じっけん','じつは','じてんしゃ','じゅうみん','じゅぎょう','じゅんび','じょうしょう','じょうたい','じょじょに','じんこう','すいようび','すきになる','すぐ','すこし','すごい','すごく','すずしい','すぽーつ','すみません','すむ','する','すわる','ずっと','せいかつ','せいげん','せいさく','せいせき','せいそう','せいひん','せいりつ','せかい','せっきん','せなか','せまい','せんきょ','せんげつ','せんせい','せんたく','せんぱい','ぜったい','ぜんぜん','ぜんぶ','そこ','そして','そだつ','そちら','そつぎょう','そら','それ','それから','それで','そろそろ','たいさく','たいしょく','たいせつ','たいふう','たいへん','たいよう','たかい','たくさん','たくしー','たしか','たすける','たつ','たとえば','たのしい','たぶん','たべもの','たべる','たまご','たまに','だいがく','だいじ','だいじょうぶ','だいたい','だから','だす','だれ','だんだん','ちいき','ちいさい','ちかい','ちかてつ','ちこく','ちず','ちち','ちゅうがく','ちゅうもく','ちょうさ','ちょうどいい','ちょっと','ついに','つかう','つかれる','つき','つくえ','つくる','つづける','つまらない','つまり','つよい','て','ていあん','てがみ','てすと','てつだう','てれび','てんき','てんしょく','でかけ','でかける','できるだけ','でも','でる','でんき','でんしゃ','でんわ','とうとう','とおい','とおる','とき','ときどき','とくべつ','とけい','ところ','ところで','とても','とにかく','とぶ','とまる','ともだち','とる','どあ','どう','どうしても','どうりょう','どこ','どようび','どれ','どんどん','どんな','なかなか','ながい','なく','なぜ','なに','なまえ','なやむ','ならう','なる','なるべく','なん','なんか','なんて','なんとか','なんとなく','なんなん','におう','にく','にちようび','にゅうがく','ねだん','ねつ','ねる','のど','のぼる','のみもの','のむ','のんで','は','はいる','はしる','はじめる','はたらく','はっせい','はっぴょう','はつばい','はな','はなし','はなす','はは','はやい','はんかち','はんだん','ばあい','ばしょ','ばす','ばん','ばんごはん','ぱん','ひくい','ひこうき','ひと','ひなん','ひま','ひる','ひるごはん','ひろい','びょういん','びょうき','びーる','ふあん','ふく','ふべん','ふり','ふるい','ふんいき','ぶちょう','ぶっか','へいじつ','へや','べんきょう','べんきょうする','べんり','ぺん','ほうこく','ほうほう','ほうりつ','ほし','ほしい','ほてる','ほとんど','ほん','ほんと','ほんとう','ぼうし','まいしゅう','まいつき','まいとし','まいにち','まえ','まがる','ますます','まずい','また','まだ','まち','まつ','まど','まにあう','みえる','みじかい','みず','みち','みつける','みみ','みる','みんな','むかし','むずかしい','め','めがね','もう','もくてき','もくひょう','もくようび','もちろん','もっと','もつ','もの','もり','もんだい','やきゅう','やくそく','やさい','やさしい','やすむ','やすもう','やっと','やっぱ','やっぱり','やはり','やばい','やま','やめ','やめたい','やめる','ゆうがた','ゆうめい','ゆき','ゆめ','よい','ようす','ようふく','ようやく','よてい','よむ','よやく','よる','よろこぶ','よろしく','よわい','らいげつ','らいねん','らじお','りゆう','りょうしん','りょうり','りょこう','れんしゅう','わかい','わかる','わかれる','わすれる','わたし','わたしたち','わたる','わらう','わるい','はやく','おわり','ちえん','こんかい','ろっかげつ','のみ','かいぎ','どういう','はなせる','でかけよう']);
+  private static readonly COMMON_READINGS: Set<string> = new Set(['あいする','あう','あおう','あかちゃん','あがる','あける','あさ','あさごはん','あさって','あし','あした','あじ','あじわう','あす','あそこ','あそぶ','あたたかい','あたま','あたらしい','あちら','あつい','あと','あなた','あに','あね','あぶない','あまり','あめ','ありがとう','ある','あるく','あれ','あんしん','あんぜん','いい','いう','いえ','いきる','いく','いしゃ','いす','いそがしい','いそぐ','いただきます','いちにち','いちねん','いっしょ','いつ','いつも','いま','いみ','いもうと','いる','いれる','うごく','うた','うち','うつくしい','うまれる','うみ','うる','うるさい','うれしい','えいが','えき','えらぶ','えんき','えんちょう','えんぴつ','おいしい','おおきい','おかね','おきる','おく','おくれる','おこる','おさけ','おしえる','おそい','おそく','おちゃ','おつかれ','おとうと','おととい','おとな','おどろく','おなか','おねがい','おはよう','おぼえる','おめでとう','おもい','おもう','おもしろい','おやすみ','およぐ','おりる','おわる','おんがく','かいけん','かいしゃ','かいぜん','かいはつ','かいふく','かう','かえる','かお','かぎ','かく','かくだい','かくにん','かさ','かぜ','かぞく','かちょう','かっこいい','かなしい','かなしむ','かのじょ','かばん','かぶか','かみ','かようび','からだ','かるい','かれ','かわ','かわいい','かんがえる','かんきょう','かんじ','かんじゃ','かんじる','かんたん','がくせい','がっこう','がんばる','き','きぎょう','きく','きこえる','きしゃ','きた','きっかけ','きっと','きっぷ','きて','きのう','きぶん','きぼう','きまる','きめる','きもち','きょう','きょうしつ','きょか','きょねん','きれい','きんし','きんようび','ぎじゅつ','くうこう','くすり','くだもの','くち','くつ','くに','くも','くらす','くらべる','くる','くるま','けいかく','けいこう','けいざい','けが','けしごむ','けっか','けっこう','けっこんする','けってい','けど','けはい','けんきゅう','けんとう','げつようび','げんいん','げんき','げんしょう','げんてい','げーむ','こうこう','こうじょう','こうはい','こうひょう','こうふく','こえて','ここ','こころ','こたえ','こちら','こと','ことし','こども','こまる','こめ','これ','これから','こわい','こんげつ','こんにちは','こんばんは','こーひー','ごご','ごぜん','ごちそうさま','ごはん','ごめん','さいふ','さかな','さがす','さがる','さっかー','さっき','さっそく','さびしい','さむい','さようなら','さわる','ざっし','しあわせ','しかし','しけん','しごと','しじょう','しずか','しつもんする','しぬ','しめる','しゃかい','しゃしん','しゃちょう','しゅうかん','しゅうしょく','しゅうまつ','しゅうり','しゅくだい','しゅっちょう','しょうにん','しる','しんかんせん','しんがく','しんこく','しんしゅつ','しんぱい','しんぶん','じかん','じっけん','じつは','じてんしゃ','じゅうみん','じゅぎょう','じゅんび','じょうしょう','じょうたい','じょじょに','じんこう','すいようび','すきになる','すぐ','すこし','すごい','すごく','すずしい','すぽーつ','すみません','すむ','する','すわる','ずっと','せいかつ','せいげん','せいさく','せいせき','せいそう','せいひん','せいりつ','せかい','せっきん','せなか','せまい','せんきょ','せんげつ','せんせい','せんたく','せんぱい','ぜったい','ぜんぜん','ぜんぶ','そこ','そして','そだつ','そちら','そつぎょう','そら','それ','それから','それで','そろそろ','たいさく','たいしょく','たいせつ','たいふう','たいへん','たいよう','たかい','たくさん','たくしー','たしか','たすける','たつ','たとえば','たのしい','たぶん','たべもの','たべる','たまご','たまに','だいがく','だいじ','だいじょうぶ','だいたい','だから','だす','だれ','だんだん','ちいき','ちいさい','ちかい','ちかてつ','ちこく','ちず','ちち','ちゅうがく','ちゅうもく','ちょうさ','ちょうどいい','ちょっと','ついに','つかう','つかれる','つき','つくえ','つくる','つづける','つまらない','つまり','つよい','て','ていあん','てがみ','てすと','てつだう','てれび','てんき','てんしょく','でかけ','でかける','できるだけ','でも','でる','でんき','でんしゃ','でんわ','とうとう','とおい','とおる','とき','ときどき','とくべつ','とけい','ところ','ところで','とても','とにかく','とぶ','とまる','ともだち','とる','どあ','どう','どうしても','どうりょう','どこ','どようび','どれ','どんどん','どんな','なかなか','ながい','なく','なぜ','なに','なまえ','なやむ','ならう','なる','なるべく','なん','なんか','なんて','なんとか','なんとなく','なんなん','におう','にく','にちようび','にゅうがく','ねだん','ねつ','ねる','のど','のぼる','のみもの','のむ','のんで','は','はいる','はしる','はじめる','はたらく','はっせい','はっぴょう','はつばい','はな','はなし','はなす','はは','はやい','はんかち','はんだん','ばあい','ばしょ','ばす','ばん','ばんごはん','ぱん','ひくい','ひこうき','ひと','ひなん','ひま','ひる','ひるごはん','ひろい','びょういん','びょうき','びーる','ふあん','ふく','ふべん','ふり','ふるい','ふんいき','ぶちょう','ぶっか','へいじつ','へや','べんきょう','べんきょうする','べんり','ぺん','ほうこく','ほうほう','ほうりつ','ほし','ほしい','ほてる','ほとんど','ほん','ほんと','ほんとう','ぼうし','まいしゅう','まいつき','まいとし','まいにち','まえ','まがる','ますます','まずい','また','まだ','まち','まつ','まど','まにあう','みえる','みじかい','みず','みち','みつける','みみ','みる','みんな','むかし','むずかしい','め','めがね','もう','もくてき','もくひょう','もくようび','もちろん','もっと','もつ','もの','もり','もんだい','やきゅう','やくそく','やさい','やさしい','やすむ','やすもう','やっと','やっぱ','やっぱり','やはり','やばい','やま','やめ','やめたい','やめる','ゆうがた','ゆうめい','ゆき','ゆめ','よい','ようす','ようふく','ようやく','よてい','よむ','よやく','よる','よろこぶ','よろしく','よわい','らいげつ','らいねん','らじお','りゆう','りょうしん','りょうり','りょこう','れんしゅう','わかい','わかる','わかれる','わすれる','わたし','わたしたち','わたる','わらう','わるい','はやく','おわり','ちえん','こんかい','ろっかげつ','のみ','かいぎ','どういう','はなせる','でかけよう','やけに','やまだ','はしって','はしった','なれて','ほんとに','せんたくもの','ふられて']);
+
+  // Quality gate for findAlternateSegmentation only — deliberately *not*
+  // folded into COMMON_READINGS above: those feed getWordInfo's cost model
+  // and would change the *default* segmentation too (tried this — adding
+  // へんかん/せいど there made へんかんせいど split by default instead of
+  // matching its whole-compound dict entry, turning 変換精度 into a wrong
+  // 変換+制度 hybrid as candidate[0]). This set only decides whether a split
+  // point is "real words on both sides" for the *alternate*-candidate check.
+  private static readonly ALT_SEG_WORDS: Set<string> = new Set([
+    'へんかん', 'せいど', 'りょうきん',
+  ]);
   private static readonly COLLOQUIAL_KANA: Record<string,string> = {'まじ':'まじ','ほんま':'ほんま','なんなん':'なんなん','やば':'やば','ぴえん':'ぴえん','ぱおん':'ぱおん','てか':'てか','なんか':'なんか'};
   private static supplementaryDict: Record<string, string[]> = {};
   private static learned: Record<string, Record<string, number>> = {};
@@ -25330,6 +25378,7 @@ export class KanaKanjiConverter {
     // dict-ordering note above for why source order can't be trusted.
     '住民', '上昇', '成立', '回復', '一緒', '遅延', '今回', '会おう',
     '進出', '深刻', '接近', '延期', '飲み', '酷い', 'お出かけ', '話', '終わり',
+    '動向', '実家', '添付', '施行', '山田', '五百円玉',
   ]);
 
   private static boostCommonWords(cands: string[]): string[] {
@@ -25405,6 +25454,16 @@ export class KanaKanjiConverter {
   private segmentJoinFallback(kana: string): string | null {
     const segs = this.segment(kana);
     if (segs.length < 2) { return null; }
+    return this.joinSegs(segs);
+  }
+
+  // Per-segment join used by both segmentJoinFallback (unregistered readings)
+  // and findAlternateSegmentation (offering a second, differently-segmented
+  // candidate for readings that already resolve via a single whole-phrase
+  // dictionary entry). Pulled out so every join goes through the same
+  // grammar special-cases (てきた/てきて, あい/すいの様態, COLLOCATION_HINTS)
+  // instead of two copies drifting apart.
+  private joinSegs(segs: string[]): string | null {
     let joined = '';
     let allRecognized = true;
     for (let idx = 0; idx < segs.length; idx++) {
@@ -25448,6 +25507,29 @@ export class KanaKanjiConverter {
           else if (seg === 'すい') { best = '空い'; }
         }
       }
+      // Object→verb collocation (COLLOCATION_HINTS): 「〜を<noun>を<verb>」
+      // within the same phrase picks the verb kanji that noun actually
+      // collocates with (かさをかいた→買った, not 書いた/飼った), rather than
+      // whichever homograph lookup() would pick for the bare verb reading.
+      if (idx >= 2 && segs[idx - 1] === 'を') {
+        const obj = segs[idx - 2];
+        for (const hintKey of Object.keys(COLLOCATION_HINTS)) {
+          const sep = hintKey.indexOf('|');
+          const hintNoun = hintKey.slice(0, sep);
+          const hintVerb = hintKey.slice(sep + 1);
+          if (hintNoun === obj && seg.startsWith(hintVerb)) {
+            best = COLLOCATION_HINTS[hintKey] + seg.slice(hintVerb.length);
+            break;
+          }
+        }
+      }
+      // Adjacent-pair hint (ADJACENT_PAIR_HINTS): two segments sitting right
+      // next to each other reading as a different compound together than
+      // either would alone (へんかん+せいど -> 返還制度, not 変換+制度).
+      if (idx + 1 < segs.length) {
+        const pairHint = ADJACENT_PAIR_HINTS[seg + '|' + segs[idx + 1]];
+        if (pairHint !== undefined) { best = pairHint; }
+      }
       // A segment that resolves to a bare symbol (e.g. かっこ→"()") means the
       // segmenter split a casual string across a symbol "word"; the joined
       // phrase would be nonsense like "()よ". Abandon the join so the plain
@@ -25457,6 +25539,56 @@ export class KanaKanjiConverter {
     }
     if (/[一-鿿]/.test(joined)) { return joined; }
     return allRecognized ? joined : null;
+  }
+
+  // "自動区切り変更": a second candidate from a *differently-segmented*
+  // reading of the same text, not just a different word choice for the same
+  // segmentation — e.g. へんかんせいど is one whole compound dict entry
+  // (→変換精度), but splitting it へんかん+せいど instead gives 返還+制度,
+  // a genuinely different (and sometimes intended) parse. Only meaningful
+  // when the default segmentation collapsed the whole reading into a single
+  // span; if it's already multi-segment, ordinary candidate cycling already
+  // covers word-level alternatives within that one segmentation.
+  findAlternateSegmentation(kana: string): string | null {
+    if (kana.length < 4) { return null; }
+    const primary = this.segment(kana);
+    if (primary.length !== 1) { return null; }
+    // Forcing the DP to merely avoid the whole-string span isn't enough — it
+    // just finds whatever's next-cheapest overall, which can land on a split
+    // point with no linguistic relation to the intended one (へんかんせいど ->
+    // へん+かんせいど instead of へんかん+せいど). Look for an actual 2-morpheme
+    // boundary instead: a position where *both* halves are themselves
+    // recognized dictionary words, picking the cheapest such split.
+    let bestSplit = -1;
+    let bestCost = Infinity;
+    let bestBalance = -1;
+    for (let i = 2; i <= kana.length - 2; i++) {
+      const left = kana.slice(0, i);
+      const right = kana.slice(i);
+      // inDict() alone is far too permissive here — dict.json lists some
+      // obscure kanji reading for nearly every kana fragment, so almost any
+      // split point would trivially pass and mostly produce garbage (checked
+      // against a random sample of dictionary keys during development).
+      // Require ALT_SEG_WORDS on *both* sides: a curated "this is a
+      // genuinely common word" signal, not just "something maps to this".
+      if (!KanaKanjiConverter.ALT_SEG_WORDS.has(left) || !KanaKanjiConverter.ALT_SEG_WORDS.has(right)) { continue; }
+      const cost = this.getWordInfo(left)[0] + this.getWordInfo(right)[0];
+      // Tiebreak toward the more balanced split: a 2-char/5-char split is
+      // usually a short generic prefix cutting into a longer word by
+      // coincidence, whereas equal-ish halves (4/3) are the real compound
+      // boundary. Only applied when costs tie exactly.
+      const balance = Math.min(i, kana.length - i);
+      if (cost < bestCost || (cost === bestCost && balance > bestBalance)) {
+        bestCost = cost;
+        bestBalance = balance;
+        bestSplit = i;
+      }
+    }
+    if (bestSplit < 0) { return null; }
+    const alt = [kana.slice(0, bestSplit), kana.slice(bestSplit)];
+    const result = this.joinSegs(alt);
+    if (result === null || result === kana) { return null; }
+    return result;
   }
 
   private static contextRerank(reading: string, cands: string[]): string[] {
@@ -26140,7 +26272,7 @@ export class KanaKanjiConverter {
   // Minimum-cost Viterbi lattice segmentation.
   // Node costs from grammar rules (VN_*); edge costs from buildConnectionMatrix().
   // Falls back gracefully to heuristic costs when data files are not loaded.
-  segment(kana: string): string[] {
+  segment(kana: string, forceSplit: boolean = false): string[] {
     const n = kana.length;
     if (n === 0) { return []; }
     const INF = 1000000000;
@@ -26163,6 +26295,12 @@ export class KanaKanjiConverter {
       if (best[i] === INF) { continue; }
       const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
       for (let len = 1; len <= maxLen; len++) {
+        // forceSplit forbids the whole reading as a single span, so callers
+        // that already have the single-segment Viterbi-best answer can ask
+        // for the best *alternative* segmentation instead (see
+        // findAlternateSegmentation) — e.g. へんかんせいど as one compound
+        // dict entry (→変換精度) vs へんかん+せいど split (→返還+制度).
+        if (forceSplit && i === 0 && len === n) { continue; }
         const sub = kana.slice(i, i + len);
         if (len > 1 && !this.inDict(sub)) { continue; }
         const info = this.getWordInfo(sub);

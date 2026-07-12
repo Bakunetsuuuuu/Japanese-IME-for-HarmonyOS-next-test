@@ -1,20 +1,14 @@
 #!/usr/bin/env node
-// Offline conversion-accuracy harness for the shunti IME.
-//
-// KanaKanjiConverter.ets has no ArkTS-only runtime dependencies, so it runs as
-// plain TypeScript. This script transpiles it on the fly (via the local
-// typescript compiler), loads the real bundled dictionaries, reproduces the
-// app's default sentence conversion (KeyboardController.updateCandidates ->
-// candidate[0]), and reports accuracy against a labeled corpus of natural
-// Japanese (reading -> gold surface) pairs.
+// Held-out TEST accuracy — separate from run.js (which measures against the
+// TRAIN corpus: corpus.js/corpus2.js/corpus3.js, the set actually used to
+// guide tuning decisions all along). corpus_test.js/accept_test.js are never
+// used to pick a fix; they only ever get *measured*, so this number reflects
+// real generalization instead of overfitting to whatever's been tuned
+// against. Re-run after any conversion change to confirm it still holds.
 //
 // Usage:
-//   node tools/ime-eval/run.js            # summary accuracy
-//   node tools/ime-eval/run.js --misses   # also print every miss
-//
-// Requires a local `typescript` (npx tsc). Intended for iterating on conversion
-// quality: change the converter, re-run, confirm accuracy went up and no
-// labeled sentence regressed.
+//   node tools/ime-eval/run_test.js            # summary accuracy
+//   node tools/ime-eval/run_test.js --misses   # also print every miss
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -42,7 +36,6 @@ function main() {
   KanaKanjiConverter.initConnectionMatrix();
   const conv = new KanaKanjiConverter();
 
-  // Faithful port of KeyboardController.updateCandidates() candidate[0].
   const convert = (reading) => {
     if (!reading) return '';
     const fullKata = KanaKanjiConverter.toKatakana(reading);
@@ -51,18 +44,12 @@ function main() {
     const full = conv.lookup(reading);
     if (full[0] !== fullKata && full[0] !== reading) return full[0];
     const prefixParts = segs.slice(0, -1).map((s) => conv.autoConvert(s));
-    // A prefix segment that resolves to a bare symbol (e.g. かっこ->"()") means
-    // Viterbi split a casual word across a symbol "word" -- joining it would
-    // produce nonsense like "()よ" for かっこよ. Fall back to plain kana.
     if (prefixParts.some((p) => KanaKanjiConverter.isSymbolOnly(p))) return reading;
     return prefixParts.join('') + conv.lookup(segs[segs.length - 1])[0];
   };
 
-  const corpus = [...require('./corpus.js'), ...require('./corpus2.js'), ...require('./corpus3.js')];
-  // accept.js lists additional *valid* natural-Japanese outputs per reading
-  // (okurigana/kana-kanji/homophone variation the IME can't disambiguate). The
-  // lenient score counts those as correct; garbage never appears there.
-  const accept = require('./accept.js');
+  const corpus = require('./corpus_test.js');
+  const accept = require('./accept_test.js');
   let strict = 0, lenient = 0;
   const misses = [];
   for (const [reading, gold] of corpus) {
@@ -72,8 +59,8 @@ function main() {
     if (okSet.includes(got)) lenient++; else misses.push([reading, gold, got]);
   }
   const n = corpus.length;
-  console.log(`strict accuracy : ${strict}/${n} (${(100 * strict / n).toFixed(1)}%)  [exact gold match]`);
-  console.log(`lenient accuracy: ${lenient}/${n} (${(100 * lenient / n).toFixed(1)}%)  [any valid natural output]`);
+  console.log(`[TEST] strict accuracy : ${strict}/${n} (${(100 * strict / n).toFixed(1)}%)`);
+  console.log(`[TEST] lenient accuracy: ${lenient}/${n} (${(100 * lenient / n).toFixed(1)}%)`);
   if (showMisses) {
     for (const [r, g, got] of misses) {
       console.log(`\n${r}\n  gold: ${g}\n  got : ${got}`);

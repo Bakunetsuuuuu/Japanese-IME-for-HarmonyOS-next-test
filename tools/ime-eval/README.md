@@ -13,11 +13,27 @@ labeled corpus of natural Japanese `[reading, goldSurface]` pairs.
 ## Run
 
 ```sh
-node tools/ime-eval/run.js            # summary accuracy
+node tools/ime-eval/run.js            # TRAIN summary accuracy
 node tools/ime-eval/run.js --misses   # also print every miss (gold vs got)
+node tools/ime-eval/run_test.js           # held-out TEST summary accuracy
+node tools/ime-eval/run_test.js --misses  # also print every miss
 ```
 
 Requires a local `typescript` (`npx tsc`).
+
+## Train/test split
+
+`run.js` (corpus.js/corpus2.js/corpus3.js) is the **train** set: the one
+actually used to decide what to fix. `run_test.js` (corpus_test.js/
+accept_test.js) is a separately-authored **held-out test** set — never used to
+pick or shape a fix, only to check the result afterward. This matters because
+tuning repeatedly against one small corpus makes it stop measuring
+generalization: an earlier round of this converter scored 89% against a
+130-sentence corpus it had been tuned against, but only 70% against a larger
+held-out corpus of the same difficulty. Keep that separation when adding
+cases — a bug found via corpus_test.js should be fixed by reasoning about the
+general rule (or by adding the fix to the train corpus for regression
+coverage), not by hand-tuning to the exact test sentence.
 
 ## Corpus
 
@@ -31,6 +47,9 @@ Requires a local `typescript` (`npx tsc`).
 - `accept.js` — per-reading map of *additional* valid natural-Japanese outputs
   (okurigana / kana-kanji / standard homophones the IME can't disambiguate
   without context). Garbage is never listed here.
+- `corpus_test.js` / `accept_test.js` — the held-out TEST set (see above).
+  Same format as corpus.js/accept.js, kept in separate files so it's obvious
+  which corpus a given tuning session is/isn't allowed to look at.
 
 Two metrics are reported:
 - **strict** — output equals the one authored gold exactly.
@@ -44,11 +63,28 @@ Readings are authored by hand so alignment is exact.
 
 ## Where the converter encodes this
 
-`KanaKanjiConverter` carries two small lexicons that feed segmentation quality:
-`COMMON_READINGS` (a frequency signal — common words beat rare-kanji fragment
-splits) and `COLLOQUIAL_KANA` (well-known slang forced to its natural kana form).
-Extend those, plus the segmentation cost constants in `getWordInfo` /
-`buildConnectionMatrix`, when the harness surfaces a new class of mistake.
+`KanaKanjiConverter` carries a few small lexicons/tables that feed conversion
+quality — extend these, plus the segmentation cost constants in `getWordInfo` /
+`buildConnectionMatrix`, when the harness surfaces a new class of mistake:
+
+- `COMMON_READINGS` — a frequency signal for *segmentation*: common words beat
+  a rare-kanji fragment split of the same span.
+- `COMMON_WORDS` — a ranking boost for specific *candidate surface forms*,
+  regardless of which dictionary source produced them.
+- `COLLOQUIAL_KANA` — well-known slang forced to its natural kana form.
+- `COLLOCATION_HINTS` — object→verb disambiguation within one phrase
+  (`かさをかいた`→買った, not 書いた/飼った), keyed by "noun|verbReading".
+- `ADJACENT_PAIR_HINTS` — two segments that read as a different compound
+  together than either would alone, used by `findAlternateSegmentation`.
+- `ALT_SEG_WORDS` — a curated "both sides are real words" gate for
+  `findAlternateSegmentation`'s alternate-segmentation candidate (offers a
+  second, differently-split parse — e.g. へんかんせいど as one compound entry
+  →変換精度 vs the へんかん+せいど split →返還制度). Deliberately kept separate
+  from `COMMON_READINGS`: folding words in there changes the *default*
+  segmentation too, not just this opt-in secondary candidate.
+- `PredictivePhrases.ets` — prefix-matched completion for common greetings/
+  set phrases (あけまし→あけましておめでとうございます), independent of the
+  regular whole-reading dictionary lookup.
 
 ## Workflow
 
