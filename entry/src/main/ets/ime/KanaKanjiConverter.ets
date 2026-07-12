@@ -25300,6 +25300,7 @@ export class KanaKanjiConverter {
     'くらい': true, 'ぐらい': true, 'ばかり': true, 'など': true,
     'なんか': true, 'しか': true, 'だけ': true, 'さえ': true, 'こそ': true,
     'か': true, 'ね': true, 'よ': true, 'ぞ': true, 'わ': true, 'な': true,
+    'かよ': true, 'のか': true, 'のかよ': true,
     'て': true, 'ば': true, 'のに': true, 'ので': true,
     // 条件・断定の「なら」(Xなら=if X / if it's X) は超頻出の機能語。
     // 辞書では地名の「奈良」が既定になりがちだが、文中の接続では圧倒的に
@@ -25958,6 +25959,9 @@ export class KanaKanjiConverter {
     'かも': 69, 'かもしれない': 69, 'かもしれません': 69, 'かもね': 69,
     'ね': 70, 'な': 70,
     'よ': 71, 'ぞ': 72, 'わ': 72,
+    // Compound sentence-enders that a dictionary tends to read as a noun
+    // (かよ→通, のかよ, だのに, …). Kept as function words so they stay kana.
+    'かよ': 71, 'のか': 69, 'のかよ': 71, 'だよ': 71, 'だね': 70, 'だな': 70,
     // Auxiliary verbs — past (73)
     'た': 73, 'でした': 73, 'だった': 73, 'ていた': 73,
     // Auxiliary verbs — progressive/aspect (74)
