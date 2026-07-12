@@ -15,41 +15,75 @@ labeled corpus of natural Japanese `[reading, goldSurface]` pairs.
 ```sh
 node tools/ime-eval/run.js            # TRAIN summary accuracy
 node tools/ime-eval/run.js --misses   # also print every miss (gold vs got)
-node tools/ime-eval/run_test.js           # held-out TEST summary accuracy
+node tools/ime-eval/run_test.js           # held-out TEST summary accuracy (rounds 1-6, see below)
 node tools/ime-eval/run_test.js --misses  # also print every miss
+node tools/ime-eval/run_vocab.js           # bare single-word dictionary coverage check
+node tools/ime-eval/run_vocab.js --misses  # also print every miss
 ```
 
 Requires a local `typescript` (`npx tsc`).
 
-## Train/test split
+## Train/test split — and its limits
 
 `run.js` (corpus.js/corpus2.js/corpus3.js) is the **train** set: the one
-actually used to decide what to fix. `run_test.js` (corpus_test.js/
-accept_test.js) is a separately-authored **held-out test** set — never used to
-pick or shape a fix, only to check the result afterward. This matters because
-tuning repeatedly against one small corpus makes it stop measuring
-generalization: an earlier round of this converter scored 89% against a
-130-sentence corpus it had been tuned against, but only 70% against a larger
-held-out corpus of the same difficulty. Keep that separation when adding
-cases — a bug found via corpus_test.js should be fixed by reasoning about the
-general rule (or by adding the fix to the train corpus for regression
-coverage), not by hand-tuning to the exact test sentence.
+actually used to decide what to fix. `run_test*.js` (corpus_test*.js/
+accept_test*.js) are **held-out test** sets — never used to pick or shape a
+fix, only to check the result afterward. This matters because tuning
+repeatedly against one small corpus makes it stop measuring generalization:
+an earlier round of this converter scored 89% against a 130-sentence corpus
+it had been tuned against, but only 70% against a larger held-out corpus of
+the same difficulty.
+
+**A single held-out corpus is not enough if the same person writes both the
+fixes and the test sentences.** Round 1 (`corpus_test.js`) turned out to
+overlap in spirit with words patched the same session that authored it — no
+literal sentence duplication, but 30% of its sentences directly exercised a
+word just patched, which quietly inflates the score without proving anything
+generalizes. Two mitigations are in place:
+
+1. **Rotate the corpus every round.** `corpus_test2.js` through
+   `corpus_test6.js` were each measured exactly once, *before* any fix aimed at
+   that round's failures, to get an honest baseline; after fixing, that
+   corpus is "spent" (informative, but no longer blind) and the next round
+   uses a fresh one. Don't keep re-measuring against the same held-out file
+   round after round while tuning — write a new one.
+2. **Prefer corpora whose *wording* isn't yours.** `corpus_test6.js` is
+   sampled from the [Tatoeba Project](https://tatoeba.org) (CC BY 2.0 FR),
+   real sentences from independent contributors — only the hiragana reading
+   column was transcribed by hand for this project, not the sentence content
+   itself. This is more rigorous than corpus_test.js–corpus_test5.js (all
+   hand-authored by whoever was doing the fixing that session), which still
+   carries an unconscious vocabulary-selection bias even when no fix is
+   deliberately targeted. Prefer sourcing more real-corpus sentences (with a
+   compatible license) over hand-authoring when starting a new round.
+   Tatoeba itself skews toward polite/textbook-style example sentences,
+   though, not genuine casual speech — `corpus_test7.js` instead samples the
+   [Open 2channel Dialogue Corpus](https://github.com/1never/open2ch-dialogue-corpus)
+   (Apache 2.0), real casual message-board conversation, and scores
+   noticeably lower (22.7% first-measurement) than the more formal-register
+   sources. That gap is itself informative: this converter's dictionary/
+   grammar coverage is much better tuned to neutral/written register than to
+   live colloquial speech, and any accuracy number should be read alongside
+   *what register the test corpus is drawn from*, not as a single scalar.
+
+Even with both mitigations, expect the *first-measurement* score on a fresh
+round to land well below any previously-reported number — that gap is the
+honest one. Fixing what a fresh corpus reveals is legitimate; re-running the
+*same* corpus after patching it and reporting the new number as if it were
+still a blind measurement is not.
 
 ## Corpus
 
-- `corpus.js` — everyday sentences, colloquial/casual forms, and readings known
-  to surface garbage candidates.
-- `corpus2.js` — additional held-out sentences used to validate that a change
-  generalizes rather than overfitting.
-- `corpus3.js` — a larger, independently-authored held-out corpus (news/forum
-  register plus more grammar patterns: passive/causative/potential forms,
-  questions, counters) for the same generalization check at greater scale.
-- `accept.js` — per-reading map of *additional* valid natural-Japanese outputs
-  (okurigana / kana-kanji / standard homophones the IME can't disambiguate
-  without context). Garbage is never listed here.
-- `corpus_test.js` / `accept_test.js` — the held-out TEST set (see above).
-  Same format as corpus.js/accept.js, kept in separate files so it's obvious
-  which corpus a given tuning session is/isn't allowed to look at.
+- `corpus.js` / `corpus2.js` / `corpus3.js` / `accept.js` — the TRAIN set (see
+  above).
+- `corpus_test.js` … `corpus_test6.js` (with matching `accept_test*.js`) —
+  successive held-out TEST rounds, each authored/sourced fresh and measured
+  once before any fix targeted it. Treat all of them as "spent" (no longer
+  blind) once a fix round has run against them; write a new one for the next
+  round rather than reusing.
+- `vocab_test.js` / `run_vocab.js` — a separate check: ~250 common everyday
+  N5–N3 words as bare single-reading `lookup()` calls (not sentences), to
+  measure raw dictionary/ranking coverage independent of segmentation.
 
 Two metrics are reported:
 - **strict** — output equals the one authored gold exactly.
