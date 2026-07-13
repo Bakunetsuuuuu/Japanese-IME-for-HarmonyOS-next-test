@@ -5814,7 +5814,8 @@ const DICTIONARY: Record<string, string[]> = {
   'よくなる': ['良くなる'],
   'よすぎた': ['良すぎた'],
   'よすぎる': ['良すぎる'],
-  'よそう': ['良そう'],
+  // よそう is 予想 (a common noun), not 良い's conjecture form — that is よさそう.
+  // The auto-generated 良そう entry was wrong and shadowed 予想, so it is omitted.
   'よわかった': ['弱かった'],
   'よわくて': ['弱くて'],
   'よわくない': ['弱くない'],
