@@ -25404,7 +25404,8 @@ export class KanaKanjiConverter {
     // word + a cheap particle-like tail (ひる+ね, くつ+した, ほん+だ+な,
     // はんそ+で, ながそ+で, はつもう+で). Giving the whole reading the common
     // bonus keeps 昼寝/靴下/本棚/半袖/長袖/初詣 intact.
-    'ひるね','くつした','ほんだな','はんそで','ながそで','はつもうで']);
+    'ひるね','くつした','ほんだな','はんそで','ながそで','はつもうで',
+    'はなみず','あしあと','ひので','おりもの','ほんもの']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
