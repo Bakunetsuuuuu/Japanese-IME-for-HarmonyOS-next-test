@@ -25974,7 +25974,13 @@ export class KanaKanjiConverter {
       // user leads global; both prepended ahead of the katakana/kana fallback.
       const withGlobal = KanaKanjiConverter.withRegisteredWords(global, cands);
       const withUserOnly = KanaKanjiConverter.withRegisteredWords(user, withGlobal);
-      return KanaKanjiConverter.boostCounterWords(withUserOnly);
+      // global/user dicts are scraped and can lead with sentence-fragment or
+      // markup garbage (は、日本の…藍屋球). filterCandidates never runs on this
+      // early-return path, so drop artifacts here too — keeping the list if
+      // everything was filtered out, to never return empty.
+      let gClean = withUserOnly.filter((c: string) => !KanaKanjiConverter.isMarkupArtifact(c));
+      if (gClean.length === 0) { gClean = withUserOnly; }
+      return KanaKanjiConverter.boostCounterWords(gClean);
     } else {
       // Not in any dict: try Viterbi segment→convert→join first, then katakana fallback.
       const fallback = kata !== kana ? [kana, kata] : [kana];
@@ -26184,6 +26190,16 @@ export class KanaKanjiConverter {
     if (/\{\{|\}\}/.test(c)) { return true; }        // {{template}}
     if (/'''/.test(c)) { return true; }              // '''bold'''
     if (/<[a-zA-Z/]/.test(c)) { return true; }       // stray <html> tag
+    if (/&#|&amp;|&lt;|&gt;|&quot;/.test(c)) { return true; } // HTML entity (&#91; …)
+    if (/[、。]/.test(c)) { return true; }            // Japanese punctuation: a
+                                                     // single dictionary surface
+                                                     // never contains 、/。, so
+                                                     // this is a scraped sentence
+                                                     // fragment (は、日本の…藍屋球)
+    if (/[;；][0-9]|[0-9]{2};/.test(c)) { return true; } // stray entity remnants "91;" "1;2"
+    if (/^["':：；]/.test(c)) { return true; }        // leading stray quote/colon markup
+    if (/[（(【「『]$/.test(c)) { return true; }      // dangling open bracket at end (藍屋球（)
+    if (/^[）)】」』]/.test(c)) { return true; }      // dangling close bracket at start
     // Trailing short parenthetical gloss/optional-okurigana, e.g. 長持（ち）,
     // 中国（地方）, 関（せき）— real words don't end in a bare "（…）" like this.
     if (/^.+（[^（）]{1,6}）$/.test(c)) { return true; }
