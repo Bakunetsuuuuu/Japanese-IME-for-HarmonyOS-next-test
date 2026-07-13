@@ -26203,7 +26203,11 @@ export class KanaKanjiConverter {
                                                      // this is a scraped sentence
                                                      // fragment (は、日本の…藍屋球)
     if (/[;；][0-9]|[0-9]{2};/.test(c)) { return true; } // stray entity remnants "91;" "1;2"
-    if (/^["':：；]/.test(c)) { return true; }        // leading stray quote/colon markup
+    if (/^["']/.test(c)) { return true; }            // leading stray quote markup
+    if (/[:：|｜]/.test(c)) { return true; }          // colon / pipe anywhere = wiki
+                                                     // or annotation markup
+                                                     // (w:漢口|漢口, 当て字:流石,
+                                                     // 稀:沙) — never in a real word
     if (/[（(【「『]$/.test(c)) { return true; }      // dangling open bracket at end (藍屋球（)
     if (/^[）)】」』]/.test(c)) { return true; }      // dangling close bracket at start
     if (/[「」『』]/.test(c)) { return true; }          // quote marks anywhere: a
