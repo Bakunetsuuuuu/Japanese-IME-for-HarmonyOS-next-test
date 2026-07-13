@@ -26206,6 +26206,12 @@ export class KanaKanjiConverter {
     if (/^["':：；]/.test(c)) { return true; }        // leading stray quote/colon markup
     if (/[（(【「『]$/.test(c)) { return true; }      // dangling open bracket at end (藍屋球（)
     if (/^[）)】」』]/.test(c)) { return true; }      // dangling close bracket at start
+    // Multi-word English phrase (all ASCII, has a letter AND a space), e.g.
+    // "Academic Overview", "Access Control", "Art Nouveau" — scraped English
+    // glosses that leaked in as candidates. Never valid Japanese output. Guarded
+    // to ASCII-only so Japanese candidates (9月, DLする, Tシャツ) are untouched,
+    // and to require a space so single acronyms (SNS, OK, DL) are kept.
+    if (/^[\x20-\x7E]+$/.test(c) && /[A-Za-z]/.test(c) && /\s/.test(c)) { return true; }
     // Trailing short parenthetical gloss/optional-okurigana, e.g. 長持（ち）,
     // 中国（地方）, 関（せき）— real words don't end in a bare "（…）" like this.
     if (/^.+（[^（）]{1,6}）$/.test(c)) { return true; }
