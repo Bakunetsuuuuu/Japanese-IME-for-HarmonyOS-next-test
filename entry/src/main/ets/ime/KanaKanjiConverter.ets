@@ -26210,6 +26210,16 @@ export class KanaKanjiConverter {
                                                      // 稀:沙) — never in a real word
     if (/[（(【「『]$/.test(c)) { return true; }      // dangling open bracket at end (藍屋球（)
     if (/^[）)】」』]/.test(c)) { return true; }      // dangling close bracket at start
+    if (/^[／/]/.test(c)) { return true; }           // leading slash (／単位取得後退学)
+    // Unmatched parenthesis => scraped sentence fragment: 毒性）試験, 須賀川市),
+    // "ility）または老成魚". Balanced parens are legit (（財）, 西鉄福岡（天神）駅,
+    // O(n)) so only an open/close-count mismatch is flagged.
+    const fwParen = (c.split('（').length) - (c.split('）').length);
+    const hwParen = (c.split('(').length) - (c.split(')').length);
+    if (fwParen !== 0 || hwParen !== 0) { return true; }
+    if (/[#＃]/.test(c) && /[一-鿿]/.test(c)) { return true; } // wiki section link
+                                                     // (…登場人物#三藁); keeps C#
+                                                     // and other latin-only forms
     if (/[「」『』]/.test(c)) { return true; }          // quote marks anywhere: a
                                                      // single surface never quotes
                                                      // (湖で行う水浴」を湖水浴)
