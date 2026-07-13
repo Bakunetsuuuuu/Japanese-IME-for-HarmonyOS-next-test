@@ -25843,7 +25843,7 @@ export class KanaKanjiConverter {
     return result;
   }
 
-  lookup(kana: string, fromNorm: boolean = false): string[] {
+  private lookupCore(kana: string, fromNorm: boolean = false): string[] {
     // 読みの揺れ (ず/じ で打たれた づ/ぢ 語) の正規化: 正しい読みの漢字候補を
     // 先頭に取り込む。誤り読みそのままの候補も末尾に残す（別語の可能性に配慮）。
     if (!fromNorm) {
@@ -26046,23 +26046,31 @@ export class KanaKanjiConverter {
     // remains — never return an empty candidate list.
     let clean = result.filter((c: string) => !KanaKanjiConverter.isMarkupArtifact(c));
     if (clean.length === 0) { clean = result; }
-    // 絵文字・顔文字・記号変換: 読みに対応するものを候補末尾に付加する。既定の
-    // 変換 (ほし→星) は変えず、候補送りで 😄/⭐/❤️/(^^)/(T_T) 等に届く。
+    return clean;
+  }
+
+  // Public entry point. Delegates to lookupCore for the actual conversion, then
+  // appends emoji/kaomoji for the reading. Done here (not inside lookupCore) so
+  // it applies on *every* return path — lookupCore returns early for
+  // global-only readings, colloquial forms, and out-of-dict fallbacks, and
+  // those would otherwise miss the pictographs. Skipped for fromNorm (internal
+  // recursive) calls so intermediate results don't accrue duplicates.
+  lookup(kana: string, fromNorm: boolean = false): string[] {
+    const base = this.lookupCore(kana, fromNorm);
+    if (fromNorm) { return base; }
     const emojis = EMOJI_MAP[kana];
     const kaomoji = KAOMOJI_MAP[kana];
-    if (emojis !== undefined || kaomoji !== undefined) {
-      const withExtra = [...clean];
-      const push = (arr: string[] | undefined): void => {
-        if (arr === undefined) { return; }
-        for (const e of arr) {
-          if (!withExtra.includes(e)) { withExtra.push(e); }
-        }
-      };
-      push(emojis);
-      push(kaomoji);
-      return withExtra;
-    }
-    return clean;
+    if (emojis === undefined && kaomoji === undefined) { return base; }
+    const withExtra = [...base];
+    const push = (arr: string[] | undefined): void => {
+      if (arr === undefined) { return; }
+      for (const e of arr) {
+        if (!withExtra.includes(e)) { withExtra.push(e); }
+      }
+    };
+    push(emojis);
+    push(kaomoji);
+    return withExtra;
   }
 
   // Closed set of compound-verb second elements (as they appear at the end of
