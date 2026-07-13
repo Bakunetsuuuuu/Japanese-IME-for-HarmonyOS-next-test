@@ -959,28 +959,29 @@ export class InputHandler {
     new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
 
   // Move the caret one position left after inserting a bracket pair so it lands
-  // between them. insertText's Promise only confirms the request was accepted,
-  // not that the editor has finished applying it, so moving the caret in the
-  // same microtask can act on the pre-insert position. Prefer an absolute
-  // reposition via getTextIndexAtCursor+selectByRange (lands exactly one code
-  // unit before the caret regardless of timing); fall back to moveCursor, and
-  // to a short delayed moveCursor, for editors that don't support range select.
+  // between them. Read the caret's absolute index (getTextIndexAtCursor resolves
+  // after the editor has applied the just-inserted pair, since requests to the
+  // editor are processed in order) and collapse the selection one code unit
+  // earlier via selectByRange — timing-independent and exact. Fall back to a
+  // relative moveCursor for editors that reject range selection.
   private placeCaretBetweenBrackets(client: inputMethodEngine.InputClient): void {
-    const back = (): void => {
-      client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
-        .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
+    const moveBack = (delayed: boolean): void => {
+      const step = (): void => {
+        client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+          .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
+      };
+      if (delayed) { setTimeout(step, 16); } else { step(); }
     };
-    const anyClient = client as ESObject;
-    if (typeof anyClient['getTextIndexAtCursor'] === 'function' &&
-        typeof anyClient['selectByRange'] === 'function') {
-      (anyClient['getTextIndexAtCursor']() as Promise<number>).then((idx: number) => {
-        const target = idx > 0 ? idx - 1 : 0;
-        (anyClient['selectByRange']({ start: target, end: target }) as Promise<void>)
-          .catch((_e: Error) => { setTimeout(back, 16); });
-      }).catch((_e: Error) => { setTimeout(back, 16); });
-    } else {
-      setTimeout(back, 16);
-    }
+    client.getTextIndexAtCursor().then((idx: number) => {
+      const target: number = idx > 0 ? idx - 1 : 0;
+      client.selectByRange({ start: target, end: target }).catch((e: Error) => {
+        console.error('shuntiIME selectByRange(bracket) failed', JSON.stringify(e));
+        moveBack(false);
+      });
+    }).catch((e: Error) => {
+      console.error('shuntiIME getTextIndexAtCursor(bracket) failed', JSON.stringify(e));
+      moveBack(true);
+    });
   }
 
   insertText(text: string): void {
