@@ -49,7 +49,7 @@ function main() {
     const segs = conv.segment(reading);
     if (segs.length <= 1) return conv.lookup(reading)[0];
     const full = conv.lookup(reading);
-    if (full[0] !== fullKata && full[0] !== reading) return full[0];
+    if ((full[0] !== fullKata && full[0] !== reading) || KanaKanjiConverter.isDictionaryWord(reading)) return full[0];
     const prefixParts = segs.slice(0, -1).map((s) => conv.autoConvert(s));
     // A prefix segment that resolves to a bare symbol (e.g. かっこ->"()") means
     // Viterbi split a casual word across a symbol "word" -- joining it would

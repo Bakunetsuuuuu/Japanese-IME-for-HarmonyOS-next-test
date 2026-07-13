@@ -686,7 +686,12 @@ export class InputHandler {
       // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
       const fullCands = this.kanjiConverter.lookup(composing);
       const fullFirst = fullCands[0];
-      const hasRealHit = fullFirst !== fullKatakana && fullFirst !== composing;
+      // A dict-authored loanword (こんびに→コンビニ) has fullFirst === the
+      // auto-katakana, so the plain fullFirst!==fullKatakana test would reject
+      // it and fall to segmentation (こんび+に → garbage). Treat a whole
+      // reading that IS a dictionary word as a real hit regardless.
+      const hasRealHit = (fullFirst !== fullKatakana && fullFirst !== composing) ||
+        KanaKanjiConverter.isDictionaryWord(composing);
 
       if (hasRealHit) {
         candidates = fullCands;

@@ -46,7 +46,7 @@ function main() {
     } else {
       const fullCands = conv.lookup(composing);
       const fullFirst = fullCands[0];
-      const hasRealHit = fullFirst !== fullKatakana && fullFirst !== composing;
+      const hasRealHit = (fullFirst !== fullKatakana && fullFirst !== composing) || KanaKanjiConverter.isDictionaryWord(composing);
       if (hasRealHit) {
         candidates = fullCands;
       } else {

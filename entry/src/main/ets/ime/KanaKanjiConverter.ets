@@ -26055,6 +26055,19 @@ export class KanaKanjiConverter {
       || KanaKanjiConverter.FUNCTION_WORDS[sub]);
   }
 
+  // True if `reading` is a *content* word authored in one of the dictionaries
+  // (DICTIONARY/global/user/supplementary) — not merely a function word. Used
+  // by the keyboard's sentence-conversion path to recognise that a whole
+  // reading is a known word (e.g. a loanword こんびに→コンビニ) so it isn't
+  // re-segmented into pieces just because its authored surface happens to be
+  // katakana (which the segment path can't distinguish from an auto-fallback).
+  static isDictionaryWord(reading: string): boolean {
+    return !!(DICTIONARY[reading]
+      || KanaKanjiConverter.globalDict[reading]
+      || KanaKanjiConverter.userDict[reading]
+      || KanaKanjiConverter.supplementaryDict[reading]);
+  }
+
   // Returns true for kana that cannot start a Japanese word/morpheme.
   private static isNoStarter(c: string): boolean {
     return 'っゃゅょぁぃぅぇぉゎんー'.indexOf(c) >= 0;
