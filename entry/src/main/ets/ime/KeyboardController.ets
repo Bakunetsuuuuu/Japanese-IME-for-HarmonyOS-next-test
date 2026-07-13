@@ -958,12 +958,37 @@ export class InputHandler {
   private static readonly BRACKET_PAIRS: Set<string> =
     new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
 
+  // Move the caret one position left after inserting a bracket pair so it lands
+  // between them. insertText's Promise only confirms the request was accepted,
+  // not that the editor has finished applying it, so moving the caret in the
+  // same microtask can act on the pre-insert position. Prefer an absolute
+  // reposition via getTextIndexAtCursor+selectByRange (lands exactly one code
+  // unit before the caret regardless of timing); fall back to moveCursor, and
+  // to a short delayed moveCursor, for editors that don't support range select.
+  private placeCaretBetweenBrackets(client: inputMethodEngine.InputClient): void {
+    const back = (): void => {
+      client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+        .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
+    };
+    const anyClient = client as ESObject;
+    if (typeof anyClient['getTextIndexAtCursor'] === 'function' &&
+        typeof anyClient['selectByRange'] === 'function') {
+      (anyClient['getTextIndexAtCursor']() as Promise<number>).then((idx: number) => {
+        const target = idx > 0 ? idx - 1 : 0;
+        (anyClient['selectByRange']({ start: target, end: target }) as Promise<void>)
+          .catch((_e: Error) => { setTimeout(back, 16); });
+      }).catch((_e: Error) => { setTimeout(back, 16); });
+    } else {
+      setTimeout(back, 16);
+    }
+  }
+
   insertText(text: string): void {
     if (InputHandler.BRACKET_PAIRS.has(text) && this.inputClient) {
       const client = this.inputClient;
       client.insertText(text).then(() => {
-        client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT).catch((_e: Error) => {});
-      }).catch((_e: Error) => {});
+        this.placeCaretBetweenBrackets(client);
+      }).catch((e: Error) => console.error('shuntiIME insertText(bracket) failed', JSON.stringify(e)));
     } else {
       this.inputClient?.insertText(text);
     }
