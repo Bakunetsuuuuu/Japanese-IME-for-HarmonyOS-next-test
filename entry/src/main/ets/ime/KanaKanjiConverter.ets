@@ -26197,6 +26197,12 @@ export class KanaKanjiConverter {
     if (/'''/.test(c)) { return true; }              // '''bold'''
     if (/<[a-zA-Z/]/.test(c)) { return true; }       // stray <html> tag
     if (/&#|&amp;|&lt;|&gt;|&quot;/.test(c)) { return true; } // HTML entity (&#91; …)
+    if (/[ぁ-ゖァ-ヶ一-鿿]\s*,/.test(c)) { return true; } // ASCII comma after a
+                                                     // Japanese char = two merged
+                                                     // surface forms (選択, 撰択);
+                                                     // recoverFragment keeps the
+                                                     // first. Digit commas (1,000)
+                                                     // are unaffected.
     if (/[、。]/.test(c)) { return true; }            // Japanese punctuation: a
                                                      // single dictionary surface
                                                      // never contains 、/。, so
@@ -26246,7 +26252,8 @@ export class KanaKanjiConverter {
   // 西鉄福岡（天神）駅) are never altered. Only ever applied to candidates that
   // are already classified as markup, so legit candidates never reach it.
   private static recoverFragment(c: string): string {
-    let s = c;
+    // Two merged surface forms "選択, 撰択" -> keep the first before the comma.
+    let s = c.replace(/\s*,.*$/, '');
     for (let i = 0; i < 8 && s.length > 0; i++) {
       const opens = (s.split('（').length - 1) + (s.split('(').length - 1)
         + (s.split('「').length - 1) + (s.split('『').length - 1) + (s.split('【').length - 1);
