@@ -25984,7 +25984,7 @@ export class KanaKanjiConverter {
       // markup garbage (は、日本の…藍屋球). filterCandidates never runs on this
       // early-return path, so drop artifacts here too — keeping the list if
       // everything was filtered out, to never return empty.
-      let gClean = withUserOnly.filter((c: string) => !KanaKanjiConverter.isMarkupArtifact(c));
+      let gClean = KanaKanjiConverter.cleanArtifacts(withUserOnly);
       if (gClean.length === 0) { gClean = withUserOnly; }
       return KanaKanjiConverter.boostCounterWords(gClean);
     } else {
@@ -26100,7 +26100,7 @@ export class KanaKanjiConverter {
     // one of those (e.g. global_dict's own "[[錦]]"/"{{w|甲賀}}") would
     // otherwise slip through untouched. Only drop them if something clean
     // remains — never return an empty candidate list.
-    let clean = result.filter((c: string) => !KanaKanjiConverter.isMarkupArtifact(c));
+    let clean = KanaKanjiConverter.cleanArtifacts(result);
     if (clean.length === 0) { clean = result; }
     return clean;
   }
@@ -26238,6 +26238,47 @@ export class KanaKanjiConverter {
     return false;
   }
 
+  // Strip DANGLING brackets from a scraped candidate so a clean word buried
+  // inside can be recovered instead of dropped: 化学結合（ -> 化学結合,
+  // 背泳」 -> 背泳, 藍屋球（ -> 藍屋球. Only removes brackets that are dangling
+  // (an open bracket at the very end, a close bracket at the very start, or a
+  // close/open with no partner), so balanced forms (（財）, O(n),
+  // 西鉄福岡（天神）駅) are never altered. Only ever applied to candidates that
+  // are already classified as markup, so legit candidates never reach it.
+  private static recoverFragment(c: string): string {
+    let s = c;
+    for (let i = 0; i < 8 && s.length > 0; i++) {
+      const opens = (s.split('（').length - 1) + (s.split('(').length - 1)
+        + (s.split('「').length - 1) + (s.split('『').length - 1) + (s.split('【').length - 1);
+      const closes = (s.split('）').length - 1) + (s.split(')').length - 1)
+        + (s.split('」').length - 1) + (s.split('』').length - 1) + (s.split('】').length - 1);
+      const last = s[s.length - 1];
+      const first = s[0];
+      if (/[（(「『【]/.test(last)) { s = s.slice(0, -1); continue; }            // trailing open = dangling
+      if (/[）)」』】]/.test(last) && closes > opens) { s = s.slice(0, -1); continue; } // unmatched trailing close
+      if (/[）)」』】]/.test(first)) { s = s.slice(1); continue; }               // leading close = dangling
+      if (/[（(「『【]/.test(first) && opens > closes) { s = s.slice(1); continue; }  // unmatched leading open
+      break;
+    }
+    return s;
+  }
+
+  // Filter markup artifacts, but first try to recover a clean word from a
+  // doomed candidate by stripping dangling brackets. Legit candidates are
+  // returned untouched (never reach recoverFragment).
+  private static cleanArtifacts(cands: string[]): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const add = (x: string): void => { if (!seen.has(x)) { seen.add(x); out.push(x); } };
+    for (const c of cands) {
+      if (!KanaKanjiConverter.isMarkupArtifact(c)) { add(c); continue; }
+      const r = KanaKanjiConverter.recoverFragment(c);
+      if (r !== c && r.length >= 2 && !KanaKanjiConverter.isMarkupArtifact(r)) { add(r); }
+      // else: unrecoverable markup — drop it
+    }
+    return out;
+  }
+
   private static hasKanjiChar(c: string): boolean {
     return /[一-鿿々〆〇]/.test(c);
   }
@@ -26256,12 +26297,13 @@ export class KanaKanjiConverter {
   // Remove half-width katakana and pure-ASCII romaji only.
   // Full-width katakana is always kept (loanwords need カタカナ even when kanji exists).
   private static filterCandidates(kana: string, cands: string[]): string[] {
-    const filtered = cands.filter(c => {
+    const preFiltered = cands.filter(c => {
       if (/^[ｦ-ﾟ]+$/.test(c)) { return false; } // half-width katakana
       if (/^[A-Za-zÀ-ɏ]+$/.test(c)) { return false; } // romaji / latin
-      if (KanaKanjiConverter.isMarkupArtifact(c)) { return false; }
       return true;
     });
+    // Recover clean words from bracket-fragment candidates, then drop the rest.
+    const filtered = KanaKanjiConverter.cleanArtifacts(preFiltered);
     return filtered.length > 0 ? filtered : [kana];
   }
 
