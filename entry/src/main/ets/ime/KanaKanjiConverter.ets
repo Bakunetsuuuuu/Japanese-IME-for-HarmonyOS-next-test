@@ -26206,6 +26206,9 @@ export class KanaKanjiConverter {
     if (/^["':：；]/.test(c)) { return true; }        // leading stray quote/colon markup
     if (/[（(【「『]$/.test(c)) { return true; }      // dangling open bracket at end (藍屋球（)
     if (/^[）)】」』]/.test(c)) { return true; }      // dangling close bracket at start
+    if (/[「」『』]/.test(c)) { return true; }          // quote marks anywhere: a
+                                                     // single surface never quotes
+                                                     // (湖で行う水浴」を湖水浴)
     // Multi-word English phrase (all ASCII, has a letter AND a space), e.g.
     // "Academic Overview", "Access Control", "Art Nouveau" — scraped English
     // glosses that leaked in as candidates. Never valid Japanese output. Guarded
