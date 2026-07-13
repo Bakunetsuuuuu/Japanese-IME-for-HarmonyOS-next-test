@@ -26223,6 +26223,9 @@ export class KanaKanjiConverter {
     if (/[「」『』]/.test(c)) { return true; }          // quote marks anywhere: a
                                                      // single surface never quotes
                                                      // (湖で行う水浴」を湖水浴)
+    if (/[【】〖〗]/.test(c)) { return true; }          // lenticular brackets = dict
+                                                     // notation (【煌びやか】,
+                                                     // 【碌でなし・陸で無し】)
     // Multi-word English phrase (all ASCII, has a letter AND a space), e.g.
     // "Academic Overview", "Access Control", "Art Nouveau" — scraped English
     // glosses that leaked in as candidates. Never valid Japanese output. Guarded
