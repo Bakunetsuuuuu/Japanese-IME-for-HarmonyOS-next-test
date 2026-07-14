@@ -2337,7 +2337,10 @@ const DICTIONARY: Record<string, string[]> = {
   'きゃっしゅれす': ['キャッシュレス'],
   'ふりこみ': ['振り込み', '振込'],
   'こうざ': ['口座'],
-  'りし': ['利子', '利率', '理事'],
+  // りし as 利子/利率/理事 (finance/corporate terms) is much rarer than the
+  // very common ~たり~たりする construction (よんだり+して) it collided
+  // with, since り there is the already-registered FUNCTION_WORD り.
+  'りし': ['りし', '利子', '利率', '理事'],
   'ほけん': ['保険', '保健'],
   'ねんきん': ['年金'],
   'きゅうよ': ['給与'],
@@ -17201,7 +17204,6 @@ const DICTIONARY: Record<string, string[]> = {
   'おちゃをいれる': ['お茶を入れる'],
   'みずをのむ': ['水を飲む'],
   'ほんをよむ': ['本を読む'],
-  'ほんをよんだ': ['本を読んだ'],
   'ほんをかう': ['本を買う'],
   'てがみをかく': ['手紙を書く'],
   'にっきをかく': ['日記を書く'],
@@ -25410,6 +25412,7 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'めざましどけい|なって': '鳴って', 'どけい|なって': '鳴って',
   'あらーむ|なって': '鳴って', 'べる|なって': '鳴って',
   'ぽいんと|たまって': '貯まって',
+  'しゃしん|とる': '撮る', 'しゃしん|とった': '撮った', 'しゃしん|とって': '撮って',
   'りょうきん|へんかん': '返還', 'おかね|へんかん': '返還', 'けんり|へんかん': '返還',
   'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
 };
@@ -26696,7 +26699,7 @@ export class KanaKanjiConverter {
     // very common bigram to the trained matrix), which the ordinary
     // COMMON_READINGS commonBonus (capped at 3000) can't outweigh.
     if (sub === 'へや' || sub === 'はいそう' || sub === 'たまって' || sub === 'にもつ' ||
-        sub === 'もてた' || sub === 'へこんでいる') {
+        sub === 'もてた' || sub === 'へこんでいる' || sub === 'にわ' || sub === 'よんだり') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
