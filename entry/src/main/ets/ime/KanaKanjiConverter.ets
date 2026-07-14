@@ -26727,7 +26727,7 @@ export class KanaKanjiConverter {
         sub === 'てはいして' || sub === 'したかいがある' ||
         sub === 'たなに' || sub === 'ないそう' || sub === 'やたい' ||
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
-        sub === 'きたのくには') {
+        sub === 'きたのくには' || sub === 'はいしん') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
