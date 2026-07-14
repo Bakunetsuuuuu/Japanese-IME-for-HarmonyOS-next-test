@@ -25579,7 +25579,12 @@ export class KanaKanjiConverter {
     'みせた',
     // しどうを (指導を) already led its own candidate list standalone
     // but fragmented into し+どう+を in context.
-    'しどうを']);
+    'しどうを',
+    // からだを (体を)/からだ (体) already led their own candidate list
+    // standalone but fragmented into から (particle)+だ (copula)+を in
+    // context (boosting からだを alone wasn't enough once a preceding
+    // adverb like ゆっくり shifted the edge costs again).
+    'からだを','からだ']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
