@@ -18915,7 +18915,9 @@ const DICTIONARY: Record<string, string[]> = {
   'じょじょに': ['徐々に'],
   'なっている': ['なっている'],
   'いわれる': ['言われる'],
-  'たてた': ['建てた'],
+  // 立てた (計画/予定/音/腹を立てる…) covers far more common idioms than
+  // 建てた (physical construction), which was leading.
+  'たてた': ['立てた', '建てた'],
   'とじた': ['閉じた'],
   'とじて': ['閉じて'],
   'とじない': ['閉じない'],
@@ -25387,6 +25389,7 @@ const CONTEXT_HINTS: Record<string, string[]> = {
 const COLLOCATION_HINTS: Record<string, string> = {
   'かさ|かいた': '買った', 'ふく|かいた': '買った', 'くつ|かいた': '買った',
   'うわぎ|きた': '着た', 'ふく|きた': '着た', 'せーたー|きた': '着た',
+  'ゆかた|きた': '着た', 'ゆかた|きて': '着て',
   'りょうきん|へんかん': '返還', 'おかね|へんかん': '返還', 'けんり|へんかん': '返還',
   'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
 };
@@ -25452,7 +25455,9 @@ export class KanaKanjiConverter {
     // but lost the lattice to a wrong split (は+らう, おし+てもらった,
     // ぴあ+の+の, どう+が, に+もつ, みな+おしてみた, た+のんで, た+て+
     // はじめた).
-    'はらう','おして','ぴあの','どうが','にもつ','みなおして','たのんで','たてはじめた']);
+    'はらう','おして','ぴあの','どうが','にもつ','みなおして','たのんで','たてはじめた',
+    // へや (部屋) fragmented into へ(particle)+やの in context.
+    'へや']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
