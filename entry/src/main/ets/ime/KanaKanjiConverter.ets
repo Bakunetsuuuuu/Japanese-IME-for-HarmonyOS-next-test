@@ -25610,7 +25610,12 @@ export class KanaKanjiConverter {
     'こうたいせいの','てあてが',
     // のでふいて (ので拭いて): narrow whole-phrase boost for the
     // 拭く/吹く homophone in this specific "wiped off dust" context.
-    'のでふいて']);
+    'のでふいて',
+    // ほんばんに (本番に)/のぞんだ (臨んだ)/とれーに (トレーに) already
+    // led their own candidate list standalone but fragmented (ほん+
+    // ばん+に, の+ぞん+だ, とれー+に) under connection-matrix pressure
+    // in context.
+    'ほんばんに','のぞんだ','とれーに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
