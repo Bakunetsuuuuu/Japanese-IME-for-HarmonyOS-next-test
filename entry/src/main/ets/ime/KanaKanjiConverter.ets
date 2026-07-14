@@ -1606,7 +1606,7 @@ const DICTIONARY: Record<string, string[]> = {
   'はくさい': ['白菜'],
   'れたす': ['レタス'],
   'ねぎ': ['ネギ', '葱'],
-  'たまねぎ': ['タマネギ', '玉ねぎ'],
+  'たまねぎ': ['玉ねぎ', 'タマネギ'],
   'にんにく': ['ニンニク', '大蒜', 'にんにく'],
   'らっきょう': ['ラッキョウ', '辣韭'],
   'だいこん': ['大根'],
@@ -22794,7 +22794,7 @@ const DICTIONARY: Record<string, string[]> = {
   'こうきん': ['抗菌'],
   'ちりてき': ['地理的'],
   'けいど': ['経度'],
-  'めん': ['面', '綿', '麺'],
+  'めん': ['麺', '面', '綿'],
   'とうかい': ['東海'],
   'さんいん': ['山陰'],
   'さんよう': ['山陽'],
@@ -26715,7 +26715,8 @@ export class KanaKanjiConverter {
         sub === 'もてた' || sub === 'へこんでいる' || sub === 'よんだり' ||
         sub === 'のかわからなかった' || sub === 'やるな' || sub === 'こっから' ||
         sub === 'がばがば' || sub === 'やろが' || sub === 'しやすい' ||
-        sub === 'はずれてる' || sub === 'こんびに' || sub === 'さいと') {
+        sub === 'はずれてる' || sub === 'こんびに' || sub === 'さいと' ||
+        sub === 'てはいして' || sub === 'したかいがある') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
