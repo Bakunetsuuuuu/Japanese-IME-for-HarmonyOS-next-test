@@ -25621,7 +25621,14 @@ export class KanaKanjiConverter {
     'とうき',
     // がいしゃに (会社に) already led its own candidate list standalone
     // but fragmented into が+いしゃ+に in context.
-    'がいしゃに']);
+    'がいしゃに',
+    // とまとを (トマトを) already led its own candidate list standalone
+    // but fragmented under connection-matrix pressure in context.
+    'とまとを',
+    // つぎつぎと (次々と)/していされる (指定される) already led their
+    // own candidate list standalone but fragmented (つぎ+つぎ+と,
+    // し+ていさ+れる) in context.
+    'つぎつぎと','していされる']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
