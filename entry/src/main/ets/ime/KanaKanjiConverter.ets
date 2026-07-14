@@ -25592,6 +25592,18 @@ export class KanaKanjiConverter {
     // かんそう (感想) already led its own candidate list standalone but
     // fragmented into かん+そう+を in context.
     'かんそう',
+    // もちこんだ (持ち込んだ) already led its own candidate list
+    // standalone but fragmented into も+ちこんだ in context.
+    'もちこんだ',
+    // ようすについてはなした (様子について話した)/わたしたら (渡したら)
+    // already led their own candidate list standalone but fragmented
+    // (はなし+た, わたし/私+たら) under connection-matrix pressure.
+    'ようすについてはなした','わたしたら',
+    // とって (取って) already led its own candidate list standalone
+    // but merged with a preceding で into a single garbled でとって
+    // span in context.
+    'とって',
+    'たなにだした',
     // こうたいせいの (交代制の)/てあてが (手当が) already led their own
     // candidate list standalone but fragmented (こうたいせい+の,
     // てあて+が) under connection-matrix pressure in context.
