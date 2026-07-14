@@ -25588,7 +25588,10 @@ export class KanaKanjiConverter {
     // みせて (見せて)/やすく (安く) already led their own candidate
     // list standalone but fragmented into みせ (店)+て / や+すく in
     // context.
-    'みせて','やすく']);
+    'みせて','やすく',
+    // かんそう (感想) already led its own candidate list standalone but
+    // fragmented into かん+そう+を in context.
+    'かんそう']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
