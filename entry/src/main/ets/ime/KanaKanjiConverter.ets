@@ -10328,7 +10328,7 @@ const DICTIONARY: Record<string, string[]> = {
   'うけついでいる': ['受け継いでいる'],
   'うけつがない': ['受け継がない'],
   'うけつぐ': ['受け継ぐ'],
-  'うけつけ': ['受け付け'],
+  'うけつけ': ['受付', '受け付け'],
   'うけつけた': ['受け付けた'],
   'うけつけない': ['受け付けない'],
   'うけつける': ['受け付ける'],
@@ -25425,6 +25425,7 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'りょうきん|へんかん': '返還', 'おかね|へんかん': '返還', 'けんり|へんかん': '返還',
   'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
   'みず|あげた': 'あげた', 'みず|あげる': 'あげる',
+  'めいわく|かけて': 'かけて',
 };
 
 // Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
@@ -25538,7 +25539,15 @@ export class KanaKanjiConverter {
     // といで (研いで)/よやくきのうで (予約機能で) already led their own
     // candidate list standalone but fragmented under connection-matrix
     // pressure in context.
-    'といで','よやくきのうで']);
+    'といで','よやくきのうで',
+    // もらう (the common 〜てもらう auxiliary) already led its own
+    // candidate list standalone but fragmented into も+らう after a
+    // te-form verb in context.
+    'もらう',
+    // たのんだ (頼んだ)/けっこうな (結構な) already led their own
+    // candidate list standalone but fragmented under connection-matrix
+    // pressure in context.
+    'たのんだ','けっこうな']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
