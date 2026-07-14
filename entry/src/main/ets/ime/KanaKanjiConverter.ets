@@ -25531,7 +25531,14 @@ export class KanaKanjiConverter {
     // list standalone. Boosting it alone made it outbid うたたね (転寝, a
     // longer word containing it as a suffix: うた+たね), so うたたね needs
     // the same boost to keep winning as the longer whole span.
-    'たね','うたたね']);
+    'たね','うたたね',
+    // やすいもの (安いもの) already led its own candidate list standalone
+    // but fragmented into や+のに-adjacent splits in context.
+    'やすいもの',
+    // といで (研いで)/よやくきのうで (予約機能で) already led their own
+    // candidate list standalone but fragmented under connection-matrix
+    // pressure in context.
+    'といで','よやくきのうで']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -26753,7 +26760,7 @@ export class KanaKanjiConverter {
         sub === 'たなに' || sub === 'ないそう' || sub === 'やたい' ||
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
         sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
-        sub === 'ほかの') {
+        sub === 'ほかの' || sub === 'やすいもの') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
