@@ -25416,7 +25416,8 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'あらーむ|なって': '鳴って', 'べる|なって': '鳴って',
   'ぽいんと|たまって': '貯まって',
   'おちば|はいて': '掃いて',
-  'かぎや|よんだ': '呼んだ',
+  'かぎや|よんだ': '呼んだ', 'ぎょうしゃ|よんだ': '呼んだ',
+  'じゅんび|すすめた': '進めた',
   'ちけっと|かって': '買って', 'ちけっと|かった': '買った',
   'チケット|かって': '買って', 'チケット|かった': '買った',
   'もと|たずねる': '訪ねる',
@@ -26529,7 +26530,9 @@ export class KanaKanjiConverter {
   private static filterCandidates(kana: string, cands: string[]): string[] {
     const preFiltered = cands.filter(c => {
       if (/^[ｦ-ﾟ]+$/.test(c)) { return false; } // half-width katakana
-      if (/^[A-Za-zÀ-ɏ]+$/.test(c)) { return false; } // romaji / latin
+      // romaji / latin, but keep short ALL-CAPS acronyms (PTA, NHK, SNS, OK,
+      // DL, PC) — real Japanese-context words, not romaji-conversion junk.
+      if (/^[A-Za-zÀ-ɏ]+$/.test(c) && !/^[A-Z]{2,6}$/.test(c)) { return false; }
       return true;
     });
     // Recover clean words from bracket-fragment candidates, then drop the rest.
@@ -26732,7 +26735,8 @@ export class KanaKanjiConverter {
         sub === 'てはいして' || sub === 'したかいがある' ||
         sub === 'たなに' || sub === 'ないそう' || sub === 'やたい' ||
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
-        sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて') {
+        sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
+        sub === 'ほかの') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
