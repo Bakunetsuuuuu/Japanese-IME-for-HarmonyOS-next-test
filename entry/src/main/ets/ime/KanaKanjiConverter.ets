@@ -26298,7 +26298,7 @@ export class KanaKanjiConverter {
       // another completely standard construction, not a script-mix accident.
       // Also covers the equally productive katakana-noun+する pattern
       // (メモする/コピーする/シェアする → メモした/メモして/メモします…).
-      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった|する|した|します|しません|して|しない|しなかった|は|が|を|に|で|と|も|の|へ|や|から|まで|って|った|る|らない|れば|り|れて|れた)$/.test(top);
+      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった|する|した|します|しません|して|しない|しなかった|していた|している|していない|しておいた|しておく|しました|してください|は|が|を|に|で|と|も|の|へ|や|から|まで|って|った|る|らない|れば|り|れて|れた)$/.test(top);
       const mixedKana = !KanaKanjiConverter.hasKanjiChar(top) &&
           /[ぁ-ん]/.test(top) && /[ァ-ヶ]/.test(top) && !katakanaStemAux;
       const noKanjiAnywhere = !result.some((c: string) => KanaKanjiConverter.hasKanjiChar(c));
