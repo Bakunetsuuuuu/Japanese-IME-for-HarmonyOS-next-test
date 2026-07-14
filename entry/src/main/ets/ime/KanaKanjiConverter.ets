@@ -25584,7 +25584,11 @@ export class KanaKanjiConverter {
     // standalone but fragmented into から (particle)+だ (copula)+を in
     // context (boosting からだを alone wasn't enough once a preceding
     // adverb like ゆっくり shifted the edge costs again).
-    'からだを','からだ']);
+    'からだを','からだ',
+    // みせて (見せて)/やすく (安く) already led their own candidate
+    // list standalone but fragmented into みせ (店)+て / や+すく in
+    // context.
+    'みせて','やすく']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
