@@ -25405,7 +25405,10 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'うわぎ|きた': '着た', 'ふく|きた': '着た', 'せーたー|きた': '着た',
   'ゆかた|きた': '着た', 'ゆかた|きて': '着て',
   'びょういん|いって': '行って', 'がっこう|いって': '行って',
+  'はいしゃ|いって': '行って',
   'ふぐあい|なおった': '直った', 'こしょう|なおった': '直った',
+  'めざましどけい|なって': '鳴って', 'どけい|なって': '鳴って',
+  'あらーむ|なって': '鳴って', 'べる|なって': '鳴って',
   'りょうきん|へんかん': '返還', 'おかね|へんかん': '返還', 'けんり|へんかん': '返還',
   'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
 };
@@ -25484,7 +25487,10 @@ export class KanaKanjiConverter {
     'しかく','ひょうか','ためした','こめんと','ぷれぜんと',
     // りょこうがいしゃ (旅行会社) already led its own candidate list
     // standalone but fragmented in context (りょこう+が+いしゃ).
-    'りょこうがいしゃ']);
+    'りょこうがいしゃ',
+    // もらいながら already led its own candidate list standalone but
+    // fragmented in context (もらい treated as two words).
+    'もらいながら']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -25884,11 +25890,14 @@ export class KanaKanjiConverter {
           else if (seg === 'すい') { best = '空い'; }
         }
       }
-      // Object→verb collocation (COLLOCATION_HINTS): 「〜を<noun>を<verb>」
-      // within the same phrase picks the verb kanji that noun actually
-      // collocates with (かさをかいた→買った, not 書いた/飼った), rather than
-      // whichever homograph lookup() would pick for the bare verb reading.
-      if (idx >= 2 && segs[idx - 1] === 'を') {
+      // Noun+particle→verb collocation (COLLOCATION_HINTS): 「〜を<noun>を
+      // <verb>」within the same phrase picks the verb kanji that noun
+      // actually collocates with (かさをかいた→買った, not 書いた/飼った),
+      // rather than whichever homograph lookup() would pick for the bare
+      // verb reading. Also covers に (destination: びょういんにいって→
+      // 行って, not 言って) and が (subject: どけいがなって→鳴って, not
+      // なって/成って) — same disambiguation, different particle.
+      if (idx >= 2 && (segs[idx - 1] === 'を' || segs[idx - 1] === 'に' || segs[idx - 1] === 'が')) {
         const obj = segs[idx - 2];
         for (const hintKey of Object.keys(COLLOCATION_HINTS)) {
           const sep = hintKey.indexOf('|');
