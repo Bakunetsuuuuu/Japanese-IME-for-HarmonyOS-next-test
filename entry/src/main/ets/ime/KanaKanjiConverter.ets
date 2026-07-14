@@ -25784,7 +25784,7 @@ export class KanaKanjiConverter {
     // 回復 behind rare-kanji 恢復, etc.) — see appendRegisteredWords/
     // dict-ordering note above for why source order can't be trusted.
     '住民', '上昇', '成立', '回復', '一緒', '遅延', '今回', '会おう',
-    '進出', '深刻', '接近', '延期', '飲み', '酷い', 'お出かけ', '話', '終わり',
+    '進出', '深刻', '接近', '延期', '飲み', '酷い', 'お出かけ', '話',
     '動向', '実家', '添付', '施行', '山田', '五百円玉',
   ]);
 
