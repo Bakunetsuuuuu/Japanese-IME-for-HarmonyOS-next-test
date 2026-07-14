@@ -25573,7 +25573,13 @@ export class KanaKanjiConverter {
     // かくにんしてからだした (確認してから出した): narrow whole-phrase
     // boost so だした resolves correctly after から without touching the
     // bare だした span (see the だす compound-verb-suffix note above).
-    'かくにんしてからだした']);
+    'かくにんしてからだした',
+    // みせた (見せた) already led its own candidate list standalone but
+    // fragmented into みせ (店)+た in context.
+    'みせた',
+    // しどうを (指導を) already led its own candidate list standalone
+    // but fragmented into し+どう+を in context.
+    'しどうを']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -26259,7 +26265,9 @@ export class KanaKanjiConverter {
       // Also covers the productive katakana-stem "-る verb" conjugation
       // pattern (ダブる/サボる/バグる/ミスる → ダブって/サボった/バグらない…),
       // another completely standard construction, not a script-mix accident.
-      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった|は|が|を|に|で|と|も|の|へ|や|から|まで|って|った|る|らない|れば|り|れて|れた)$/.test(top);
+      // Also covers the equally productive katakana-noun+する pattern
+      // (メモする/コピーする/シェアする → メモした/メモして/メモします…).
+      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった|する|した|します|しません|して|しない|しなかった|は|が|を|に|で|と|も|の|へ|や|から|まで|って|った|る|らない|れば|り|れて|れた)$/.test(top);
       const mixedKana = !KanaKanjiConverter.hasKanjiChar(top) &&
           /[ぁ-ん]/.test(top) && /[ァ-ヶ]/.test(top) && !katakanaStemAux;
       const noKanjiAnywhere = !result.some((c: string) => KanaKanjiConverter.hasKanjiChar(c));
