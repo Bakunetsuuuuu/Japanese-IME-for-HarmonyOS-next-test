@@ -25426,7 +25426,12 @@ export class KanaKanjiConverter {
     // but lost the lattice contest in full-sentence context: the segmenter
     // preferred しか+いが and ほう+どう (cheaper short-word splits) over
     // keeping the real word whole.
-    'しかい','ほうどう']);
+    'しかい','ほうどう',
+    // Same lattice-boundary-loss pattern found in TEST7: each already leads
+    // its own candidate list standalone but lost to a cheaper wrong split in
+    // context (ただす->た+だす, おいだそう->おい+だ+そう, むだ->もむ+だ,
+    // やるな->や+るな(瑠奈, an obscure name reading)).
+    'ただす','おいだそう','むだ','やるな']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -25443,6 +25448,8 @@ export class KanaKanjiConverter {
     // 矢文, やねん→…）が、文末では圧倒的に「〜だろう/〜じゃない/〜なんだ」の
     // 話し言葉なので、かなを既定にする。
     'やろ':'やろ','やん':'やん','やねん':'やねん','やんけ':'やんけ',
+    // てんねん (=〜ているねん, 関西弁の文末) collided with common noun 天然.
+    'てんねん':'てんねん',
     // 笑った→わろた, net slang written both ways (わろた/ワロタ) but hiragana
     // is the default. Used to rely on the generic writableBothWays fallback
     // in lookup(), which was restricted to reduplicated words (どきどき等)
