@@ -11499,7 +11499,7 @@ const DICTIONARY: Record<string, string[]> = {
   'はってんとじょうこく': ['発展途上国'],
   'はったつ': ['発達'],
   'はったつする': ['発達する'],
-  'はっそう': ['発想', '発送'],
+  'はっそう': ['発送', '発想'],
   'はっせい': ['発生'],
   'はっせいする': ['発生する'],
   'はっせいした': ['発生した'],
@@ -25424,6 +25424,7 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'しゃしん|とる': '撮る', 'しゃしん|とった': '撮った', 'しゃしん|とって': '撮って',
   'りょうきん|へんかん': '返還', 'おかね|へんかん': '返還', 'けんり|へんかん': '返還',
   'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
+  'みず|あげた': 'あげた', 'みず|あげる': 'あげる',
 };
 
 // Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
@@ -25514,7 +25515,23 @@ export class KanaKanjiConverter {
     'もらいながら',
     // たなに (棚に) already led its own candidate list standalone but
     // fragmented into た(past marker)+何 in context.
-    'たなに']);
+    'たなに',
+    // はっそう (発送) ends in そう and hit the souPenalty (unrelated 様態の
+    // そう heuristic) which fragmented it into はっ+そう (齒+相) despite
+    // already leading its own candidate list standalone.
+    // まえもって/じてんしゃや/てきようされるか all likewise already led
+    // their own candidate list standalone but fragmented in context
+    // (まえ+もって, じてんしゃ+や, て+きようさ+れる+か).
+    // あわず (合わず) needed a real dict entry (added alongside) plus this
+    // boost since it fragmented into あわ+ず in context.
+    'はっそう','まえもって','じてんしゃや','てきようされるか','あわず',
+    // たね (種) is a 2-char noun that fragmented into two individually
+    // registered function-word-like single chars (た/past-marker, ね/
+    // sentence-final particle) despite already leading its own candidate
+    // list standalone. Boosting it alone made it outbid うたたね (転寝, a
+    // longer word containing it as a suffix: うた+たね), so うたたね needs
+    // the same boost to keep winning as the longer whole span.
+    'たね','うたたね']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
