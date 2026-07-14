@@ -26188,10 +26188,13 @@ export class KanaKanjiConverter {
       //     lead with — restrict to reduplicated (AABB) readings, the shape
       //     that actually marks a native mimetic/doubled word, so borrowed
       //     words are no longer caught by that false positive.
-      // katakana-stem + native auxiliary (アクセスできる, コピーできる…) is a
-      // legitimate, common construction — not an accidental script mix like
-      // マジか — so it's exempted from the mixedKana check below.
-      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった)$/.test(top);
+      // katakana-stem + native auxiliary/particle (アクセスできる, ネットで,
+      // アプリを…) is a legitimate, common construction — not an accidental
+      // script mix like マジか — so it's exempted from the mixedKana check
+      // below. Restricted to a single trailing particle/auxiliary (not just
+      // "any hiragana suffix") so genuine mixed-script garbles are still
+      // caught.
+      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった|は|が|を|に|で|と|も|の|へ|や|から|まで)$/.test(top);
       const mixedKana = !KanaKanjiConverter.hasKanjiChar(top) &&
           /[ぁ-ん]/.test(top) && /[ァ-ヶ]/.test(top) && !katakanaStemAux;
       const noKanjiAnywhere = !result.some((c: string) => KanaKanjiConverter.hasKanjiChar(c));
@@ -26723,7 +26726,7 @@ export class KanaKanjiConverter {
         sub === 'はずれてる' || sub === 'こんびに' || sub === 'さいと' ||
         sub === 'てはいして' || sub === 'したかいがある' ||
         sub === 'たなに' || sub === 'ないそう' || sub === 'やたい' ||
-        sub === 'しふと' || sub === 'もらいながら') {
+        sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
