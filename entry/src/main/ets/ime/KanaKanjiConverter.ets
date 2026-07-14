@@ -26717,7 +26717,7 @@ export class KanaKanjiConverter {
         sub === 'がばがば' || sub === 'やろが' || sub === 'しやすい' ||
         sub === 'はずれてる' || sub === 'こんびに' || sub === 'さいと' ||
         sub === 'てはいして' || sub === 'したかいがある' ||
-        sub === 'たなに' || sub === 'ないそう') {
+        sub === 'たなに' || sub === 'ないそう' || sub === 'やたい') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
