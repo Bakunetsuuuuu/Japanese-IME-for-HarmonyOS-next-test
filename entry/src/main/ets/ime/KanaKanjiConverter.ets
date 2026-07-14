@@ -26713,7 +26713,7 @@ export class KanaKanjiConverter {
     // COMMON_READINGS commonBonus (capped at 3000) can't outweigh.
     if (sub === 'へや' || sub === 'はいそう' || sub === 'たまって' || sub === 'にもつ' ||
         sub === 'もてた' || sub === 'へこんでいる' || sub === 'よんだり' ||
-        sub === 'のかわからなかった') {
+        sub === 'のかわからなかった' || sub === 'やるな') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
