@@ -25431,7 +25431,13 @@ export class KanaKanjiConverter {
     // its own candidate list standalone but lost to a cheaper wrong split in
     // context (ただす->た+だす, おいだそう->おい+だ+そう, むだ->もむ+だ,
     // やるな->や+るな(瑠奈, an obscure name reading)).
-    'ただす','おいだそう','むだ','やるな']);
+    'ただす','おいだそう','むだ','やるな',
+    // Same pattern found in TEST8: しかた fragmented into しか+た (two
+    // function words); えらそう lost the -そう-suffix penalty exemption
+    // (see souPenalty below) despite being a real word, not the
+    // sou-da-conjecture construction; のばして fragmented into four
+    // single-char function words (の+ば+し+て).
+    'しかた','えらそう','のばして']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -25450,6 +25456,11 @@ export class KanaKanjiConverter {
     'やろ':'やろ','やん':'やん','やねん':'やねん','やんけ':'やんけ',
     // てんねん (=〜ているねん, 関西弁の文末) collided with common noun 天然.
     'てんねん':'てんねん',
+    // こっから (=ここから, casual contraction) collided with 凝っから
+    // (a conjugation of 凝る). くっそ/がばがば are net slang intensifiers
+    // (very/extremely, sloppy) always written in kana; they collided with
+    // obscure kanji homographs (苦蘇, 薄伽梵).
+    'こっから':'こっから','くっそ':'くっそ','がばがば':'がばがば',
     // 笑った→わろた, net slang written both ways (わろた/ワロタ) but hiragana
     // is the default. Used to rely on the generic writableBothWays fallback
     // in lookup(), which was restricted to reduplicated words (どきどき等)
@@ -25541,6 +25552,10 @@ export class KanaKanjiConverter {
     'いる': true, 'ある': true, 'する': true, 'なる': true, 'くる': true,
     'しよう': true, 'こよう': true,
     'こと': true, 'もの': true, 'とき': true, 'ところ': true,
+    // かどうか (whether or not) is a very common conjunctive construction;
+    // bare it defaulted to the obscure 華道家/花道家 (flower-arrangement
+    // master), corrupting every Xかどうか sentence.
+    'かどうか': true,
     'これ': true, 'それ': true, 'あれ': true, 'どれ': true,
     // Imperative/auxiliary readings that collide with rarer kanji homographs
     // (暮れ, 屍体/死体/etc.) — see appendRegisteredWords/boostCommonWords above
