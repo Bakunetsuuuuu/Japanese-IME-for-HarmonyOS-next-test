@@ -26695,7 +26695,8 @@ export class KanaKanjiConverter {
     // FUNCTION_WORDS, so "adjective + destination-particle へ" reads as a
     // very common bigram to the trained matrix), which the ordinary
     // COMMON_READINGS commonBonus (capped at 3000) can't outweigh.
-    if (sub === 'へや' || sub === 'はいそう' || sub === 'たまって' || sub === 'にもつ') {
+    if (sub === 'へや' || sub === 'はいそう' || sub === 'たまって' || sub === 'にもつ' ||
+        sub === 'もてた' || sub === 'へこんでいる') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
