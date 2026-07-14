@@ -25547,7 +25547,13 @@ export class KanaKanjiConverter {
     // たのんだ (頼んだ)/けっこうな (結構な) already led their own
     // candidate list standalone but fragmented under connection-matrix
     // pressure in context.
-    'たのんだ','けっこうな']);
+    'たのんだ','けっこうな',
+    // わたして (渡して)/かして (貸して)/さんかして (参加して)/かわりに
+    // (代わりに) all likewise already led their own candidate list
+    // standalone but fragmented under connection-matrix pressure in
+    // context (わたし+て with わたし読まれて私, かし+てもらった with かし
+    // read as 歌詞, さん+かしてみた, か+わりに).
+    'わたして','かして','さんか','かわりに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
