@@ -146,7 +146,11 @@ const KAOMOJI_MAP: Record<string, string[]> = {
 
 const DICTIONARY: Record<string, string[]> = {
   'いち': ['一', '１'],
-  'さん': ['三', '参', '３', 'さん'],
+  // さん as bare kana is typed almost exclusively for the honorific suffix
+  // (田中さん, 店員さん, 屋さん…) — the numeral 三 is usually entered as a
+  // digit directly rather than spelled out via kana conversion. Lead kana;
+  // 三/参/３ stay reachable.
+  'さん': ['さん', '三', '参', '３'],
   'し': ['四', '死', '氏', 'し'],
   // 敬語接頭辞の「ご」(ご家族/ご予約/ご説明) は超頻出。お と同様かな先頭に
   // する（五/語/後 等は ごじゅう/ごい のように長い読みの一部で入力される）。
@@ -26109,6 +26113,33 @@ export class KanaKanjiConverter {
     return clean;
   }
 
+  // じ/ず と ぢ/づ は現代語ではほぼ同音のため、辞書側が本来の表記（ぢ/づ）
+  // でしか登録していない語は、より打たれやすい じ/ず 側から永久に引けない
+  // （例: 「みじか」で「身近」が出ない — 辞書は「みぢか」にしかない）。
+  // 読みに じ/ず が含まれる場合のみ、該当箇所を ぢ/づ に置き換えた全ての
+  // 組み合わせを試し、そちらだけが持つ漢字候補を拾う。MISTYPE_READINGS
+  // （動詞活用の決め打ちリスト）と違い辞書全体を自動的にカバーする一般ルール。
+  private static dakutenVariants(kana: string): string[] {
+    if (!/[じず]/.test(kana)) { return []; }
+    const positions: number[] = [];
+    for (let i = 0; i < kana.length; i++) {
+      if (kana[i] === 'じ' || kana[i] === 'ず') { positions.push(i); }
+    }
+    const n = positions.length;
+    const variants: string[] = [];
+    for (let mask = 1; mask < (1 << n); mask++) {
+      const chars = kana.split('');
+      for (let b = 0; b < n; b++) {
+        if (mask & (1 << b)) {
+          const idx = positions[b];
+          chars[idx] = chars[idx] === 'じ' ? 'ぢ' : 'づ';
+        }
+      }
+      variants.push(chars.join(''));
+    }
+    return variants;
+  }
+
   // Public entry point. Delegates to lookupCore for the actual conversion, then
   // appends emoji/kaomoji for the reading. Done here (not inside lookupCore) so
   // it applies on *every* return path — lookupCore returns early for
@@ -26118,10 +26149,31 @@ export class KanaKanjiConverter {
   lookup(kana: string, fromNorm: boolean = false): string[] {
     const base = this.lookupCore(kana, fromNorm);
     if (fromNorm) { return base; }
+    let result = base;
+    // Dakuten-confusion enrichment (じ/ず ⇄ ぢ/づ). Skipped for function words —
+    // their kana form is a deliberate grammatical choice, not a coverage gap.
+    if (!KanaKanjiConverter.FUNCTION_WORDS[kana]) {
+      const variants = KanaKanjiConverter.dakutenVariants(kana);
+      if (variants.length > 0) {
+        const baseHasKanji = base.some((c: string) => KanaKanjiConverter.hasKanjiChar(c));
+        const extra: string[] = [];
+        for (const v of variants) {
+          const vCands = this.lookupCore(v, true);
+          for (const c of vCands) {
+            if (KanaKanjiConverter.hasKanjiChar(c) && !base.includes(c) && !extra.includes(c)) {
+              extra.push(c);
+            }
+          }
+        }
+        if (extra.length > 0) {
+          result = baseHasKanji ? [...base, ...extra] : [...extra, ...base];
+        }
+      }
+    }
     const emojis = EMOJI_MAP[kana];
     const kaomoji = KAOMOJI_MAP[kana];
-    if (emojis === undefined && kaomoji === undefined) { return base; }
-    const withExtra = [...base];
+    if (emojis === undefined && kaomoji === undefined) { return result; }
+    const withExtra = [...result];
     const push = (arr: string[] | undefined): void => {
       if (arr === undefined) { return; }
       for (const e of arr) {
