@@ -25415,6 +25415,7 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'めざましどけい|なって': '鳴って', 'どけい|なって': '鳴って',
   'あらーむ|なって': '鳴って', 'べる|なって': '鳴って',
   'ぽいんと|たまって': '貯まって',
+  'おちば|はいて': '掃いて',
   'ちけっと|かって': '買って', 'ちけっと|かった': '買った',
   'チケット|かって': '買って', 'チケット|かった': '買った',
   'もと|たずねる': '訪ねる',
@@ -26730,7 +26731,7 @@ export class KanaKanjiConverter {
         sub === 'てはいして' || sub === 'したかいがある' ||
         sub === 'たなに' || sub === 'ないそう' || sub === 'やたい' ||
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
-        sub === 'きたのくには' || sub === 'はいしん') {
+        sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
