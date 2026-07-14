@@ -25477,10 +25477,14 @@ export class KanaKanjiConverter {
     // てんねん (=〜ているねん, 関西弁の文末) collided with common noun 天然.
     'てんねん':'てんねん',
     // こっから (=ここから, casual contraction) collided with 凝っから
-    // (a conjugation of 凝る). くっそ/がばがば are net slang intensifiers
-    // (very/extremely, sloppy) always written in kana; they collided with
-    // obscure kanji homographs (苦蘇, 薄伽梵).
-    'こっから':'こっから','くっそ':'くっそ','がばがば':'がばがば',
+    // (a conjugation of 凝る), a genuine hiragana contraction, unlike the
+    // two below. くっそ/がばがば are net slang intensifiers (very/extremely,
+    // sloppy/loose) that in practice skew katakana for stylized emphasis
+    // (クッソ寒い, ガバガバ判定) rather than the plain-hiragana convention of
+    // genuine mimetic words like どきどき/ふらふら — map them to their
+    // katakana form instead of forcing kana, still overriding the obscure
+    // kanji homographs (苦蘇, 薄伽梵) they collided with.
+    'こっから':'こっから','くっそ':'クッソ','がばがば':'ガバガバ',
     // 笑った→わろた, net slang written both ways (わろた/ワロタ) but hiragana
     // is the default. Used to rely on the generic writableBothWays fallback
     // in lookup(), which was restricted to reduplicated words (どきどき等)
