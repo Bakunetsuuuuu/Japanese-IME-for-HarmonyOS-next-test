@@ -21275,7 +21275,10 @@ const DICTIONARY: Record<string, string[]> = {
   'みこ': ['巫女'],
   'みこまいり': ['巫女参り'],
   'さいしき': ['祭式'],
-  'もと': ['本', '素'],
+  // 元 (origin/basis/former -- 親のもとを訪ねる, もとに戻す) covers far more
+  // everyday constructions than 本 (book), which was leading and shadowing
+  // the ext dict.json entry that already had 元 first.
+  'もと': ['元', '本', '素'],
   'じんぐう': ['神宮'],
   'だいじんぐう': ['大神宮'],
   'じんじゃのもうで': ['神社の参拝'],
