@@ -1859,7 +1859,7 @@ const DICTIONARY: Record<string, string[]> = {
   'まつげ': ['まつ毛', 'まつげ', '睫毛'],
   'まゆげ': ['眉毛', '眉'],
   'みけん': ['眉間'],
-  'こうかん': ['後頭', '交換', '好感'],
+  'こうかん': ['交換', '後頭', '好感'],
   'ひじ': ['肘'],
   'てくび': ['手首'],
   'こぶし': ['拳'],
@@ -26194,7 +26194,10 @@ export class KanaKanjiConverter {
       // below. Restricted to a single trailing particle/auxiliary (not just
       // "any hiragana suffix") so genuine mixed-script garbles are still
       // caught.
-      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった|は|が|を|に|で|と|も|の|へ|や|から|まで)$/.test(top);
+      // Also covers the productive katakana-stem "-る verb" conjugation
+      // pattern (ダブる/サボる/バグる/ミスる → ダブって/サボった/バグらない…),
+      // another completely standard construction, not a script-mix accident.
+      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった|は|が|を|に|で|と|も|の|へ|や|から|まで|って|った|る|らない|れば|り|れて|れた)$/.test(top);
       const mixedKana = !KanaKanjiConverter.hasKanjiChar(top) &&
           /[ぁ-ん]/.test(top) && /[ァ-ヶ]/.test(top) && !katakanaStemAux;
       const noKanjiAnywhere = !result.some((c: string) => KanaKanjiConverter.hasKanjiChar(c));
