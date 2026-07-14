@@ -3153,7 +3153,12 @@ const DICTIONARY: Record<string, string[]> = {
   'かちました': ['勝ちました'],
   'かちます': ['勝ちます'],
   'かちません': ['勝ちません'],
-  'かった': ['買った', '勝った'],
+  // かった alone leads kana: it's overwhelmingly the past-tense い-adjective
+  // ending (たのしかった, おいしかった, ほほえましかった…) whenever the
+  // adjective itself isn't registered as its own whole-word entry, so this
+  // bare tail gets used as the final segment's top candidate. 買った/勝った
+  // stay reachable.
+  'かった': ['かった', '買った', '勝った'],
   'やんだ': ['止んだ', '病んだ'],
   'やんだら': ['止んだら', '病んだら'],
   'でかけよう': ['出かけよう'],
