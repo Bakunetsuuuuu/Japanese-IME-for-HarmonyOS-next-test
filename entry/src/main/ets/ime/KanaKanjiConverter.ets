@@ -26711,7 +26711,8 @@ export class KanaKanjiConverter {
     // very common bigram to the trained matrix), which the ordinary
     // COMMON_READINGS commonBonus (capped at 3000) can't outweigh.
     if (sub === 'へや' || sub === 'はいそう' || sub === 'たまって' || sub === 'にもつ' ||
-        sub === 'もてた' || sub === 'へこんでいる' || sub === 'よんだり') {
+        sub === 'もてた' || sub === 'へこんでいる' || sub === 'よんだり' ||
+        sub === 'のかわからなかった') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
