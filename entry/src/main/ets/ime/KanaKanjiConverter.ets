@@ -25467,7 +25467,10 @@ export class KanaKanjiConverter {
     // はじめた).
     'はらう','おして','ぴあの','どうが','にもつ','みなおして','たのんで','たてはじめた',
     // へや (部屋) fragmented into へ(particle)+やの in context.
-    'へや']);
+    'へや',
+    // てんそう (転送) already led its own candidate list standalone but
+    // fragmented into てん+そう in context.
+    'てんそう']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
