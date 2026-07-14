@@ -2347,7 +2347,7 @@ const DICTIONARY: Record<string, string[]> = {
   'ほけん': ['保険', '保健'],
   'ねんきん': ['年金'],
   'きゅうよ': ['給与'],
-  'こうよう': ['公用', '効用', '紅葉', '高揚', '広葉'],
+  'こうよう': ['紅葉', '公用', '効用', '高揚', '広葉'],
   'ちゃどう': ['茶道'],
   'かどう': ['華道', '花道'],
   'しょどう': ['書道'],
@@ -25500,6 +25500,9 @@ export class KanaKanjiConverter {
     // heavier getWordInfo special case, so a longer にわ-prefixed
     // compound (にわき/庭木) isn't systematically outbid by it.
     'にわ',
+    // しどうして (指導して) already led its own candidate list standalone
+    // but fragmented into し+どうしても+らい in context.
+    'しどうして',
     // もらいながら already led its own candidate list standalone but
     // fragmented in context (もらい treated as two words).
     'もらいながら',
