@@ -26716,7 +26716,8 @@ export class KanaKanjiConverter {
         sub === 'のかわからなかった' || sub === 'やるな' || sub === 'こっから' ||
         sub === 'がばがば' || sub === 'やろが' || sub === 'しやすい' ||
         sub === 'はずれてる' || sub === 'こんびに' || sub === 'さいと' ||
-        sub === 'てはいして' || sub === 'したかいがある') {
+        sub === 'てはいして' || sub === 'したかいがある' ||
+        sub === 'たなに' || sub === 'ないそう') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
