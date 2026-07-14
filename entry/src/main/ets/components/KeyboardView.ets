@@ -6,10 +6,16 @@ const ROWS: string[][] = [
   // '-' always inserts ー (the long-vowel mark) via ROMAJI_TABLE — romaji kana
   // input has no other reachable key for it, since it isn't part of any
   // romaji consonant sequence. Tacked onto the middle row rather than the
-  // number row so it still shares the same 10-key width as row 0.
+  // number row so it still shares the same 10-key width as row 0. Only used
+  // for kana input (see ROW1_ALPHANUMERIC below for the plain-alphabet row,
+  // where a trailing '-' has no such purpose and is just clutter).
   ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', '-'],
   ['z', 'x', 'c', 'v', 'b', 'n', 'm'],
 ];
+
+// Same middle row as ROWS[1] but without the kana-only ー shortcut key, used
+// when inputMode is ALPHANUMERIC (direct alphabet input, not romaji-to-kana).
+const ROW1_ALPHANUMERIC: string[] = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'];
 
 const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
@@ -63,10 +69,11 @@ export struct KeyboardView {
         .layoutWeight(1)
       }
 
-      // QWERTY rows 0 and 1
+      // QWERTY rows 0 and 1. Row 1 drops the kana-only ー-shortcut '-' key in
+      // ALPHANUMERIC mode, where it serves no purpose.
       ForEach([0, 1], (rowIdx: number) => {
         Row({ space: 2 }) {
-          ForEach(ROWS[rowIdx], (key: string) => {
+          ForEach(rowIdx === 1 && this.inputMode === InputMode.ALPHANUMERIC ? ROW1_ALPHANUMERIC : ROWS[rowIdx], (key: string) => {
             this.RegularKey(key, this.keyWidthVp)
           }, (key: string) => key)
         }
