@@ -25490,7 +25490,10 @@ export class KanaKanjiConverter {
     'りょこうがいしゃ',
     // もらいながら already led its own candidate list standalone but
     // fragmented in context (もらい treated as two words).
-    'もらいながら']);
+    'もらいながら',
+    // たなに (棚に) already led its own candidate list standalone but
+    // fragmented into た(past marker)+何 in context.
+    'たなに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -25607,6 +25610,9 @@ export class KanaKanjiConverter {
     'なく': true, 'なくて': true, 'なかった': true, 'なければ': true,
     'たい': true, 'たく': true, 'たくて': true,
     'いる': true, 'ある': true, 'する': true, 'なる': true, 'くる': true,
+    // なり (て形/連用形 of なる, "そうになり") collided with the noun
+    // homograph 成り/鳴り/服装/形/姿.
+    'なり': true,
     'しよう': true, 'こよう': true,
     'こと': true, 'もの': true, 'とき': true, 'ところ': true,
     // かどうか (whether or not) is a very common conjunctive construction;
