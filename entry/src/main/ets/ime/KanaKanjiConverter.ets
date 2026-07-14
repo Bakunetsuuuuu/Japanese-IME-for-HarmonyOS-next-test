@@ -13531,8 +13531,11 @@ const DICTIONARY: Record<string, string[]> = {
   'になわない': ['担わない'],
   'になわなかった': ['担わなかった'],
   'になわないで': ['担わないで'],
-  'になった': ['担った'],
-  'になって': ['担って'],
+  // になった/になって collide with the far more common auxiliary construction
+  // に+なった/なって (…になった, "became …") — lead kana, keep 担った/担って
+  // (担う, "to carry/bear") reachable as an alternative.
+  'になった': ['になった', '担った'],
+  'になって': ['になって', '担って'],
   'にないます': ['担います'],
   'にないません': ['担いません'],
   'にないました': ['担いました'],
