@@ -4777,8 +4777,11 @@ const DICTIONARY: Record<string, string[]> = {
   'ふりました': ['降りました', '振りました'],
   'ふります': ['降ります', '振ります'],
   'ふりません': ['降りません', '振りません'],
-  'まいた': ['巻いた'],
-  'まいて': ['巻いて'],
+  // 撒く/蒔く (to scatter/sow -- 水をまく, 種をまく) are far more common in
+  // everyday text than 巻く (to roll/wind), which was leading here and
+  // shadowing dict.json's own fix for the same reading.
+  'まいた': ['撒いた', '巻いた'],
+  'まいて': ['撒いて', '巻いて'],
   'まいていた': ['巻いていた'],
   'まいていない': ['巻いていない'],
   'まいている': ['巻いている'],
@@ -5851,8 +5854,11 @@ const DICTIONARY: Record<string, string[]> = {
   'きれいじゃない': ['綺麗じゃない', 'きれいじゃない'],
   'きれいだった': ['綺麗だった', 'きれいだった'],
   'きれいじゃなかった': ['綺麗じゃなかった'],
-  'きれいに': ['綺麗に'],
-  'きれいな': ['綺麗な', 'きれいな'],
+  // きれい is deliberately kana-preferred (see COMMON_READINGS) -- 綺麗 is a
+  // less commonly handwritten/typed kanji than most な-adjectives get. These
+  // two inline entries led kanji, overriding that intent.
+  'きれいに': ['きれいに', '綺麗に'],
+  'きれいな': ['きれいな', '綺麗な'],
   'きれいになる': ['綺麗になる'],
   'きれいにした': ['綺麗にした'],
   'きれいにする': ['綺麗にする'],
@@ -25440,7 +25446,13 @@ export class KanaKanjiConverter {
     // (see souPenalty below) despite being a real word, not the
     // sou-da-conjecture construction; のばして fragmented into four
     // single-char function words (の+ば+し+て).
-    'しかた','えらそう','のばして']);
+    'しかた','えらそう','のばして',
+    // TEST4 batch: same pattern -- each already led its own candidate list
+    // standalone (払う/押して/ピアノ/動画/荷物/見直して/頼んで/立て始めた)
+    // but lost the lattice to a wrong split (は+らう, おし+てもらった,
+    // ぴあ+の+の, どう+が, に+もつ, みな+おしてみた, た+のんで, た+て+
+    // はじめた).
+    'はらう','おして','ぴあの','どうが','にもつ','みなおして','たのんで','たてはじめた']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
