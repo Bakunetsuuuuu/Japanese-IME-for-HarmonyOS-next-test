@@ -935,7 +935,9 @@ const DICTIONARY: Record<string, string[]> = {
   'つかれて': ['疲れて'],
   'つかれている': ['疲れている'],
   'おいしい': ['美味しい', 'おいしい'],
-  'おいしかった': ['美味しかった', 'おいしかった'],
+  // おいしい is deliberately kana-preferred (see COMMON_READINGS) -- 美味しい
+  // is a less commonly typed kanji spelling.
+  'おいしかった': ['おいしかった', '美味しかった'],
   'おいしく': ['美味しく'],
   'おいしくない': ['美味しくない', 'おいしくない'],
   'あたたかい': ['暖かい', '温かい'],
@@ -2992,7 +2994,10 @@ const DICTIONARY: Record<string, string[]> = {
   'おりない': ['降りない'],
   'おりなかった': ['降りなかった'],
   'おりました': ['降りました', 'おりました'],
-  'おります': ['降ります', 'おります'],
+  // おります (humble けんじょうご for いる, 〜ておりますcommon in business
+  // writing) is far more common than 降ります (to get off/descend) in that
+  // register.
+  'おります': ['おります', '降ります'],
   'おりません': ['降りません', 'おりません'],
   'おりられる': ['降りられる'],
   'おりれば': ['降りれば'],
@@ -4018,7 +4023,9 @@ const DICTIONARY: Record<string, string[]> = {
   'ちがります': ['違ります'],
   'ちがりません': ['違りません'],
   'ついた': ['着いた', '付いた'],
-  'ついて': ['着いて', '付いて'],
+  // 自信がつく (to gain confidence) and 気がつく need 付いて, not the
+  // leading 着いて (to arrive).
+  'ついて': ['付いて', '着いて'],
   'ついていた': ['着いていた'],
   'ついていない': ['着いていない'],
   'ついている': ['着いている', '付いている'],
@@ -19055,7 +19062,10 @@ const DICTIONARY: Record<string, string[]> = {
   'つまさき': ['つまさき', '爪先', 'つま先'],
   'しんきん': ['心筋'],
   'じんたい': ['靭帯', '靱帯'],
-  'けん': ['腱', 'けん', 'から（九州）'],
+  // 件 (matter/case -- 〜の件, お伺いする件) is far more common in everyday
+  // typing than 腱 (tendon); "から（九州）" was a stray dialect gloss, not a
+  // valid candidate.
+  'けん': ['件', 'けん', '腱'],
   'けっかん': ['血管'],
   'どうみゃく': ['動脈'],
   'じょうみゃく': ['静脈'],
@@ -26633,6 +26643,16 @@ export class KanaKanjiConverter {
   private getWordInfo(sub: string): number[] {
     const fc = KanaKanjiConverter.FW_CLASS_MAP[sub];
     if (fc !== undefined) {
+      // によると (as one span) loses to による+と every time despite both
+      // being FW_CLASS_MAP-registered: the connection matrix gives NOUN->と
+      // a large negative edge-cost discount (と is an extremely common
+      // particle after nouns generally), which COMMON_READINGS can't offset
+      // here since it's never consulted on this early-return path. Special-
+      // cased rather than lowering VN_FUNCTION_WORD globally, which would
+      // perturb every other FW_CLASS_MAP entry's DP costs.
+      if (sub === 'によると') {
+        return [KanaKanjiConverter.VN_FUNCTION_WORD - 2000, fc, fc];
+      }
       return [KanaKanjiConverter.VN_FUNCTION_WORD, fc, fc];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
