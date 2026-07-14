@@ -975,7 +975,8 @@ const DICTIONARY: Record<string, string[]> = {
   'しずか': ['静か', 'しずか'],
   'べんり': ['便利'],
   'ふべん': ['不便'],
-  'きれい': ['綺麗', '奇麗', 'きれい'],
+  // きれい is deliberately kana-preferred (see COMMON_READINGS).
+  'きれい': ['きれい', '綺麗', '奇麗'],
   'たのしみ': ['楽しみ', '楽'],
   'うれしみ': ['嬉しみ'],
   'かなしみ': ['悲しみ', '悲'],
@@ -1709,7 +1710,9 @@ const DICTIONARY: Record<string, string[]> = {
   'あざらし': ['アザラシ'],
   'しまうま': ['シマウマ', '縞馬'],
   'かば': ['カバ', '河馬'],
-  'さい': ['最', '才', '祭', '再', '際', 'サイ', '犀'],
+  // 際 (occasion/moment -- 〜する際に) is a very frequent grammatical
+  // marker, more common in typed text than this bare-animal-list ordering.
+  'さい': ['際', '最', '才', '祭', '再', 'サイ', '犀'],
   'ごりら': ['ゴリラ'],
   'ちんぱんじー': ['チンパンジー'],
   'おらんうーたん': ['オランウータン'],
@@ -25492,6 +25495,11 @@ export class KanaKanjiConverter {
     // りょこうがいしゃ (旅行会社) already led its own candidate list
     // standalone but fragmented in context (りょこう+が+いしゃ).
     'りょこうがいしゃ',
+    // にわ (庭) needed a boost after removing the obscure わの (和野/上野)
+    // blocker, but as a plain COMMON_READINGS entry rather than the
+    // heavier getWordInfo special case, so a longer にわ-prefixed
+    // compound (にわき/庭木) isn't systematically outbid by it.
+    'にわ',
     // もらいながら already led its own candidate list standalone but
     // fragmented in context (もらい treated as two words).
     'もらいながら',
@@ -26699,7 +26707,7 @@ export class KanaKanjiConverter {
     // very common bigram to the trained matrix), which the ordinary
     // COMMON_READINGS commonBonus (capped at 3000) can't outweigh.
     if (sub === 'へや' || sub === 'はいそう' || sub === 'たまって' || sub === 'にもつ' ||
-        sub === 'もてた' || sub === 'へこんでいる' || sub === 'にわ' || sub === 'よんだり') {
+        sub === 'もてた' || sub === 'へこんでいる' || sub === 'よんだり') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
