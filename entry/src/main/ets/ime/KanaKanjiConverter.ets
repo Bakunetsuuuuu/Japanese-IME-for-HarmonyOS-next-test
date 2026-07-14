@@ -7478,10 +7478,13 @@ const DICTIONARY: Record<string, string[]> = {
   'すいみんできない': ['睡眠できない'],
   'すいみんしてる': ['睡眠してる'],
   'すいみんしてた': ['睡眠してた'],
-  'よくする': ['浴する'],
-  'よくします': ['浴します'],
-  'よくした': ['浴した'],
-  'よくしました': ['浴しました'],
+  // よくする/よくした etc. (to make [something] better/good -- 日当たりを
+  // よくした) is a far more common construction than 浴する (to bathe in);
+  // lead kana, keep 浴する reachable.
+  'よくする': ['よくする', '浴する'],
+  'よくします': ['よくします', '浴します'],
+  'よくした': ['よくした', '浴した'],
+  'よくしました': ['よくしました', '浴しました'],
   'よくしない': ['浴しない'],
   'よくしなかった': ['浴しなかった'],
   'よくして': ['浴して'],
@@ -25470,7 +25473,12 @@ export class KanaKanjiConverter {
     'へや',
     // てんそう (転送) already led its own candidate list standalone but
     // fragmented into てん+そう in context.
-    'てんそう']);
+    'てんそう',
+    // Same pattern in LONGTEXT6: しかく/ひょうか/ためした/こめんと/ぷれぜんと
+    // each already led their own candidate list standalone but lost the
+    // lattice to a wrong split (ひつような+し+かく, ひょう+からん,
+    // ため+した(as if two separate words), こめん+と, ぷれぜん+と).
+    'しかく','ひょうか','ためした','こめんと','ぷれぜんと']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
