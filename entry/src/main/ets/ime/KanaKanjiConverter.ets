@@ -25628,7 +25628,10 @@ export class KanaKanjiConverter {
     // つぎつぎと (次々と)/していされる (指定される) already led their
     // own candidate list standalone but fragmented (つぎ+つぎ+と,
     // し+ていさ+れる) in context.
-    'つぎつぎと','していされる']);
+    'つぎつぎと','していされる',
+    // もでるを (モデルを) already led its own candidate list standalone
+    // but fragmented into も(particle)+でる(出る)+を in context.
+    'もでるを']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -26852,7 +26855,7 @@ export class KanaKanjiConverter {
         sub === 'たなに' || sub === 'ないそう' || sub === 'やたい' ||
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
         sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
-        sub === 'ほかの' || sub === 'やすいもの') {
+        sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
