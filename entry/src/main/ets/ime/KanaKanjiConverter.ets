@@ -25558,7 +25558,22 @@ export class KanaKanjiConverter {
     // はがき (葉書)/つきそいで (付き添いで) already led their own
     // candidate list standalone but fragmented under connection-matrix
     // pressure in context.
-    'はがき','つきそいで']);
+    'はがき','つきそいで',
+    // かんを (缶を)/でーと (デート) already led their own candidate list
+    // standalone but fragmented under connection-matrix pressure in
+    // context. だした (出した) was tried here too, but だす is a
+    // productive "start doing X" compound-verb suffix (降り出した,
+    // 泣き出した…) and boosting the bare 3-char span made it outbid
+    // those longer compounds (ふり+だした beat 降り出した) — reverted in
+    // favor of the narrower からだした compound entry below.
+    'かんを','でーと',
+    // わけて (分けて) already led its own candidate list standalone but
+    // fragmented into わけ+て in context.
+    'わけて',
+    // かくにんしてからだした (確認してから出した): narrow whole-phrase
+    // boost so だした resolves correctly after から without touching the
+    // bare だした span (see the だす compound-verb-suffix note above).
+    'かくにんしてからだした']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
