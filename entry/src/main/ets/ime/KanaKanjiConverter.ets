@@ -25631,7 +25631,12 @@ export class KanaKanjiConverter {
     'つぎつぎと','していされる',
     // もでるを (モデルを) already led its own candidate list standalone
     // but fragmented into も(particle)+でる(出る)+を in context.
-    'もでるを']);
+    'もでるを',
+    // できる (the extremely common potential auxiliary) already led its
+    // own candidate list standalone but fragmented into で+きる in
+    // context.
+    'できる',
+    'ねがはちのそこからはみだしていて','つかいきれないしゅうも']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
