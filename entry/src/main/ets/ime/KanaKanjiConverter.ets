@@ -22786,7 +22786,7 @@ const DICTIONARY: Record<string, string[]> = {
   'がいらいしゅ': ['外来種'],
   'こゆうしゅ': ['固有種'],
   'しんかぎょとくか': ['進化的獲得'],
-  'こうたい': ['抗体'],
+  'こうたい': ['交代', '抗体'],
   'ワクチン': ['ワクチン'],
   'しょうかん': ['症患'],
   'びょうげんたい': ['病原体'],
@@ -25615,7 +25615,13 @@ export class KanaKanjiConverter {
     // led their own candidate list standalone but fragmented (ほん+
     // ばん+に, の+ぞん+だ, とれー+に) under connection-matrix pressure
     // in context.
-    'ほんばんに','のぞんだ','とれーに']);
+    'ほんばんに','のぞんだ','とれーに',
+    // とうき (陶器) already led its own candidate list standalone but
+    // fragmented into と+うき in context.
+    'とうき',
+    // がいしゃに (会社に) already led its own candidate list standalone
+    // but fragmented into が+いしゃ+に in context.
+    'がいしゃに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
