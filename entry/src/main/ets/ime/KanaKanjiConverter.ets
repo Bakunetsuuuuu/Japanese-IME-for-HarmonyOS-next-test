@@ -23538,7 +23538,7 @@ const DICTIONARY: Record<string, string[]> = {
   'りがくりょうほうし': ['理学療法士'],
   'さぎょうりょうほうし': ['作業療法士'],
   'げんごちょうかくし': ['言語聴覚士'],
-  'しかい': ['歯科医'],
+  'しかい': ['視界', '歯科医'],
   'こころのびょういん': ['心の病院'],
   'しんりし': ['心理士'],
   'ひらしゃいん': ['平社員'],
@@ -26188,8 +26188,12 @@ export class KanaKanjiConverter {
       //     lead with — restrict to reduplicated (AABB) readings, the shape
       //     that actually marks a native mimetic/doubled word, so borrowed
       //     words are no longer caught by that false positive.
+      // katakana-stem + native auxiliary (アクセスできる, コピーできる…) is a
+      // legitimate, common construction — not an accidental script mix like
+      // マジか — so it's exempted from the mixedKana check below.
+      const katakanaStemAux = /^[ァ-ヶー]+(できる|できた|できます|できません|できて|できない|できなかった)$/.test(top);
       const mixedKana = !KanaKanjiConverter.hasKanjiChar(top) &&
-          /[ぁ-ん]/.test(top) && /[ァ-ヶ]/.test(top);
+          /[ぁ-ん]/.test(top) && /[ァ-ヶ]/.test(top) && !katakanaStemAux;
       const noKanjiAnywhere = !result.some((c: string) => KanaKanjiConverter.hasKanjiChar(c));
       const writableBothWays = noKanjiAnywhere &&
           KanaKanjiConverter.isReduplicated(kana) &&
