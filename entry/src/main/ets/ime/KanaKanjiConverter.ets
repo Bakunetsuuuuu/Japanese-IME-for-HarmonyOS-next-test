@@ -15278,8 +15278,12 @@ const DICTIONARY: Record<string, string[]> = {
   'かならない': ['変わらない'],
   'かならなかった': ['変わらなかった'],
   'かならないで': ['変わらないで'],
-  'かなった': ['変わった', '叶った'],
-  'かなって': ['変わって'],
+  // かなう(叶う, wish comes true) vs かわる(変わる, to change) are true
+  // homophones in these conjugated forms. 叶った/叶って is led here to match
+  // the dict.json (ext) fix for かなって — this inline entry took priority
+  // over ext and was silently overriding it, so 夢が叶って never surfaced.
+  'かなった': ['叶った', '変わった'],
+  'かなって': ['叶って', '変わって'],
   'かなります': ['変わります'],
   'かなりません': ['変わりません'],
   'かなりました': ['変わりました'],
@@ -25417,7 +25421,12 @@ export class KanaKanjiConverter {
     // おかず (side dish) ends in ず, which is now a forced-kana FUNCTION_WORD
     // (the classical negative auxiliary, …ず) — without this bonus the
     // segmenter split it as おか+ず instead of keeping the whole word.
-    'おかず']);
+    'おかず',
+    // しかい (視界) and ほうどう (報道) already lead their own candidate lists,
+    // but lost the lattice contest in full-sentence context: the segmenter
+    // preferred しか+いが and ほう+どう (cheaper short-word splits) over
+    // keeping the real word whole.
+    'しかい','ほうどう']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -25433,7 +25442,14 @@ export class KanaKanjiConverter {
     // 関西弁の文末表現。辞書では地名・名詞に化けやすい（やろ→野路, やん→
     // 矢文, やねん→…）が、文末では圧倒的に「〜だろう/〜じゃない/〜なんだ」の
     // 話し言葉なので、かなを既定にする。
-    'やろ':'やろ','やん':'やん','やねん':'やねん','やんけ':'やんけ'};
+    'やろ':'やろ','やん':'やん','やねん':'やねん','やんけ':'やんけ',
+    // 笑った→わろた, net slang written both ways (わろた/ワロタ) but hiragana
+    // is the default. Used to rely on the generic writableBothWays fallback
+    // in lookup(), which was restricted to reduplicated words (どきどき等)
+    // to stop it from wrongly demoting genuine katakana loanwords that also
+    // list their bare reading as a fallback candidate (バター, リスク…) — see
+    // isReduplicated. わろた doesn't fit that shape, so it needs its own entry.
+    'わろた':'わろた'};
   private static supplementaryDict: Record<string, string[]> = {};
   private static learned: Record<string, Record<string, number>> = {};
   private static userDict: Record<string, string[]> = {};
@@ -25523,7 +25539,13 @@ export class KanaKanjiConverter {
     // (暮れ, 屍体/死体/etc.) — see appendRegisteredWords/boostCommonWords above
     // for the same problem at the dictionary-ordering level.
     'くれ': true, 'したい': true, 'した': true, 'し': true,
-    'しまった': true, 'しまって': true, 'によると': true, 'により': true,
+    'しまった': true, 'しまって': true,
+    // しまう(finish/end up doing) conjugates as …てしまい before another verb
+    // (忘れてしまい謝った), same family as しまった/しまって above which were
+    // already forced kana — しまい itself was missed, so it kept losing to
+    // the rarer noun homograph 姉妹 (siblings) in that position.
+    'しまい': true,
+    'によると': true, 'により': true,
     // 複合助詞（連語）。かな表記が標準のもの。に+動詞（に着いて/に置ける/
     // に取って）へ誤分割されるのを防ぐため一語の機能語として扱う。関/対/基/
     // 通/従 など漢字を含む複合助詞（に関して等）はかな固定にできないので
@@ -26053,12 +26075,18 @@ export class KanaKanjiConverter {
       //     is an intended shortcut) or latin-bearing forms (Tシャツ).
       // (b) writableBothWays: nothing converts to kanji and the dictionary
       //     itself authored BOTH a katakana and the plain hiragana — a word
-      //     writable both ways, e.g. slang わろた/ワロタ. A genuine loanword
-      //     authors only its katakana (テレビ) and is left leading.
+      //     writable both ways, e.g. slang わろた/ワロタ or mimetic どきどき.
+      //     A genuine loanword (バター, リスク, ステーキ…) also lists its own
+      //     bare reading as a defensive fallback candidate, which used to
+      //     trip this same check and wrongly demote the katakana it should
+      //     lead with — restrict to reduplicated (AABB) readings, the shape
+      //     that actually marks a native mimetic/doubled word, so borrowed
+      //     words are no longer caught by that false positive.
       const mixedKana = !KanaKanjiConverter.hasKanjiChar(top) &&
           /[ぁ-ん]/.test(top) && /[ァ-ヶ]/.test(top);
       const noKanjiAnywhere = !result.some((c: string) => KanaKanjiConverter.hasKanjiChar(c));
       const writableBothWays = noKanjiAnywhere &&
+          KanaKanjiConverter.isReduplicated(kana) &&
           authored.indexOf(kana) >= 0 &&
           authored.some((c: string) => KanaKanjiConverter.isPureKatakana(c));
       if (mixedKana || writableBothWays) {
@@ -26364,6 +26392,18 @@ export class KanaKanjiConverter {
 
   private static isPureKatakana(c: string): boolean {
     return /^[ァ-ヶーヽヾ・゠]+$/.test(c);
+  }
+
+  // AABB-style reduplication (どきどき, ふらふら, ぱぱ) — the standard shape of
+  // Japanese-native mimetic/onomatopoeic words and doubled colloquialisms.
+  // Used to tell those apart from foreign loanwords when both a katakana form
+  // and the bare hiragana reading are authored for the same key (see
+  // writableBothWays below): a loanword just happens to also list its
+  // as-typed hiragana as a fallback candidate, while a mimetic word's
+  // hiragana form is the genuinely preferred writing.
+  private static isReduplicated(kana: string): boolean {
+    const n = kana.length;
+    return n > 0 && n % 2 === 0 && kana.slice(0, n / 2) === kana.slice(n / 2);
   }
 
   // Remove half-width katakana and pure-ASCII romaji only.
