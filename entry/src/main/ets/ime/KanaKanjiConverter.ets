@@ -2338,7 +2338,7 @@ const DICTIONARY: Record<string, string[]> = {
   'ぼうえき': ['貿易'],
   'ちょきん': ['貯金'],
   'きゃっしゅれす': ['キャッシュレス'],
-  'ふりこみ': ['振り込み', '振込'],
+  'ふりこみ': ['振込', '振り込み'],
   'こうざ': ['口座'],
   // りし as 利子/利率/理事 (finance/corporate terms) is much rarer than the
   // very common ~たり~たりする construction (よんだり+して) it collided
@@ -10899,7 +10899,7 @@ const DICTIONARY: Record<string, string[]> = {
   'きょうぎじょう': ['競技場'],
   'ぎかい': ['議会'],
   'ぐたいてき': ['具体的'],
-  'こうしゅう': ['公衆'],
+  'こうしゅう': ['講習', '公衆'],
   'こうしゅうえいせい': ['公衆衛生'],
   'こうつう': ['交通'],
   'こうつうきかん': ['交通機関'],
@@ -25426,6 +25426,7 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
   'みず|あげた': 'あげた', 'みず|あげる': 'あげる',
   'めいわく|かけて': 'かけて',
+  'うけとり|いった': '行った',
 };
 
 // Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
@@ -25553,7 +25554,11 @@ export class KanaKanjiConverter {
     // standalone but fragmented under connection-matrix pressure in
     // context (わたし+て with わたし読まれて私, かし+てもらった with かし
     // read as 歌詞, さん+かしてみた, か+わりに).
-    'わたして','かして','さんか','かわりに']);
+    'わたして','かして','さんか','かわりに',
+    // はがき (葉書)/つきそいで (付き添いで) already led their own
+    // candidate list standalone but fragmented under connection-matrix
+    // pressure in context.
+    'はがき','つきそいで']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
