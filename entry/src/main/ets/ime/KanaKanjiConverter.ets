@@ -938,7 +938,8 @@ const DICTIONARY: Record<string, string[]> = {
   // おいしい is deliberately kana-preferred (see COMMON_READINGS) -- 美味しい
   // is a less commonly typed kanji spelling.
   'おいしかった': ['おいしかった', '美味しかった'],
-  'おいしく': ['美味しく'],
+  // おいしい is deliberately kana-preferred (see COMMON_READINGS).
+  'おいしく': ['おいしく', '美味しく'],
   'おいしくない': ['美味しくない', 'おいしくない'],
   'あたたかい': ['暖かい', '温かい'],
   'あたたかかった': ['暖かかった', '温かかった'],
@@ -25403,6 +25404,8 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'かさ|かいた': '買った', 'ふく|かいた': '買った', 'くつ|かいた': '買った',
   'うわぎ|きた': '着た', 'ふく|きた': '着た', 'せーたー|きた': '着た',
   'ゆかた|きた': '着た', 'ゆかた|きて': '着て',
+  'びょういん|いって': '行って', 'がっこう|いって': '行って',
+  'ふぐあい|なおった': '直った', 'こしょう|なおった': '直った',
   'りょうきん|へんかん': '返還', 'おかね|へんかん': '返還', 'けんり|へんかん': '返還',
   'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
 };
@@ -25478,7 +25481,10 @@ export class KanaKanjiConverter {
     // each already led their own candidate list standalone but lost the
     // lattice to a wrong split (ひつような+し+かく, ひょう+からん,
     // ため+した(as if two separate words), こめん+と, ぷれぜん+と).
-    'しかく','ひょうか','ためした','こめんと','ぷれぜんと']);
+    'しかく','ひょうか','ためした','こめんと','ぷれぜんと',
+    // りょこうがいしゃ (旅行会社) already led its own candidate list
+    // standalone but fragmented in context (りょこう+が+いしゃ).
+    'りょこうがいしゃ']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
