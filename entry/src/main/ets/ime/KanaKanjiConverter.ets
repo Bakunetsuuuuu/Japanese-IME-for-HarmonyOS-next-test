@@ -25591,7 +25591,14 @@ export class KanaKanjiConverter {
     'みせて','やすく',
     // かんそう (感想) already led its own candidate list standalone but
     // fragmented into かん+そう+を in context.
-    'かんそう']);
+    'かんそう',
+    // こうたいせいの (交代制の)/てあてが (手当が) already led their own
+    // candidate list standalone but fragmented (こうたいせい+の,
+    // てあて+が) under connection-matrix pressure in context.
+    'こうたいせいの','てあてが',
+    // のでふいて (ので拭いて): narrow whole-phrase boost for the
+    // 拭く/吹く homophone in this specific "wiped off dust" context.
+    'のでふいて']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
