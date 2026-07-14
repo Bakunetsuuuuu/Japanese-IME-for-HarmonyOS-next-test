@@ -4180,21 +4180,21 @@ const DICTIONARY: Record<string, string[]> = {
   'てつだってみる': ['手伝ってみる'],
   'てつだわない': ['手伝わない'],
   'てつだわなかった': ['手伝わなかった'],
-  'てもらいたい': ['手もらいたい'],
-  'てもらいたかった': ['手もらいたかった'],
-  'てもらいました': ['手もらいました', 'てもらいました'],
-  'てもらいます': ['手もらいます', 'てもらいます'],
-  'てもらいません': ['手もらいません'],
-  'てもらった': ['手もらった', 'てもらった'],
-  'てもらって': ['手もらって', 'てもらって'],
-  'てもらっていた': ['手もらっていた'],
-  'てもらっていない': ['手もらっていない'],
-  'てもらっている': ['手もらっている'],
-  'てもらってください': ['手もらってください'],
-  'てもらってみた': ['手もらってみた'],
-  'てもらってみる': ['手もらってみる'],
-  'てもらわない': ['手もらわない'],
-  'てもらわなかった': ['手もらわなかった'],
+  'てもらいたい': ['てもらいたい', '手もらいたい'],
+  'てもらいたかった': ['てもらいたかった', '手もらいたかった'],
+  'てもらいました': ['てもらいました', '手もらいました'],
+  'てもらいます': ['てもらいます', '手もらいます'],
+  'てもらいません': ['てもらいません', '手もらいません'],
+  'てもらった': ['てもらった', '手もらった'],
+  'てもらって': ['てもらって', '手もらって'],
+  'てもらっていた': ['てもらっていた', '手もらっていた'],
+  'てもらっていない': ['てもらっていない', '手もらっていない'],
+  'てもらっている': ['てもらっている', '手もらっている'],
+  'てもらってください': ['てもらってください', '手もらってください'],
+  'てもらってみた': ['てもらってみた', '手もらってみた'],
+  'てもらってみる': ['てもらってみる', '手もらってみる'],
+  'てもらわない': ['てもらわない', '手もらわない'],
+  'てもらわなかった': ['てもらわなかった', '手もらわなかった'],
   'でかけさせた': ['出かけさせた'],
   'でかけさせる': ['出かけさせる'],
   'でかけた': ['出かけた'],
@@ -21835,7 +21835,7 @@ const DICTIONARY: Record<string, string[]> = {
   'あまりうれない': ['あまり売れない'],
   'たまる': ['溜まる'],
   'たまった': ['溜まった'],
-  'たまって': ['溜まって'],
+  'たまって': ['溜まって', '貯まって'],
   'たまらない': ['溜まらない', 'たまらない'],
   'ふやす': ['増やす'],
   'ふやした': ['増やした'],
@@ -25409,6 +25409,7 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'ふぐあい|なおった': '直った', 'こしょう|なおった': '直った',
   'めざましどけい|なって': '鳴って', 'どけい|なって': '鳴って',
   'あらーむ|なって': '鳴って', 'べる|なって': '鳴って',
+  'ぽいんと|たまって': '貯まって',
   'りょうきん|へんかん': '返還', 'おかね|へんかん': '返還', 'けんり|へんかん': '返還',
   'ほうきん|へんかん': '返還', 'ざいさん|へんかん': '返還',
 };
@@ -26686,6 +26687,16 @@ export class KanaKanjiConverter {
         return [KanaKanjiConverter.VN_FUNCTION_WORD - 2000, fc, fc];
       }
       return [KanaKanjiConverter.VN_FUNCTION_WORD, fc, fc];
+    }
+    // へや (部屋) has the same problem as によると above, just via
+    // COMMON_READINGS instead of FW_CLASS_MAP: an adjective ending in
+    // らしい/しい immediately before it gets a large connection-matrix
+    // discount into the へ+や split (へ and や are both registered
+    // FUNCTION_WORDS, so "adjective + destination-particle へ" reads as a
+    // very common bigram to the trained matrix), which the ordinary
+    // COMMON_READINGS commonBonus (capped at 3000) can't outweigh.
+    if (sub === 'へや' || sub === 'はいそう' || sub === 'たまって' || sub === 'にもつ') {
+      return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
       return [KanaKanjiConverter.VN_FUNCTION_WORD, 73, 73]; // generic AUX_TA class
