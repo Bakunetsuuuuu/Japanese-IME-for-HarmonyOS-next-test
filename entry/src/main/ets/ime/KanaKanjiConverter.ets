@@ -25413,7 +25413,11 @@ export class KanaKanjiConverter {
     // はんそ+で, ながそ+で, はつもう+で). Giving the whole reading the common
     // bonus keeps 昼寝/靴下/本棚/半袖/長袖/初詣 intact.
     'ひるね','くつした','ほんだな','はんそで','ながそで','はつもうで',
-    'はなみず','あしあと','ひので','おりもの','ほんもの']);
+    'はなみず','あしあと','ひので','おりもの','ほんもの',
+    // おかず (side dish) ends in ず, which is now a forced-kana FUNCTION_WORD
+    // (the classical negative auxiliary, …ず) — without this bonus the
+    // segmenter split it as おか+ず instead of keeping the whole word.
+    'おかず']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -25497,6 +25501,11 @@ export class KanaKanjiConverter {
     'か': true, 'ね': true, 'よ': true, 'ぞ': true, 'わ': true, 'な': true,
     'かよ': true, 'のか': true, 'のかよ': true,
     'て': true, 'ば': true, 'のに': true, 'ので': true,
+    // classical negative auxiliary (Xず = without doing X: わからず, しらず,
+    // およばず…) — extremely common in everyday and formal text alike. Bare
+    // ず otherwise defaulted to 手 (a rare reading), corrupting every such
+    // construction (わからず -> "分から手").
+    'ず': true,
     // 条件・断定の「なら」(Xなら=if X / if it's X) は超頻出の機能語。
     // 辞書では地名の「奈良」が既定になりがちだが、文中の接続では圧倒的に
     // 助詞用法なので、学習が無い限りかなを既定にする。
