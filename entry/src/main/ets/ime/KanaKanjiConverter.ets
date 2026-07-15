@@ -25702,7 +25702,10 @@ export class KanaKanjiConverter {
     // connection-matrix pressure. (Trimmed to 10 chars: segment()'s
     // MAX_LEN=10 span cap means an 11-char span with the trailing が
     // is never even considered as a candidate.)
-    'きゅうのうごかしかた']);
+    'きゅうのうごかしかた',
+    // うれしそう/かくかてい/いっぴんずつ fragmented under connection-
+    // matrix pressure despite already leading their own candidate lists.
+    'うれしそう','かくかてい','いっぴんずつ']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -26927,7 +26930,7 @@ export class KanaKanjiConverter {
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
         sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
         sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
-        sub === 'できた') {
+        sub === 'できた' || sub === 'できて' || sub === 'かくかてい') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
