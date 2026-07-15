@@ -25812,7 +25812,8 @@ export class KanaKanjiConverter {
     'きのブロックを','けずって','おもりのいちを','はやさに','だしわすれた',
     'つまずかない','あしもとを','しきりで','わけた','てまえの','ふような',
     'やすりで',
-    'におい','においが','しあがりが','しあがり','かわかして']);
+    'におい','においが','しあがりが','しあがり','かわかして','ぴんと',
+    'ぴんとはって']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
