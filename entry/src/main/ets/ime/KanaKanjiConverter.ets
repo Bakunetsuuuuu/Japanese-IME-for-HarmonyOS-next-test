@@ -25744,7 +25744,10 @@ export class KanaKanjiConverter {
     // already leading (or, once added, now leading) their own candidate
     // lists.
     'きあいを','けりの','どうさを','なんとかかんせい','あめあがりの',
-    'はじまって','あなを']);
+    'はじまって','あなを',
+    // めかくしを/よりはやくて fragmented under connection-matrix
+    // pressure despite already leading their own candidate lists.
+    'めかくしを','よりはやくて']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
