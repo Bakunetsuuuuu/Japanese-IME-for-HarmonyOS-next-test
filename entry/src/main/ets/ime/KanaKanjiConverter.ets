@@ -25866,7 +25866,7 @@ export class KanaKanjiConverter {
     'かしょを','したにかみを','はのすじが','かみにうきでてきた','ノートにはった',
     'てんじょうのすみに','くもが','すをはっていた','ほうきで',
     'そっとはらって','あたらしいすが','できていた','きのブロックに','かたをかいた',
-    'つぎのばんの']);
+    'つぎのばんの','もけいぼーどにはった','せんたくそうを','しめらせた','たすくを']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
