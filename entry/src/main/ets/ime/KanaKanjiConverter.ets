@@ -23962,7 +23962,7 @@ const DICTIONARY: Record<string, string[]> = {
   'あくをとる': ['灰汁を取る'],
   'あくをすくう': ['アクをすくう'],
   'ていねいにつくる': ['丁寧に作る'],
-  'できあがり': ['できあがり', '出来上がり'],
+  'できあがり': ['出来上がり', 'できあがり'],
   'もりつける': ['盛り付ける'],
   'かざりつける': ['飾り付ける'],
   'うつわにもる': ['器に盛る'],
@@ -25815,7 +25815,7 @@ export class KanaKanjiConverter {
     'におい','においが','しあがりが','しあがり','かわかして','ぴんと',
     'ぴんとはって','いたを','はちに','ほーすで','すぽんじに','おおまかに',
     'つかいやすく','たてる','ずを','おいるを','とどきにくいと','いちを',
-    'はいちを']);
+    'はいちを','よびの','いどうに','なくいってください']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
