@@ -25733,7 +25733,12 @@ export class KanaKanjiConverter {
     // despite already leading their own candidate lists.
     'ふたを','かさなって',
     // くき (茎) fragmented into の+かくき (の客気) in context.
-    'くき','のかくきが','あさのうちに']);
+    'くき','のかくきが','あさのうちに',
+    // すりへって/たったり/すわったり/できそうだ fragmented under
+    // connection-matrix pressure despite already leading (or, once
+    // added, now leading) their own candidate lists.
+    'すりへって','たったり','すわったり','できそうだ',
+    'あみを','そこが']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -26959,7 +26964,8 @@ export class KanaKanjiConverter {
         sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
         sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
         sub === 'できた' || sub === 'できて' || sub === 'かくかてい' ||
-        sub === 'てまえに') {
+        sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
+        sub === 'すりへっていないか') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
