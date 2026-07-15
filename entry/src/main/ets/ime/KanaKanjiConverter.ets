@@ -25854,7 +25854,9 @@ export class KanaKanjiConverter {
     'はんだを','まどべに','つるすと','チームわけの','いちらんを',
     'わゴムを','たらいの','めもりが','みえにくくなっていた','はへんを',
     'まるくととのえた','ねがいごとを','かぜがふくと','みたいおうの',
-    'ついせきびを']);
+    'ついせきびを','もようの','わけおわる','はこなを','まぶしておいた',
+    'もようがついていた','こうせいずを','スクリーンにうつして','ぼとるねっくに',
+    'もようのとくちょうを']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
