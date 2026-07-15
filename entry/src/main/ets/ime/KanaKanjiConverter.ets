@@ -25646,6 +25646,10 @@ export class KanaKanjiConverter {
     // candidate list standalone but fragmented (か+み+が+た, とめ+
     // わすれていない) under connection-matrix pressure in context.
     'かみがた','とめわすれて',
+    // いがいと (意外と)/ほっと/きけんなので (危険なので) already led
+    // their own candidate list standalone but fragmented (いがい+と,
+    // ほっ+と, きけんな+の+で) under connection-matrix pressure.
+    'いがいと','ほっと','きけんなので',
     // なおると (直ると) already led its own candidate list standalone
     // but fragmented into なおる (治る)+と in context.
     'なおると',
