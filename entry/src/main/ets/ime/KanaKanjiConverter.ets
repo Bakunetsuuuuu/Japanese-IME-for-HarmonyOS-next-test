@@ -25915,6 +25915,9 @@ export class KanaKanjiConverter {
     'かくぶしょの',
     'かれはと','すをきれいに','ふたのこうきあなを','かたがみをかみで',
     'ふたまいを','ふめいな','てんについては','はりでとめて',
+    'そこを','とおして','ひまわりの','きろくようしに',
+    'すくなくなったので','せつめいをそえた','きのわくを','はけで',
+    'ついかぶんを','じゆうきじゅつを',
     'にすで','しあげをした','きょうごうたの','じぶんたちの','たかすぎないか',
     'はめこんだ','えらんでおしていった']);
 
@@ -27145,7 +27148,7 @@ export class KanaKanjiConverter {
         sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
         sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
         sub === 'とばなかった' || sub === 'くもが' || sub === 'はいきした' ||
-        sub === 'みとおしを' || sub === 'かわを') {
+        sub === 'みとおしを' || sub === 'かわを' || sub === 'そこを') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
