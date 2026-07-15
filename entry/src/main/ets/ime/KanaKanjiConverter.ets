@@ -25775,7 +25775,11 @@ export class KanaKanjiConverter {
     'はじめてなので','てと','なまえのかんじが','ばっじ','ちゃいむが',
     'ちゃいむがなって','かぜかなと',
     'だしあった','みずをはってから','うけとって','にゅうりょくした',
-    'うりきれた','よせがきが','わたす']);
+    'うりきれた','よせがきが','わたす',
+    'さいずがあうように','かたがみを','たちきって','あかいぬのを',
+    'てんめつ','たかさだったので','こうかんごに','おしてさどうを',
+    'なれてきたころに','じかんがかさならない','もとのいちに',
+    'あうように','たっておよぐ']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
