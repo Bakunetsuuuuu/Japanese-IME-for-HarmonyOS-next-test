@@ -20679,7 +20679,7 @@ const DICTIONARY: Record<string, string[]> = {
   'だいにじせかいたいせん': ['第二次世界大戦'],
   'たいへいようせんそう': ['太平洋戦争'],
   'げんばく': ['原爆'],
-  'はいせん': ['敗戦'],
+  'はいせん': ['配線', '敗戦'],
   'とっきょほうき': ['特許放棄'],
   'れんごうこく': ['連合国'],
   'しょくみんち': ['植民地'],
@@ -25636,7 +25636,18 @@ export class KanaKanjiConverter {
     // own candidate list standalone but fragmented into で+きる in
     // context.
     'できる',
-    'ねがはちのそこからはみだしていて']);
+    'ねがはちのそこからはみだしていて',
+    // えらんで (選んで)/やきあがるまでに (焼きあがるまでに) already led
+    // their own candidate list standalone but fragmented (えらん+で,
+    // やきあがる+まで+に) under connection-matrix pressure in context.
+    'えらんで','やきあがるまでに',
+    // なおると (直ると) already led its own candidate list standalone
+    // but fragmented into なおる (治る)+と in context.
+    'なおると',
+    // ふやして (増やして) already led its own candidate list standalone
+    // but lost the connection-matrix contest to て merging into the
+    // legitimate but wrong-here 手作業 (てさぎょう) in context.
+    'ふやして']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
