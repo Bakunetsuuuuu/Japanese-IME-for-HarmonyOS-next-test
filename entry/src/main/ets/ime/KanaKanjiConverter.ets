@@ -25713,7 +25713,13 @@ export class KanaKanjiConverter {
     // entry and won this span before てんと's boost above was added; the
     // shorter span's boost alone made it steal characters from this
     // longer one, so it needs an equal boost to stay competitive.
-    'てんとをはる']);
+    'てんとをはる',
+    // はいって (入って) fragmented into は+いってくる in context, with
+    // は misread as the topic particle.
+    'はいって',
+    // せんたくした (洗濯した) fragmented into せんたくし+た, with せんたくし
+    // resolving to the unrelated noun 選択肢 instead of the verb stem.
+    'せんたくした']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
