@@ -25851,7 +25851,10 @@ export class KanaKanjiConverter {
     'はいせんを','たっしていない','つぎのきかんでの','すりあわせた',
     'ほしがたの','でたらめにはった','ひかって','ひるまに','ふさがないように',
     'いしをしいた','ながれでないように','おもしをそえておいた','はめこんでいった',
-    'はんだを','まどべに','つるすと','チームわけの','いちらんを']);
+    'はんだを','まどべに','つるすと','チームわけの','いちらんを',
+    'わゴムを','たらいの','めもりが','みえにくくなっていた','はへんを',
+    'まるくととのえた','ねがいごとを','かぜがふくと','みたいおうの',
+    'ついせきびを']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
