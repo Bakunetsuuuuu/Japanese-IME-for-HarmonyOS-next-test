@@ -25654,6 +25654,11 @@ export class KanaKanjiConverter {
     // list standalone but fragmented (わたし/私+た, ほし/星+た) under
     // connection-matrix pressure in context.
     'わたした','ほした',
+    // へんなおとがでた (変な音が出た)/もちかえって (持ち帰って) already
+    // led their own candidate list standalone but lost the connection-
+    // matrix contest to て merging into a legitimate but wrong-here
+    // dict word (手偏/てへん, 手持ち/てもち) in context.
+    'へんなおとがでた','もちかえって',
     // なおると (直ると) already led its own candidate list standalone
     // but fragmented into なおる (治る)+と in context.
     'なおると',
