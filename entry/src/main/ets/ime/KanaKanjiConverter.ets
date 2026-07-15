@@ -25885,7 +25885,11 @@ export class KanaKanjiConverter {
     'こいみずようえきを','わりばしに','いとをまいて','つるした',
     'けっしょうの','てんとうしないように','きゃくたてを','せんようのえきに',
     'かんそうさせてから','かくめんせつかんの','わかれたてんについて',
-    'つけおきして']);
+    'つけおきして',
+    'きつくまいて','だんろでもやしてみた','まきより','もえつづいた',
+    'ひきとるように','とのおしらせだった','かんりがわで','しょぶんする',
+    'きゅうりと','にんじんを','しおをふった','でてきた','かめに',
+    'じゅうしをのせて','あさづけに','らいきの','しゅうせいごの','おんきょうを']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
