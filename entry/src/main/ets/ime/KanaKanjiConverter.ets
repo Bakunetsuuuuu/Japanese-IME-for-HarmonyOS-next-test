@@ -25828,7 +25828,8 @@ export class KanaKanjiConverter {
     'あきかんを','へやのらんを','きじを','ざせきの',
     'つかわなくなった','のせてやいた','つつの','つぎめで','ビーだまが',
     'よくとまった','とおりきった','かんせいがあがった','あみについた',
-    'しょぶんした','よくまぜてから','ためすことを','ちかくのてんで']);
+    'しょぶんした','よくまぜてから','ためすことを','ちかくのてんで','さんを',
+    'かいてはりだした']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
