@@ -21328,7 +21328,7 @@ const DICTIONARY: Record<string, string[]> = {
   'けいちょう': ['慶弔'],
   'けいちょうきゅうか': ['慶弔休暇'],
   'ちょうじ': ['弔事'],
-  'けいじ': ['慶事'],
+  'けいじ': ['掲示', '慶事'],
   'よろこびごと': ['喜び事'],
   'かなしみごと': ['悲しみ事'],
   'そうぎ': ['葬儀'],
@@ -23261,7 +23261,7 @@ const DICTIONARY: Record<string, string[]> = {
   'いくじ': ['育児'],
   'にゅうようじ': ['乳幼児'],
   'にゅうじ': ['乳児'],
-  'ようじ': ['幼児'],
+  'ようじ': ['用事', '幼児'],
   'おさなご': ['幼子'],
   'ははおや': ['母親'],
   'ちちおや': ['父親'],
@@ -25731,7 +25731,9 @@ export class KanaKanjiConverter {
     'はずして','よそう',
     // ふたを/かさなって fragmented under connection-matrix pressure
     // despite already leading their own candidate lists.
-    'ふたを','かさなって']);
+    'ふたを','かさなって',
+    // くき (茎) fragmented into の+かくき (の客気) in context.
+    'くき','のかくきが','あさのうちに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
