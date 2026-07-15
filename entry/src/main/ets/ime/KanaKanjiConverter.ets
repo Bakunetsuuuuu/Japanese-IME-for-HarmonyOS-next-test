@@ -25795,7 +25795,10 @@ export class KanaKanjiConverter {
     'まっすぐとぶ',
     'かためやすく','をさかさにして','かたをつくった','じかんたいを',
     'かみに','かいてはった','こものが','のせても','おもいどおりに',
-    'ひるすぎに','はいっていた']);
+    'ひるすぎに','はいっていた',
+    'いろちがいのいとを','もようを','ふとさに','ほどけない','いんたーほんで',
+    'したかんしょくが','あかるさを','たいまーきのうで','じどうしょうとうした',
+    'てに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
