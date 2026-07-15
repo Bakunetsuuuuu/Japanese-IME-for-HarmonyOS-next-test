@@ -25802,7 +25802,11 @@ export class KanaKanjiConverter {
     'ではかって','ころんだ','かれたくきや','どじょうにひりょうを',
     'くさかりきで','まとめてかった','ばくがと','ほっぷを',
     'はっこうをまった','があわない','まちがえてかっていた',
-    'よるのうちに']);
+    'よるのうちに',
+    'じゅうそうと','さいげんした','ぬって','ようがんっぽく','がめんにうつった',
+    'けいかいした','ろくがきのうで','ほうもんを','しずまないように',
+    'あついふくを','きかくにあうか','とりつけごに','たかさが','よくなった',
+    'つかえる','はやめに','すを','あついふくをきた']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -27029,7 +27033,7 @@ export class KanaKanjiConverter {
         sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
         sub === 'できた' || sub === 'できて' || sub === 'かくかてい' ||
         sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
-        sub === 'すりへっていないか' || sub === 'かみに') {
+        sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
