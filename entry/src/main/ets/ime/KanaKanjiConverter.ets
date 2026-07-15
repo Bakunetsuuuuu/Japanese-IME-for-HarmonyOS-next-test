@@ -25819,7 +25819,8 @@ export class KanaKanjiConverter {
     'かわからない','むらが','やりすぎが','かんそうにおもった','なんどもなおした',
     'あかるさに','こいしを','つばさの','そこにこいしを','はたけを',
     'じゅうでんちゅうの','きになった','たかさに','かいてきになった',
-    'だんぼーるがつまって','ぼうで','のれるようになった','けーぶるを','けーぶるが']);
+    'だんぼーるがつまって','ぼうで','のれるようになった','けーぶるを','けーぶるが',
+    'はばを','おりめを','はじめてのかべで','もらって','すじにくが','もちかたがわからず']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
