@@ -25673,7 +25673,19 @@ export class KanaKanjiConverter {
     // ふやして (増やして) already led its own candidate list standalone
     // but lost the connection-matrix contest to て merging into the
     // legitimate but wrong-here 手作業 (てさぎょう) in context.
-    'ふやして']);
+    'ふやして',
+    // ほんばん/たいや/りすと/たな/でかけた already led their own
+    // candidate lists standalone but fragmented under connection-matrix
+    // pressure (ほん+ばん, たい+や, りす+と, た+な, で+かけた).
+    'ほんばん','たいや','りすと','たな','でかけた',
+    // えんそう/はいしゅつ/くかく/みずやり: same fragmentation pattern
+    // (えん+そう, は+いしゅつ, たく+かく split stealing くかく's characters,
+    // みず+や+りとう eating into とうばん's とう).
+    'えんそう','はいしゅつ','くかく','みずやり',
+    // できた: kana-preferred sibling of できる (already above), needed
+    // separately since it fragmented into で+きた after えんそう's own
+    // boost shifted the connection-matrix balance in this context.
+    'できた']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -26897,7 +26909,8 @@ export class KanaKanjiConverter {
         sub === 'たなに' || sub === 'ないそう' || sub === 'やたい' ||
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
         sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
-        sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを') {
+        sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
+        sub === 'できた') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
