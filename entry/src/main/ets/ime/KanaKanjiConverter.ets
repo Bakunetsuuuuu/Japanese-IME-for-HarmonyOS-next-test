@@ -25725,7 +25725,13 @@ export class KanaKanjiConverter {
     'おとした',
     // てまえに/したに fragmented under connection-matrix pressure despite
     // already leading their own candidate lists.
-    'てまえに','したに']);
+    'てまえに','したに',
+    // はずして/よそう fragmented under connection-matrix pressure despite
+    // already leading their own candidate lists.
+    'はずして','よそう',
+    // ふたを/かさなって fragmented under connection-matrix pressure
+    // despite already leading their own candidate lists.
+    'ふたを','かさなって']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
