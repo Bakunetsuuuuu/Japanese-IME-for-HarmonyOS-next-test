@@ -25747,7 +25747,15 @@ export class KanaKanjiConverter {
     'はじまって','あなを',
     // めかくしを/よりはやくて fragmented under connection-matrix
     // pressure despite already leading their own candidate lists.
-    'めかくしを','よりはやくて']);
+    'めかくしを','よりはやくて',
+    // まわすはやさを/やくにしゅうかん/かかからずに/たらした/あたりが
+    // あっても/あわてずに/いっぴきもつれずに/クリーナーをかって/
+    // ふきなおした fragmented under connection-matrix pressure despite
+    // already leading (or, once added, now leading) their own
+    // candidate lists.
+    'まわすはやさを','やくにしゅうかん','かかからずに','たらした',
+    'あたりがあっても','あわてずに','いっぴきもつれずに','クリーナーをかって',
+    'ふきなおした','てで']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
