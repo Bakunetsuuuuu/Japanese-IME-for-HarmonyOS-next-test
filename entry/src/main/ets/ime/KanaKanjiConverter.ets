@@ -25719,7 +25719,13 @@ export class KanaKanjiConverter {
     'はいって',
     // せんたくした (洗濯した) fragmented into せんたくし+た, with せんたくし
     // resolving to the unrelated noun 選択肢 instead of the verb stem.
-    'せんたくした']);
+    'せんたくした',
+    // おとした (落とした) fragmented into おと+した, with おと resolving
+    // to the unrelated noun 音 instead of the verb stem.
+    'おとした',
+    // てまえに/したに fragmented under connection-matrix pressure despite
+    // already leading their own candidate lists.
+    'てまえに','したに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -26944,7 +26950,8 @@ export class KanaKanjiConverter {
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
         sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
         sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
-        sub === 'できた' || sub === 'できて' || sub === 'かくかてい') {
+        sub === 'できた' || sub === 'できて' || sub === 'かくかてい' ||
+        sub === 'てまえに') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
