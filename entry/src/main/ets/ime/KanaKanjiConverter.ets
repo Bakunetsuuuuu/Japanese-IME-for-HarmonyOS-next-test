@@ -25427,6 +25427,7 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'みず|あげた': 'あげた', 'みず|あげる': 'あげる',
   'めいわく|かけて': 'かけて',
   'うけとり|いった': '行った',
+  'しょうめいしゃしん|とった': '撮った',
 };
 
 // Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
