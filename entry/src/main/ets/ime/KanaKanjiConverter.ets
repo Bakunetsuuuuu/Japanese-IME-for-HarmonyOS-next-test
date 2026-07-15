@@ -25650,6 +25650,10 @@ export class KanaKanjiConverter {
     // their own candidate list standalone but fragmented (いがい+と,
     // ほっ+と, きけんな+の+で) under connection-matrix pressure.
     'いがいと','ほっと','きけんなので',
+    // わたした (渡した)/ほした (干した) already led their own candidate
+    // list standalone but fragmented (わたし/私+た, ほし/星+た) under
+    // connection-matrix pressure in context.
+    'わたした','ほした',
     // なおると (直ると) already led its own candidate list standalone
     // but fragmented into なおる (治る)+と in context.
     'なおると',
