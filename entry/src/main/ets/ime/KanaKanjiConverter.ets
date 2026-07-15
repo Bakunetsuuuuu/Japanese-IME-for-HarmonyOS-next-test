@@ -25755,7 +25755,12 @@ export class KanaKanjiConverter {
     // candidate lists.
     'まわすはやさを','やくにしゅうかん','かかからずに','たらした',
     'あたりがあっても','あわてずに','いっぴきもつれずに','クリーナーをかって',
-    'ふきなおした','てで']);
+    'ふきなおした','てで',
+    // Fragmented under connection-matrix pressure despite already
+    // leading (or, once added, now leading) their own candidate lists.
+    'かんきゃくやくの','てじなの','をずにかいて','あたらしいきぐは',
+    'せっちご','さどうかくにんが','もちものを','てんとをはり','ぶんぴんを',
+    'らべるをはった','たなのおくに','ひるまは','れんきゅうは']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
