@@ -26368,7 +26368,13 @@ export class KanaKanjiConverter {
       if (KanaKanjiConverter.isSymbolOnly(best)) { return null; }
       joined += best;
     }
-    if (/[一-鿿]/.test(joined)) { return joined; }
+    // Previously there was a short-circuit here returning `joined` whenever it
+    // contained any kanji, on the theory that kanji presence implied a trustworthy
+    // join. It didn't: almost every join contains kanji from at least one
+    // correctly-recognized segment, so the short-circuit fired nearly every time
+    // and defeated allRecognized tracking — letting an adjacent *unrecognized*
+    // segment's raw kana get silently concatenated in and shown as if the whole
+    // sentence were confidently resolved (e.g. 行衛を仰手, 森崈ている, 賭場されない).
     return allRecognized ? joined : null;
   }
 
