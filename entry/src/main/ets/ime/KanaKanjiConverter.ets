@@ -25659,6 +25659,14 @@ export class KanaKanjiConverter {
     // matrix contest to て merging into a legitimate but wrong-here
     // dict word (手偏/てへん, 手持ち/てもち) in context.
     'へんなおとがでた','もちかえって',
+    // まいごになった (迷子になった) already led its own candidate list
+    // standalone but lost the connection-matrix contest to た merging
+    // into the legitimate but wrong-here 種子 (たねこ) in context.
+    'まいごになった',
+    // ぱーと (パート)/できるきのうが (できる機能が) already led their
+    // own candidate list standalone but fragmented (ぱー+と, きのう
+    // resolving alone as 昨日) under connection-matrix pressure.
+    'ぱーと','できるきのうが','はっせいれんしゅうを',
     // なおると (直ると) already led its own candidate list standalone
     // but fragmented into なおる (治る)+と in context.
     'なおると',
