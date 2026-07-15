@@ -25792,7 +25792,10 @@ export class KanaKanjiConverter {
     'きれたげんを','ちょうげんきを','げんをまた','きって','きのえだに',
     'とれなくなった','まっすぐとぶ','てくびのかどうが','てきしていた',
     'みずをいっぱい','しょくどうへいった','あわせた','ひっかかって',
-    'まっすぐとぶ']);
+    'まっすぐとぶ',
+    'かためやすく','をさかさにして','かたをつくった','じかんたいを',
+    'かみに','かいてはった','こものが','のせても','おもいどおりに',
+    'ひるすぎに','はいっていた']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -27019,7 +27022,7 @@ export class KanaKanjiConverter {
         sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
         sub === 'できた' || sub === 'できて' || sub === 'かくかてい' ||
         sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
-        sub === 'すりへっていないか') {
+        sub === 'すりへっていないか' || sub === 'かみに') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
