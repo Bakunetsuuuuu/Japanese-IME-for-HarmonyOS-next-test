@@ -25835,7 +25835,9 @@ export class KanaKanjiConverter {
     'してきが','はさみで','つかったかみを','かくはんした','あみですくって',
     'かんそうさせた','せんさーしきの','しょうめいをあらたに','おさえられた',
     'いっていの','たもってといだ','やさいがすっときれた','つぎにいかせる',
-    'おわびの','そうじきをかけた']);
+    'おわびの','そうじきをかけた','にたくだものを','きれいなものから',
+    'うれていった','ようきがからに','かいたした','にほんぶんを',
+    'へるのがはやい','さましておいた','じこうを','いるようで','ねっとうで']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
