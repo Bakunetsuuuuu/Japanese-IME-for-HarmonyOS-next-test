@@ -25641,6 +25641,10 @@ export class KanaKanjiConverter {
     // their own candidate list standalone but fragmented (えらん+で,
     // やきあがる+まで+に) under connection-matrix pressure in context.
     'えらんで','やきあがるまでに',
+    // かみがた (髪型)/とめわすれて (留め忘れて) already led their own
+    // candidate list standalone but fragmented (か+み+が+た, とめ+
+    // わすれていない) under connection-matrix pressure in context.
+    'かみがた','とめわすれて',
     // なおると (直ると) already led its own candidate list standalone
     // but fragmented into なおる (治る)+と in context.
     'なおると',
