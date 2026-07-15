@@ -25691,7 +25691,12 @@ export class KanaKanjiConverter {
     // と+くに, はなし+た dropping the verb-stem okurigana し).
     'そのご','とくに','はなした',
     // おおめに (多めに) fragmented into おおめ+に in context.
-    'おおめに']);
+    'おおめに',
+    // そとがわ/そっと/たより/すぎていた fragmented under connection-matrix
+    // pressure (そと+が+わ, そっ+と, た+より, すぎ+ていた — the last one
+    // also crosses the すぎ FUNCTION_WORDS short-circuit, so a whole-span
+    // dict entry was added too).
+    'そとがわ','そっと','たより','すぎていた','しーと','おとして']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
