@@ -25811,7 +25811,8 @@ export class KanaKanjiConverter {
     'すべてのアカウントを','すべてのアカウントで',
     'きのブロックを','けずって','おもりのいちを','はやさに','だしわすれた',
     'つまずかない','あしもとを','しきりで','わけた','てまえの','ふような',
-    'やすりで']);
+    'やすりで',
+    'におい','においが','しあがりが','しあがり']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
