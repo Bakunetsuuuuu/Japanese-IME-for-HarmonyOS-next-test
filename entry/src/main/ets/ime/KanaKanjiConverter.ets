@@ -25785,7 +25785,10 @@ export class KanaKanjiConverter {
     'つかみながら','てんとうした','ささえなしで','こんでいるときは',
     'ひるすぎから','よるはやめに',
     'ようきのそこに','すきまなくうえた','はえて','はなしあいのばを',
-    'ぜんしんきんにくを','たいそうに','もうけた']);
+    'ぜんしんきんにくを','たいそうに','もうけた',
+    'やわらかくして','かんそうさせる','げすとようの','ようのかいせんを',
+    'ようういしてある','ときように','ひかえておいた','せつだんされる',
+    'しょったーが','よりはやかった','ぺありんぐの','げすと','すぎると']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
