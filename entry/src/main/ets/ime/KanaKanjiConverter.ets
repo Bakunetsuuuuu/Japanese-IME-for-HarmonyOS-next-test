@@ -25824,7 +25824,9 @@ export class KanaKanjiConverter {
     'ふくについていた','わたを','かんそうじかんが','つかっているうちに',
     'にぶくかんじた','かざすと','おもしでとめた','はっこうが','あじみを','かいすうを',
     'いたがくさって','ぺんきを','しあげが','だいしゃを','もとのばしょに',
-    'もどしておいた','なかでちょうが','にがしてあげた','そのたびに']);
+    'もどしておいた','なかでちょうが','にがしてあげた','そのたびに',
+    'あきかんを','へやのらんを','きじを','ざせきの',
+    'つかわなくなった','のせてやいた']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
