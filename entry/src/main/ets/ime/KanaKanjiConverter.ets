@@ -25806,7 +25806,9 @@ export class KanaKanjiConverter {
     'じゅうそうと','さいげんした','ぬって','ようがんっぽく','がめんにうつった',
     'けいかいした','ろくがきのうで','ほうもんを','しずまないように',
     'あついふくを','きかくにあうか','とりつけごに','たかさが','よくなった',
-    'つかえる','はやめに','すを','あついふくをきた']);
+    'つかえる','はやめに','すを','あついふくをきた',
+    'ひかりだす','よくあたるいちに','すませてから','くもりのひが',
+    'すべてのアカウントを','すべてのアカウントで']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
