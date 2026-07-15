@@ -15,13 +15,19 @@ labeled corpus of natural Japanese `[reading, goldSurface]` pairs.
 ```sh
 node tools/ime-eval/run.js            # TRAIN summary accuracy
 node tools/ime-eval/run.js --misses   # also print every miss (gold vs got)
-node tools/ime-eval/run_test.js           # held-out TEST summary accuracy (rounds 1-6, see below)
+node tools/ime-eval/run_test.js           # held-out TEST summary accuracy (rounds 1-9, see below)
 node tools/ime-eval/run_test.js --misses  # also print every miss
 node tools/ime-eval/run_vocab.js           # bare single-word dictionary coverage check
 node tools/ime-eval/run_vocab.js --misses  # also print every miss
+node tools/ime-eval/run_all.js        # one build, every corpus (TRAIN/TEST1-9/VOCAB1-3) -- fastest way to get a full picture
+node tools/ime-eval/sweep.js          # 4000-key dict-sampling old(HEAD)-vs-new(working tree) kanji-loss check
+node tools/ime-eval/sweep_join.js     # same, but sampling concatenated dict-key PAIRS -- see "Regression tooling" below
+node tools/ime-eval/regress.js        # classifies every corpus row that changed into FIXED/REGRESSED/CHANGED_STILL_WRONG
 ```
 
-Requires a local `typescript` (`npx tsc`).
+Requires a local `typescript` (`npx tsc`). `run_test2.js` … `run_test9.js` and
+`run_vocab2.js`/`run_vocab3.js` follow the same naming pattern as `run_test.js`/
+`run_vocab.js` for the later rounds.
 
 ## Train/test split — and its limits
 
@@ -76,11 +82,16 @@ still a blind measurement is not.
 
 - `corpus.js` / `corpus2.js` / `corpus3.js` / `accept.js` — the TRAIN set (see
   above).
-- `corpus_test.js` … `corpus_test6.js` (with matching `accept_test*.js`) —
+- `corpus_test.js` … `corpus_test9.js` (with matching `accept_test*.js`) —
   successive held-out TEST rounds, each authored/sourced fresh and measured
   once before any fix targeted it. Treat all of them as "spent" (no longer
   blind) once a fix round has run against them; write a new one for the next
-  round rather than reusing.
+  round rather than reusing. `corpus_test9.js` was promoted from a
+  49-sentence, 16-register benchmark (news/business/casual/recipe/weather/
+  travel/shopping/health/tech/sports/finance/school/family/entertainment/
+  nature) authored specifically to cover registers the contemporaneous
+  "LONGTEXT" tuning loop hadn't touched; see its header comment for its
+  own spent/first-measurement history before reusing it as if still blind.
 - `vocab_test.js` / `run_vocab.js` — a separate check: ~250 common everyday
   N5–N3 words as bare single-reading `lookup()` calls (not sentences), to
   measure raw dictionary/ranking coverage independent of segmentation.
@@ -120,12 +131,53 @@ quality — extend these, plus the segmentation cost constants in `getWordInfo` 
   set phrases (あけまし→あけましておめでとうございます), independent of the
   regular whole-reading dictionary lookup.
 
+## Regression tooling
+
+Corpus scoring (`run.js`/`run_test*.js`/`run_all.js`) tells you the aggregate
+number moved the right way. It doesn't tell you *why*, or catch a regression
+outside the ~600 labeled sentences currently in this directory. Three tools
+fill that gap, all comparing committed `HEAD` against the current working
+tree so they also catch uncommitted changes:
+
+- **`sweep.js`** — samples 4000 keys from `Object.keys(dict.json) ∪
+  Object.keys(global_dict.json)` (seeded PRNG, reproducible), builds the
+  converter twice (HEAD vs. working tree), and diffs `lookup(key)[0]`,
+  flagging any sample that lost kanji (`kanjiLoss`) it had before. Cheap,
+  broad, dictionary-ordering/candidate-ranking regressions.
+  **Blind spot:** every sampled key already has a direct dictionary entry,
+  so this never exercises `lookupCore()`'s "not in any dict" branch and
+  therefore never calls `segmentJoinFallback()`/`joinSegs()`. A change to
+  that code path can look completely clean under `sweep.js` alone and still
+  be a regression.
+- **`sweep_join.js`** — same methodology, but samples *concatenated pairs*
+  of existing dict keys (which usually aren't themselves dict keys), forcing
+  `lookupCore()` down the `segmentJoinFallback()`/`joinSegs()` path that
+  `sweep.js` can't reach. Use this whenever a change touches segmentation
+  joining, not just dictionary data.
+- **`regress.js`** — runs every corpus in this directory (TRAIN/TEST1-9/
+  VOCAB1-3) through both the HEAD and working-tree converter and classifies
+  every row whose answer changed as `FIXED` (was wrong, now matches gold/
+  accept), `REGRESSED` (matched before, wrong now), or
+  `CHANGED_STILL_WRONG` (wrong both times, different guess). `REGRESSED`
+  rows where the *old* answer had kanji and the *new* one is a plain-kana
+  fallback are worth eyeballing individually: an honest "I don't know" kana
+  fallback is very often a net improvement over a confidently wrong kanji
+  guess, even though it counts as a strict-match loss in the corpus score.
+
 ## Workflow
 
-1. `node tools/ime-eval/run.js` to get the current baseline.
+1. `node tools/ime-eval/run_all.js` to get the current baseline across every
+   corpus in one build (equivalent to running `run.js` + every `run_test*.js`
+   + every `run_vocab*.js` separately, but only transpiles once).
 2. Change the converter (ranking, segmentation cost, dictionary pruning, …).
-3. Re-run. A change ships only if accuracy rises **and** no previously-correct
-   labeled sentence regresses (diff the `--misses` output before/after).
+3. Re-run `run_all.js`. A change ships only if accuracy rises **and** no
+   previously-correct labeled sentence regresses (`regress.js`'s
+   `REGRESSED` list should be empty or each entry manually judged
+   net-acceptable, per "Regression tooling" above).
+4. Also run `sweep.js` for a broader dictionary-level sanity check. If the
+   change touches `joinSegs()`, `segmentJoinFallback()`, or `lookupCore()`'s
+   no-dict-entry branch specifically, `sweep.js` alone is **not** sufficient
+   — also run `sweep_join.js`.
 
 Some "misses" are valid homophones of the gold (e.g. `撮った` vs `取った`,
 `聞く` vs `聴く`), so real-world quality is a little higher than the raw score.
