@@ -25813,7 +25813,7 @@ export class KanaKanjiConverter {
     'つまずかない','あしもとを','しきりで','わけた','てまえの','ふような',
     'やすりで',
     'におい','においが','しあがりが','しあがり','かわかして','ぴんと',
-    'ぴんとはって']);
+    'ぴんとはって','いたを']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
