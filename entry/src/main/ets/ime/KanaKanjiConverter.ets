@@ -25696,7 +25696,13 @@ export class KanaKanjiConverter {
     // pressure (そと+が+わ, そっ+と, た+より, すぎ+ていた — the last one
     // also crosses the すぎ FUNCTION_WORDS short-circuit, so a whole-span
     // dict entry was added too).
-    'そとがわ','そっと','たより','すぎていた','しーと','おとして']);
+    'そとがわ','そっと','たより','すぎていた','しーと','おとして',
+    // きゅうのうごかしかた (弓の動かし方) already led its own candidate
+    // list standalone but fragmented (きゅう+の+うごか+しか+た) under
+    // connection-matrix pressure. (Trimmed to 10 chars: segment()'s
+    // MAX_LEN=10 span cap means an 11-char span with the trailing が
+    // is never even considered as a candidate.)
+    'きゅうのうごかしかた']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
