@@ -25767,7 +25767,10 @@ export class KanaKanjiConverter {
     'ぶつぶついっていた','えんぎのしどうで','きょうしが','うちがわに',
     'うけとりようの','いとが','たかくあがった','たこが','ながじかん',
     'ひじかけの','たかさを','れんらくをまちながら','しごとをすすめた',
-    'からまって','ほどくのに','あわせてなおした']);
+    'からまって','ほどくのに','あわせてなおした',
+    'からまらない','バンドでとめた','にちじょう','ガスかんの','れっかが',
+    'いったんもとせんを','うえでのたちかたを','つかったぶんを',
+    'こんでいたので','すわれなかった','ころには']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
