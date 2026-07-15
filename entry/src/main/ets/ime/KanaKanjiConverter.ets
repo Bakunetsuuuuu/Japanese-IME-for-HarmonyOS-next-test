@@ -25816,7 +25816,7 @@ export class KanaKanjiConverter {
     'ぴんとはって','いたを','はちに','ほーすで','すぽんじに','おおまかに',
     'つかいやすく','たてる','ずを','おいるを','とどきにくいと','いちを',
     'はいちを','よびの','いどうに','なくいってください','みだしを','じょしの',
-    'かわからない']);
+    'かわからない','むらが','やりすぎが','かんそうにおもった']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
