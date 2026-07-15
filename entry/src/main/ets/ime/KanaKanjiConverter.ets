@@ -15001,8 +15001,8 @@ const DICTIONARY: Record<string, string[]> = {
   'かかりました': ['係わりました'],
   'かかりたい': ['係わりたい'],
   'かかりたかった': ['係わりたかった'],
-  'かかっている': ['係わっている'],
-  'かかっていた': ['係わっていた'],
+  'かかっている': ['かかっている', '係わっている'],
+  'かかっていた': ['かかっていた', '係わっていた'],
   'かかっていない': ['係わっていない'],
   'かかっています': ['係わっています'],
   'かかってから': ['係わってから'],
@@ -25738,7 +25738,13 @@ export class KanaKanjiConverter {
     // connection-matrix pressure despite already leading (or, once
     // added, now leading) their own candidate lists.
     'すりへって','たったり','すわったり','できそうだ',
-    'あみを','そこが']);
+    'あみを','そこが',
+    // きあいを/けりの/どうさを/なんとかかんせいさせた/あめあがりの/
+    // はじまって fragmented under connection-matrix pressure despite
+    // already leading (or, once added, now leading) their own candidate
+    // lists.
+    'きあいを','けりの','どうさを','なんとかかんせい','あめあがりの',
+    'はじまって','あなを']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
