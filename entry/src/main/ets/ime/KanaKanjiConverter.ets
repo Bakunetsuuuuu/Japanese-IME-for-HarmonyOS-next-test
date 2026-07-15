@@ -25798,7 +25798,11 @@ export class KanaKanjiConverter {
     'ひるすぎに','はいっていた',
     'いろちがいのいとを','もようを','ふとさに','ほどけない','いんたーほんで',
     'したかんしょくが','あかるさを','たいまーきのうで','じどうしょうとうした',
-    'てに']);
+    'てに',
+    'ではかって','ころんだ','かれたくきや','どじょうにひりょうを',
+    'くさかりきで','まとめてかった','ばくがと','ほっぷを',
+    'はっこうをまった','があわない','まちがえてかっていた',
+    'よるのうちに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
