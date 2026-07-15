@@ -25843,7 +25843,10 @@ export class KanaKanjiConverter {
     'わりあてた','ゆしと','あきかんに','がわりにした','くろいぬので',
     'かんこうようしに','さかさまの','ぞうが','ホースをまいて',
     'とりだしやすい','せんたんの','しめなおした','ちいさいのみで','きのめの',
-    'かえながら','ほった','ぞうがうつって']);
+    'かえながら','ほった','ぞうがうつって','せんばずるように','いとで',
+    'いろがみの','あきばんごうを','たいきょする','かわにあなを',
+    'ろうびきいとを','ひとはりひとはり','ぬいすすめた','ぬいめの',
+    'はばが','さいげんてじゅんを','かりにきめた','とおした']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
