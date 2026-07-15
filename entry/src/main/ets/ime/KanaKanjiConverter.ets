@@ -25428,6 +25428,7 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'めいわく|かけて': 'かけて',
   'うけとり|いった': '行った',
   'しょうめいしゃしん|とった': '撮った',
+  'やさい|かっている': '買っている',
 };
 
 // Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
@@ -25685,7 +25686,12 @@ export class KanaKanjiConverter {
     // できた: kana-preferred sibling of できる (already above), needed
     // separately since it fragmented into で+きた after えんそう's own
     // boost shifted the connection-matrix balance in this context.
-    'できた']);
+    'できた',
+    // そのご/とくに/はなした: same fragmentation pattern (その+ごは,
+    // と+くに, はなし+た dropping the verb-stem okurigana し).
+    'そのご','とくに','はなした',
+    // おおめに (多めに) fragmented into おおめ+に in context.
+    'おおめに']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
