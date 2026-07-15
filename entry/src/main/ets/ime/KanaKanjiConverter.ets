@@ -25823,7 +25823,8 @@ export class KanaKanjiConverter {
     'はばを','おりめを','はじめてのかべで','もらって','すじにくが','もちかたがわからず',
     'ふくについていた','わたを','かんそうじかんが','つかっているうちに',
     'にぶくかんじた','かざすと','おもしでとめた','はっこうが','あじみを','かいすうを',
-    'いたがくさって','ぺんきを','しあげが']);
+    'いたがくさって','ぺんきを','しあげが','だいしゃを','もとのばしょに',
+    'もどしておいた']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -27050,7 +27051,8 @@ export class KanaKanjiConverter {
         sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
         sub === 'できた' || sub === 'できて' || sub === 'かくかてい' ||
         sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
-        sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに') {
+        sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
+        sub === 'とばなかった') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
