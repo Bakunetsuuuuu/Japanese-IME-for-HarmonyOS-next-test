@@ -25899,7 +25899,9 @@ export class KanaKanjiConverter {
     'とうめいなけーすに','ひきあげて',
     'たけひごをまげて','わしを','ぬるまゆで','もとどおりに',
     'あとにひにかけて','すいぶんをとばした','なじませていった',
-    'かくもくひょうの','たっせいできなかった']);
+    'かくもくひょうの','たっせいできなかった',
+    'たてにいとを','はってから','よこにいとを','とおしていった',
+    'おりあがった','ぬのを','そっとはずした','すいそうから','ぶんかいした']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
