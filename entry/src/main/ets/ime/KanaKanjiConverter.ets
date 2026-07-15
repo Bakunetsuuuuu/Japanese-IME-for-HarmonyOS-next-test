@@ -25636,7 +25636,7 @@ export class KanaKanjiConverter {
     // own candidate list standalone but fragmented into で+きる in
     // context.
     'できる',
-    'ねがはちのそこからはみだしていて','つかいきれないしゅうも']);
+    'ねがはちのそこからはみだしていて']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
