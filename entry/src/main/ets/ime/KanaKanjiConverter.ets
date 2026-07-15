@@ -25873,7 +25873,11 @@ export class KanaKanjiConverter {
     'バジルのえだを','かれたはを','つちにすきこんだ','ぶぶんをしてきした',
     'まどをしめてから','ぜんこ','がめんないの','はいちについて',
     'かたちをととのえて','くうきいれのきを','たてかんばんにはった',
-    'けいとを','みとおしを','かふぇへいった']);
+    'けいとを','みとおしを','かふぇへいった',
+    'にんぎょうをぼうに','かげをうつした','かしだしぼを','へんきゃくびを',
+    'もどすときは','ばんごうじゅんに','こなに','ぬのをかけて',
+    'いちじはっこうが','にじはっこうを','へやのしょうめいを',
+    'こねはじめた','せいけいしてから']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
