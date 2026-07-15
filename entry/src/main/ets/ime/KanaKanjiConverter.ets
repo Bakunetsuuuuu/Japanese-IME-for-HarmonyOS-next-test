@@ -25863,7 +25863,10 @@ export class KanaKanjiConverter {
     'ようもうを','はりでさしては','あらいめのはりに','ろーるばっく',
     'かたまってきたら','かいじょを','まるくきりだした','にすを',
     'ひとばん','うらに','フェルトをはって','きずをふせいだ','つまずいた',
-    'かしょを']);
+    'かしょを','したにかみを','はのすじが','かみにうきでてきた','ノートにはった',
+    'てんじょうのすみに','くもが','すをはっていた','ほうきで',
+    'そっとはらって','あたらしいすが','できていた','きのブロックに','かたをかいた',
+    'つぎのばんの']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -27091,7 +27094,7 @@ export class KanaKanjiConverter {
         sub === 'できた' || sub === 'できて' || sub === 'かくかてい' ||
         sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
         sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
-        sub === 'とばなかった') {
+        sub === 'とばなかった' || sub === 'くもが') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
