@@ -24953,7 +24953,7 @@ const DICTIONARY: Record<string, string[]> = {
   'せいせいえーあいのりんり': ['生成AIの倫理'],
   'でじたるつりーどばいど': ['デジタルツイン'],
   'あーじゃいるかいはつ': ['アジャイル開発'],
-  'かんばん': ['カンバン', '看板'],
+  'かんばん': ['看板', 'カンバン'],
   'でぶおぷす': ['DevOps'],
   'えむえるおぷす': ['MLOps'],
   'えるえるえむおぷす': ['LLMOps'],
@@ -25705,7 +25705,15 @@ export class KanaKanjiConverter {
     'きゅうのうごかしかた',
     // うれしそう/かくかてい/いっぴんずつ fragmented under connection-
     // matrix pressure despite already leading their own candidate lists.
-    'うれしそう','かくかてい','いっぴんずつ']);
+    'うれしそう','かくかてい','いっぴんずつ',
+    // てんと/つづりを/ふせんに/たいりょうの fragmented under connection-
+    // matrix pressure despite already leading their own candidate lists.
+    'てんと','つづりを','ふせんに','たいりょうの',
+    // てんとをはる (テントを張る) already had its own correct compound
+    // entry and won this span before てんと's boost above was added; the
+    // shorter span's boost alone made it steal characters from this
+    // longer one, so it needs an equal boost to stay competitive.
+    'てんとをはる']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
