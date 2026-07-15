@@ -25904,7 +25904,10 @@ export class KanaKanjiConverter {
     'おりあがった','ぬのを','そっとはずした','すいそうから','ぶんかいした',
     'めもりをかいた','かみをはった','すいいをきろくした','かしだしぼに','すいでかこんで',
     'めじるしにした','ぱっちを','おさえてかためた','ふちどりした',
-    'いちじたいおうの','めもをみせあった','そうじきをかけて']);
+    'いちじたいおうの','めもをみせあった','そうじきをかけて',
+    'まるいわくに','もっていって','かわを','ぬらしておいた',
+    'にすで','しあげをした','きょうごうたの','じぶんたちの','たかすぎないか',
+    'はめこんだ','えらんでおしていった']);
 
   // Quality gate for findAlternateSegmentation only — deliberately *not*
   // folded into COMMON_READINGS above: those feed getWordInfo's cost model
@@ -27133,7 +27136,7 @@ export class KanaKanjiConverter {
         sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
         sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
         sub === 'とばなかった' || sub === 'くもが' || sub === 'はいきした' ||
-        sub === 'みとおしを') {
+        sub === 'みとおしを' || sub === 'かわを') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
