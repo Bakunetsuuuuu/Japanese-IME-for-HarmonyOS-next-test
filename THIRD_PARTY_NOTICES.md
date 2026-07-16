@@ -1,8 +1,7 @@
 # Third-Party Notices
 
 This project ships derived data generated from the mozc project's
-open-source dictionary and connection-cost data, merged with real
-mecab-ipadic connection-cost and conjugation data, and augmented with
+open-source dictionary and connection-cost data, augmented with
 kanji-spelling vocabulary from JMdict and SudachiDict (see
 `tools/mozc_data/build_mozc_engine.py`, `tools/mozc_data/
 build_jmdict_augment.py`, and `tools/mozc_data/build_sudachi_augment.py`),
@@ -13,16 +12,17 @@ via a settings toggle. The generated files
 `mozc_matrix.json`) are derived works of the data below and are covered by
 the same license terms.
 
+(An earlier round also fetched and merged in real mecab-ipadic's own
+connection-cost matrix directly from https://github.com/taku910/mecab --
+that merge was later superseded by using mozc's own matrix unreduced,
+which measured better; see `tools/mozc_data/build_mozc_engine.py`'s module
+docstring and git history. mozc's own bundled dictionary text is still
+itself IPAdic-derived per mozc's own documentation, which is what the
+"IPAdic-derived dictionary entries" section below covers -- that one is
+unrelated to the now-removed direct fetch and still applies.)
+
 Sources:
 - https://github.com/google/mozc (branch: master, `src/data/dictionary_oss/`)
-- https://github.com/taku910/mecab (branch: master, `mecab-ipadic/`) —
-  the original mecab author's own mirror of the real IPAdic release (word
-  list + connection-cost matrix), used to fill in a gap found in mozc's own
-  dictionary_oss export (see `tools/mozc_data/README.md` for details). Same
-  NAIST/ICOT license as the "IPAdic-derived dictionary entries" section
-  below — this is the same upstream project mozc's own dictionary is
-  itself derived from, just fetched directly rather than through mozc's
-  re-export.
 - https://www.edrdg.org/ (JMdict, via http://ftp.edrdg.org/pub/Nihongo/JMdict.gz)
   — used only to append extra kanji-spelling candidates to readings mozc's
   own dictionary already recognises (`tools/mozc_data/build_jmdict_augment.py`).
