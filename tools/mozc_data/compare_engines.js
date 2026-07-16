@@ -1,15 +1,18 @@
 #!/usr/bin/env node
 // One-shot side-by-side comparison of the two conversion engines
 // (KanaKanjiConverter's track A "custom" hand-built dictionary vs track B
-// "mozc" statistical engine) against tools/ime-eval/corpus_test10.js.
+// "mozc" statistical engine) against a tools/ime-eval/ corpus file.
 //
 // This is NOT a regression gate like tools/ime-eval/regress.js -- track B
-// is not expected to match track A (see corpus_test10.js header). It exists
-// to get an honest first read on where the mozc engine currently stands.
+// is not expected to match track A. It exists to get an honest read on
+// where the mozc engine currently stands, on corpora it was never tuned
+// against (see each corpus file's own header for its blind/spent status).
 //
 // Usage:
-//   node tools/mozc_data/compare_engines.js            # summary only
-//   node tools/mozc_data/compare_engines.js --misses   # print every mozc miss
+//   node tools/mozc_data/compare_engines.js                        # corpus_test10.js, summary only
+//   node tools/mozc_data/compare_engines.js --misses                # also print every mozc miss
+//   node tools/mozc_data/compare_engines.js corpus_test9.js         # any other corpus file
+//   node tools/mozc_data/compare_engines.js corpus_test9.js --misses
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -56,7 +59,8 @@ function main() {
     return prefixParts.join('') + conv.lookup(segs[segs.length - 1])[0];
   };
 
-  const corpus = require(path.join(ROOT, 'tools/ime-eval/corpus_test10.js'));
+  const corpusFile = process.argv.find((a) => a.startsWith('corpus_')) || 'corpus_test10.js';
+  const corpus = require(path.join(ROOT, 'tools/ime-eval', corpusFile));
 
   function run(engine) {
     KanaKanjiConverter.setEngine(engine);

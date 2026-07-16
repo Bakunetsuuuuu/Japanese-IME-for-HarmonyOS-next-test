@@ -272,7 +272,7 @@ export class InputHandler {
       .then((dictData: Uint8Array) => {
         const dict = JSON.parse(decoder.decode(dictData)) as Record<string, string[]>;
         return rm.getRawFileContent('mozc_costs.json').then((costsData: Uint8Array) => {
-          const costs = JSON.parse(decoder.decode(costsData)) as Record<string, number[]>;
+          const costs = JSON.parse(decoder.decode(costsData)) as Record<string, (number | string)[][]>;
           return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
             const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
             KanaKanjiConverter.loadMozcEngine(dict, costs, matrix);
