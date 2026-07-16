@@ -25482,6 +25482,17 @@ interface MozcSense {
   surface: string;
 }
 
+// One reachable (position, class) state in segment()'s track-B Viterbi DP
+// (see segment()'s own comment for why this replaced a single-state-per-
+// position array): the cheapest way found so far to reach this position
+// while ending in this specific class, plus enough to backtrace through.
+interface MozcDpState {
+  cost: number;
+  prevPos: number;
+  prevClass: number;
+  surface: string | undefined;
+}
+
 export class KanaKanjiConverter {
   private static readonly COMMON_READINGS: Set<string> = new Set(['あいする','あう','あおう','あかちゃん','あがる','あける','あさ','あさごはん','あさって','あし','あした','あじ','あじわう','あす','あそこ','あそぶ','あたたかい','あたま','あたらしい','あちら','あつい','あと','あなた','あに','あね','あぶない','あまり','あめ','ありがとう','ある','あるく','あれ','あんしん','あんぜん','いい','いう','いえ','いきる','いく','いしゃ','いす','いそがしい','いそぐ','いただきます','いちにち','いちねん','いっしょ','いつ','いつも','いま','いみ','いもうと','いる','いれる','うごく','うた','うち','うつくしい','うまれる','うみ','うる','うるさい','うれしい','えいが','えき','えらぶ','えんき','えんちょう','えんぴつ','おいしい','おおきい','おかね','おきる','おく','おくれる','おこる','おさけ','おしえる','おそい','おそく','おちゃ','おつかれ','おとうと','おととい','おとな','おどろく','おなか','おねがい','おはよう','おぼえる','おめでとう','おもい','おもう','おもしろい','おやすみ','およぐ','おりる','おわる','おんがく','かいけん','かいしゃ','かいぜん','かいはつ','かいふく','かう','かえる','かお','かぎ','かく','かくだい','かくにん','かさ','かぜ','かぞく','かちょう','かっこいい','かなしい','かなしむ','かのじょ','かばん','かぶか','かみ','かようび','からだ','かるい','かれ','かわ','かわいい','かんがえる','かんきょう','かんじ','かんじゃ','かんじる','かんたん','がくせい','がっこう','がんばる','き','きぎょう','きく','きこえる','きしゃ','きた','きっかけ','きっと','きっぷ','きて','きのう','きぶん','きぼう','きまる','きめる','きもち','きょう','きょうしつ','きょか','きょねん','きれい','きんし','きんようび','ぎじゅつ','くうこう','くすり','くだもの','くち','くつ','くに','くも','くらす','くらべる','くる','くるま','けいかく','けいこう','けいざい','けが','けしごむ','けっか','けっこう','けっこんする','けってい','けど','けはい','けんきゅう','けんとう','げつようび','げんいん','げんき','げんしょう','げんてい','げーむ','こうこう','こうじょう','こうはい','こうひょう','こうふく','こえて','ここ','こころ','こたえ','こちら','こと','ことし','こども','こまる','こめ','これ','これから','こわい','こんげつ','こんにちは','こんばんは','こーひー','ごご','ごぜん','ごちそうさま','ごはん','ごめん','さいふ','さかな','さがす','さがる','さっかー','さっき','さっそく','さびしい','さむい','さようなら','さわる','ざっし','しあわせ','しかし','しけん','しごと','しじょう','しずか','しつもんする','しぬ','しめる','しゃかい','しゃしん','しゃちょう','しゅうかん','しゅうしょく','しゅうまつ','しゅうり','しゅくだい','しゅっちょう','しょうにん','しる','しんかんせん','しんがく','しんこく','しんしゅつ','しんぱい','しんぶん','じかん','じっけん','じつは','じてんしゃ','じゅうみん','じゅぎょう','じゅんび','じょうしょう','じょうたい','じょじょに','じんこう','すいようび','すきになる','すぐ','すこし','すごい','すごく','すずしい','すぽーつ','すみません','すむ','する','すわる','ずっと','せいかつ','せいげん','せいさく','せいせき','せいそう','せいひん','せいりつ','せかい','せっきん','せなか','せまい','せんきょ','せんげつ','せんせい','せんたく','せんぱい','ぜったい','ぜんぜん','ぜんぶ','そこ','そして','そだつ','そちら','そつぎょう','そら','それ','それから','それで','そろそろ','たいさく','たいしょく','たいせつ','たいふう','たいへん','たいよう','たかい','たくさん','たくしー','たしか','たすける','たつ','たとえば','たのしい','たぶん','たべもの','たべる','たまご','たまに','だいがく','だいじ','だいじょうぶ','だいたい','だから','だす','だれ','だんだん','ちいき','ちいさい','ちかい','ちかてつ','ちこく','ちず','ちち','ちゅうがく','ちゅうもく','ちょうさ','ちょうどいい','ちょっと','ついに','つかう','つかれる','つき','つくえ','つくる','つづける','つまらない','つまり','つよい','て','ていあん','てがみ','てすと','てつだう','てれび','てんき','てんしょく','でかけ','でかける','できるだけ','でも','でる','でんき','でんしゃ','でんわ','とうとう','とおい','とおる','とき','ときどき','とくべつ','とけい','ところ','ところで','とても','とにかく','とぶ','とまる','ともだち','とる','どあ','どう','どうしても','どうりょう','どこ','どようび','どれ','どんどん','どんな','なかなか','ながい','なく','なぜ','なに','なまえ','なやむ','ならう','なる','なるべく','なん','なんか','なんて','なんとか','なんとなく','なんなん','におう','にく','にちようび','にゅうがく','ねだん','ねつ','ねる','のど','のぼる','のみもの','のむ','のんで','は','はいる','はしる','はじめる','はたらく','はっせい','はっぴょう','はつばい','はな','はなし','はなす','はは','はやい','はんかち','はんだん','ばあい','ばしょ','ばす','ばん','ばんごはん','ぱん','ひくい','ひこうき','ひと','ひなん','ひま','ひる','ひるごはん','ひろい','びょういん','びょうき','びーる','ふあん','ふく','ふべん','ふり','ふるい','ふんいき','ぶちょう','ぶっか','へいじつ','へや','べんきょう','べんきょうする','べんり','ぺん','ほうこく','ほうほう','ほうりつ','ほし','ほしい','ほてる','ほとんど','ほん','ほんと','ほんとう','ぼうし','まいしゅう','まいつき','まいとし','まいにち','まえ','まがる','ますます','まずい','また','まだ','まち','まつ','まど','まにあう','みえる','みじかい','みず','みち','みつける','みみ','みる','みんな','むかし','むずかしい','め','めがね','もう','もくてき','もくひょう','もくようび','もちろん','もっと','もつ','もの','もり','もんだい','やきゅう','やくそく','やさい','やさしい','やすむ','やすもう','やっと','やっぱ','やっぱり','やはり','やばい','やま','やめ','やめたい','やめる','ゆうがた','ゆうめい','ゆき','ゆめ','よい','ようす','ようふく','ようやく','よてい','よむ','よやく','よる','よろこぶ','よろしく','よわい','らいげつ','らいねん','らじお','りゆう','りょうしん','りょうり','りょこう','れんしゅう','わかい','わかる','わかれる','わすれる','わたし','わたしたち','わたる','わらう','わるい','はやく','おわり','ちえん','こんかい','ろっかげつ','のみ','かいぎ','どういう','はなせる','でかけよう','やけに','やまだ','はしって','はしった','なれて','ほんとに','せんたくもの','ふられて','きゅうに','そと','おと','こうしん','さつえい','へんしゅう','たまる','にもつ','どうが','みせ','せんたくき','つぎ','まんが','よんで','そふと','はやめ','やすい','くずし','ぱんく','やすんだ','どうき','まちがえ','かみのけ','ため','やって','ほうそう','いかが','おか','はなします','せんたくし','きざみ','ふとうこう','せいろん','たしょう','ざんまい','どうとく','きょういく','ふやす','にゅうじょう','けんそん','たんご','かいがん','よとう','せんきょ','れっしゃ','にたいして','にかんして','にもとづいて','をつうじて','にしたがって','におうじて','にむけて','にそって','については',
     // Common compound nouns the segmenter otherwise splits into a common short
@@ -27694,21 +27705,54 @@ export class KanaKanjiConverter {
     }
     best[0] = 0;
 
-    for (let i = 0; i < n; i++) {
-      if (best[i] === INF) { continue; }
-      const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
-      for (let len = 1; len <= maxLen; len++) {
-        // forceSplit forbids the whole reading as a single span, so callers
-        // that already have the single-segment Viterbi-best answer can ask
-        // for the best *alternative* segmentation instead (see
-        // findAlternateSegmentation) — e.g. へんかんせいど as one compound
-        // dict entry (→変換精度) vs へんかん+せいど split (→返還+制度).
-        if (forceSplit && i === 0 && len === n) { continue; }
-        const sub = kana.slice(i, i + len);
-        if (len > 1 && !this.inDict(sub)) { continue; }
-        if (isMozc) {
-          // Track B: a span can carry several distinct grammatical senses
-          // (see getWordInfoCandidatesMozc) — try each and let normal cost
+    if (isMozc) {
+      // Track B's DP tracks every reachable (position, class) state, not
+      // just the single cheapest state per position (see MozcDpState's own
+      // comment) -- unlike track A below, which keeps its original
+      // scalar best[]/rightClass[] per position untouched. A scalar array
+      // silently drops any equally-cheap-but-differently-classed way of
+      // reaching a position: whenever two senses of a span tie exactly on
+      // total cost (a real, not rare, situation here -- see below), only
+      // the FIRST one tried survived, and every later edge cost was
+      // computed against ITS class alone, even when a different tied sense
+      // would have connected far better to whatever actually follows.
+      //
+      // Confirmed via direct debug trace as the root cause of a real miss:
+      // ダウンロードした mis-converting to ダウンロード下. "ダウンロード"
+      // isn't in mozc's (hiragana-keyed) dictionary as a katakana span, so
+      // it's processed one character at a time via the generic UNKNOWN-class
+      // fallback (see getWordInfoCandidatesMozc) -- and connecting FROM the
+      // UNKNOWN class costs the same maximal discourage_cost to every class,
+      // so five of し's six senses (助動詞文語キ/助詞/動詞接尾/動詞未然形/
+      // 動詞連用形) tied exactly. The old scalar version kept whichever came
+      // first in mozc_costs.json (文語キ, a rare classical form, unrelated to
+      // what's actually needed here) and permanently lost する's 連用形 sense
+      // (the correct one) right there -- so the *next* character (た) then
+      // computed its own edge cost against the wrong surviving class and lost
+      // to a cheaper "した(下)" 2-span reading instead. Keeping every tied
+      // class alive until an actual difference in the following context
+      // breaks the tie is exactly what real Viterbi POS taggers (mecab/
+      // kuromoji/Sudachi) do, and what track A -- with its own much smaller,
+      // hand-designed class space where this kind of exact multi-way tie is
+      // rare -- has never needed.
+      const states: Map<number, MozcDpState>[] = [];
+      for (let j = 0; j <= n; j++) { states.push(new Map<number, MozcDpState>()); }
+      states[0].set(bosClass, { cost: 0, prevPos: -1, prevClass: -1, surface: undefined });
+
+      for (let i = 0; i < n; i++) {
+        if (states[i].size === 0) { continue; }
+        const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
+        for (let len = 1; len <= maxLen; len++) {
+          // forceSplit forbids the whole reading as a single span, so callers
+          // that already have the single-segment Viterbi-best answer can ask
+          // for the best *alternative* segmentation instead (see
+          // findAlternateSegmentation) — e.g. へんかんせいど as one compound
+          // dict entry (→変換精度) vs へんかん+せいど split (→返還+制度).
+          if (forceSplit && i === 0 && len === n) { continue; }
+          const sub = kana.slice(i, i + len);
+          if (len > 1 && !this.inDict(sub)) { continue; }
+          // A span can carry several distinct grammatical senses (see
+          // getWordInfoCandidatesMozc) — try each and let normal cost
           // minimization pick whichever actually fits the surrounding
           // context, rather than committing to one representative sense
           // before context is even known.
@@ -27721,27 +27765,64 @@ export class KanaKanjiConverter {
             // before reorder_kana_dumps.py), so an unpenalized content-word
             // sense here frequently steals a short span from what should
             // have been part of a longer word or a different grammatical
-            // decomposition (e.g. ダウンロードした mis-resolving した's
-            // noun-suffix 下 sense instead of する's conjugated form).
-            // Mirrors track A's singleContentPenalty, extended one mora
-            // further since 2-char spans showed the identical failure
-            // pattern in validation; only applies to open-class content
-            // senses (mozcContentClassMask) -- a genuine short particle/
-            // auxiliary (は/を/に/した=する's past/ます/...) must stay cheap.
+            // decomposition. Mirrors track A's singleContentPenalty, extended
+            // one mora further since 2-char spans showed the identical
+            // failure pattern in validation; only applies to open-class
+            // content senses (mozcContentClassMask) -- a genuine short
+            // particle/auxiliary (は/を/に/した=する's past/ます/...) must
+            // stay cheap.
             let singlePenalty = 0;
             if (KanaKanjiConverter.mozcContentClassMask[cand.leftClass] === 1) {
               if (len === 1) { singlePenalty = KanaKanjiConverter.MOZC_SINGLE_CONTENT_PENALTY; }
               else if (len === 2) { singlePenalty = KanaKanjiConverter.MOZC_SINGLE_CONTENT_PENALTY / 2; }
             }
-            const total = best[i] + cand.cost + singlePenalty + this.getEdgeCost(rightClass[i], cand.leftClass);
-            if (total < best[i + len]) {
-              best[i + len] = total;
-              prevPos[i + len] = i;
-              rightClass[i + len] = cand.rightClass;
-              winSurface[i + len] = cand.surface;
-            }
+            const nextStates = states[i + len];
+            states[i].forEach((state: MozcDpState, prevClass: number) => {
+              const total = state.cost + cand.cost + singlePenalty + this.getEdgeCost(prevClass, cand.leftClass);
+              const existing = nextStates.get(cand.rightClass);
+              if (existing === undefined || total < existing.cost) {
+                nextStates.set(cand.rightClass, { cost: total, prevPos: i, prevClass, surface: cand.surface });
+              }
+            });
           }
-        } else {
+        }
+      }
+
+      // Pick whichever class reached position n cheapest, then backtrace
+      // through the (position, class) chain into the same prevPos[]/
+      // winSurface[] arrays the shared backtrace code below already expects
+      // -- prevPos[j] stays -1 / winSurface[j] stays undefined for any
+      // position this backward walk never reaches, matching the convention
+      // an unreachable position had under the old scalar (INF) version.
+      let bestFinalClass = -1;
+      let bestFinalCost = INF;
+      states[n].forEach((state: MozcDpState, cls: number) => {
+        if (state.cost < bestFinalCost) { bestFinalCost = state.cost; bestFinalClass = cls; }
+      });
+      if (bestFinalClass >= 0) {
+        let pos = n;
+        let cls = bestFinalClass;
+        while (pos > 0) {
+          const state = states[pos].get(cls) as MozcDpState;
+          prevPos[pos] = state.prevPos;
+          winSurface[pos] = state.surface;
+          cls = state.prevClass;
+          pos = state.prevPos;
+        }
+      }
+    } else {
+      for (let i = 0; i < n; i++) {
+        if (best[i] === INF) { continue; }
+        const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
+        for (let len = 1; len <= maxLen; len++) {
+          // forceSplit forbids the whole reading as a single span, so callers
+          // that already have the single-segment Viterbi-best answer can ask
+          // for the best *alternative* segmentation instead (see
+          // findAlternateSegmentation) — e.g. へんかんせいど as one compound
+          // dict entry (→変換精度) vs へんかん+せいど split (→返還+制度).
+          if (forceSplit && i === 0 && len === n) { continue; }
+          const sub = kana.slice(i, i + len);
+          if (len > 1 && !this.inDict(sub)) { continue; }
           const info = this.getWordInfo(sub);
           const nc = info[0];
           const lc = info[1];

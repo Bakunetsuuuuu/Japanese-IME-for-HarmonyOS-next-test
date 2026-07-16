@@ -119,6 +119,41 @@ real complaint, a middle-ground reduction granularity is one lever;
 another is only reducing for the *unknown-fallback* case rather than the
 whole matrix).
 
+### Per-(position, class) Viterbi states, not one state per position
+
+`segment()`'s DP (`KanaKanjiConverter.ets`) used to track a single cheapest
+state per character position (`best[i]` + one `rightClass[i]`) — standard
+for track A's own much smaller, hand-designed class space, but a real bug
+for track B's much larger one: whenever two senses of a span tied exactly
+on total cost, only the first one tried survived, and every later edge
+cost was computed against *its* class alone, even when a different tied
+sense would have connected far better to whatever actually followed.
+
+Confirmed via direct debug trace (not assumed) as the cause of a real
+miss: ダウンロードした mis-converting to ダウンロード下. "ダウンロード"
+isn't in mozc's (hiragana-keyed) dictionary as a katakana span, so it's
+processed one character at a time via the generic UNKNOWN-class fallback
+-- and connecting FROM the UNKNOWN class costs the same maximal
+discourage_cost to every class, so five of し's six senses (助動詞文語キ/
+助詞/動詞接尾/動詞未然形/動詞連用形) tied exactly at cost 0. The old
+single-state version kept whichever came first in mozc_costs.json (文語
+キ, a rare classical form) and permanently lost する's 連用形 sense (the
+one actually needed) right there, so た then computed its own edge cost
+against the wrong surviving class and lost to a cheaper "した(下)" 2-span
+reading instead.
+
+Fixed by tracking every reachable (position, class) state (a `Map<class,
+{cost, prevPos, prevClass, surface}>` per position, not a single scalar) --
+exactly what real Viterbi POS taggers (mecab/kuromoji/Sudachi) do. Ties
+now survive until an actual difference in the following context resolves
+them, instead of being collapsed arbitrarily by array order. Scoped to
+the `isMozc` branch only; track A keeps its original scalar arrays
+completely untouched (verified via `run_all.js`/`regress.js`/`sweep.js`/
+`sweep_join.js` showing zero change). Reachable classes per position stay
+naturally bounded (roughly `MAX_LEN` × `MAX_SENSES_PER_READING`), so this
+adds no meaningful overhead -- `compare_engines.js` runs at the same speed
+as before.
+
 ### Two further generic (POS-driven, not per-word) mitigations
 
 Both verified empirically against `compare_engines.js`:
@@ -149,20 +184,21 @@ Both verified empirically against `compare_engines.js`:
 
 `compare_engines.js` strict-match rate:
 
-| Corpus | track A (unchanged throughout) | sense-aware Viterbi only | + real-ipadic matrix merge (removed) | + no class reduction (current) |
-|---|---|---|---|---|
-| `corpus_test10.js` (20 sentences) | 16/20 (80.0%) | 4/20 (20.0%) | 6/20 (30.0%) | **12/20 (60.0%)** |
-| `corpus_test9.js` (49 sentences, 16 registers) | 35/49 (71.4%) | 9/49 (18.4%) | 13/49 (26.5%) | **20/49 (40.8%)** |
+| Corpus | track A (unchanged throughout) | sense-aware Viterbi only | + real-ipadic matrix merge (removed) | + no class reduction | + per-class Viterbi states (current) |
+|---|---|---|---|---|---|
+| `corpus_test10.js` (20 sentences) | 16/20 (80.0%) | 4/20 (20.0%) | 6/20 (30.0%) | 12/20 (60.0%) | **14/20 (70.0%)** |
+| `corpus_test9.js` (49 sentences, 16 registers) | 35/49 (71.4%) | 9/49 (18.4%) | 13/49 (26.5%) | 20/49 (40.8%) | **26/49 (53.1%)** |
 
 (Original baseline before any track B accuracy work: 2/20 and not
-measured, respectively.) The jump from removing class reduction is the
-single largest improvement of any change made to track B so far — roughly
-doubling strict-match rate over the reduced+ipadic-merged version, and
-fixing the case that motivated the (now-removed) ipadic merge in the first
-place (じゅんびした → 準備した). Remaining misses are now overwhelmingly
-homophone/vocabulary choices (とった vs 撮った, ふる vs 降る) rather than
-garbled mis-segmentations — real, qualitative improvement beyond what the
-strict-match number alone shows.
+measured, respectively.) Removing class reduction and then fixing the
+single-state-per-position Viterbi bug are the two largest improvements
+made to track B so far, each roughly doubling strict-match rate in turn,
+and together fixing both cases that motivated the (now-removed) ipadic
+merge (じゅんびした → 準備した) and the per-class-state fix
+(ダウンロードした, どこかいこうよ). Remaining misses are now
+overwhelmingly homophone/vocabulary choices (とった vs 撮った, ふる vs
+降る) rather than garbled mis-segmentations — real, qualitative
+improvement beyond what the strict-match number alone shows.
 
 JMdict/SudachiDict vocabulary augmentation (below) doesn't move this
 number at all, by design — they only add candidate-cycling surfaces, never
