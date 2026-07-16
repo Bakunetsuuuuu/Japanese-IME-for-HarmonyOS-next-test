@@ -6,7 +6,7 @@ import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
-import { KanaKanjiConverter } from './KanaKanjiConverter';
+import { KanaKanjiConverter, MozcMatrixData } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { SettingsStore, KeyboardSettings } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
@@ -243,6 +243,47 @@ export class InputHandler {
         AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
         AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
+        AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
+        this.applyConversionEngine(s.conversionEngine);
+      });
+  }
+
+  // Track B (mozc-derived) is loaded lazily -- only the first time the
+  // conversionEngine setting is actually 'mozc' -- so users who never touch
+  // the toggle pay zero extra startup cost/memory for it. Safe to call
+  // repeatedly: loadMozcEngine() is a no-op cost-wise once already loaded
+  // (isMozcLoaded() short-circuits), and setEngine('custom') is always cheap.
+  private applyConversionEngine(engine: string): void {
+    if (engine !== 'mozc') {
+      KanaKanjiConverter.setEngine('custom');
+      return;
+    }
+    if (KanaKanjiConverter.isMozcLoaded()) {
+      KanaKanjiConverter.setEngine('mozc');
+      return;
+    }
+    if (!this.imeContext) { return; }
+    const rm = this.imeContext.resourceManager;
+    const decoder = new util.TextDecoder('utf-8');
+    // Chained (not Promise.all + destructuring) to match this file's existing
+    // getRawFileContent().then() style (see loadDictionary/loadGlobalDictionary
+    // above) rather than introduce a new pattern.
+    rm.getRawFileContent('mozc_dict.json')
+      .then((dictData: Uint8Array) => {
+        const dict = JSON.parse(decoder.decode(dictData)) as Record<string, string[]>;
+        return rm.getRawFileContent('mozc_costs.json').then((costsData: Uint8Array) => {
+          const costs = JSON.parse(decoder.decode(costsData)) as Record<string, number[]>;
+          return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
+            const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
+            KanaKanjiConverter.loadMozcEngine(dict, costs, matrix);
+            KanaKanjiConverter.setEngine('mozc');
+            console.info('shuntiIME mozc engine loaded');
+          });
+        });
+      })
+      .catch((e: Error) => {
+        console.error('shuntiIME mozc engine load failed, staying on custom', JSON.stringify(e));
+        KanaKanjiConverter.setEngine('custom');
       });
   }
 
@@ -264,6 +305,16 @@ export class InputHandler {
     AppStorage.setOrCreate('keyboardLayout', layout);
     if (this.imeContext) {
       SettingsStore.saveKeyboardLayout(this.imeContext, layout);
+    }
+  }
+
+  // Same immediate-switch pattern as setKeyboardLayout above. applyConversionEngine
+  // lazily fetches the mozc rawfiles the first time 'mozc' is actually selected.
+  setConversionEngine(engine: string): void {
+    AppStorage.setOrCreate('conversionEngine', engine);
+    this.applyConversionEngine(engine);
+    if (this.imeContext) {
+      SettingsStore.saveConversionEngine(this.imeContext, engine);
     }
   }
 

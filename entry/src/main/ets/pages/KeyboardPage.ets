@@ -91,6 +91,14 @@ struct KeyboardPage {
       AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
       AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
       AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
+      // This panel and the extension's InputHandler share the same process/
+      // KanaKanjiConverter static state (see setConversionEngine's own
+      // lazy-load comment), but this aboutToAppear-driven reload is the more
+      // reliable refresh point per the comment above -- route through
+      // InputHandler.setConversionEngine so a setting persisted from the main
+      // app (a different process) actually applies the mozc engine switch
+      // here too, not just update the SettingsBar toggle's own display value.
+      InputHandler.getInstance().setConversionEngine(s.conversionEngine);
     });
   }
 

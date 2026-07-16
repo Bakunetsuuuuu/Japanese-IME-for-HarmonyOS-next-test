@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Regression classifier: build the converter twice (committed HEAD vs. the
 // current working tree) and run every corpus in this directory
-// (TRAIN/TEST1-9/VOCAB1-3) through both, classifying every row whose answer
+// (TRAIN/TEST1-10/VOCAB1-3) through both, classifying every row whose answer
 // changed into one of:
 //   FIXED              - was wrong before, now matches gold/accept
 //   REGRESSED          - matched gold/accept before, now wrong
@@ -77,6 +77,7 @@ function main() {
     ['TEST7', req('corpus_test7.js'), req('accept_test7.js')],
     ['TEST8', req('corpus_test8.js'), req('accept_test8.js')],
     ['TEST9', req('corpus_test9.js'), req('accept_test9.js')],
+    ['TEST10', req('corpus_test10.js'), req('accept_test10.js')],
     ['VOCAB1', req('vocab_test.js'), {}],
     ['VOCAB2', req('vocab_test2.js'), {}],
     ['VOCAB3', req('vocab_test3.js'), {}],

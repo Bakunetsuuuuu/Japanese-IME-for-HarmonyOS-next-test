@@ -15,6 +15,7 @@ export struct SettingsBar {
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
+  @StorageLink('conversionEngine') conversionEngine: string = 'custom';
   @State showHistory: boolean = false;
 
   private close(): void {
@@ -132,6 +133,38 @@ export struct SettingsBar {
       .justifyContent(FlexAlign.Center)
       .padding({ bottom: 8 })
     }
+
+    Divider().color(kbTheme(this.isDark).borderColor)
+
+    Row() {
+      Text('変換エンジン')
+        .fontSize(14)
+        .fontColor(kbTheme(this.isDark).previewText)
+        .layoutWeight(1)
+
+      Row() {
+        Text('独自辞書')
+          .fontSize(12)
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .borderRadius(6)
+          .backgroundColor(this.conversionEngine !== 'mozc' ? kbTheme(this.isDark).accentBg : 'transparent')
+          .fontColor(this.conversionEngine !== 'mozc' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).subText)
+          .onClick(() => { InputHandler.getInstance().setConversionEngine('custom'); })
+
+        Text('統計データ')
+          .fontSize(12)
+          .padding({ left: 10, right: 10, top: 5, bottom: 5 })
+          .borderRadius(6)
+          .backgroundColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).accentBg : 'transparent')
+          .fontColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).subText)
+          .onClick(() => { InputHandler.getInstance().setConversionEngine('mozc'); })
+      }
+      .backgroundColor(kbTheme(this.isDark).funcKeyBg)
+      .borderRadius(8)
+      .padding(2)
+    }
+    .width('100%')
+    .padding(10)
 
     Divider().color(kbTheme(this.isDark).borderColor)
 

@@ -25459,6 +25459,16 @@ const MISTYPE_READINGS: Record<string, string> = {
   'ちじこまる': 'ちぢこまる', 'はなじ': 'はなぢ', 'そこじから': 'そこぢから',
 };
 
+// Shape of entry/src/main/resources/rawfile/mozc_matrix.json, produced by
+// tools/mozc_data/build_mozc_engine.py. `matrix` is the size*size reduced
+// connection-cost table flattened row-major (matrix[left*size+right]).
+export interface MozcMatrixData {
+  size: number;
+  bosClass: number;
+  unknownClass: number;
+  matrix: number[];
+}
+
 export class KanaKanjiConverter {
   private static readonly COMMON_READINGS: Set<string> = new Set(['あいする','あう','あおう','あかちゃん','あがる','あける','あさ','あさごはん','あさって','あし','あした','あじ','あじわう','あす','あそこ','あそぶ','あたたかい','あたま','あたらしい','あちら','あつい','あと','あなた','あに','あね','あぶない','あまり','あめ','ありがとう','ある','あるく','あれ','あんしん','あんぜん','いい','いう','いえ','いきる','いく','いしゃ','いす','いそがしい','いそぐ','いただきます','いちにち','いちねん','いっしょ','いつ','いつも','いま','いみ','いもうと','いる','いれる','うごく','うた','うち','うつくしい','うまれる','うみ','うる','うるさい','うれしい','えいが','えき','えらぶ','えんき','えんちょう','えんぴつ','おいしい','おおきい','おかね','おきる','おく','おくれる','おこる','おさけ','おしえる','おそい','おそく','おちゃ','おつかれ','おとうと','おととい','おとな','おどろく','おなか','おねがい','おはよう','おぼえる','おめでとう','おもい','おもう','おもしろい','おやすみ','およぐ','おりる','おわる','おんがく','かいけん','かいしゃ','かいぜん','かいはつ','かいふく','かう','かえる','かお','かぎ','かく','かくだい','かくにん','かさ','かぜ','かぞく','かちょう','かっこいい','かなしい','かなしむ','かのじょ','かばん','かぶか','かみ','かようび','からだ','かるい','かれ','かわ','かわいい','かんがえる','かんきょう','かんじ','かんじゃ','かんじる','かんたん','がくせい','がっこう','がんばる','き','きぎょう','きく','きこえる','きしゃ','きた','きっかけ','きっと','きっぷ','きて','きのう','きぶん','きぼう','きまる','きめる','きもち','きょう','きょうしつ','きょか','きょねん','きれい','きんし','きんようび','ぎじゅつ','くうこう','くすり','くだもの','くち','くつ','くに','くも','くらす','くらべる','くる','くるま','けいかく','けいこう','けいざい','けが','けしごむ','けっか','けっこう','けっこんする','けってい','けど','けはい','けんきゅう','けんとう','げつようび','げんいん','げんき','げんしょう','げんてい','げーむ','こうこう','こうじょう','こうはい','こうひょう','こうふく','こえて','ここ','こころ','こたえ','こちら','こと','ことし','こども','こまる','こめ','これ','これから','こわい','こんげつ','こんにちは','こんばんは','こーひー','ごご','ごぜん','ごちそうさま','ごはん','ごめん','さいふ','さかな','さがす','さがる','さっかー','さっき','さっそく','さびしい','さむい','さようなら','さわる','ざっし','しあわせ','しかし','しけん','しごと','しじょう','しずか','しつもんする','しぬ','しめる','しゃかい','しゃしん','しゃちょう','しゅうかん','しゅうしょく','しゅうまつ','しゅうり','しゅくだい','しゅっちょう','しょうにん','しる','しんかんせん','しんがく','しんこく','しんしゅつ','しんぱい','しんぶん','じかん','じっけん','じつは','じてんしゃ','じゅうみん','じゅぎょう','じゅんび','じょうしょう','じょうたい','じょじょに','じんこう','すいようび','すきになる','すぐ','すこし','すごい','すごく','すずしい','すぽーつ','すみません','すむ','する','すわる','ずっと','せいかつ','せいげん','せいさく','せいせき','せいそう','せいひん','せいりつ','せかい','せっきん','せなか','せまい','せんきょ','せんげつ','せんせい','せんたく','せんぱい','ぜったい','ぜんぜん','ぜんぶ','そこ','そして','そだつ','そちら','そつぎょう','そら','それ','それから','それで','そろそろ','たいさく','たいしょく','たいせつ','たいふう','たいへん','たいよう','たかい','たくさん','たくしー','たしか','たすける','たつ','たとえば','たのしい','たぶん','たべもの','たべる','たまご','たまに','だいがく','だいじ','だいじょうぶ','だいたい','だから','だす','だれ','だんだん','ちいき','ちいさい','ちかい','ちかてつ','ちこく','ちず','ちち','ちゅうがく','ちゅうもく','ちょうさ','ちょうどいい','ちょっと','ついに','つかう','つかれる','つき','つくえ','つくる','つづける','つまらない','つまり','つよい','て','ていあん','てがみ','てすと','てつだう','てれび','てんき','てんしょく','でかけ','でかける','できるだけ','でも','でる','でんき','でんしゃ','でんわ','とうとう','とおい','とおる','とき','ときどき','とくべつ','とけい','ところ','ところで','とても','とにかく','とぶ','とまる','ともだち','とる','どあ','どう','どうしても','どうりょう','どこ','どようび','どれ','どんどん','どんな','なかなか','ながい','なく','なぜ','なに','なまえ','なやむ','ならう','なる','なるべく','なん','なんか','なんて','なんとか','なんとなく','なんなん','におう','にく','にちようび','にゅうがく','ねだん','ねつ','ねる','のど','のぼる','のみもの','のむ','のんで','は','はいる','はしる','はじめる','はたらく','はっせい','はっぴょう','はつばい','はな','はなし','はなす','はは','はやい','はんかち','はんだん','ばあい','ばしょ','ばす','ばん','ばんごはん','ぱん','ひくい','ひこうき','ひと','ひなん','ひま','ひる','ひるごはん','ひろい','びょういん','びょうき','びーる','ふあん','ふく','ふべん','ふり','ふるい','ふんいき','ぶちょう','ぶっか','へいじつ','へや','べんきょう','べんきょうする','べんり','ぺん','ほうこく','ほうほう','ほうりつ','ほし','ほしい','ほてる','ほとんど','ほん','ほんと','ほんとう','ぼうし','まいしゅう','まいつき','まいとし','まいにち','まえ','まがる','ますます','まずい','また','まだ','まち','まつ','まど','まにあう','みえる','みじかい','みず','みち','みつける','みみ','みる','みんな','むかし','むずかしい','め','めがね','もう','もくてき','もくひょう','もくようび','もちろん','もっと','もつ','もの','もり','もんだい','やきゅう','やくそく','やさい','やさしい','やすむ','やすもう','やっと','やっぱ','やっぱり','やはり','やばい','やま','やめ','やめたい','やめる','ゆうがた','ゆうめい','ゆき','ゆめ','よい','ようす','ようふく','ようやく','よてい','よむ','よやく','よる','よろこぶ','よろしく','よわい','らいげつ','らいねん','らじお','りゆう','りょうしん','りょうり','りょこう','れんしゅう','わかい','わかる','わかれる','わすれる','わたし','わたしたち','わたる','わらう','わるい','はやく','おわり','ちえん','こんかい','ろっかげつ','のみ','かいぎ','どういう','はなせる','でかけよう','やけに','やまだ','はしって','はしった','なれて','ほんとに','せんたくもの','ふられて','きゅうに','そと','おと','こうしん','さつえい','へんしゅう','たまる','にもつ','どうが','みせ','せんたくき','つぎ','まんが','よんで','そふと','はやめ','やすい','くずし','ぱんく','やすんだ','どうき','まちがえ','かみのけ','ため','やって','ほうそう','いかが','おか','はなします','せんたくし','きざみ','ふとうこう','せいろん','たしょう','ざんまい','どうとく','きょういく','ふやす','にゅうじょう','けんそん','たんご','かいがん','よとう','せんきょ','れっしゃ','にたいして','にかんして','にもとづいて','をつうじて','にしたがって','におうじて','にむけて','にそって','については',
     // Common compound nouns the segmenter otherwise splits into a common short
@@ -25975,6 +25985,19 @@ export class KanaKanjiConverter {
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
   // No external file dependency — rules ported from tools/gen_matrix_default.py.
   private static connectionMatrix: number[][] = [];
+  // Track B: optional second conversion engine built from mozc's (BSD-3-Clause,
+  // https://github.com/google/mozc) statistical dictionary/cost data, entirely
+  // separate from the hand-tuned "track A" state above — see
+  // tools/mozc_data/build_mozc_engine.py and THIRD_PARTY_NOTICES.md. `engine`
+  // gates every entry point below (inDict/getWordInfo/getEdgeCost/lookup); when
+  // it is 'custom' (the default), every existing method runs completely
+  // unmodified, byte-for-byte the same code path as before this field existed.
+  private static engine: 'custom' | 'mozc' = 'custom';
+  private static mozcDict: Record<string, string[]> = {};
+  private static mozcCosts: Record<string, number[]> = {}; // reading -> [nodeCost, leftClass, rightClass]
+  private static mozcMatrix: number[][] = [];
+  private static mozcBosClass: number = 0;
+  private static mozcUnknownClass: number = 0;
   // Ring buffer of up to 15 recently confirmed output strings for context re-ranking.
   private static contextBuffer: string[] = [];
   // True when the most recently committed text ended in an Arabic digit (half- or full-width).
@@ -26132,6 +26155,47 @@ export class KanaKanjiConverter {
   // Build and store the connection matrix from inline grammar rules (no JSON file needed).
   static initConnectionMatrix(): void {
     KanaKanjiConverter.connectionMatrix = KanaKanjiConverter.buildConnectionMatrix();
+  }
+
+  // Track B (see field comments above). Loads the mozc-derived rawfiles;
+  // does not touch any track-A state. Call once, lazily, the first time the
+  // user switches the conversionEngine setting to 'mozc' — see
+  // KeyboardController.reloadSettings().
+  static loadMozcEngine(dict: Record<string, string[]>, costs: Record<string, number[]>,
+      matrixData: MozcMatrixData): void {
+    KanaKanjiConverter.mozcDict = dict;
+    KanaKanjiConverter.mozcCosts = costs;
+    KanaKanjiConverter.mozcMatrix = KanaKanjiConverter.reshapeMozcMatrix(matrixData);
+    KanaKanjiConverter.mozcBosClass = matrixData.bosClass;
+    KanaKanjiConverter.mozcUnknownClass = matrixData.unknownClass;
+  }
+
+  private static reshapeMozcMatrix(matrixData: MozcMatrixData): number[][] {
+    const size = matrixData.size;
+    const flat = matrixData.matrix;
+    const m: number[][] = [];
+    for (let i = 0; i < size; i++) {
+      const row: number[] = [];
+      const base = i * size;
+      for (let j = 0; j < size; j++) { row.push(flat[base + j]); }
+      m.push(row);
+    }
+    return m;
+  }
+
+  static isMozcLoaded(): boolean {
+    return KanaKanjiConverter.mozcMatrix.length > 0;
+  }
+
+  // 'mozc' is only actually honored if loadMozcEngine() has already been
+  // called — falls back to 'custom' otherwise so a not-yet-loaded engine
+  // can never silently produce empty/broken conversions.
+  static setEngine(e: 'custom' | 'mozc'): void {
+    KanaKanjiConverter.engine = (e === 'mozc' && KanaKanjiConverter.isMozcLoaded()) ? 'mozc' : 'custom';
+  }
+
+  static getEngine(): 'custom' | 'mozc' {
+    return KanaKanjiConverter.engine;
   }
 
   static setLearned(data: Record<string, Record<string, number>>): void {
@@ -26729,6 +26793,14 @@ export class KanaKanjiConverter {
   // those would otherwise miss the pictographs. Skipped for fromNorm (internal
   // recursive) calls so intermediate results don't accrue duplicates.
   lookup(kana: string, fromNorm: boolean = false): string[] {
+    // Track B bypasses lookupCore() and everything below (dakuten
+    // enrichment, EMOJI_MAP/KAOMOJI_MAP) entirely -- all of that is
+    // track-A-specific hand-tuning layered onto the hand-built dictionary,
+    // and mozc data is meant to stand on its own (see `engine` field
+    // comment). segment()/joinSegs()/findAlternateSegmentation() all call
+    // through this same lookup() entry point, so this one dispatch makes
+    // every caller engine-aware without touching their own code.
+    if (KanaKanjiConverter.engine === 'mozc') { return this.lookupMozc(kana); }
     const base = this.lookupCore(kana, fromNorm);
     if (fromNorm) { return base; }
     let result = base;
@@ -26765,6 +26837,18 @@ export class KanaKanjiConverter {
     push(emojis);
     push(kaomoji);
     return withExtra;
+  }
+
+  // Track B's lookup: a plain read from mozc_dict.json, ascending mozc cost
+  // order, no track-A special-casing (colloquial/mistype normalization,
+  // COLLOCATION_HINTS, dakuten enrichment, emoji/kaomoji). Falls back to
+  // [katakana-if-different, kana] when mozc has no entry, matching the same
+  // "always return something usable" shape lookupCore's own fallback keeps.
+  private lookupMozc(kana: string): string[] {
+    const entry = KanaKanjiConverter.mozcDict[kana];
+    if (entry && entry.length > 0) { return entry; }
+    const kata = KanaKanjiConverter.toKatakana(kana);
+    return kata !== kana ? [kata, kana] : [kana];
   }
 
   // Closed set of compound-verb second elements (as they appear at the end of
@@ -26967,6 +27051,12 @@ export class KanaKanjiConverter {
   }
 
   private inDict(sub: string): boolean {
+    if (KanaKanjiConverter.engine === 'mozc') {
+      // Track B is deliberately its own closed world (see field comments
+      // near `engine`) -- FUNCTION_WORDS/FW_CLASS_MAP are track-A hand-tuned
+      // grammar tables, not part of mozc's own data, so they don't apply here.
+      return !!KanaKanjiConverter.mozcDict[sub];
+    }
     return !!(KanaKanjiConverter.globalDict[sub]
       || KanaKanjiConverter.userDict[sub]
       || KanaKanjiConverter.supplementaryDict[sub]
@@ -26982,6 +27072,9 @@ export class KanaKanjiConverter {
   // re-segmented into pieces just because its authored surface happens to be
   // katakana (which the segment path can't distinguish from an auto-fallback).
   static isDictionaryWord(reading: string): boolean {
+    if (KanaKanjiConverter.engine === 'mozc') {
+      return !!KanaKanjiConverter.mozcDict[reading];
+    }
     return !!(DICTIONARY[reading]
       || KanaKanjiConverter.globalDict[reading]
       || KanaKanjiConverter.userDict[reading]
@@ -27132,6 +27225,7 @@ export class KanaKanjiConverter {
   // FW_CLASS_MAP / FUNCTION_WORDS are checked FIRST — grammar rules take priority
   // over any corpus statistics to ensure correct POS class for function words.
   private getWordInfo(sub: string): number[] {
+    if (KanaKanjiConverter.engine === 'mozc') { return this.getWordInfoMozc(sub); }
     const fc = KanaKanjiConverter.FW_CLASS_MAP[sub];
     if (fc !== undefined) {
       // によると (as one span) loses to による+と every time despite both
@@ -27211,9 +27305,34 @@ export class KanaKanjiConverter {
             KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
   }
 
+  // Track B's getWordInfo: node cost/classes come straight from
+  // mozc_costs.json (see loadMozcEngine), no hand-tuned heuristics. A span
+  // only reaches here if it's either a genuine mozcDict entry (multi-char
+  // spans are gated by inDict() in segment()) or a single character with no
+  // entry at all (single-char spans are always DP-eligible) -- the latter
+  // gets the same "discourage but don't forbid" treatment track A's
+  // VN_UNKNOWN_SINGLE/VC_UNKNOWN gives an unrecognized single character.
+  private getWordInfoMozc(sub: string): number[] {
+    const c = KanaKanjiConverter.mozcCosts[sub];
+    if (c !== undefined) { return c; }
+    return [KanaKanjiConverter.VN_UNKNOWN_SINGLE,
+            KanaKanjiConverter.mozcUnknownClass, KanaKanjiConverter.mozcUnknownClass];
+  }
+
   // Connection cost between adjacent segments using the 100×100 Phase-2.5 matrix.
   private getEdgeCost(prevRightClass: number, curLeftClass: number): number {
+    if (KanaKanjiConverter.engine === 'mozc') { return this.getEdgeCostMozc(prevRightClass, curLeftClass); }
     const m = KanaKanjiConverter.connectionMatrix;
+    if (m.length === 0) { return 0; }
+    const row = m[prevRightClass];
+    if (!row) { return 0; }
+    return row[curLeftClass] ?? 0;
+  }
+
+  // Track B's getEdgeCost: a direct lookup into the reduced mozc connection
+  // matrix (tools/mozc_data/build_mozc_engine.py), no hand-tuned fv() rules.
+  private getEdgeCostMozc(prevRightClass: number, curLeftClass: number): number {
+    const m = KanaKanjiConverter.mozcMatrix;
     if (m.length === 0) { return 0; }
     const row = m[prevRightClass];
     if (!row) { return 0; }
@@ -27476,10 +27595,12 @@ export class KanaKanjiConverter {
     const best: number[] = [];
     const prevPos: number[] = [];
     const rightClass: number[] = [];
+    const bosClass = KanaKanjiConverter.engine === 'mozc'
+      ? KanaKanjiConverter.mozcBosClass : KanaKanjiConverter.VC_BOS;
     for (let j = 0; j <= n; j++) {
       best.push(INF);
       prevPos.push(-1);
-      rightClass.push(KanaKanjiConverter.VC_BOS);
+      rightClass.push(bosClass);
     }
     best[0] = 0;
 

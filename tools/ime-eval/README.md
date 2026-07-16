@@ -19,7 +19,7 @@ node tools/ime-eval/run_test.js           # held-out TEST summary accuracy (roun
 node tools/ime-eval/run_test.js --misses  # also print every miss
 node tools/ime-eval/run_vocab.js           # bare single-word dictionary coverage check
 node tools/ime-eval/run_vocab.js --misses  # also print every miss
-node tools/ime-eval/run_all.js        # one build, every corpus (TRAIN/TEST1-9/VOCAB1-3) -- fastest way to get a full picture
+node tools/ime-eval/run_all.js        # one build, every corpus (TRAIN/TEST1-10/VOCAB1-3) -- fastest way to get a full picture
 node tools/ime-eval/sweep.js          # 4000-key dict-sampling old(HEAD)-vs-new(working tree) kanji-loss check
 node tools/ime-eval/sweep_join.js     # same, but sampling concatenated dict-key PAIRS -- see "Regression tooling" below
 node tools/ime-eval/regress.js        # classifies every corpus row that changed into FIXED/REGRESSED/CHANGED_STILL_WRONG
@@ -95,6 +95,12 @@ still a blind measurement is not.
 - `vocab_test.js` / `run_vocab.js` — a separate check: ~250 common everyday
   N5–N3 words as bare single-reading `lookup()` calls (not sentences), to
   measure raw dictionary/ranking coverage independent of segmentation.
+- `corpus_test10.js` — authored fresh, not reused from TEST1-9. Doubles as
+  the held-out corpus for `tools/mozc_data/compare_engines.js`, which scores
+  the optional mozc-derived "track B" engine (see `tools/mozc_data/README.md`
+  for what that is and its known quality limitations) side by side with the
+  default hand-built dictionary on the same sentences. Not a regression gate
+  the way TEST1-9 are against track A — track B isn't expected to match it.
 
 Two metrics are reported:
 - **strict** — output equals the one authored gold exactly.
@@ -154,7 +160,7 @@ tree so they also catch uncommitted changes:
   `lookupCore()` down the `segmentJoinFallback()`/`joinSegs()` path that
   `sweep.js` can't reach. Use this whenever a change touches segmentation
   joining, not just dictionary data.
-- **`regress.js`** — runs every corpus in this directory (TRAIN/TEST1-9/
+- **`regress.js`** — runs every corpus in this directory (TRAIN/TEST1-10/
   VOCAB1-3) through both the HEAD and working-tree converter and classifies
   every row whose answer changed as `FIXED` (was wrong, now matches gold/
   accept), `REGRESSED` (matched before, wrong now), or

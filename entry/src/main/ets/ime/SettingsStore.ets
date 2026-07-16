@@ -9,12 +9,17 @@ export interface KeyboardSettings {
   keyboardLayout: string;
   oneHandedMode: boolean;
   oneHandedSide: string;
+  // 'custom' = hand-built dictionary (default, unchanged behavior).
+  // 'mozc' = optional statistical engine derived from mozc (see
+  // KanaKanjiConverter.loadMozcEngine / THIRD_PARTY_NOTICES.md).
+  conversionEngine: string;
 }
 
 const DEFAULTS: KeyboardSettings = {
   keyboardLayout: 'QWERTY',
   oneHandedMode: false,
   oneHandedSide: 'right',
+  conversionEngine: 'custom',
 };
 
 export class SettingsStore {
@@ -29,15 +34,17 @@ export class SettingsStore {
       const layout = await prefs.get('keyboardLayout', DEFAULTS.keyboardLayout);
       const oneHanded = await prefs.get('oneHandedMode', DEFAULTS.oneHandedMode);
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, forceReload }));
+      const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, engine, forceReload }));
       return {
         keyboardLayout: String(layout),
         oneHandedMode: oneHanded === true,
         oneHandedSide: String(side),
+        conversionEngine: String(engine),
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
-      return { keyboardLayout: DEFAULTS.keyboardLayout, oneHandedMode: DEFAULTS.oneHandedMode, oneHandedSide: DEFAULTS.oneHandedSide };
+      return { keyboardLayout: DEFAULTS.keyboardLayout, oneHandedMode: DEFAULTS.oneHandedMode, oneHandedSide: DEFAULTS.oneHandedSide, conversionEngine: DEFAULTS.conversionEngine };
     }
   }
 
@@ -59,5 +66,16 @@ export class SettingsStore {
       await prefs.put('oneHandedSide', side);
       await prefs.flush();
     } catch (_e) {}
+  }
+
+  static async saveConversionEngine(context: common.Context, engine: string): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('conversionEngine', engine);
+      await prefs.flush();
+      console.info('shuntiIME SettingsStore.saveConversionEngine ok', engine);
+    } catch (e) {
+      console.error('shuntiIME SettingsStore.saveConversionEngine error', JSON.stringify(e));
+    }
   }
 }

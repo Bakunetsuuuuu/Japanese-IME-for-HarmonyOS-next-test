@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // One-shot battery: build the converter exactly once and score it against
 // every corpus in this directory (TRAIN, all held-out TEST rounds, VOCAB).
-// Equivalent to running run.js + run_test.js..run_test9.js + run_vocab.js..
+// Equivalent to running run.js + run_test.js..run_test10.js + run_vocab.js..
 // run_vocab3.js separately, but ~10x faster since the tsc transpile (the
 // slow part) only happens once instead of once per corpus.
 //
@@ -79,6 +79,7 @@ function main() {
   runCorpus('TEST7', req('corpus_test7.js'), req('accept_test7.js'));
   runCorpus('TEST8', req('corpus_test8.js'), req('accept_test8.js'));
   runCorpus('TEST9', req('corpus_test9.js'), req('accept_test9.js'));
+  runCorpus('TEST10', req('corpus_test10.js'), req('accept_test10.js'));
   runCorpus('VOCAB1', req('vocab_test.js'), null);
   runCorpus('VOCAB2', req('vocab_test2.js'), null);
   runCorpus('VOCAB3', req('vocab_test3.js'), null);
