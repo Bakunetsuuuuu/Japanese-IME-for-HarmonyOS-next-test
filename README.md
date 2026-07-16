@@ -4,6 +4,9 @@ HarmonyOS NEXT (API 12+) 向けの日本語 IME です。フリック入力・QW
 
 > **開発者**: shuntilettuce
 
+**このアプリは無料で、広告もありません。** 開発・維持に協力していただける方は
+[GitHub Sponsors](https://github.com/sponsors/shuntilettuce) から支援していただけると励みになります。
+
 ---
 
 ## インストール

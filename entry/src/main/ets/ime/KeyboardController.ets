@@ -718,6 +718,20 @@ export class InputHandler {
     return true;
   }
 
+  // Opens this project's GitHub repository in the system browser (README,
+  // source code, and the GitHub Sponsors link at the top of the README).
+  // Deliberately routed through GitHub rather than a payment link embedded
+  // directly in the app -- keeps any donation ask entirely outside the
+  // app binary/store listing, avoiding AppGallery review ambiguity around
+  // in-app payment/donation solicitation.
+  openGithubRepo(): boolean {
+    if (!this.imeContext) { return false; }
+    const want: Want = { uri: 'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next' };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openGithubRepo error', JSON.stringify(err)));
+    return true;
+  }
+
   private updateCandidates(): void {
     const composing = AppStorage.get<string>('composingText') ?? '';
     if (composing.length === 0) {

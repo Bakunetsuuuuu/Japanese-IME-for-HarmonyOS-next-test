@@ -189,6 +189,18 @@ export struct SettingsBar {
         }
         this.close();
       })
+
+    Divider().color(kbTheme(this.isDark).borderColor)
+
+    Text('開発を支援 / ソースコード（GitHub）')
+      .fontSize(14)
+      .fontColor(kbTheme(this.isDark).previewText)
+      .width('100%')
+      .padding(10)
+      .onClick(() => {
+        InputHandler.getInstance().openGithubRepo();
+        this.close();
+      })
   }
 
   @Builder HistoryView() {
