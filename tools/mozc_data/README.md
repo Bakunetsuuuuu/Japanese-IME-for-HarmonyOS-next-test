@@ -1,34 +1,46 @@
-# Track B: mozc + real ipadic-derived conversion engine
+# Track B: mozc + real ipadic + JMdict-derived conversion engine
 
 An optional, in-app switchable second conversion engine (settings toggle:
 独自辞書/統計データ) built from mozc's (BSD-3-Clause,
 https://github.com/google/mozc) open-source dictionary/connection-cost
 data, merged with real mecab-ipadic's own connection-cost matrix
-(https://github.com/taku910/mecab, NAIST/ICOT license), kept entirely
-separate from this project's own hand-built dictionary ("track A":
-`dict.json` / the inline `DICTIONARY` in `KanaKanjiConverter.ets` /
-`getWordInfo`'s hand-tuned cost heuristics). See the top-level
-`THIRD_PARTY_NOTICES.md` for the exact license terms this data carries.
+(https://github.com/taku910/mecab, NAIST/ICOT license), and augmented with
+extra kanji-spelling candidates from JMdict (https://www.edrdg.org/,
+CC BY-SA 4.0) -- kept entirely separate from this project's own hand-built
+dictionary ("track A": `dict.json` / the inline `DICTIONARY` in
+`KanaKanjiConverter.ets` / `getWordInfo`'s hand-tuned cost heuristics). See
+the top-level `THIRD_PARTY_NOTICES.md` for the exact license terms this
+data carries.
 
 ## Regenerating
 
 ```sh
-python3 tools/mozc_data/fetch_mozc.py         # downloads + caches raw mozc data (not committed)
-python3 tools/mozc_data/fetch_ipadic.py       # downloads + caches raw ipadic data (not committed)
-python3 tools/mozc_data/build_mozc_engine.py  # writes entry/src/main/resources/rawfile/mozc_*.json
+python3 tools/mozc_data/fetch_mozc.py           # downloads + caches raw mozc data (not committed)
+python3 tools/mozc_data/fetch_ipadic.py         # downloads + caches raw ipadic data (not committed)
+python3 tools/mozc_data/build_mozc_engine.py    # writes entry/src/main/resources/rawfile/mozc_*.json
+python3 tools/mozc_data/fetch_jmdict.py         # downloads + caches raw JMdict.xml (not committed)
+python3 tools/mozc_data/build_jmdict_augment.py # augments mozc_dict.json in place (run LAST, after build_mozc_engine.py)
 node tools/mozc_data/compare_engines.js --misses          # custom vs mozc on corpus_test10.js
 node tools/mozc_data/compare_engines.js corpus_test9.js   # or any other tools/ime-eval/ corpus
 ```
 
-`build_mozc_engine.py` works with just mozc's cache present (skips the
-ipadic merge with a note) if `fetch_ipadic.py` hasn't been run — useful for
-quickly regenerating without the ipadic download, though the shipped data
-always includes both.
+Order matters: `build_mozc_engine.py` always regenerates `mozc_dict.json`
+from scratch (mozc's dictionary shards + the ipadic merge, if present), so
+`build_jmdict_augment.py` -- which only ever edits `mozc_dict.json` in
+place -- must run after it, every time. Re-running `build_mozc_engine.py`
+alone discards any previous JMdict augmentation; re-run
+`build_jmdict_augment.py` again afterward to restore it.
 
-Both caches (`tools/mozc_data/cache/`, `cache_ipadic/`, ~90MB + ~30MB) are
-gitignored; only `build_mozc_engine.py`'s small derived output
+`build_mozc_engine.py` works with just mozc's cache present (skips the
+ipadic merge with a note) if `fetch_ipadic.py` hasn't been run -- useful
+for quickly regenerating without the ipadic download, though the shipped
+data always includes both. Likewise, `build_jmdict_augment.py` skips with a
+note if `fetch_jmdict.py`'s cache is absent.
+
+All three caches (`tools/mozc_data/cache/`, `cache_ipadic/`, `cache_jmdict/`
+-- ~90MB + ~30MB + ~120MB) are gitignored; only the small derived output
 (`entry/src/main/resources/rawfile/mozc_dict.json` /
-`mozc_costs.json` / `mozc_matrix.json`, ~17.6MB combined) is committed and
+`mozc_costs.json` / `mozc_matrix.json`, ~17.8MB combined) is committed and
 shipped in the app.
 
 ## How it plugs in
@@ -146,10 +158,48 @@ bundled dictionary explicitly excludes "the large vocabulary set generated
 from the Web corpus" that the real Google Japanese Input / Gboard engines
 use — real ipadic doesn't have that either. There is a hard vocabulary
 ceiling here that connection-matrix or Viterbi engineering alone can't
-remove; closing it further needs a genuinely larger dictionary source (see
-"Considered, not yet done" below). Track B should currently be understood
-as "a genuine second opinion with real, measurably improving quality," not
-a recommended daily-driver replacement for track A.
+remove (see "JMdict vocabulary augmentation" below for one further step
+taken, and "Considered, not yet done" for what wasn't). Track B should
+currently be understood as "a genuine second opinion with real, measurably
+improving quality," not a recommended daily-driver replacement for track A.
+
+### JMdict vocabulary augmentation
+
+`build_jmdict_augment.py` broadens track B's candidate-cycling vocabulary
+with JMdict's kanji spellings (CC BY-SA 4.0, see `THIRD_PARTY_NOTICES.md`
+for the full license terms and how this project satisfies them), in a
+deliberately narrow **safe mode**: it only appends extra surface candidates
+to `mozc_dict.json` readings that **already exist** there — it never adds
+a new reading key.
+
+This scope was chosen specifically to preserve the "never changes DP/
+segmentation behavior" guarantee: `segment()`'s DP (`KanaKanjiConverter.ets`)
+gates multi-character spans on `inDict(sub)`, which for track B checks
+`mozcDict` directly. Adding a brand-new reading key would make spans
+matching it newly DP-eligible (falling back to the generic UNKNOWN-class
+discourage cost in `getWordInfoCandidatesMozc`, since `mozc_costs.json`
+would have no real entry for it) — a real change to segmentation behavior
+for sentences containing that reading, and a mixing of two independently-
+scaled cost sources (mozc/ipadic's calibrated matrix vs. an ad-hoc fallback)
+exactly like the dictionary-merge risk already avoided in the connection-
+matrix section above. Restricting augmentation to already-known readings
+avoids all of that: `inDict`/`getWordInfoCandidatesMozc`/segment()'s DP see
+exactly the same set of DP-eligible spans before and after augmentation.
+Only `lookup()`/`lookupMozc()`'s candidate *list* for an already-recognised
+reading grows — e.g. more kanji options when cycling candidates for a
+reading typed and converted on its own.
+
+Effect (this round): scanned 258,109 JMdict reading/kanji pairs, augmented
+11,859 of the 137,869 readings already in `mozc_dict.json` (8.6%), adding
+20,913 candidate surfaces total (mozc_dict.json: 7,360,801 → 7,586,929
+bytes, +3.1%). Per-reading additions are capped (`MAX_NEW_PER_READING=12`
+new surfaces, `MAX_TOTAL_CANDIDATES=40` overall per reading) and ordered
+with JMdict's own priority-tagged (news1/ichi1/spec1/spec2/gai1) spellings
+first, since JMdict carries no cost/frequency number the way mozc's
+dictionary does. `compare_engines.js` strict-match rate is unchanged by
+this step (confirmed: 6/20 and 13/49, identical to the ipadic-matrix-merge
+numbers above) — expected, since it doesn't touch what the DP scores, only
+what a resolved reading can additionally display.
 
 ## Do not hand-patch individual words/sentences here
 
@@ -176,11 +226,6 @@ patch.
   exact matching UniDic version's matrix. Real, but larger and riskier than
   what this round's budget covered — the two sources actually integrated
   this round (mozc, real ipadic) were lower-risk and higher-confidence.
-- **JMdict** (CC BY-SA 4.0, https://www.edrdg.org/) — a large, curated
-  reading/kanji vocabulary dictionary (no cost/frequency data, so usable
-  only as candidate-surface augmentation, not for Viterbi node/edge costs).
-  License requires attribution + a documented update mechanism for
-  redistributed derived data (share-alike). Not yet integrated.
 - **Unreduced (2,672-class) mozc connection matrix** instead of the current
   ~723-class MIN-aggregated reduction (mozc's ~585 + ipadic's ~138 new
   classes) — would cost roughly 2.5MB → ~34MB for `mozc_matrix.json`.
@@ -206,6 +251,12 @@ patch.
   intentionally unmodified since they're mozc's real data, not a bug).
 - `mozc_classes_reference.json` — reduced-class-id → POS-label lookup, for
   maintainers only; not shipped in the app.
+- `fetch_jmdict.py` — downloads and decompresses JMdict's XML dump into
+  `cache_jmdict/` (gitignored).
+- `build_jmdict_augment.py` — safe-mode candidate-surface augmentation of
+  the already-built `mozc_dict.json` (does not touch `mozc_costs.json` /
+  `mozc_matrix.json`). Must run after `build_mozc_engine.py`. See "JMdict
+  vocabulary augmentation" above.
 - `compare_engines.js` — side-by-side custom-vs-mozc scoring against any
   `tools/ime-eval/` corpus file (`corpus_test10.js` by default). Not a
   regression gate like `tools/ime-eval/regress.js` — track B isn't expected

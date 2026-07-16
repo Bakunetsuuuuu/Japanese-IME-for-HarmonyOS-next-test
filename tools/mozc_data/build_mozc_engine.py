@@ -112,7 +112,10 @@ naively pooling both sources' entries into one cost-sorted list would let
 that scale mismatch silently bias which sense wins, which is a worse
 failure mode than not merging at all).
 
-Outputs (entry/src/main/resources/rawfile/, shipped in the app):
+Outputs (entry/src/main/resources/rawfile/, shipped in the app). Note this
+script always regenerates mozc_dict.json from scratch -- run
+build_jmdict_augment.py afterward (see tools/mozc_data/README.md) to
+re-apply its candidate-surface augmentation from JMdict if that's wanted:
   - mozc_dict.json    { reading: [surface, ...] }            ascending cost
   - mozc_costs.json   { reading: [[cost, leftClass, rightClass, surface], ...] }
                         one entry per distinct (leftClass, rightClass) sense,

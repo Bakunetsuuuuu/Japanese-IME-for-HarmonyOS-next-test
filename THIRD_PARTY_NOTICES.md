@@ -2,8 +2,9 @@
 
 This project ships derived data generated from the mozc project's
 open-source dictionary and connection-cost data, merged with real
-mecab-ipadic connection-cost and conjugation data (see
-`tools/mozc_data/build_mozc_engine.py`), used to build the optional
+mecab-ipadic connection-cost and conjugation data, and augmented with
+JMdict's kanji-spelling vocabulary (see `tools/mozc_data/build_mozc_engine.py`
+and `tools/mozc_data/build_jmdict_augment.py`), used to build the optional
 "統計データ" (mozc-derived) conversion engine, which the user can enable
 alongside the app's own hand-built dictionary via a settings toggle. The
 generated files (`entry/src/main/resources/rawfile/mozc_dict.json`,
@@ -20,6 +21,11 @@ Sources:
   below — this is the same upstream project mozc's own dictionary is
   itself derived from, just fetched directly rather than through mozc's
   re-export.
+- https://www.edrdg.org/ (JMdict, via http://ftp.edrdg.org/pub/Nihongo/JMdict.gz)
+  — used only to append extra kanji-spelling candidates to readings mozc's
+  own dictionary already recognises (`tools/mozc_data/build_jmdict_augment.py`).
+  See the "JMdict (CC BY-SA 4.0)" section below for the license text and
+  the attribution/share-alike/update-mechanism terms this data carries.
 
 ---
 
@@ -132,6 +138,48 @@ writing, such person, organization or entity, will also be exempted
 from and not be held liable to the user for any such damages as noted
 above as far as the program is concerned.
 ```
+
+## JMdict/EDICT (kanji-spelling candidate augmentation for the "統計データ"
+## engine only, via `tools/mozc_data/build_jmdict_augment.py`) —
+## CC BY-SA 4.0
+
+Source: https://www.edrdg.org/ (The Electronic Dictionary Research and
+Development Group), file fetched: http://ftp.edrdg.org/pub/Nihongo/JMdict.gz
+
+License: Creative Commons Attribution-ShareAlike 4.0 International
+(https://creativecommons.org/licenses/by-sa/4.0/). Full terms and the
+EDRDG's own usage policy: https://www.edrdg.org/edrdg/licence.html
+
+This project's use, and how it satisfies the license's conditions:
+- **Attribution**: this notice, the in-app "ⓘ ライセンス" screen
+  (`SymbolView.ets`), and `DATA_SOURCES.md` each credit JMdict/EDICT by
+  name with a link to the EDRDG's project page, as required by both CC
+  BY-SA 4.0 and the EDRDG's own stated policy for software/apps using
+  these files.
+- **ShareAlike**: only the derived, redistributed data
+  (`entry/src/main/resources/rawfile/mozc_dict.json`'s appended candidate
+  surfaces) is a JMdict-derived work; it is covered by this same CC BY-SA
+  4.0 license, consistent with every other file in this repository being
+  under a permissive/compatible license already (see the app code's own
+  MIT license, noted in the in-app license screen).
+- **"Regular updating" requirement**: the EDRDG's policy asks that
+  software using JMdict data implement "a procedure for regular updating
+  of the data from the most recent versions available." This project does
+  not fetch JMdict at runtime (it is baked into a static shipped asset at
+  build time, like every other data source here); the update procedure is
+  to re-run `tools/mozc_data/fetch_jmdict.py` (which always re-downloads if
+  the local cache is cleared) followed by
+  `tools/mozc_data/build_jmdict_augment.py` before each release that
+  touches track B's data, so the shipped snapshot doesn't go stale
+  indefinitely.
+
+Note: JMdict/EDICT was already used, separately, as one of several sources
+for the hand-built `dict.json`/`global_dict.json` vocabulary (track A) --
+see `DATA_SOURCES.md` and the in-app license screen's existing "変換辞書"
+section. The usage documented here is a second, independent, later use of
+the same source: appending extra kanji-spelling candidates to track B's
+`mozc_dict.json` (see `tools/mozc_data/README.md`'s "JMdict vocabulary
+augmentation" section for the mechanism and scope).
 
 ## Okinawa Dictionary entries (also within files: `dictionary*.txt`) —
 ## Public Domain
