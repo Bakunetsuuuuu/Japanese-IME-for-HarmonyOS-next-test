@@ -98,8 +98,6 @@ const LICENSE_TEXT: string =
   '上記の独自辞書とは完全に別データの、切り替え式の第二変換エンジンです。\n' +
   '・mozc（Google, BSD-3-Clause）\n' +
   '  https://github.com/google/mozc\n' +
-  '・mecab-ipadic（奈良先端科学技術大学院大学 / ICOT, NAIST/ICOTライセンス）\n' +
-  '  https://github.com/taku910/mecab\n' +
   '・JMdict/EDICT（電子化辞書研究開発グループ、CC BY-SA 4.0）\n' +
   '  https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project\n' +
   '・SudachiDict（Works Applications, Apache License 2.0）\n' +

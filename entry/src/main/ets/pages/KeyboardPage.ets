@@ -39,7 +39,6 @@ struct KeyboardPage {
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
-  @State showSettingsBar: boolean = false;
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -104,15 +103,16 @@ struct KeyboardPage {
   }
 
   build() {
-    Stack() {
     Column() {
-      // Symbol/Emoji views take the full panel (no preview bar). Numeric keeps
-      // the preview bar — without it the pad's rows stretch to fill the whole
-      // panel height and end up uncomfortably tall.
+      // Symbol/Emoji/Settings views take the full panel (no preview bar).
+      // Numeric keeps the preview bar — without it the pad's rows stretch to
+      // fill the whole panel height and end up uncomfortably tall.
       if (this.keyboardSubMode === 'symbol') {
         SymbolView()
       } else if (this.keyboardSubMode === 'emoji') {
         EmojiView()
+      } else if (this.keyboardSubMode === 'settings') {
+        SettingsBar()
       } else {
         // Preview bar
         if (this.inputState === InputState.BUNSETSU) {
@@ -209,7 +209,7 @@ struct KeyboardPage {
                 .backgroundColor(kbTheme(this.isDark).funcKeyBg)
                 .borderRadius(6)
                 .onClick(() => {
-                  this.showSettingsBar = !this.showSettingsBar;
+                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
                 })
             }
             .width('100%')
@@ -281,12 +281,5 @@ struct KeyboardPage {
         }
       }
     })
-
-    if (this.showSettingsBar) {
-      SettingsBar({ visible: this.showSettingsBar })
-    }
-    }
-    .width('100%')
-    .height('100%')
   }
 }

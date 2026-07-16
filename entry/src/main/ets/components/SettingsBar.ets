@@ -2,13 +2,13 @@ import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
 
-// Popup panel opened from the ⚙ button that replaced the old in-keyboard
-// flick/QWERTY toggle (that setting moved into the main app). Floats above
-// the keyboard rather than pushing it down, since the IME panel's height is
-// fixed by the system.
+// Dedicated settings sub-mode, entered via keyboardSubMode === 'settings'
+// (the ⚙ button in KeyboardPage). Takes the full IME panel the same way
+// SymbolView/EmojiView do (header row + Scroll content) rather than
+// floating a narrow card over the keyboard -- the previous floating-card
+// version was too cramped once enough menu items accumulated.
 @Component
 export struct SettingsBar {
-  @Link visible: boolean;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('isLandscape') isLandscape: boolean = false;
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
@@ -19,57 +19,72 @@ export struct SettingsBar {
   @State showHistory: boolean = false;
 
   private close(): void {
-    this.visible = false;
+    AppStorage.setOrCreate('keyboardSubMode', 'kana');
     this.showHistory = false;
   }
 
   build() {
-    Stack({ alignContent: Alignment.TopEnd }) {
-      // Scrim: tap outside the card closes the panel.
-      Column() {}
-        .width('100%')
-        .height('100%')
-        .backgroundColor('#00000040')
-        .onClick(() => { this.close(); })
-
-      // Card: sized to the full IME panel height (a fixed top spacer here,
-      // not a margin — margin + intrinsic content height silently grew
-      // taller than the panel as menu items were added, clipping the
-      // bottom entries with no way to reach them) so it always uses exactly
-      // the space actually available, then Scroll handles anything that
-      // still doesn't fit instead of clipping it.
-      Column() {
-        Column() {}.width('100%').height(this.isLandscape ? 40 : 80)
-
-        Column() {
-          Scroll() {
-            Column() {
-              if (this.showHistory) {
-                this.HistoryView()
-              } else {
-                this.MenuView()
-              }
+    Column({ space: 0 }) {
+      // ── Header ───────────────────────────────────────────────
+      Row() {
+        Text('←')
+          .fontSize(18)
+          .textAlign(TextAlign.Center)
+          .width(48).height(40)
+          .fontColor(kbTheme(this.isDark).onAccentText)
+          .backgroundColor(kbTheme(this.isDark).specialKeyBg)
+          .borderRadius(20)
+          .onClick(() => {
+            if (this.showHistory) {
+              this.showHistory = false;
+            } else {
+              this.close();
             }
-          }
+          })
+
+        Text(this.showHistory ? 'クリップボード履歴' : '設定')
+          .fontSize(16)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(kbTheme(this.isDark).previewText)
           .layoutWeight(1)
-          .align(Alignment.Top)
-          .scrollBar(BarState.Auto)
-          .edgeEffect(EdgeEffect.Spring)
+          .padding({ left: 12 })
+
+        if (this.showHistory) {
+          Text('削除')
+            .fontSize(13)
+            .fontColor(kbTheme(this.isDark).subText)
+            .padding({ right: 12 })
+            .onClick(() => {
+              InputHandler.getInstance().clearClipboardHistory();
+            })
         }
-        .width(this.isLandscape ? 200 : 230)
-        .layoutWeight(1)
-        .backgroundColor(kbTheme(this.isDark).candidateBg)
-        .borderRadius(10)
-        .shadow({ radius: 8, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
-        .padding(6)
-        .margin({ bottom: 8 })
       }
-      .width(this.isLandscape ? 200 : 230)
-      .height('100%')
-      .margin({ right: 4 })
+      .width('100%')
+      .height(48)
+      .padding({ left: 4 })
+      .alignItems(VerticalAlign.Center)
+
+      Divider().color(kbTheme(this.isDark).borderColor)
+
+      // ── Content (scrolls if it doesn't fit the panel height) ──
+      Scroll() {
+        Column() {
+          if (this.showHistory) {
+            this.HistoryView()
+          } else {
+            this.MenuView()
+          }
+        }
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .align(Alignment.Top)
+      .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .height('100%')
+    .backgroundColor(kbTheme(this.isDark).panelBg)
   }
 
   @Builder MenuView() {
@@ -189,11 +204,10 @@ export struct SettingsBar {
     .padding(10)
 
     Text(this.conversionEngine === 'mozc'
-      ? '統計データ：Google製オープンソースIME「mozc」・実IPA辞書・JMdict・SudachiDictの統計データを組み合わせた実験的な第二エンジン。独自辞書とは完全に別データで、現状はまだ独自辞書より変換精度が低め。'
-      : '独自辞書：常用漢字・Wikipedia/Wiktionary/JMdict等から編纂した本アプリ独自の変換辞書。デフォルトで最も精度が高い。')
+      ? '高性能だが比較的鈍重（推奨）'
+      : '軽量だが発展途上')
       .fontSize(11)
       .fontColor(kbTheme(this.isDark).subText)
-      .lineHeight(16)
       .width('100%')
       .padding({ left: 10, right: 10, bottom: 10 })
 
@@ -235,24 +249,6 @@ export struct SettingsBar {
   }
 
   @Builder HistoryView() {
-    Row() {
-      Text('← 戻る')
-        .fontSize(13)
-        .fontColor(kbTheme(this.isDark).accentBg)
-        .onClick(() => { this.showHistory = false; })
-        .layoutWeight(1)
-      Text('履歴を削除')
-        .fontSize(12)
-        .fontColor(kbTheme(this.isDark).subText)
-        .onClick(() => {
-          InputHandler.getInstance().clearClipboardHistory();
-        })
-    }
-    .width('100%')
-    .padding(10)
-
-    Divider().color(kbTheme(this.isDark).borderColor)
-
     if (this.clipboardHistory.length === 0) {
       Text('履歴がありません')
         .fontSize(13)
