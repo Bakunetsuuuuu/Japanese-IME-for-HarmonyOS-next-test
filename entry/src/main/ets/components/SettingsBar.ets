@@ -32,19 +32,41 @@ export struct SettingsBar {
         .backgroundColor('#00000040')
         .onClick(() => { this.close(); })
 
+      // Card: sized to the full IME panel height (a fixed top spacer here,
+      // not a margin — margin + intrinsic content height silently grew
+      // taller than the panel as menu items were added, clipping the
+      // bottom entries with no way to reach them) so it always uses exactly
+      // the space actually available, then Scroll handles anything that
+      // still doesn't fit instead of clipping it.
       Column() {
-        if (this.showHistory) {
-          this.HistoryView()
-        } else {
-          this.MenuView()
+        Column() {}.width('100%').height(this.isLandscape ? 40 : 80)
+
+        Column() {
+          Scroll() {
+            Column() {
+              if (this.showHistory) {
+                this.HistoryView()
+              } else {
+                this.MenuView()
+              }
+            }
+          }
+          .layoutWeight(1)
+          .align(Alignment.Top)
+          .scrollBar(BarState.Auto)
+          .edgeEffect(EdgeEffect.Spring)
         }
+        .width(this.isLandscape ? 200 : 230)
+        .layoutWeight(1)
+        .backgroundColor(kbTheme(this.isDark).candidateBg)
+        .borderRadius(10)
+        .shadow({ radius: 8, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+        .padding(6)
+        .margin({ bottom: 8 })
       }
       .width(this.isLandscape ? 200 : 230)
-      .backgroundColor(kbTheme(this.isDark).candidateBg)
-      .borderRadius(10)
-      .shadow({ radius: 8, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
-      .margin({ top: this.isLandscape ? 40 : 80, right: 4 })
-      .padding(6)
+      .height('100%')
+      .margin({ right: 4 })
     }
     .width('100%')
     .height('100%')
@@ -165,6 +187,15 @@ export struct SettingsBar {
     }
     .width('100%')
     .padding(10)
+
+    Text(this.conversionEngine === 'mozc'
+      ? '統計データ：Google製オープンソースIME「mozc」・実IPA辞書・JMdict・SudachiDictの統計データを組み合わせた実験的な第二エンジン。独自辞書とは完全に別データで、現状はまだ独自辞書より変換精度が低め。'
+      : '独自辞書：常用漢字・Wikipedia/Wiktionary/JMdict等から編纂した本アプリ独自の変換辞書。デフォルトで最も精度が高い。')
+      .fontSize(11)
+      .fontColor(kbTheme(this.isDark).subText)
+      .lineHeight(16)
+      .width('100%')
+      .padding({ left: 10, right: 10, bottom: 10 })
 
     Divider().color(kbTheme(this.isDark).borderColor)
 

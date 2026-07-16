@@ -662,18 +662,28 @@ export class InputHandler {
     AppStorage.setOrCreate('clipboardHistory', next);
   }
 
-  pasteClipboard(): void {
+  // Returns false (and pastes nothing) for image/file clipboard contents.
+  // No input method on any platform can inject non-text content into an
+  // arbitrary third-party app's text field through the standard IME
+  // text-commit API (insertText here) -- that's not a bug to fix in this
+  // app, it's what every keyboard app is limited to. Twitter/Discord/etc.
+  // pasting an image already works today via their OWN paste UI (long-press
+  // → 貼り付け, or Ctrl+V), which reads the system clipboard directly and
+  // doesn't go through the keyboard at all. The caller uses this return
+  // value to tell the user that, instead of silently doing nothing.
+  pasteClipboard(): boolean {
     const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
     const isFile = AppStorage.get<boolean>('clipboardIsFile') ?? false;
     if (isImage || isFile) {
-      return;
+      return false;
     }
     const text = AppStorage.get<string>('clipboardPreview') ?? '';
     if (text.length === 0) {
-      return;
+      return false;
     }
     this.insertText(text);
     this.refreshClipboardPreview();
+    return true;
   }
 
   // Paste an arbitrary entry from clipboard history (not necessarily the

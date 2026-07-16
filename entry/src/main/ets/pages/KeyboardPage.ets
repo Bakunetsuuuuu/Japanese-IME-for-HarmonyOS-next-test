@@ -1,5 +1,6 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import util from '@ohos.util';
+import { promptAction } from '@kit.ArkUI';
 import { InputHandler, InputState, InputMode, applyKeyboardWidthsForVp } from '../ime/KeyboardController';
 import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
@@ -179,7 +180,15 @@ struct KeyboardPage {
                     .backgroundColor(kbTheme(this.isDark).candidateBg)
                     .fontColor(kbTheme(this.isDark).subText)
                     .onClick(() => {
-                      InputHandler.getInstance().pasteClipboard();
+                      const pasted = InputHandler.getInstance().pasteClipboard();
+                      if (!pasted) {
+                        // Image/file clipboard contents -- no IME can inject
+                        // non-text content into a third-party app's field via
+                        // the text-commit API. Tell the user instead of
+                        // silently doing nothing (see pasteClipboard's own
+                        // comment for why this is a platform limit, not a bug).
+                        promptAction.showToast({ message: '画像・ファイルはキーボードから直接貼り付けできません。貼り付け先アプリ自体の貼り付け機能をご利用ください' });
+                      }
                     })
                 }
               }
