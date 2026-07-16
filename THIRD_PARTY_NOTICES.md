@@ -3,13 +3,15 @@
 This project ships derived data generated from the mozc project's
 open-source dictionary and connection-cost data, merged with real
 mecab-ipadic connection-cost and conjugation data, and augmented with
-JMdict's kanji-spelling vocabulary (see `tools/mozc_data/build_mozc_engine.py`
-and `tools/mozc_data/build_jmdict_augment.py`), used to build the optional
-"統計データ" (mozc-derived) conversion engine, which the user can enable
-alongside the app's own hand-built dictionary via a settings toggle. The
-generated files (`entry/src/main/resources/rawfile/mozc_dict.json`,
-`mozc_costs.json`, `mozc_matrix.json`) are derived works of the data below
-and are covered by the same license terms.
+kanji-spelling vocabulary from JMdict and SudachiDict (see
+`tools/mozc_data/build_mozc_engine.py`, `tools/mozc_data/
+build_jmdict_augment.py`, and `tools/mozc_data/build_sudachi_augment.py`),
+used to build the optional "統計データ" (mozc-derived) conversion engine,
+which the user can enable alongside the app's own hand-built dictionary
+via a settings toggle. The generated files
+(`entry/src/main/resources/rawfile/mozc_dict.json`, `mozc_costs.json`,
+`mozc_matrix.json`) are derived works of the data below and are covered by
+the same license terms.
 
 Sources:
 - https://github.com/google/mozc (branch: master, `src/data/dictionary_oss/`)
@@ -26,6 +28,13 @@ Sources:
   own dictionary already recognises (`tools/mozc_data/build_jmdict_augment.py`).
   See the "JMdict (CC BY-SA 4.0)" section below for the license text and
   the attribution/share-alike/update-mechanism terms this data carries.
+- https://github.com/WorksApplications/SudachiDict (lexicon CSVs fetched
+  from the project's own distribution bucket, see
+  `tools/mozc_data/fetch_sudachi.py`) — used the same way as JMdict, only
+  to append extra kanji-spelling candidates to readings mozc's own
+  dictionary already recognises
+  (`tools/mozc_data/build_sudachi_augment.py`). See the "SudachiDict
+  (Apache License 2.0)" section below.
 
 ---
 
@@ -180,6 +189,32 @@ section. The usage documented here is a second, independent, later use of
 the same source: appending extra kanji-spelling candidates to track B's
 `mozc_dict.json` (see `tools/mozc_data/README.md`'s "JMdict vocabulary
 augmentation" section for the mechanism and scope).
+
+## SudachiDict (kanji-spelling candidate augmentation for the "統計データ"
+## engine only, via `tools/mozc_data/build_sudachi_augment.py`) —
+## Apache License 2.0
+
+Source: https://github.com/WorksApplications/SudachiDict, copyright
+2017-2023 Works Applications Co., Ltd. Lexicon CSVs fetched from the
+project's own distribution host (see `tools/mozc_data/fetch_sudachi.py`
+for the exact URLs, discovered via that host's public bucket listing).
+
+License: Apache License, Version 2.0
+(http://www.apache.org/licenses/LICENSE-2.0). SudachiDict's own README
+states the project "incorporates UniDic and a part of NEologd" and
+distributes the resulting lexicon as a whole under Apache-2.0, without
+carving out separate terms for those incorporated components.
+
+This project's use: only the "small" and "core" lexicon tiers (not the
+much larger "notcore"/full tier of proper nouns) are scanned for entries
+whose reading already exists as a key in `mozc_dict.json`; their kanji
+surface is appended as an extra candidate for that reading, exactly like
+the JMdict augmentation above (same "never adds a new reading key" safe
+mode — see `build_sudachi_augment.py` and `build_jmdict_augment.py`'s
+module docstrings, and `tools/mozc_data/README.md`, for why). Apache-2.0
+is a permissive license (attribution required, no share-alike/copyleft
+obligation on derivative data) — satisfied by this notice, the in-app "ⓘ
+ライセンス" screen (`SymbolView.ets`), and `DATA_SOURCES.md`.
 
 ## Okinawa Dictionary entries (also within files: `dictionary*.txt`) —
 ## Public Domain

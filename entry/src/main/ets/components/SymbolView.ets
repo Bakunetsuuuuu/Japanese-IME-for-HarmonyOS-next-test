@@ -102,6 +102,8 @@ const LICENSE_TEXT: string =
   '  https://github.com/taku910/mecab\n' +
   '・JMdict/EDICT（電子化辞書研究開発グループ、CC BY-SA 4.0）\n' +
   '  https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project\n' +
+  '・SudachiDict（Works Applications, Apache License 2.0）\n' +
+  '  https://github.com/WorksApplications/SudachiDict\n' +
   '詳細なライセンス全文は THIRD_PARTY_NOTICES.md を参照してください。\n\n' +
   '■ アプリコード\n' +
   'MIT License';

@@ -1,4 +1,4 @@
-# Track B: mozc + real ipadic + JMdict-derived conversion engine
+# Track B: mozc + real ipadic + JMdict + SudachiDict-derived conversion engine
 
 An optional, in-app switchable second conversion engine (settings toggle:
 独自辞書/統計データ) built from mozc's (BSD-3-Clause,
@@ -6,8 +6,10 @@ https://github.com/google/mozc) open-source dictionary/connection-cost
 data, merged with real mecab-ipadic's own connection-cost matrix
 (https://github.com/taku910/mecab, NAIST/ICOT license), and augmented with
 extra kanji-spelling candidates from JMdict (https://www.edrdg.org/,
-CC BY-SA 4.0) -- kept entirely separate from this project's own hand-built
-dictionary ("track A": `dict.json` / the inline `DICTIONARY` in
+CC BY-SA 4.0) and SudachiDict
+(https://github.com/WorksApplications/SudachiDict, Apache License 2.0) --
+kept entirely separate from this project's own hand-built dictionary
+("track A": `dict.json` / the inline `DICTIONARY` in
 `KanaKanjiConverter.ets` / `getWordInfo`'s hand-tuned cost heuristics). See
 the top-level `THIRD_PARTY_NOTICES.md` for the exact license terms this
 data carries.
@@ -15,32 +17,36 @@ data carries.
 ## Regenerating
 
 ```sh
-python3 tools/mozc_data/fetch_mozc.py           # downloads + caches raw mozc data (not committed)
-python3 tools/mozc_data/fetch_ipadic.py         # downloads + caches raw ipadic data (not committed)
-python3 tools/mozc_data/build_mozc_engine.py    # writes entry/src/main/resources/rawfile/mozc_*.json
-python3 tools/mozc_data/fetch_jmdict.py         # downloads + caches raw JMdict.xml (not committed)
-python3 tools/mozc_data/build_jmdict_augment.py # augments mozc_dict.json in place (run LAST, after build_mozc_engine.py)
+python3 tools/mozc_data/fetch_mozc.py            # downloads + caches raw mozc data (not committed)
+python3 tools/mozc_data/fetch_ipadic.py          # downloads + caches raw ipadic data (not committed)
+python3 tools/mozc_data/build_mozc_engine.py     # writes entry/src/main/resources/rawfile/mozc_*.json
+python3 tools/mozc_data/fetch_jmdict.py          # downloads + caches raw JMdict.xml (not committed)
+python3 tools/mozc_data/build_jmdict_augment.py  # augments mozc_dict.json in place (run AFTER build_mozc_engine.py)
+python3 tools/mozc_data/fetch_sudachi.py         # downloads + caches SudachiDict lexicon CSVs (not committed)
+python3 tools/mozc_data/build_sudachi_augment.py # augments mozc_dict.json in place (run AFTER build_mozc_engine.py)
 node tools/mozc_data/compare_engines.js --misses          # custom vs mozc on corpus_test10.js
 node tools/mozc_data/compare_engines.js corpus_test9.js   # or any other tools/ime-eval/ corpus
 ```
 
 Order matters: `build_mozc_engine.py` always regenerates `mozc_dict.json`
 from scratch (mozc's dictionary shards + the ipadic merge, if present), so
-`build_jmdict_augment.py` -- which only ever edits `mozc_dict.json` in
-place -- must run after it, every time. Re-running `build_mozc_engine.py`
-alone discards any previous JMdict augmentation; re-run
-`build_jmdict_augment.py` again afterward to restore it.
+both augmentation scripts -- which only ever edit `mozc_dict.json` in
+place, appending surfaces -- must run after it, every time. The two
+augmentation scripts can run in either order relative to each other.
+Re-running `build_mozc_engine.py` alone discards any previous JMdict/
+SudachiDict augmentation; re-run both augmentation scripts again afterward
+to restore it.
 
 `build_mozc_engine.py` works with just mozc's cache present (skips the
 ipadic merge with a note) if `fetch_ipadic.py` hasn't been run -- useful
 for quickly regenerating without the ipadic download, though the shipped
-data always includes both. Likewise, `build_jmdict_augment.py` skips with a
-note if `fetch_jmdict.py`'s cache is absent.
+data always includes both. Likewise, each augmentation script skips with a
+note if its own fetch script's cache is absent.
 
-All three caches (`tools/mozc_data/cache/`, `cache_ipadic/`, `cache_jmdict/`
--- ~90MB + ~30MB + ~120MB) are gitignored; only the small derived output
-(`entry/src/main/resources/rawfile/mozc_dict.json` /
-`mozc_costs.json` / `mozc_matrix.json`, ~17.8MB combined) is committed and
+All four caches (`tools/mozc_data/cache/`, `cache_ipadic/`, `cache_jmdict/`,
+`cache_sudachi/` -- ~90MB + ~30MB + ~120MB + ~270MB) are gitignored; only
+the small derived output (`entry/src/main/resources/rawfile/mozc_dict.json`
+/ `mozc_costs.json` / `mozc_matrix.json`, ~19MB combined) is committed and
 shipped in the app.
 
 ## How it plugs in
@@ -189,17 +195,68 @@ Only `lookup()`/`lookupMozc()`'s candidate *list* for an already-recognised
 reading grows — e.g. more kanji options when cycling candidates for a
 reading typed and converted on its own.
 
-Effect (this round): scanned 258,109 JMdict reading/kanji pairs, augmented
-11,859 of the 137,869 readings already in `mozc_dict.json` (8.6%), adding
-20,913 candidate surfaces total (mozc_dict.json: 7,360,801 → 7,586,929
-bytes, +3.1%). Per-reading additions are capped (`MAX_NEW_PER_READING=12`
-new surfaces, `MAX_TOTAL_CANDIDATES=40` overall per reading) and ordered
-with JMdict's own priority-tagged (news1/ichi1/spec1/spec2/gai1) spellings
+Effect: scanned 258,109 JMdict reading/kanji pairs, augmented 11,859 of the
+137,869 readings already in `mozc_dict.json` (8.6%), adding 20,913
+candidate surfaces total (mozc_dict.json: 7,360,801 → 7,586,929 bytes,
++3.1%). Per-reading additions are capped (`MAX_NEW_PER_READING=12` new
+surfaces, `MAX_TOTAL_CANDIDATES=40` overall per reading) and ordered with
+JMdict's own priority-tagged (news1/ichi1/spec1/spec2/gai1) spellings
 first, since JMdict carries no cost/frequency number the way mozc's
 dictionary does. `compare_engines.js` strict-match rate is unchanged by
 this step (confirmed: 6/20 and 13/49, identical to the ipadic-matrix-merge
 numbers above) — expected, since it doesn't touch what the DP scores, only
 what a resolved reading can additionally display.
+
+### SudachiDict vocabulary augmentation
+
+`build_sudachi_augment.py` does the same thing as the JMdict augmentation
+above, sourced from SudachiDict (Apache License 2.0,
+https://github.com/WorksApplications/SudachiDict) instead — same safe
+mode (only appends candidates to already-existing `mozc_dict.json`
+readings, never adds a reading key), same reasoning for why that scope
+specifically preserves the "never changes DP/segmentation behavior"
+guarantee.
+
+SudachiDict was originally considered for a full connection-matrix merge
+(like real ipadic's, see above) rather than vocabulary-only augmentation,
+since it's a much larger, actively-maintained modern lexicon. That was
+investigated properly this round rather than assumed impossible: fetched
+SudachiDict's own `matrix.def` (5,981×5,981 raw context classes -- larger
+than mozc's 2,672 or real ipadic's 1,316) directly from the project's
+distribution host. But unlike mozc's `id.def` and real ipadic's
+`left-id.def` (both POS-label-string-keyed files, which is what let those
+two merge into one shared reduced-class registry), SudachiDict's own
+distribution has **no published id→POS-label mapping for those 5,981
+context classes** -- Sudachi's own docs say the ids are UniDic-mecab
+2.1.2's native numbering, but the actual UniDic 2.1.2 `id.def` (a separate
+NINJAL distribution, not part of what SudachiDict ships) wasn't obtained
+this round, and UniDic's short-unit-word POS convention isn't confirmed to
+align with the IPADIC-derived convention mozc/ipadic already share.
+Attempting the merge without directly verifying that label alignment --
+the same empirical discipline that caught the real mozc-vs-ipadic scale
+mismatch before it shipped -- would risk a silent mis-alignment, which is
+worse than not merging at all (see the connection-matrix section above for
+the general principle). So this round only integrates SudachiDict's
+*vocabulary* (its lexicon CSVs' surface/reading pairs), not its connection
+costs. A future round could revisit the matrix merge if real UniDic 2.1.2
+`id.def` data is obtained and the label alignment is actually verified.
+
+Source scope: only SudachiDict's "small" and "core" lexicon tiers (fetched
+from the project's own distribution host, see `fetch_sudachi.py`) -- not
+"notcore" (the "full" tier), which the project's own docs describe as
+"miscellaneous proper nouns", a much larger and noisier long tail. Entries
+are filtered to open-class content-word POS categories (名詞/動詞/形容詞/
+副詞/連体詞/接頭辞/接尾辞/感動詞/形状詞) with a non-ASCII surface, so
+symbols/whitespace/particles/auxiliary-verb entries in the lexicon don't
+pollute candidate lists.
+
+Effect: scanned 1,580,626 content-word lexicon rows (small + core tiers),
+augmented 38,286 of the 137,869 readings already in `mozc_dict.json`
+(27.8%), adding 106,032 candidate surfaces total (mozc_dict.json:
+7,586,929 → 8,836,108 bytes, +16.5%). Same caps as the JMdict augmentation
+(`MAX_NEW_PER_READING=12`, `MAX_TOTAL_CANDIDATES=40`). `compare_engines.js`
+strict-match rate is unchanged (6/20, 13/49) -- expected, same reasoning as
+the JMdict augmentation.
 
 ## Do not hand-patch individual words/sentences here
 
@@ -215,17 +272,17 @@ patch.
 
 ## Considered, not yet done
 
-- **SudachiDict** (Apache-2.0, https://github.com/WorksApplications/SudachiDict)
-  — a much larger, actively-maintained modern vocabulary. Investigated this
-  round and deferred: SudachiDict's lexicon has no connection-cost matrix of
-  its own — its connection ids explicitly reference "unidic-mecab 2.1.2's
-  left-id.def" (per Sudachi's own docs), a *different* project (UniDic,
-  NINJAL, GPL/LGPL/BSD triple-licensed — the BSD option is usable) with its
-  own raw id space requiring the same class-alignment-by-label-string
-  treatment as the ipadic merge above, plus locating and downloading the
-  exact matching UniDic version's matrix. Real, but larger and riskier than
-  what this round's budget covered — the two sources actually integrated
-  this round (mozc, real ipadic) were lower-risk and higher-confidence.
+- **SudachiDict's own connection-cost matrix** — see the "SudachiDict
+  vocabulary augmentation" section above for why this specifically (not
+  SudachiDict as a whole, which *is* now integrated for vocabulary) remains
+  undone: it would need UniDic 2.1.2's own `id.def` (NINJAL, a separate
+  distribution SudachiDict's own S3 host doesn't carry) to reduce its
+  5,981-class raw matrix into this project's shared registry, plus
+  verification that UniDic's short-unit POS convention actually aligns
+  with the IPADIC-derived one mozc/ipadic/JMdict/SudachiDict's own
+  vocabulary side already share. UniDic itself is GPL/LGPL/BSD
+  triple-licensed (the BSD option would be usable). Real, but a
+  larger, separately-scoped project than a vocabulary augmentation.
 - **Unreduced (2,672-class) mozc connection matrix** instead of the current
   ~723-class MIN-aggregated reduction (mozc's ~585 + ipadic's ~138 new
   classes) — would cost roughly 2.5MB → ~34MB for `mozc_matrix.json`.
@@ -256,6 +313,12 @@ patch.
 - `build_jmdict_augment.py` — safe-mode candidate-surface augmentation of
   the already-built `mozc_dict.json` (does not touch `mozc_costs.json` /
   `mozc_matrix.json`). Must run after `build_mozc_engine.py`. See "JMdict
+  vocabulary augmentation" above.
+- `fetch_sudachi.py` — downloads and extracts SudachiDict's "small" and
+  "core" lexicon CSVs into `cache_sudachi/` (gitignored).
+- `build_sudachi_augment.py` — the same safe-mode candidate-surface
+  augmentation as `build_jmdict_augment.py`, sourced from SudachiDict
+  instead. Must run after `build_mozc_engine.py`. See "SudachiDict
   vocabulary augmentation" above.
 - `compare_engines.js` — side-by-side custom-vs-mozc scoring against any
   `tools/ime-eval/` corpus file (`corpus_test10.js` by default). Not a

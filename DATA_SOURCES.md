@@ -93,6 +93,21 @@
   Unicode社の利用条件表示が求められる場合がある）
 - **帰属表示**: アプリ内ライセンス画面に記載済み
 
+## 8. SudachiDict（Works Applications Co., Ltd.）
+
+- **ライセンス**: Apache License 2.0
+- **利用内容 (track B, mozc_dict.json のみ)**: `tools/mozc_data/
+  build_sudachi_augment.py` が、統計データエンジン向けに、small/core
+  レキシコンCSVから既存の読みへの追加の候補表記（漢字表記のバリエー
+  ション）としてのみ利用。JMdictと同じ「新しい読みキーは追加しない」
+  安全モード。track Aのdict.json/global_dict.jsonでは未使用。
+- **帰属表示**: 記載済み — アプリ内ライセンス画面（`SymbolView.ets`
+  「ⓘ ライセンス」track Bセクション）、`THIRD_PARTY_NOTICES.md`
+  （全文条件を記載）、本ファイル。
+- **注記**: Apache-2.0は許諾的ライセンスで、JMdictのCC BY-SAと異なり
+  シェアアライク（同一ライセンスでの再配布）義務はない。帰属表示のみ
+  required。
+
 ---
 
 ## 未対応の推奨アクション
