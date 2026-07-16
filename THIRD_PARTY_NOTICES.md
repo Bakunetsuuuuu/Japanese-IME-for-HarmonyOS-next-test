@@ -1,7 +1,8 @@
 # Third-Party Notices
 
 This project ships derived data generated from the mozc project's
-open-source dictionary and connection-cost data (see
+open-source dictionary and connection-cost data, merged with real
+mecab-ipadic connection-cost and conjugation data (see
 `tools/mozc_data/build_mozc_engine.py`), used to build the optional
 "統計データ" (mozc-derived) conversion engine, which the user can enable
 alongside the app's own hand-built dictionary via a settings toggle. The
@@ -9,8 +10,16 @@ generated files (`entry/src/main/resources/rawfile/mozc_dict.json`,
 `mozc_costs.json`, `mozc_matrix.json`) are derived works of the data below
 and are covered by the same license terms.
 
-Source: https://github.com/google/mozc (branch: master,
-`src/data/dictionary_oss/`)
+Sources:
+- https://github.com/google/mozc (branch: master, `src/data/dictionary_oss/`)
+- https://github.com/taku910/mecab (branch: master, `mecab-ipadic/`) —
+  the original mecab author's own mirror of the real IPAdic release (word
+  list + connection-cost matrix), used to fill in a gap found in mozc's own
+  dictionary_oss export (see `tools/mozc_data/README.md` for details). Same
+  NAIST/ICOT license as the "IPAdic-derived dictionary entries" section
+  below — this is the same upstream project mozc's own dictionary is
+  itself derived from, just fetched directly rather than through mozc's
+  re-export.
 
 ---
 

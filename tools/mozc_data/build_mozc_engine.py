@@ -84,6 +84,34 @@ reading of し) rather than mozc_dict[reading][0] (whichever surface is
 cheapest for the reading in general, regardless of which sense was chosen --
 see KanaKanjiConverter.ets's mozcLastHints).
 
+Connection matrix: merged with real ipadic, not mozc alone
+-------------------------------------------------------------
+mozc's dictionary_oss is itself IPAdic-derived (see mozc's own
+dictionary_oss/README.txt), but its connection-cost matrix
+(connection_single_column.txt) turns out NOT to be stock ipadic's own
+matrix -- mozc's authors re-trained/re-costed it. Direct comparison against
+the real mecab-ipadic source (github.com/taku910/mecab, mecab-ipadic/,
+fetched by fetch_ipadic.py -- same NAIST/ICOT license already documented in
+../../THIRD_PARTY_NOTICES.md, mozc's own dictionary source lineage) found
+mozc's re-training made at least one extremely common, basic grammar
+pattern noticeably WORSE: する's 連用形 (conjunctive stem, e.g. the し in
+した) connecting to た (past-tense auxiliary) costs 859 in mozc's matrix but
+-7956 (i.e. strongly preferred) in real ipadic's matrix.def. Both matrices
+are built into the shared reduced-class space (see load_id_def/
+build_reduced_class_registry below -- mozc's id.def and ipadic's
+left-id.def use the same POS-label-string convention despite different raw
+numeric id spaces, so classes align by label, not by number) and merged
+with MIN, so a connection gets whichever source found it cheaper. mozc's
+own word list / node costs are NOT touched by this merge -- only the
+connection (edge-cost) matrix mixes in ipadic's data; see the module
+docstring's "Node cost / class per reading" section for why dictionary-side
+merging was deliberately NOT attempted this round (mozc's and ipadic's raw
+cost scales are not directly comparable -- see the same reading's cost in
+each source differing by 1-2 orders of magnitude in spot checks -- and
+naively pooling both sources' entries into one cost-sorted list would let
+that scale mismatch silently bias which sense wins, which is a worse
+failure mode than not merging at all).
+
 Outputs (entry/src/main/resources/rawfile/, shipped in the app):
   - mozc_dict.json    { reading: [surface, ...] }            ascending cost
   - mozc_costs.json   { reading: [[cost, leftClass, rightClass, surface], ...] }
@@ -106,6 +134,7 @@ import numpy as np
 
 HERE = os.path.dirname(__file__)
 CACHE = os.path.join(HERE, "cache")
+CACHE_IPADIC = os.path.join(HERE, "cache_ipadic")
 ROOT = os.path.abspath(os.path.join(HERE, "..", ".."))
 RAWFILE_DIR = os.path.join(ROOT, "entry/src/main/resources/rawfile")
 
@@ -136,10 +165,18 @@ MAX_CANDIDATES_PER_READING = 30
 MAX_SENSES_PER_READING = 6
 
 
-def load_id_def():
-    """Returns (raw_id -> full pos fields list, raw_id -> reduced_class_id, num_reduced)."""
+def load_id_def(path: str, encoding: str, group_key_to_reduced: dict):
+    """Parses an id.def-style file ("<id> <pos1>,<pos2>,...,<posN>" per
+    line) and folds ids into reduced classes by their first GROUP_FIELDS POS
+    columns. `group_key_to_reduced` is a SHARED registry across sources
+    (mozc's id.def and ipadic's left-id.def both use the same POS-label
+    convention despite disjoint raw numeric id spaces) -- mutated in place
+    so a class key already assigned an id by one source is reused by the
+    other, and any source-only key gets a newly appended id.
+    Returns (raw_id -> full pos fields list, raw_id -> reduced_class_id).
+    """
     raw_pos = {}
-    with open(os.path.join(CACHE, "id.def"), encoding="utf-8") as f:
+    with open(path, encoding=encoding) as f:
         for line in f:
             line = line.rstrip("\n")
             if not line:
@@ -147,7 +184,6 @@ def load_id_def():
             rid_str, pos = line.split(" ", 1)
             raw_pos[int(rid_str)] = pos.split(",")
 
-    group_key_to_reduced = {}
     raw_to_reduced = {}
     for rid in sorted(raw_pos):
         key = ",".join(raw_pos[rid][:GROUP_FIELDS])
@@ -155,41 +191,70 @@ def load_id_def():
             group_key_to_reduced[key] = len(group_key_to_reduced)
         raw_to_reduced[rid] = group_key_to_reduced[key]
 
-    return raw_pos, raw_to_reduced, group_key_to_reduced
+    return raw_pos, raw_to_reduced
 
 
-def build_reduced_matrix(raw_to_reduced: dict, num_reduced: int) -> np.ndarray:
+def _reduce_matrix(raw_matrix: np.ndarray, raw_to_reduced: dict, num_reduced: int) -> np.ndarray:
+    """MIN-aggregates a raw n*n connection matrix into num_reduced*num_reduced
+    reduced classes. See build_mozc_engine.py's module docstring for why MIN
+    (not mean). Cells with no underlying raw data default to this source's
+    own max (a neutral "unknown, don't prefer" filler) -- callers merging
+    multiple sources' reduced matrices via MIN naturally let a source that
+    DOES have real data for a cell override this filler.
+    """
+    n = raw_matrix.shape[0]
+    r2r = np.zeros(n, dtype=np.int64)
+    for rid, red in raw_to_reduced.items():
+        r2r[rid] = red
+    left_reduced = r2r[:, None] * num_reduced
+    right_reduced = r2r[None, :]
+    flat_idx = (left_reduced + right_reduced).reshape(-1)
+
+    mins = np.full(num_reduced * num_reduced, raw_matrix.max(), dtype=np.int64)
+    np.minimum.at(mins, flat_idx, raw_matrix.reshape(-1))
+    return mins.reshape(num_reduced, num_reduced)
+
+
+def build_reduced_matrix(raw_to_reduced: dict, num_reduced: int):
     path = os.path.join(CACHE, "connection_single_column.txt")
     with open(path, encoding="utf-8") as f:
         n = int(f.readline())
         raw = np.loadtxt(f, dtype=np.int64)
     assert raw.size == n * n, f"expected {n*n} costs, got {raw.size}"
     raw_matrix = raw.reshape(n, n)
+    return _reduce_matrix(raw_matrix, raw_to_reduced, num_reduced), float(np.median(raw_matrix))
 
-    # raw_to_reduced as an array for vectorized bincount-based grouping.
-    r2r = np.zeros(n, dtype=np.int64)
-    for rid, red in raw_to_reduced.items():
-        r2r[rid] = red
 
-    # MIN (not mean) over each (reducedLeft, reducedRight) bucket. Tried mean
-    # first; it systematically broke very common, grammatically central
-    # connections -- e.g. 名詞(noun) -> です(copula) reduced-cost came out
-    # *worse* than 名詞->で (a much rarer continuation) purely because です's
-    # reduced group also absorbed some unrelated, costlier raw sub-variants,
-    # dragging the average up. Each reduced group here is deliberately
-    # fine-grained (POS + conjugation form, see GROUP_FIELDS), so within a
-    # group the raw sub-variants are already grammatically near-identical --
-    # taking the cheapest one is a reasonable "this connection IS good in at
-    # least one real realization" signal rather than diluting it with worse
-    # siblings. Concretely verified fixing 名詞+です vs 名詞+で after this
-    # change (was mis-segmenting いいてんき+です+ね as いいてんき+で+すね).
-    left_reduced = r2r[:, None] * num_reduced  # (n,1)
-    right_reduced = r2r[None, :]  # (1,n)
-    flat_idx = (left_reduced + right_reduced).reshape(-1)
-
-    mins = np.full(num_reduced * num_reduced, raw_matrix.max(), dtype=np.int64)
-    np.minimum.at(mins, flat_idx, raw_matrix.reshape(-1))
-    return mins.reshape(num_reduced, num_reduced)
+def build_ipadic_reduced_matrix(raw_to_reduced: dict, num_reduced: int, target_median: float) -> np.ndarray:
+    # matrix.def is sparse (left, right, cost) triples, one per line, first
+    # line "leftSize rightSize" -- unlike mozc's flat row-major dump.
+    path = os.path.join(CACHE_IPADIC, "matrix.def")
+    with open(path, encoding="ascii") as f:
+        dims = f.readline().split()
+        n = int(dims[0])
+        triples = np.loadtxt(f, dtype=np.int64)
+    raw_matrix = np.zeros((n, n), dtype=np.int64)
+    raw_matrix[triples[:, 0], triples[:, 1]] = triples[:, 2]
+    # Calibration: real ipadic uses mecab's native convention (median ~-115,
+    # negative = strongly preferred); mozc shifted its own matrix to be
+    # entirely non-negative (median ~8157) during their own re-training/
+    # export. Merging the two raw scales directly was tried first and made
+    # things dramatically worse (corpus_test10 strict dropped from 20% to
+    # 5%) -- ipadic's very negative values made large swaths of the DP
+    # artificially cheap regardless of whether the actual span/context made
+    # sense, overwhelming node-cost signal from mozc's own (differently
+    # scaled) dictionary. Shifting ipadic's raw values by a constant so its
+    # median matches mozc's puts both sources on a comparable footing before
+    # the per-cell MIN merge, while still preserving *relative* differences
+    # within ipadic's own data (a connection ipadic rates unusually cheap
+    # relative to its own distribution stays unusually cheap relative to
+    # mozc's after the shift).
+    ipadic_raw_median = float(np.median(raw_matrix))
+    calibration_offset = round(target_median - ipadic_raw_median)
+    print(f"  ipadic matrix calibration offset: {calibration_offset:+d} "
+          f"(raw median {ipadic_raw_median:.0f} -> target {target_median:.0f})")
+    raw_matrix = raw_matrix + calibration_offset
+    return _reduce_matrix(raw_matrix, raw_to_reduced, num_reduced)
 
 
 # Major POS categories (id.def's first comma field) that are open-class
@@ -204,7 +269,16 @@ def build_reduced_matrix(raw_to_reduced: dict, num_reduced: int) -> np.ndarray:
 # applied only to content classes -- a real function word/particle sense
 # (助詞/助動詞/接続詞/フィラー/記号/感動詞/BOS-EOS/その他) is often
 # GENUINELY one character (は/を/に/で/と/し/た/...) and must stay cheap.
-CONTENT_POS_MAJOR = {"名詞", "動詞", "形容詞", "副詞", "連体詞", "接頭詞"}
+#
+# 動詞 (verbs) deliberately excluded, unlike track A's blanket
+# singleContentPenalty: a short verb span is very often a genuine
+# CONJUGATED STEM used as light-verb glue (じゅんびした = 準備(noun) +
+# し(する's 連用形, exactly 1-2 characters) + た), not homophone noise the
+# way a short bare noun usually is. Penalizing 動詞 here was tried and
+# empirically made things worse (corpus_test10 strict dropped from 30% to
+# 20%, re-breaking じゅんびした specifically) -- verified before reverting,
+# not assumed.
+CONTENT_POS_MAJOR = {"名詞", "形容詞", "副詞", "連体詞", "接頭詞"}
 
 
 def compute_content_class_mask(group_key_to_reduced: dict, num_reduced: int) -> list:
@@ -311,15 +385,38 @@ def build_dict_and_costs(raw_to_reduced: dict):
 
 
 def main():
-    print("loading id.def and reducing POS classes...")
-    raw_pos, raw_to_reduced, group_key_to_reduced = load_id_def()
+    print("loading id.def / left-id.def, reducing POS classes into a shared registry...")
+    group_key_to_reduced = {}
+    raw_pos, raw_to_reduced = load_id_def(os.path.join(CACHE, "id.def"), "utf-8", group_key_to_reduced)
+    mozc_num_reduced = len(group_key_to_reduced)
+    print(f"  mozc: {len(raw_pos)} raw ids -> {mozc_num_reduced} reduced classes")
+
+    have_ipadic = os.path.isdir(CACHE_IPADIC)
+    if have_ipadic:
+        ipadic_raw_pos, ipadic_raw_to_reduced = load_id_def(
+            os.path.join(CACHE_IPADIC, "left-id.def"), "euc-jp", group_key_to_reduced)
+        print(f"  + ipadic: {len(ipadic_raw_pos)} raw ids -> "
+              f"{len(group_key_to_reduced) - mozc_num_reduced} new reduced classes "
+              f"({len(group_key_to_reduced)} total)")
     num_reduced = len(group_key_to_reduced)
-    print(f"  {len(raw_pos)} raw ids -> {num_reduced} reduced classes")
     content_class_mask = compute_content_class_mask(group_key_to_reduced, num_reduced)
     print(f"  {sum(content_class_mask)} of {num_reduced} classes are open-class content POS")
 
     print("building reduced connection matrix (this takes a bit)...")
-    matrix = build_reduced_matrix(raw_to_reduced, num_reduced)
+    matrix, mozc_raw_median = build_reduced_matrix(raw_to_reduced, num_reduced)
+    if have_ipadic:
+        # Merge mozc's and real ipadic's connection matrices with MIN, in the
+        # shared reduced-class space -- see the module docstring's
+        # "Connection matrix: merged with real ipadic, not mozc alone"
+        # section for why (mozc re-trained its matrix away from stock
+        # ipadic, measurably worse for at least one very common pattern),
+        # and build_ipadic_reduced_matrix's own comment for the calibration
+        # offset this needs first (mozc's and ipadic's raw cost scales
+        # differ by a large constant shift, not just noise -- merging
+        # without correcting for that made results dramatically worse,
+        # confirmed empirically before adding this calibration step).
+        ipadic_matrix = build_ipadic_reduced_matrix(ipadic_raw_to_reduced, num_reduced, mozc_raw_median)
+        matrix = np.minimum(matrix, ipadic_matrix)
     print(f"  matrix shape: {matrix.shape}")
 
     # segment()'s Viterbi DP (KanaKanjiConverter.ets) needs two extra things

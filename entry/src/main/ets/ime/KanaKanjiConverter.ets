@@ -25466,7 +25466,7 @@ export interface MozcMatrixData {
   size: number;
   bosClass: number;
   unknownClass: number;
-  contentClassMask: number[]; // 1 = open-class content POS (名詞/動詞/形容詞/副詞/連体詞/接頭詞), 0 = function-word-ish
+  contentClassMask: number[]; // 1 = open-class content POS (名詞/形容詞/副詞/連体詞/接頭詞 -- 動詞 deliberately excluded, see build_mozc_engine.py's CONTENT_POS_MAJOR comment), 0 = function-word-ish
   matrix: number[];
 }
 
