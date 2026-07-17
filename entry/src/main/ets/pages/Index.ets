@@ -24,20 +24,39 @@ struct Index {
   @State showConsent: boolean = false;
   @State isDark: boolean = false;
 
+  // Set by EntryAbility (onCreate for a cold start, onNewWant for a
+  // re-launch into an already-running instance -- see its own comment) when
+  // the keyboard's settings panel asks to open a URL (e.g. GitHub) in the
+  // in-app browser. @Watch fires on both the initial bind and later changes,
+  // so this covers a re-launch without needing a page-visibility callback.
+  @StorageLink('pendingWebViewUrl') @Watch('onPendingWebViewUrlChanged') pendingWebViewUrl: string = '';
+  @StorageLink('pendingWebViewTitle') pendingWebViewTitle: string = '';
+
   // Hidden access to the developer dictionary: 7 quick taps on the title.
   private titleTapCount: number = 0;
   private titleTapLast: number = 0;
+
+  private onPendingWebViewUrlChanged(): void {
+    if (this.pendingWebViewUrl.length === 0) { return; }
+    const url = this.pendingWebViewUrl;
+    const title = this.pendingWebViewTitle;
+    AppStorage.setOrCreate('pendingWebViewUrl', '');
+    router.pushUrl({ url: 'pages/WebViewPage', params: { url, title } });
+  }
 
   aboutToAppear(): void {
     this.reload();
     this.checkConsent();
     try {
       const dis = display.getDefaultDisplaySync();
-      // display.ColorMode: COLOR_MODE_LIGHT=0, COLOR_MODE_DARK=1
-      this.isDark = (dis as ESObject)['colorMode'] === 1;
+      // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1
+      // (previous comment/check here had this inverted -- see PrivacyPolicy.ets/
+      // DevDict.ets/KeyboardController.applyColorMode, which all agree on 0=dark).
+      this.isDark = (dis as ESObject)['colorMode'] === 0;
     } catch (_e) {
       this.isDark = false;
     }
+    this.onPendingWebViewUrlChanged();
   }
 
   private checkConsent(): void {

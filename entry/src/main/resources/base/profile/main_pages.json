@@ -3,6 +3,7 @@
     "pages/KeyboardPage",
     "pages/Index",
     "pages/DevDict",
-    "pages/PrivacyPolicy"
+    "pages/PrivacyPolicy",
+    "pages/WebViewPage"
   ]
 }

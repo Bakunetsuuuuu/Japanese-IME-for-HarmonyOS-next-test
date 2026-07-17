@@ -8,6 +8,7 @@
     { "name": "subtype_hiragana",    "value": "日本語（ひらがな）" },
     { "name": "subtype_katakana",    "value": "カタカナ" },
     { "name": "subtype_alphanumeric","value": "英数字" },
-    { "name": "clipboard_permission_reason", "value": "コピーした内容を変換候補バーに表示し、タップで貼り付けできるようにするため" }
+    { "name": "clipboard_permission_reason", "value": "コピーした内容を変換候補バーに表示し、タップで貼り付けできるようにするため" },
+    { "name": "internet_permission_reason", "value": "アプリ内でGitHubリポジトリのページを表示するため" }
   ]
 }

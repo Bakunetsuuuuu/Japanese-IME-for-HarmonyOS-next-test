@@ -620,46 +620,49 @@ export class InputHandler {
   // keyboard extension process restarts.
   private static readonly MAX_CLIPBOARD_HISTORY = 8;
 
+  private static setClipboardPreviewState(preview: string, isImage: boolean, isFile: boolean, uri: string): void {
+    AppStorage.setOrCreate('clipboardPreview', preview);
+    AppStorage.setOrCreate('clipboardIsImage', isImage);
+    AppStorage.setOrCreate('clipboardIsFile', isFile);
+    AppStorage.setOrCreate('clipboardUri', uri);
+  }
+
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
       if (!data || data.getRecordCount() === 0) {
-        AppStorage.setOrCreate('clipboardPreview', '');
-        AppStorage.setOrCreate('clipboardIsImage', false);
-        AppStorage.setOrCreate('clipboardIsFile', false);
+        InputHandler.setClipboardPreviewState('', false, false, '');
         return;
       }
-      if (data.hasType(pasteboard.MIMETYPE_PIXELMAP)) {
-        AppStorage.setOrCreate('clipboardPreview', '画像');
-        AppStorage.setOrCreate('clipboardIsImage', true);
-        AppStorage.setOrCreate('clipboardIsFile', false);
-        return;
-      }
+      const isImage = data.hasType(pasteboard.MIMETYPE_PIXELMAP);
       const text = data.getPrimaryText();
       if (text && text.length > 0) {
-        AppStorage.setOrCreate('clipboardPreview', text);
-        AppStorage.setOrCreate('clipboardIsImage', false);
-        AppStorage.setOrCreate('clipboardIsFile', false);
+        InputHandler.setClipboardPreviewState(text, false, false, '');
         this.recordClipboardHistory(text);
         return;
       }
-      // No text/image record -- a copied file (e.g. from Files/a Gallery share
-      // sheet) shows up as a URI record instead. Preview it as a filename
-      // rather than leaving the chip blank or showing the raw URI.
+      // A file (from Files/a Gallery share sheet) shows up as a URI record.
+      // A directly-copied image often carries BOTH a pixelmap record and a
+      // URI record (many apps populate both), so check for a URI regardless
+      // of isImage -- it's what lets pasteClipboard's drag-out path (see
+      // KeyboardPage.ets) attach real content instead of just a preview
+      // string. Preview it as a filename rather than the raw URI.
       const uri = data.getPrimaryUri();
       if (uri && uri.length > 0) {
-        AppStorage.setOrCreate('clipboardPreview', InputHandler.formatFileClipPreview(uri));
-        AppStorage.setOrCreate('clipboardIsImage', false);
-        AppStorage.setOrCreate('clipboardIsFile', true);
+        const preview = isImage ? '画像' : InputHandler.formatFileClipPreview(uri);
+        InputHandler.setClipboardPreviewState(preview, isImage, true, uri);
         return;
       }
-      AppStorage.setOrCreate('clipboardPreview', '');
-      AppStorage.setOrCreate('clipboardIsImage', false);
-      AppStorage.setOrCreate('clipboardIsFile', false);
+      if (isImage) {
+        // Raw pixels only, no URI to point at (e.g. some apps' plain
+        // "コピー" on an image) -- preview-only, same as before; see
+        // pasteClipboard()'s comment for why this can't go further.
+        InputHandler.setClipboardPreviewState('画像', true, false, '');
+        return;
+      }
+      InputHandler.setClipboardPreviewState('', false, false, '');
     }).catch((err: Error) => {
       console.error('shuntiIME refreshClipboardPreview error', JSON.stringify(err));
-      AppStorage.setOrCreate('clipboardPreview', '');
-      AppStorage.setOrCreate('clipboardIsImage', false);
-      AppStorage.setOrCreate('clipboardIsFile', false);
+      InputHandler.setClipboardPreviewState('', false, false, '');
     });
   }
 
@@ -702,6 +705,19 @@ export class InputHandler {
   // → 貼り付け, or Ctrl+V), which reads the system clipboard directly and
   // doesn't go through the keyboard at all. The caller uses this return
   // value to tell the user that, instead of silently doing nothing.
+  //
+  // When a real file/image URI is available (clipboardUri, set by
+  // refreshClipboardPreview above), KeyboardPage.ets's clipboard chip offers
+  // a SEPARATE drag-out path via ArkUI's system drag-and-drop
+  // (unifiedDataChannel/DragEvent), which unlike insertText() can carry
+  // arbitrary content -- dragging the chip onto a compatible drop target
+  // (e.g. Twitter/LINE/Discord's own attachment/input area) can work where
+  // a tap-to-paste never could. This is best-effort and unverified: it
+  // depends on (a) this keyboard panel being allowed to originate a system
+  // drag at all, and (b) the target app's field actually implementing
+  // onDrop for the dragged type -- neither is guaranteed, and there's no
+  // way to detect either failure ahead of time, so it may just silently not
+  // work in some apps. Tap-to-paste keeps failing the same documented way.
   pasteClipboard(): boolean {
     const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
     const isFile = AppStorage.get<boolean>('clipboardIsFile') ?? false;
@@ -759,15 +775,26 @@ export class InputHandler {
     return true;
   }
 
-  // Opens this project's GitHub repository in the system browser (README,
-  // source code, and the GitHub Sponsors link at the top of the README).
+  // Opens this project's GitHub repository (README, source code, and the
+  // GitHub Sponsors link at the top of the README) in the main app's own
+  // in-app browser (pages/WebViewPage, an ArkWeb view) rather than handing
+  // off to the system's "choose a browser" chooser -- routed through
+  // EntryAbility's want parameters (see EntryAbility.ets/Index.ets) since a
+  // URL want here would open the system browser chooser instead.
   // Deliberately routed through GitHub rather than a payment link embedded
   // directly in the app -- keeps any donation ask entirely outside the
   // app binary/store listing, avoiding AppGallery review ambiguity around
   // in-app payment/donation solicitation.
   openGithubRepo(): boolean {
     if (!this.imeContext) { return false; }
-    const want: Want = { uri: 'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next' };
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+      parameters: {
+        openUrl: 'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next',
+        openTitle: 'GitHub',
+      },
+    };
     this.imeContext.startAbility(want)
       .catch((err: Error) => console.error('shuntiIME openGithubRepo error', JSON.stringify(err)));
     return true;
