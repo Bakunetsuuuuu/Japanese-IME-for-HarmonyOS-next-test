@@ -10,6 +10,7 @@ const CARD_RADIUS = 16;
 const TRACK_RADIUS = 11;
 const PILL_RADIUS = 8;
 const SELECTED_SHADOW = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
+const NO_SHADOW = { radius: 0, color: 'transparent' };
 
 // Dedicated settings sub-mode, entered via keyboardSubMode === 'settings'
 // (the ⚙ button in KeyboardPage). Takes the full IME panel the same way
@@ -123,60 +124,13 @@ export struct SettingsBar {
       .width('100%')
   }
 
-  // Two-option segmented control, e.g. QWERTY/フリック, ライト/ダーク.
-  @Builder Segmented(leftLabel: string, rightLabel: string, leftActive: boolean, onLeft: () => void, onRight: () => void) {
-    Row({ space: 2 }) {
-      Text(leftLabel)
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12)
-        .fontWeight(FontWeight.Medium)
-        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-        .borderRadius(PILL_RADIUS)
-        .backgroundColor(leftActive ? kbTheme(this.isDark).accent : 'transparent')
-        .fontColor(leftActive ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-        .shadow(leftActive ? SELECTED_SHADOW : { radius: 0, color: 'transparent' })
-        .onClick(onLeft)
-
-      Text(rightLabel)
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12)
-        .fontWeight(FontWeight.Medium)
-        .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-        .borderRadius(PILL_RADIUS)
-        .backgroundColor(!leftActive ? kbTheme(this.isDark).accent : 'transparent')
-        .fontColor(!leftActive ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-        .shadow(!leftActive ? SELECTED_SHADOW : { radius: 0, color: 'transparent' })
-        .onClick(onRight)
-    }
-    .backgroundColor(kbTheme(this.isDark).funcBg)
-    .borderRadius(TRACK_RADIUS)
-    .padding(3)
-  }
-
-  @Builder ChevronRow(label: string, badge: string, action: () => void) {
-    Row() {
-      Text(label)
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(14)
-        .fontColor(kbTheme(this.isDark).textPrimary)
-        .layoutWeight(1)
-      Row({ space: 6 }) {
-        if (badge !== '') {
-          Text(badge)
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        Text('›')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-      }
-    }
-    .width('100%')
-    .padding({ top: 14, bottom: 14 })
-    .onClick(action)
-  }
+  // Segmented-control options are written inline (not as a shared @Builder
+  // taking an "active" boolean parameter) — ArkUI's fine-grained update
+  // didn't reliably re-invoke a parameterized child @Builder when only the
+  // underlying @StorageLink changed (the toggle's highlighted state stuck
+  // until the whole panel was torn down and rebuilt, i.e. closed/reopened).
+  // Each option below reads its @StorageLink field directly so the
+  // dependency is unambiguous.
 
   @Builder MenuView() {
     this.SectionLabel('入力')
@@ -190,9 +144,33 @@ export struct SettingsBar {
           .fontSize(14)
           .fontColor(kbTheme(this.isDark).textPrimary)
           .layoutWeight(1)
-        this.Segmented('QWERTY', 'フリック', this.keyboardLayout === 'QWERTY',
-          () => { InputHandler.getInstance().setKeyboardLayout('QWERTY'); },
-          () => { InputHandler.getInstance().setKeyboardLayout('FLICK'); })
+
+        Row({ space: 2 }) {
+          Text('QWERTY')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.keyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.keyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.keyboardLayout === 'QWERTY' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setKeyboardLayout('QWERTY'); })
+
+          Text('フリック')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.keyboardLayout === 'FLICK' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.keyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.keyboardLayout === 'FLICK' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setKeyboardLayout('FLICK'); })
+        }
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(TRACK_RADIUS)
+        .padding(3)
       }
       .width('100%')
       .padding({ top: 13, bottom: 13 })
@@ -218,9 +196,27 @@ export struct SettingsBar {
 
       if (this.oneHandedMode) {
         Row({ space: 8 }) {
-          this.Segmented('左寄せ', '右寄せ', this.oneHandedSide === 'left',
-            () => { InputHandler.getInstance().setOneHandedMode(true, 'left'); },
-            () => { InputHandler.getInstance().setOneHandedMode(true, 'right'); })
+          Text('左寄せ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+            .fontColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.oneHandedSide === 'left' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'left'); })
+
+          Text('右寄せ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+            .fontColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.oneHandedSide === 'right' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'right'); })
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
@@ -235,9 +231,33 @@ export struct SettingsBar {
           .fontSize(14)
           .fontColor(kbTheme(this.isDark).textPrimary)
           .layoutWeight(1)
-        this.Segmented('独自辞書', '統計データ', this.conversionEngine !== 'mozc',
-          () => { InputHandler.getInstance().setConversionEngine('custom'); },
-          () => { InputHandler.getInstance().setConversionEngine('mozc'); })
+
+        Row({ space: 2 }) {
+          Text('独自辞書')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.conversionEngine !== 'mozc' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.conversionEngine !== 'mozc' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.conversionEngine !== 'mozc' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setConversionEngine('custom'); })
+
+          Text('統計データ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.conversionEngine === 'mozc' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setConversionEngine('mozc'); })
+        }
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(TRACK_RADIUS)
+        .padding(3)
       }
       .width('100%')
       .padding({ top: 13, bottom: 4 })
@@ -264,9 +284,33 @@ export struct SettingsBar {
           .fontSize(14)
           .fontColor(kbTheme(this.isDark).textPrimary)
           .layoutWeight(1)
-        this.Segmented('ライト', 'ダーク', this.themeMode !== 'dark',
-          () => { InputHandler.getInstance().setThemeMode('light'); },
-          () => { InputHandler.getInstance().setThemeMode('dark'); })
+
+        Row({ space: 2 }) {
+          Text('ライト')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.themeMode !== 'dark' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.themeMode !== 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.themeMode !== 'dark' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setThemeMode('light'); })
+
+          Text('ダーク')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.themeMode === 'dark' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.themeMode === 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.themeMode === 'dark' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setThemeMode('dark'); })
+        }
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(TRACK_RADIUS)
+        .padding(3)
       }
       .width('100%')
       .padding({ top: 13, bottom: 13 })
@@ -278,24 +322,86 @@ export struct SettingsBar {
 
     this.SectionLabel('その他')
     Column() {
-      this.ChevronRow('アプリを開く', '', () => {
+      Row() {
+        Text('アプリを開く')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => {
         InputHandler.getInstance().openMainApp();
         this.close();
       })
+
       Divider().color(kbTheme(this.isDark).divider)
-      this.ChevronRow('クリップボード履歴', String(this.clipboardHistory.length), () => {
-        this.showHistory = true;
-      })
+
+      Row() {
+        Text('クリップボード履歴')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Row({ space: 6 }) {
+          Text(String(this.clipboardHistory.length))
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+          Text('›')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(15)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => { this.showHistory = true; })
+
       Divider().color(kbTheme(this.isDark).divider)
-      this.ChevronRow('レビューを書く', '', () => {
+
+      Row() {
+        Text('レビューを書く')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => {
         const opened = InputHandler.getInstance().openAppGalleryReview();
         if (!opened) {
           promptAction.showToast({ message: 'まだAppGalleryに公開されていません' });
         }
         this.close();
       })
+
       Divider().color(kbTheme(this.isDark).divider)
-      this.ChevronRow('開発を支援 / ソースコード（GitHub）', '', () => {
+
+      Row() {
+        Text('開発を支援 / ソースコード（GitHub）')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => {
         InputHandler.getInstance().openGithubRepo();
         this.close();
       })
