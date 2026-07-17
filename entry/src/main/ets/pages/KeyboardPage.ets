@@ -103,7 +103,6 @@ struct KeyboardPage {
       // app (a different process) actually applies the mozc engine switch
       // here too, not just update the SettingsBar toggle's own display value.
       InputHandler.getInstance().setConversionEngine(s.conversionEngine);
-      InputHandler.getInstance().setThemeMode(s.themeMode);
     });
   }
 

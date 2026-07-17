@@ -26,7 +26,6 @@ export struct SettingsBar {
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
   @StorageLink('conversionEngine') conversionEngine: string = 'custom';
-  @StorageLink('themeMode') themeMode: string = 'system';
   @State showHistory: boolean = false;
 
   private close(): void {
@@ -270,50 +269,6 @@ export struct SettingsBar {
         .fontColor(kbTheme(this.isDark).textSecondary)
         .width('100%')
         .padding({ bottom: 13 })
-    }
-    .backgroundColor(kbTheme(this.isDark).cardBg)
-    .borderRadius(CARD_RADIUS)
-    .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
-
-    this.SectionLabel('外観')
-    Column() {
-      Row() {
-        Text('テーマ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .layoutWeight(1)
-
-        Row({ space: 2 }) {
-          Text('ライト')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.themeMode !== 'dark' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.themeMode !== 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode !== 'dark' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setThemeMode('light'); })
-
-          Text('ダーク')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.themeMode === 'dark' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.themeMode === 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'dark' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setThemeMode('dark'); })
-        }
-        .backgroundColor(kbTheme(this.isDark).funcBg)
-        .borderRadius(TRACK_RADIUS)
-        .padding(3)
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: 13 })
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)

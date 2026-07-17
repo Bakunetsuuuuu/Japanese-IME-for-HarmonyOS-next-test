@@ -14,10 +14,6 @@ export interface KeyboardSettings {
   // 'mozc' = optional statistical engine derived from mozc (see
   // KanaKanjiConverter.loadMozcEngine / THIRD_PARTY_NOTICES.md).
   conversionEngine: string;
-  // 'system' (default) follows the OS color mode, same as before this
-  // setting existed. 'light'/'dark' pin the keyboard's own theme regardless
-  // of the OS setting (design redesign's 外観 > テーマ control).
-  themeMode: string;
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -25,7 +21,6 @@ const DEFAULTS: KeyboardSettings = {
   oneHandedMode: false,
   oneHandedSide: 'right',
   conversionEngine: 'custom',
-  themeMode: 'system',
 };
 
 export class SettingsStore {
@@ -41,18 +36,16 @@ export class SettingsStore {
       const oneHanded = await prefs.get('oneHandedMode', DEFAULTS.oneHandedMode);
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
       const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
-      const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, engine, themeMode, forceReload }));
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, engine, forceReload }));
       return {
         keyboardLayout: String(layout),
         oneHandedMode: oneHanded === true,
         oneHandedSide: String(side),
         conversionEngine: String(engine),
-        themeMode: String(themeMode),
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
-      return { keyboardLayout: DEFAULTS.keyboardLayout, oneHandedMode: DEFAULTS.oneHandedMode, oneHandedSide: DEFAULTS.oneHandedSide, conversionEngine: DEFAULTS.conversionEngine, themeMode: DEFAULTS.themeMode };
+      return { keyboardLayout: DEFAULTS.keyboardLayout, oneHandedMode: DEFAULTS.oneHandedMode, oneHandedSide: DEFAULTS.oneHandedSide, conversionEngine: DEFAULTS.conversionEngine };
     }
   }
 
@@ -86,32 +79,13 @@ export class SettingsStore {
       console.error('shuntiIME SettingsStore.saveConversionEngine error', JSON.stringify(e));
     }
   }
-
-  static async saveThemeMode(context: common.Context, mode: string): Promise<void> {
-    try {
-      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('themeMode', mode);
-      await prefs.flush();
-      console.info('shuntiIME SettingsStore.saveThemeMode ok', mode);
-    } catch (e) {
-      console.error('shuntiIME SettingsStore.saveThemeMode error', JSON.stringify(e));
-    }
-  }
 }
 
-// Resolves the persisted themeMode ('system'/'light'/'dark') into an actual
-// isDark boolean, reading the OS color mode only when actually needed
-// ('system'). Shared by both processes: KeyboardController.applyThemeMode
-// has its own copy (it reads InputMethodExtensionContext.config directly,
-// a different config shape than display.getDefaultDisplaySync() used here),
-// this one is for the main app (EntryAbility / Index / DevDict /
-// PrivacyPolicy / WebViewPage) so a テーマ choice made from the keyboard's
-// own settings panel (SettingsBar's 外観 > テーマ) applies consistently to
-// the main app too, instead of the main app only ever following the OS.
-export async function resolveMainAppIsDark(context: common.Context): Promise<boolean> {
-  const settings = await SettingsStore.load(context);
-  if (settings.themeMode === 'light') { return false; }
-  if (settings.themeMode === 'dark') { return true; }
+// Reads whether the OS is in dark mode -- the main app (EntryAbility) uses
+// this the same way KeyboardController.applyColorMode does for the keyboard,
+// so both halves of the app follow the system setting only (no manual
+// テーマ override; that was tried and deliberately dropped again).
+export function resolveMainAppIsDark(): boolean {
   try {
     const dis = display.getDefaultDisplaySync();
     // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
