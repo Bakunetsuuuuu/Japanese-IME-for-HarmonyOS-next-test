@@ -33,14 +33,17 @@ export default class EntryAbility extends UIAbility {
   // main-app page (Index/DevDict/PrivacyPolicy/WebViewPage) reads via
   // @StorageLink instead of each independently calling
   // display.getDefaultDisplaySync() on its own in aboutToAppear (which
-  // never updated again after that first read).
+  // never updated again after that first read, and read the wrong field
+  // besides -- see resolveMainAppIsDark's comment).
   private applyColorMode(): void {
-    AppStorage.setOrCreate('isDark', resolveMainAppIsDark());
+    AppStorage.setOrCreate('isDark', resolveMainAppIsDark(this.context));
   }
 
   // Fires on an OS-level color-mode change while the app is already
   // running (system config changed, not window-stage recreated) -- without
   // this, isDark would only ever be (re-)computed at the next cold start.
+  // Re-reads this.context.config (same idiom as InputMethodExtAbility's own
+  // onConfigurationUpdate) rather than parsing the pushed config param.
   onConfigurationUpdate(_newConfig: object): void {
     this.applyColorMode();
   }

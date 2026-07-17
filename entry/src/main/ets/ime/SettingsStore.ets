@@ -1,6 +1,5 @@
 import dataPreferences from '@ohos.data.preferences';
 import type common from '@ohos.app.ability.common';
-import display from '@ohos.display';
 
 // Keyboard-wide settings persisted via @ohos.data.preferences, shared between
 // the main app (settings UI) and the IME extension — same idiom as
@@ -85,11 +84,15 @@ export class SettingsStore {
 // this the same way KeyboardController.applyColorMode does for the keyboard,
 // so both halves of the app follow the system setting only (no manual
 // テーマ override; that was tried and deliberately dropped again).
-export function resolveMainAppIsDark(): boolean {
+// Reads via context.config.colorMode, same as the keyboard extension's
+// applyColorMode -- NOT display.getDefaultDisplaySync(), whose Display
+// object has no colorMode field at all (that was the earlier bug: the
+// field read back undefined, so isDark always resolved to false).
+export function resolveMainAppIsDark(context: common.Context): boolean {
   try {
-    const dis = display.getDefaultDisplaySync();
+    const cm = (context.config as ESObject)['colorMode'] as number;
     // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
-    return (dis as ESObject)['colorMode'] === 0;
+    return cm === 0;
   } catch (_e) {
     return false;
   }
