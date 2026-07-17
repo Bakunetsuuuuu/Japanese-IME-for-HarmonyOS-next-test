@@ -3,6 +3,7 @@ import { promptAction, router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import display from '@ohos.display';
+import { JP_FONT_FAMILY } from '../components/JpFont';
 
 const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
@@ -150,6 +151,7 @@ struct Index {
       // ── Header ──────────────────────────────────────────────
       Row() {
         Text('ユーザー辞書')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(Color.White)
@@ -163,6 +165,7 @@ struct Index {
       // ── Registration form ───────────────────────────────────
       Column({ space: 10 }) {
         TextInput({ placeholder: 'よみ（ひらがな）', text: this.yomiInput })
+          .fontFamily(JP_FONT_FAMILY)
           .onChange((v: string) => { this.yomiInput = v; })
           .height(44)
           .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
@@ -170,6 +173,7 @@ struct Index {
           .borderRadius(8)
 
         TextInput({ placeholder: '単語', text: this.wordInput })
+          .fontFamily(JP_FONT_FAMILY)
           .onChange((v: string) => { this.wordInput = v; })
           .height(44)
           .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
@@ -177,6 +181,7 @@ struct Index {
           .borderRadius(8)
 
         Button('登録')
+          .fontFamily(JP_FONT_FAMILY)
           .width('100%')
           .height(44)
           .fontSize(16)
@@ -191,6 +196,7 @@ struct Index {
       // ── 登録済み一覧 ─────────────────────────────────────
       Row() {
         Text(`登録済み（${this.rows.length}件）`)
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
           .fontColor('#888888')
       }
@@ -200,6 +206,7 @@ struct Index {
       if (this.rows.length === 0) {
         Column() {
           Text('まだ登録がありません')
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(15)
             .fontColor('#AAAAAA')
         }
@@ -212,9 +219,11 @@ struct Index {
               Row() {
                 Column({ space: 2 }) {
                   Text(row.word)
+                    .fontFamily(JP_FONT_FAMILY)
                     .fontSize(17)
                     .fontColor(this.isDark ? '#F0F0F0' : Color.Black)
                   Text(row.yomi)
+                    .fontFamily(JP_FONT_FAMILY)
                     .fontSize(13)
                     .fontColor('#999999')
                 }
@@ -222,6 +231,7 @@ struct Index {
                 .layoutWeight(1)
 
                 Button('削除')
+                  .fontFamily(JP_FONT_FAMILY)
                   .fontSize(14)
                   .height(34)
                   .backgroundColor(this.isDark ? '#3A3A3A' : '#F0F0F0')
@@ -241,13 +251,16 @@ struct Index {
       // Footer
       Row() {
         Text('プライバシーポリシー')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
           .fontColor('#4A90E2')
           .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
         Text('  ·  ')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
           .fontColor('#BBBBBB')
         Text('v1.1.0')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
           .fontColor('#BBBBBB')
       }
@@ -271,6 +284,7 @@ struct Index {
     Column() {
       Column({ space: 14 }) {
         Text('プライバシーポリシーへの同意')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor(this.isDark ? '#F0F0F0' : '#222222')
@@ -279,18 +293,21 @@ struct Index {
              '・入力内容・変換履歴はすべて端末内でのみ処理されます\n' +
              '・外部サーバーへの送信は一切行いません\n' +
              '・分析ツールや広告 SDK は使用していません')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
           .fontColor(this.isDark ? '#AAAAAA' : '#555555')
           .lineHeight(22)
           .width('100%')
 
         Text('プライバシーポリシー全文を読む')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
           .fontColor('#4A90E2')
           .decoration({ type: TextDecorationType.Underline, color: '#4A90E2' })
           .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
 
         Button('同意して始める')
+          .fontFamily(JP_FONT_FAMILY)
           .width('100%')
           .height(46)
           .fontSize(16)
@@ -298,6 +315,7 @@ struct Index {
           .onClick(() => { this.acceptConsent(); })
 
         Text('同意しない（アプリを終了）')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(13)
           .fontColor('#999999')
           .onClick(() => { this.declineConsent(); })

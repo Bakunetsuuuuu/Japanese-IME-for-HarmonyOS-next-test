@@ -1,5 +1,6 @@
 import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
+import { JP_FONT_FAMILY } from './JpFont';
 
 const ROWS: string[][] = [
   ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p'],
@@ -130,6 +131,7 @@ export struct KeyboardView {
     // Read isShift/isCapsLock directly here (not via a by-value Builder param)
     // so the label re-renders when the shift state changes.
     Text((this.isShift || this.isCapsLock) ? value.toUpperCase() : value)
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(17)
       .fontColor(kbTheme(this.isDark).keyText)
       .textAlign(TextAlign.Center)
@@ -149,6 +151,7 @@ export struct KeyboardView {
 
   @Builder ShiftKey() {
     Text(this.isCapsLock ? '⇪' : '⇧')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(17)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
@@ -171,6 +174,7 @@ export struct KeyboardView {
 
   @Builder BackspaceKey() {
     Text('⌫')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(17)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
@@ -190,6 +194,7 @@ export struct KeyboardView {
 
   @Builder BunsetsuKey() {
     Text('文節')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(13)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
@@ -205,6 +210,7 @@ export struct KeyboardView {
 
   @Builder SpaceKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'かな' : 'space')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(14)
       .fontColor(kbTheme(this.isDark).keyText)
       .textAlign(TextAlign.Center)
@@ -220,6 +226,7 @@ export struct KeyboardView {
 
   @Builder ModeKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(12)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
@@ -238,6 +245,7 @@ export struct KeyboardView {
 
   @Builder FuncKey(label: string, action: () => void) {
     Text(label)
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(17)
       .fontColor(kbTheme(this.isDark).keyText)
       .textAlign(TextAlign.Center)
@@ -251,6 +259,7 @@ export struct KeyboardView {
 
   @Builder EnterKey() {
     Text('⏎')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(17)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)

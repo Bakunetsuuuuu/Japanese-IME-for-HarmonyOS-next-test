@@ -1,5 +1,6 @@
 import { router } from '@kit.ArkUI';
 import display from '@ohos.display';
+import { JP_FONT_FAMILY } from '../components/JpFont';
 
 @Entry
 @Component
@@ -20,10 +21,12 @@ struct PrivacyPolicy {
       // Header
       Row() {
         Text('← 戻る')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(15)
           .fontColor(Color.White)
           .onClick(() => { router.back(); })
         Text('プライバシーポリシー')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor(Color.White)
@@ -80,6 +83,7 @@ struct PrivacyPolicy {
             'プライバシーに関するご質問は、AppGallery の開発者情報に記載のメールアドレスまでお問い合わせください。')
 
           Text('最終更新: 2026年6月')
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor('#999999')
             .width('100%')
@@ -100,11 +104,13 @@ struct PrivacyPolicy {
   @Builder Section(title: string, body: string) {
     Column({ space: 8 }) {
       Text(title)
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.isDark ? '#E0E0E0' : '#333333')
         .width('100%')
       Text(body)
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(14)
         .fontColor(this.isDark ? '#AAAAAA' : '#555555')
         .lineHeight(22)

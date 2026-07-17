@@ -1,5 +1,6 @@
 import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
+import { JP_FONT_FAMILY } from './JpFont';
 
 const SYM_TABS: string[] = ['🕐', '1?#', '( )', '→', '⊞', '①', '◇', '[全]'];
 
@@ -144,6 +145,7 @@ export struct SymbolView {
       Row({ space: 2 }) {
         // ← back to kana
         Text('←')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(48).height(40)
@@ -159,6 +161,7 @@ export struct SymbolView {
           // Category tabs
           ForEach([0, 1, 2, 3, 4, 5, 6, 7], (i: number) => {
             Text(SYM_TABS[i])
+              .fontFamily(JP_FONT_FAMILY)
               .fontSize(i === 1 ? 12 : 13)
               .textAlign(TextAlign.Center)
               .width(38).height(32)
@@ -171,6 +174,7 @@ export struct SymbolView {
           }, (i: number) => String(i))
         } else {
           Text('ⓘ ライセンス')
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(13)
             .fontColor(kbTheme(this.isDark).subText)
             .padding({ left: 8 })
@@ -185,6 +189,7 @@ export struct SymbolView {
         // ── License view ─────────────────────────────────────────
         Scroll() {
           Text(LICENSE_TEXT)
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).previewText)
             .lineHeight(20)
@@ -203,6 +208,7 @@ export struct SymbolView {
                 Row({ space: 2 }) {
                   ForEach(this.currentRows()[rowIdx], (sym: string) => {
                     Text(sym)
+                      .fontFamily(JP_FONT_FAMILY)
                       .fontSize(sym.length > 1 ? 12 : 17)
                       .textAlign(TextAlign.Center)
                       .width(this.symKeyWidthVp)
@@ -230,6 +236,7 @@ export struct SymbolView {
       Row({ space: 0 }) {
         // あいう — back to kana
         Text('あいう')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(13).textAlign(TextAlign.Center)
           .width(68).height(44)
           .fontColor(kbTheme(this.isDark).subText)
@@ -240,6 +247,7 @@ export struct SymbolView {
 
         // Emoji button → emoji panel
         Text('☺')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(17)
           .textAlign(TextAlign.Center)
           .width(46).height(44)
@@ -250,6 +258,7 @@ export struct SymbolView {
 
         // ⓘ license info toggle
         Text('ⓘ')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18).textAlign(TextAlign.Center)
           .width(46).height(44)
           .fontColor(this.showLicense ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).subText)
@@ -259,6 +268,7 @@ export struct SymbolView {
 
         // ⌫ backspace
         Text('⌫')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18).textAlign(TextAlign.Center)
           .width(52).height(44)
           .fontColor(kbTheme(this.isDark).onAccentText)

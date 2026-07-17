@@ -1,5 +1,6 @@
 import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
+import { JP_FONT_FAMILY } from './JpFont';
 
 const EMOJI_TABS: string[] = ['😀', '👋', '🐶', '🍎', '🚗', '⚽', '💡', '❤️'];
 
@@ -108,6 +109,7 @@ export struct EmojiView {
       // ── Tab row ───────────────────────────────────────────────
       Row({ space: 2 }) {
         Text('←')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(44).height(40)
@@ -120,6 +122,7 @@ export struct EmojiView {
 
         ForEach([0, 1, 2, 3, 4, 5, 6, 7], (i: number) => {
           Text(EMOJI_TABS[i])
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(16)
             .textAlign(TextAlign.Center)
             .width(34).height(32)
@@ -141,6 +144,7 @@ export struct EmojiView {
               Row({ space: 2 }) {
                 ForEach(EMOJI_CATEGORIES[this.currentTab][rowIdx], (emoji: string) => {
                   Text(emoji)
+                    .fontFamily(JP_FONT_FAMILY)
                     .fontSize(22)
                     .textAlign(TextAlign.Center)
                     .width(this.symKeyWidthVp)
@@ -168,6 +172,7 @@ export struct EmojiView {
       // ── Bottom row ────────────────────────────────────────────
       Row({ space: 0 }) {
         Text('あいう')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(13).textAlign(TextAlign.Center)
           .width(68).height(44)
           .fontColor(kbTheme(this.isDark).subText)
@@ -176,6 +181,7 @@ export struct EmojiView {
           })
 
         Text('←記')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(13).textAlign(TextAlign.Center)
           .width(60).height(44)
           .fontColor(kbTheme(this.isDark).subText)
@@ -186,6 +192,7 @@ export struct EmojiView {
           })
 
         Text('⌫')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18).textAlign(TextAlign.Center)
           .width(52).height(44)
           .fontColor(kbTheme(this.isDark).onAccentText)

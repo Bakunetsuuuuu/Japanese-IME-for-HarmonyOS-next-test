@@ -2,6 +2,7 @@ import { UserDictStore } from '../ime/UserDictStore';
 import { promptAction, router } from '@kit.ArkUI';
 import pasteboard from '@ohos.pasteboard';
 import display from '@ohos.display';
+import { JP_FONT_FAMILY } from '../components/JpFont';
 
 interface DictRow {
   yomi: string;
@@ -123,10 +124,12 @@ struct DevDict {
       // ── Header ──────────────────────────────────────────────
       Row() {
         Text('← 戻る')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(15)
           .fontColor(Color.White)
           .onClick(() => { router.back(); })
         Text('開発者辞書（非公開）')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor(Color.White)
@@ -141,9 +144,11 @@ struct DevDict {
         // ── Password gate ─────────────────────────────────────
         Column({ space: 14 }) {
           Text('開発者用パスワードを入力')
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(15)
             .fontColor(this.isDark ? '#AAAAAA' : '#666666')
           TextInput({ placeholder: 'パスワード', text: this.passwordInput })
+            .fontFamily(JP_FONT_FAMILY)
             .type(InputType.Password)
             .onChange((v: string) => { this.passwordInput = v; })
             .onSubmit(() => { this.tryUnlock(); })
@@ -152,6 +157,7 @@ struct DevDict {
             .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
             .borderRadius(8)
           Button('解錠')
+            .fontFamily(JP_FONT_FAMILY)
             .width('100%')
             .height(44)
             .backgroundColor('#5A3E8E')
@@ -164,6 +170,7 @@ struct DevDict {
         // ── Registration form ───────────────────────────────────
         Column({ space: 10 }) {
           TextInput({ placeholder: 'よみ（ひらがな）', text: this.yomiInput })
+            .fontFamily(JP_FONT_FAMILY)
             .onChange((v: string) => { this.yomiInput = v; })
             .height(44)
             .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
@@ -171,6 +178,7 @@ struct DevDict {
             .borderRadius(8)
 
           TextInput({ placeholder: '単語', text: this.wordInput })
+            .fontFamily(JP_FONT_FAMILY)
             .onChange((v: string) => { this.wordInput = v; })
             .height(44)
             .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
@@ -179,11 +187,13 @@ struct DevDict {
 
           Row({ space: 10 }) {
             Button('登録')
+              .fontFamily(JP_FONT_FAMILY)
               .layoutWeight(1)
               .height(44)
               .backgroundColor('#5A3E8E')
               .onClick(() => { this.addEntry(); })
             Button('JSONエクスポート')
+              .fontFamily(JP_FONT_FAMILY)
               .layoutWeight(1)
               .height(44)
               .fontSize(15)
@@ -199,6 +209,7 @@ struct DevDict {
 
         Row() {
           Text(`登録済み（${this.rows.length}件）`)
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor('#888888')
         }
@@ -208,6 +219,7 @@ struct DevDict {
         if (this.rows.length === 0) {
           Column() {
             Text('まだ登録がありません')
+              .fontFamily(JP_FONT_FAMILY)
               .fontSize(15)
               .fontColor('#AAAAAA')
           }
@@ -220,9 +232,11 @@ struct DevDict {
                 Row() {
                   Column({ space: 2 }) {
                     Text(row.word)
+                      .fontFamily(JP_FONT_FAMILY)
                       .fontSize(17)
                       .fontColor(this.isDark ? '#F0F0F0' : Color.Black)
                     Text(row.yomi)
+                      .fontFamily(JP_FONT_FAMILY)
                       .fontSize(13)
                       .fontColor('#999999')
                   }
@@ -230,6 +244,7 @@ struct DevDict {
                   .layoutWeight(1)
 
                   Button('削除')
+                    .fontFamily(JP_FONT_FAMILY)
                     .fontSize(14)
                     .height(34)
                     .backgroundColor(this.isDark ? '#3A3A3A' : '#F0F0F0')

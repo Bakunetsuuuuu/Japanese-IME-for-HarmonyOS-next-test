@@ -1,6 +1,7 @@
 import { UIAbility } from '@kit.AbilityKit';
 import type { Want, AbilityConstant } from '@kit.AbilityKit';
 import type { window } from '@kit.ArkUI';
+import { registerJpFont } from '../components/JpFont';
 
 export default class EntryAbility extends UIAbility {
   onCreate(_want: Want, _launchParam: AbilityConstant.LaunchParam): void {
@@ -10,6 +11,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
+    registerJpFont();
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         console.error('shuntiIME loadContent failed', JSON.stringify(err));

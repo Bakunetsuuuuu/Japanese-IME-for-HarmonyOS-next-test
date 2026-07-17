@@ -1,5 +1,6 @@
 import { InputHandler, InputState } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
+import { JP_FONT_FAMILY } from './JpFont';
 
 // Gboard-style numeric pad, reached via the "123" key on the flick keyboard.
 // Same 5-column (side keys + 3 digit columns) grid as FlickKeyboardView so it
@@ -69,6 +70,7 @@ export struct NumericPadView {
 
   @Builder DigitKey(digit: string) {
     Text(digit)
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(20)
       .fontWeight(FontWeight.Medium)
       .textAlign(TextAlign.Center)
@@ -81,6 +83,7 @@ export struct NumericPadView {
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
       Text('あ')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -88,6 +91,7 @@ export struct NumericPadView {
         .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'kana'); })
     } else if (rowIdx === 1) {
       Text('◄')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -95,6 +99,7 @@ export struct NumericPadView {
         .onClick(() => { this.h().handleCursorLeft(); })
     } else if (rowIdx === 2) {
       Text('記号')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -102,6 +107,7 @@ export struct NumericPadView {
         .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'symbol'); })
     } else {
       Text('+')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(20).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).keyBg).fontColor(kbTheme(this.isDark).keyText)
@@ -113,6 +119,7 @@ export struct NumericPadView {
   @Builder RightKey(rowIdx: number) {
     if (rowIdx === 0) {
       Text('⌫')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -126,6 +133,7 @@ export struct NumericPadView {
         })
     } else if (rowIdx === 1) {
       Text('►')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -133,6 +141,7 @@ export struct NumericPadView {
         .onClick(() => { this.h().handleCursorRight(); })
     } else if (rowIdx === 2) {
       Text('space')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(12).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -140,6 +149,7 @@ export struct NumericPadView {
         .onClick(() => { this.h().handleSpaceKey(); })
     } else {
       Text('⏎')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).accentBg).fontColor(kbTheme(this.isDark).onAccentText)

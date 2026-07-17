@@ -13,6 +13,7 @@ import { BunsetsuBar } from '../components/BunsetsuBar';
 import { SettingsBar } from '../components/SettingsBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
+import { JP_FONT_FAMILY } from '../components/JpFont';
 
 let _inputStartRegistered = false;
 let _dictLoaded = false;
@@ -138,6 +139,7 @@ struct KeyboardPage {
             // so this strip and the candidate row underneath both run compact.
             Row() {
               Text(this.composingText + this.pendingRomaji)
+                .fontFamily(JP_FONT_FAMILY)
                 .fontSize(this.isLandscape ? 11 : 16)
                 .fontColor(kbTheme(this.isDark).previewText)
                 .maxLines(1)
@@ -165,6 +167,7 @@ struct KeyboardPage {
                   // Gboard-style: centered paste suggestion when nothing is composing,
                   // rather than left-aligned like an actual conversion candidate.
                   Text(this.clipboardPreview)
+                    .fontFamily(JP_FONT_FAMILY)
                     .fontSize(this.isLandscape ? 11 : 16)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -201,6 +204,7 @@ struct KeyboardPage {
               // AppGallery review. The flick/QWERTY toggle that used to live here
               // moved into the main app's settings screen (SettingsStore-backed).
               Text('⚙')
+                .fontFamily(JP_FONT_FAMILY)
                 .fontSize(this.isLandscape ? 12 : 16)
                 .fontColor(kbTheme(this.isDark).subText)
                 .textAlign(TextAlign.Center)

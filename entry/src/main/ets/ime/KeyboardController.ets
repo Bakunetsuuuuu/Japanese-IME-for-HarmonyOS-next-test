@@ -10,6 +10,7 @@ import { KanaKanjiConverter, MozcMatrixData } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { SettingsStore, KeyboardSettings } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
+import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
   id: string;
@@ -1101,6 +1102,7 @@ export class KeyboardController {
   }
 
   onCreate(): void {
+    registerJpFont();
     this.inputHandle.setContext(this.context);
     this.applyColorMode();
     this.initPanel();

@@ -1,6 +1,7 @@
 import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
 import { toKatakana } from '../ime/JapaneseConverter';
 import { kbTheme } from './Theme';
+import { JP_FONT_FAMILY } from './JpFont';
 
 type FlickDir = 'center' | 'up' | 'right' | 'down' | 'left';
 
@@ -199,6 +200,7 @@ export struct FlickKeyboardView {
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
       Text('123')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -208,6 +210,7 @@ export struct FlickKeyboardView {
         })
     } else if (rowIdx === 1) {
       Text('◄')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -215,6 +218,7 @@ export struct FlickKeyboardView {
         .onClick(() => { this.h().handleCursorLeft(); })
     } else if (rowIdx === 2) {
       Text('記号')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -224,6 +228,7 @@ export struct FlickKeyboardView {
         })
     } else {
       Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(12).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -241,6 +246,7 @@ export struct FlickKeyboardView {
   @Builder RightKey(rowIdx: number) {
     if (rowIdx === 0) {
       Text('⌫')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -254,6 +260,7 @@ export struct FlickKeyboardView {
         })
     } else if (rowIdx === 1) {
       Text('►')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialKeyBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -261,6 +268,7 @@ export struct FlickKeyboardView {
         .onClick(() => { this.h().handleCursorRight(); })
     } else if (rowIdx === 2) {
       Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
         .textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
@@ -276,6 +284,7 @@ export struct FlickKeyboardView {
         })
     } else {
       Text('→')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).accentBg).fontColor(kbTheme(this.isDark).onAccentText)
@@ -301,6 +310,7 @@ export struct FlickKeyboardView {
       // just show the center glyph. Flicking itself is unaffected — dirFrom()
       // reads the touch gesture, not this label.
       Text(this.centerLabel(rowIdx, colIdx, key))
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(this.isActive(rowIdx, colIdx) ? 17 : 14)
         .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
         .fontWeight(FontWeight.Medium)
@@ -316,6 +326,7 @@ export struct FlickKeyboardView {
     } else {
       Column({ space: 0 }) {
         Text(key.up !== undefined ? this.toMode(key.up) : ' ')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(11)
           .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
           .width('100%').height('28%')
@@ -323,17 +334,20 @@ export struct FlickKeyboardView {
 
         Row({ space: 0 }) {
           Text(key.left !== undefined ? this.toMode(key.left) : ' ')
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
             .width('25%').textAlign(TextAlign.Center)
 
           Text(this.centerLabel(rowIdx, colIdx, key))
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(this.isActive(rowIdx, colIdx) ? 20 : 17)
             .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).keyText)
             .fontWeight(FontWeight.Medium)
             .width('50%').textAlign(TextAlign.Center)
 
           Text(key.right !== undefined ? this.toMode(key.right) : ' ')
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
             .width('25%').textAlign(TextAlign.Center)
@@ -341,6 +355,7 @@ export struct FlickKeyboardView {
         .width('100%').height('44%')
 
         Text(key.down !== undefined ? this.toMode(key.down) : ' ')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(11)
           .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
           .width('100%').height('28%')

@@ -1,5 +1,6 @@
 import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
+import { JP_FONT_FAMILY } from './JpFont';
 
 @Component
 export struct BunsetsuBar {
@@ -13,6 +14,7 @@ export struct BunsetsuBar {
       Row({ space: 2 }) {
         ForEach(this.segments, (seg: string, idx: number) => {
           Text(seg)
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(this.isLandscape ? 12 : 16)
             .padding(this.isLandscape ?
               { left: 6, right: 6, top: 1, bottom: 1 } :

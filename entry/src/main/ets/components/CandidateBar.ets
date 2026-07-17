@@ -1,5 +1,6 @@
 import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
+import { JP_FONT_FAMILY } from './JpFont';
 
 @Component
 export struct CandidateBar {
@@ -13,6 +14,7 @@ export struct CandidateBar {
       Row({ space: 4 }) {
         ForEach(this.candidates, (candidate: string, index: number) => {
           Text(candidate)
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(this.isLandscape ? 12 : 16)
             .padding(this.isLandscape ?
               { left: 8, right: 8, top: 2, bottom: 2 } :

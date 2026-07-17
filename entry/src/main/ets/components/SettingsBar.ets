@@ -1,6 +1,7 @@
 import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
+import { JP_FONT_FAMILY } from './JpFont';
 
 // Dedicated settings sub-mode, entered via keyboardSubMode === 'settings'
 // (the ⚙ button in KeyboardPage). Takes the full IME panel the same way
@@ -28,6 +29,7 @@ export struct SettingsBar {
       // ── Header ───────────────────────────────────────────────
       Row() {
         Text('←')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(48).height(40)
@@ -43,6 +45,7 @@ export struct SettingsBar {
           })
 
         Text(this.showHistory ? 'クリップボード履歴' : '設定')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
           .fontColor(kbTheme(this.isDark).previewText)
@@ -51,6 +54,7 @@ export struct SettingsBar {
 
         if (this.showHistory) {
           Text('削除')
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(13)
             .fontColor(kbTheme(this.isDark).subText)
             .padding({ right: 12 })
@@ -93,12 +97,14 @@ export struct SettingsBar {
     // round-trip through shared preferences for the extension to pick it up.
     Row() {
       Text('キーボード')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(14)
         .fontColor(kbTheme(this.isDark).previewText)
         .layoutWeight(1)
 
       Row() {
         Text('QWERTY')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
           .padding({ left: 10, right: 10, top: 5, bottom: 5 })
           .borderRadius(6)
@@ -107,6 +113,7 @@ export struct SettingsBar {
           .onClick(() => { InputHandler.getInstance().setKeyboardLayout('QWERTY'); })
 
         Text('フリック')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
           .padding({ left: 10, right: 10, top: 5, bottom: 5 })
           .borderRadius(6)
@@ -124,6 +131,7 @@ export struct SettingsBar {
     Divider().color(kbTheme(this.isDark).borderColor)
 
     Text('アプリを開く')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(14)
       .fontColor(kbTheme(this.isDark).previewText)
       .width('100%')
@@ -137,6 +145,7 @@ export struct SettingsBar {
 
     Row() {
       Text('片手モード')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(14)
         .fontColor(kbTheme(this.isDark).previewText)
         .layoutWeight(1)
@@ -152,6 +161,7 @@ export struct SettingsBar {
     if (this.oneHandedMode) {
       Row({ space: 8 }) {
         Text('左寄せ')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(13)
           .padding({ left: 10, right: 10, top: 5, bottom: 5 })
           .borderRadius(6)
@@ -159,6 +169,7 @@ export struct SettingsBar {
           .fontColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).subText)
           .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'left'); })
         Text('右寄せ')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(13)
           .padding({ left: 10, right: 10, top: 5, bottom: 5 })
           .borderRadius(6)
@@ -175,12 +186,14 @@ export struct SettingsBar {
 
     Row() {
       Text('変換エンジン')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(14)
         .fontColor(kbTheme(this.isDark).previewText)
         .layoutWeight(1)
 
       Row() {
         Text('独自辞書')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
           .padding({ left: 10, right: 10, top: 5, bottom: 5 })
           .borderRadius(6)
@@ -189,6 +202,7 @@ export struct SettingsBar {
           .onClick(() => { InputHandler.getInstance().setConversionEngine('custom'); })
 
         Text('統計データ')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
           .padding({ left: 10, right: 10, top: 5, bottom: 5 })
           .borderRadius(6)
@@ -206,6 +220,7 @@ export struct SettingsBar {
     Text(this.conversionEngine === 'mozc'
       ? '高性能だが比較的鈍重（推奨）'
       : '軽量だが発展途上')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(11)
       .fontColor(kbTheme(this.isDark).subText)
       .width('100%')
@@ -214,6 +229,7 @@ export struct SettingsBar {
     Divider().color(kbTheme(this.isDark).borderColor)
 
     Text(`クリップボード履歴（${this.clipboardHistory.length}）`)
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(14)
       .fontColor(kbTheme(this.isDark).previewText)
       .width('100%')
@@ -223,6 +239,7 @@ export struct SettingsBar {
     Divider().color(kbTheme(this.isDark).borderColor)
 
     Text('レビューを書く')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(14)
       .fontColor(kbTheme(this.isDark).previewText)
       .width('100%')
@@ -238,6 +255,7 @@ export struct SettingsBar {
     Divider().color(kbTheme(this.isDark).borderColor)
 
     Text('開発を支援 / ソースコード（GitHub）')
+      .fontFamily(JP_FONT_FAMILY)
       .fontSize(14)
       .fontColor(kbTheme(this.isDark).previewText)
       .width('100%')
@@ -251,6 +269,7 @@ export struct SettingsBar {
   @Builder HistoryView() {
     if (this.clipboardHistory.length === 0) {
       Text('履歴がありません')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(13)
         .fontColor(kbTheme(this.isDark).subText)
         .padding(16)
@@ -259,6 +278,7 @@ export struct SettingsBar {
         ForEach(this.clipboardHistory, (item: string, index: number) => {
           ListItem() {
             Text(item)
+              .fontFamily(JP_FONT_FAMILY)
               .fontSize(13)
               .fontColor(kbTheme(this.isDark).previewText)
               .maxLines(2)
