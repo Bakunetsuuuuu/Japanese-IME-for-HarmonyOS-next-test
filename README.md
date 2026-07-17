@@ -4,11 +4,19 @@ HarmonyOS NEXT (API 12+) 向けの日本語 IME です。フリック入力・QW
 
 > **開発者**: shuntilettuce
 
-**このアプリは無料で、広告もありません。** 開発・運用はすべて持ち出しで、
-現状は完全に赤字です。もしこのアプリを気に入っていただけたなら、
-[OFUSE](https://ofuse.me/shunti) や [GitHub Sponsors](https://github.com/sponsors/shuntilettuce)
-からのご支援を検討していただけると、本当に励みになります。どうかよろしく
-お願いします。
+## 開発支援のご案内
+
+shunti IMEは広告なし・完全無料で個人が開発しているオープンソースプロジェクトです。
+現在、日々の変換精度向上のために発生するAI利用コスト（API料金など）を個人で全て負担しており、開発継続のための資金が不足している状態です。
+
+もし shunti を気に入っていただけましたら、開発継続のために缶コーヒー1杯分だけでもご支援（寄付）をいただけますと大変励みになります。
+
+- **OFUSE**: **[ofuse.me/shunti](https://ofuse.me/shunti)**
+  クレジットカード・コンビニ決済などに対応した日本の投げ銭サービスです。GitHubアカウントは不要で、応援メッセージを添えて一度きりの寄付ができます。
+- **GitHub Sponsors**: **[github.com/sponsors/shuntilettuce](https://github.com/sponsors/shuntilettuce)**
+  GitHubアカウントがあればカード情報の入力だけで、月額の継続支援または一度きりの支援ができます。
+
+いただいたご支援は変換精度向上のためのAI利用料に充てさせていただきます。
 
 ---
 
