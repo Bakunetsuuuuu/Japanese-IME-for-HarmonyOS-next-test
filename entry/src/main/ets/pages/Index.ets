@@ -1,4 +1,6 @@
 import { UserDictStore } from '../ime/UserDictStore';
+import { UserPosStore } from '../ime/UserPosStore';
+import type { UserPosEntry } from '../ime/ConjugationEngine';
 import { router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
@@ -9,9 +11,14 @@ const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
 const CARD_RADIUS = 16;
 
+const POS_LABELS: Record<string, string> = {
+  verb: '動詞', adjective: '形容詞', person: '人名', place: '地名',
+};
+
 interface DictRow {
   yomi: string;
   word: string;
+  posLabel: string;
 }
 
 // User-dictionary list screen (design_handoff_ime_redesign/README_dictionary.md
@@ -19,16 +26,14 @@ interface DictRow {
 // (DictionaryEditPage.ets, "2. 追加・編集画面") reached via the header's ＋
 // button or tapping a row -- this used to be a single combined screen with
 // an inline add-only form and no way to edit an existing entry's text.
-// The design's 品詞 (part-of-speech) tag field is NOT implemented: the
-// underlying UserDictStore model is a plain Record<よみ, 単語[]> with no
-// per-entry metadata slot, and the keyboard's conversion lookup doesn't use
-// a POS distinction either -- adding one would mean a real data-model
-// migration, not just a visual change, so it's left out rather than wiring
-// up a tag that doesn't actually do anything.
+// Each row's 品詞 (part-of-speech) subtitle comes from UserPosStore -- see
+// DictionaryEditPage's 品詞 picker and ConjugationEngine.ets for how it
+// drives real conjugation/segmentation behaviour, not just a display tag.
 @Entry
 @Component
 struct Index {
   @State dict: Record<string, string[]> = {};
+  @State posMap: Record<string, UserPosEntry> = {};
   @State rows: DictRow[] = [];
   @State searchQuery: string = '';
   // First-launch privacy consent gate. true = block UI until the user agrees.
@@ -125,8 +130,12 @@ struct Index {
   }
 
   private reload(): void {
-    UserDictStore.load(getContext(this), true).then((d: Record<string, string[]>) => {
-      this.dict = d;
+    Promise.all([
+      UserDictStore.load(getContext(this), true),
+      UserPosStore.load(getContext(this), true),
+    ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
+      this.dict = results[0];
+      this.posMap = results[1];
       this.rebuildRows();
     });
   }
@@ -136,7 +145,9 @@ struct Index {
     const keys = Object.keys(this.dict).sort();
     for (const yomi of keys) {
       for (const word of this.dict[yomi]) {
-        list.push({ yomi: yomi, word: word });
+        const entry = UserPosStore.get(this.posMap, yomi, word);
+        const posLabel = entry ? (POS_LABELS[entry.pos] ?? '') : '';
+        list.push({ yomi: yomi, word: word, posLabel: posLabel });
       }
     }
     this.rows = list;
@@ -226,7 +237,7 @@ struct Index {
                         .fontSize(15)
                         .fontWeight(FontWeight.Medium)
                         .fontColor(kbTheme(this.isDark).textPrimary)
-                      Text(row.yomi)
+                      Text(row.posLabel.length > 0 ? `${row.yomi} ・ ${row.posLabel}` : row.yomi)
                         .fontFamily(JP_FONT_FAMILY)
                         .fontSize(12)
                         .fontColor(kbTheme(this.isDark).textSecondary)

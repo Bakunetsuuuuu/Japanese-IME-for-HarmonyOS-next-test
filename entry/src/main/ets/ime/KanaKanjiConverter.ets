@@ -31233,6 +31233,13 @@ export class KanaKanjiConverter {
   private static supplementaryDict: Record<string, string[]> = {};
   private static learned: Record<string, Record<string, number>> = {};
   private static userDict: Record<string, string[]> = {};
+  // [leftClass, rightClass] overrides for user-dictionary readings, keyed the
+  // same way VERB_CLASS is (see getWordInfo below) -- populated by
+  // ConjugationEngine.buildUserExpansion via KeyboardController.reloadUserDict.
+  // Covers both a user word's own dictionary-form reading (verb/adjective/
+  // person/place all get one) and every conjugated form generated for
+  // verb/adjective entries.
+  private static userClassMap: Record<string, number[]> = {};
   // Developer-curated dictionary bundled as rawfile/global_dict.json. Highest priority.
   private static globalDict: Record<string, string[]> = {};
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
@@ -31407,6 +31414,10 @@ export class KanaKanjiConverter {
 
   static setUserDict(dict: Record<string, string[]>): void {
     KanaKanjiConverter.userDict = dict;
+  }
+
+  static setUserClassMap(classMap: Record<string, number[]>): void {
+    KanaKanjiConverter.userClassMap = classMap;
   }
 
   static setGlobalDict(dict: Record<string, string[]>): void {
@@ -32601,7 +32612,11 @@ export class KanaKanjiConverter {
     // from VERB_CLASS falls through unchanged to the existing noun-default
     // path, so this only touches readings that used to be misclassified as
     // nouns.
-    const vc = VERB_CLASS[sub];
+    // User-registered verb/adjective/person/place words (DictionaryEditPage's
+    // 品詞 picker, see ConjugationEngine.ets) get the same treatment as the
+    // built-in VERB_CLASS table -- checked second so a collision with a
+    // built-in reading keeps the built-in's (already-tuned) class.
+    const vc = VERB_CLASS[sub] ?? KanaKanjiConverter.userClassMap[sub];
     if (vc !== undefined) {
       const lenBonus = Math.min((sub.length - 1) * 500, KanaKanjiConverter.VN_DEFAULT - 500);
       const commonBonus = KanaKanjiConverter.COMMON_READINGS.has(sub) ? 3000 : 0;

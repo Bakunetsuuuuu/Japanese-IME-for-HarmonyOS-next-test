@@ -8,6 +8,9 @@ import pasteboard from '@ohos.pasteboard';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter, MozcMatrixData } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
+import { UserPosStore } from './UserPosStore';
+import type { UserPosEntry } from './ConjugationEngine';
+import { buildUserExpansion } from './ConjugationEngine';
 import { SettingsStore, KeyboardSettings } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
 import { registerJpFont } from '../components/JpFont';
@@ -222,13 +225,23 @@ export class InputHandler {
     AppStorage.setOrCreate('frequentSymbols', syms.slice(0, 24));
   }
 
-  // Reload the user dictionary from disk (picks up words added in the main app).
+  // Reload the user dictionary from disk (picks up words added in the main
+  // app), plus its 品詞 metadata (DictionaryEditPage's POS picker) --
+  // expanded into conjugated forms + connection-matrix class overrides via
+  // ConjugationEngine before handing off to KanaKanjiConverter, so a verb/
+  // adjective/person/place entry gets real segmentation behaviour instead of
+  // the flat noun default (see UserPosStore/ConjugationEngine.ets).
   private reloadUserDict(): void {
     if (!this.imeContext) { return; }
-    UserDictStore.load(this.imeContext, true)
-      .then((dict: Record<string, string[]>) => {
-        KanaKanjiConverter.setUserDict(dict);
-      });
+    const ctx = this.imeContext;
+    Promise.all([
+      UserDictStore.load(ctx, true),
+      UserPosStore.load(ctx, true),
+    ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
+      const expansion = buildUserExpansion(results[0], results[1]);
+      KanaKanjiConverter.setUserDict(expansion.dict);
+      KanaKanjiConverter.setUserClassMap(expansion.classMap);
+    });
   }
 
   // Reload keyboard-wide settings from disk (picks up the layout choice made
