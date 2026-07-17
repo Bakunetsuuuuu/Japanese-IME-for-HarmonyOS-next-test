@@ -18520,7 +18520,7 @@ const DICTIONARY: Record<string, string[]> = {
   'きゅうふ': ['休符', '給付'],
   'てんぽ': ['店舗', 'テンポ'],
   'めろでぃ': ['メロディ'],
-  'はーもにー': ['ハーモニー'],
+  'はーもにー': ['ハーモニー', 'HarmonyOS', '鴻蒙'],
   'わしょく': ['和食'],
   'おんかい': ['音階'],
   'ちょうごう': ['調号'],
@@ -25262,6 +25262,42 @@ const DICTIONARY: Record<string, string[]> = {
   'かったら': ['勝ったら'],
   'かてば': ['勝てば'],
   'かたせる': ['勝たせる'],
+  // ガチオタク向け語彙: スマホ改造/ROM焼き, PC/自作ガジェット, 中華ガジェット・
+  // 並行輸入事情。既存キーを上書きするものは dict.json 側の候補をランキング
+  // だけ変えたい意図であり、その語自体を消しはしない(下の元候補はext経由で
+  // 自動的に後続に付加される。lookupCore()参照)。
+  'かすたむ': ['かすたむ', 'カスタムROM', 'カスタム'],
+  'ぶーと': ['ぶーと', 'boot', 'ブート'],
+  'ほんもん': ['本文', '本門', '鴻蒙'],
+  'おっぽ': ['尾っぽ', 'OPPO'],
+  'ばいおす': ['BIOS'],
+  'たおばお': ['タオバオ', '淘宝'],
+  'ちゅうごくばん': ['中国版'],
+  'ぐろーばるばん': ['グローバル版'],
+  'ぐろばん': ['グロ版'],
+  'やふおく': ['ヤフオク'],
+  'やふふり': ['ヤフフリ'],
+  'じゃんぱら': ['ジャンパラ'],
+  'いおしす': ['イオシス'],
+  'げおもば': ['ゲオモバ'],
+  'はどふ': ['ハドフ'],
+  'はーどおふ': ['ハードオフ'],
+  'ありばば': ['アリババ', '阿里巴巴'],
+  'ありえく': ['アリエク'],
+  'てんまお': ['天猫', 'テンマオ'],
+  'じんどん': ['京東'],
+  'びぼ': ['vivo'],
+  'わんぷらす': ['OnePlus'],
+  'おなー': ['HONOR'],
+  'れっどみー': ['Redmi'],
+  'りあるみー': ['realme'],
+  'みーずー': ['Meizu'],
+  'ぜっとてぃーいー': ['ZTE'],
+  'ぬびあ': ['nubia'],
+  'あいきゅーおー': ['iQOO'],
+  'れのぼ': ['Lenovo'],
+  'えいすーす': ['ASUS'],
+  'えむえすあい': ['MSI'],
 };
 
 // track A (engine='custom') POS/conjugation layer, Phase 1: whole-word
@@ -32286,6 +32322,17 @@ export class KanaKanjiConverter {
     return n > 0 && n % 2 === 0 && kana.slice(0, n / 2) === kana.slice(n / 2);
   }
 
+  // Specific mixed-case/lowercase Latin brand & tech terms that are the
+  // *correct* real-world spelling (official stylization or a lowercase
+  // command/term), not leaked romaji-conversion junk — exempted from the
+  // ALL-CAPS-only romaji filter below on a per-string basis rather than by
+  // loosening the general rule (which exists to keep scraped garbage out of
+  // the other ~190k dictionary entries).
+  private static readonly LATIN_WHITELIST = new Set<string>([
+    'HarmonyOS', 'boot', 'vivo', 'OnePlus', 'Redmi', 'realme', 'Meizu',
+    'nubia', 'iQOO', 'Lenovo',
+  ]);
+
   // Remove half-width katakana and pure-ASCII romaji only.
   // Full-width katakana is always kept (loanwords need カタカナ even when kanji exists).
   private static filterCandidates(kana: string, cands: string[]): string[] {
@@ -32293,7 +32340,8 @@ export class KanaKanjiConverter {
       if (/^[ｦ-ﾟ]+$/.test(c)) { return false; } // half-width katakana
       // romaji / latin, but keep short ALL-CAPS acronyms (PTA, NHK, SNS, OK,
       // DL, PC) — real Japanese-context words, not romaji-conversion junk.
-      if (/^[A-Za-zÀ-ɏ]+$/.test(c) && !/^[A-Z]{2,6}$/.test(c)) { return false; }
+      if (/^[A-Za-zÀ-ɏ]+$/.test(c) && !/^[A-Z]{2,6}$/.test(c)
+          && !KanaKanjiConverter.LATIN_WHITELIST.has(c)) { return false; }
       return true;
     });
     // Recover clean words from bracket-fragment candidates, then drop the rest.
