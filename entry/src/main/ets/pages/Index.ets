@@ -1,27 +1,40 @@
 import { UserDictStore } from '../ime/UserDictStore';
-import { promptAction, router } from '@kit.ArkUI';
+import { router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { JP_FONT_FAMILY } from '../components/JpFont';
+import { kbTheme } from '../components/Theme';
 
 const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
+const CARD_RADIUS = 16;
 
 interface DictRow {
   yomi: string;
   word: string;
 }
 
+// User-dictionary list screen (design_handoff_ime_redesign/README_dictionary.md
+// "1. 一覧画面"). Registration/editing moved to its own page
+// (DictionaryEditPage.ets, "2. 追加・編集画面") reached via the header's ＋
+// button or tapping a row -- this used to be a single combined screen with
+// an inline add-only form and no way to edit an existing entry's text.
+// The design's 品詞 (part-of-speech) tag field is NOT implemented: the
+// underlying UserDictStore model is a plain Record<よみ, 単語[]> with no
+// per-entry metadata slot, and the keyboard's conversion lookup doesn't use
+// a POS distinction either -- adding one would mean a real data-model
+// migration, not just a visual change, so it's left out rather than wiring
+// up a tag that doesn't actually do anything.
 @Entry
 @Component
 struct Index {
   @State dict: Record<string, string[]> = {};
   @State rows: DictRow[] = [];
-  @State yomiInput: string = '';
-  @State wordInput: string = '';
+  @State searchQuery: string = '';
   // First-launch privacy consent gate. true = block UI until the user agrees.
   @State showConsent: boolean = false;
-  // Set by EntryAbility.applyThemeMode (テーマ setting + OS color mode).
+  // Set by EntryAbility.applyColorMode (OS color mode only -- no manual
+  // override, see git history if that's ever wanted again).
   @StorageLink('isDark') isDark: boolean = false;
 
   // Set by EntryAbility (onCreate for a cold start, onNewWant for a
@@ -48,6 +61,12 @@ struct Index {
     this.reload();
     this.checkConsent();
     this.onPendingWebViewUrlChanged();
+  }
+
+  // Refresh the list when coming back from DictionaryEditPage (add/edit/
+  // delete all happen there now, not inline on this page).
+  onPageShow(): void {
+    this.reload();
   }
 
   private checkConsent(): void {
@@ -123,164 +142,147 @@ struct Index {
     this.rows = list;
   }
 
-  private isHiragana(s: string): boolean {
-    // U+3041–U+3094 covers ぁ…ゔ (incl. ん), U+30FC is the long-vowel mark ー.
-    return /^[ぁ-ゔー]+$/.test(s);
+  private visibleRows(): DictRow[] {
+    const q = this.searchQuery.trim().toLowerCase();
+    if (q.length === 0) { return this.rows; }
+    return this.rows.filter((r: DictRow) => r.word.toLowerCase().includes(q) || r.yomi.toLowerCase().includes(q));
   }
 
-  private addEntry(): void {
-    const yomi = this.yomiInput.trim();
-    const word = this.wordInput.trim();
-    if (yomi.length === 0 || word.length === 0) {
-      promptAction.showToast({ message: 'よみと単語を入力してください' });
-      return;
-    }
-    if (!this.isHiragana(yomi)) {
-      promptAction.showToast({ message: 'よみはひらがなで入力してください' });
-      return;
-    }
-    this.dict = UserDictStore.add(this.dict, yomi, word);
-    UserDictStore.save(getContext(this), this.dict).then(() => {
-      this.rebuildRows();
-      this.yomiInput = '';
-      this.wordInput = '';
-      promptAction.showToast({ message: `「${word}」を登録しました` });
-    });
-  }
-
-  private removeEntry(row: DictRow): void {
-    this.dict = UserDictStore.remove(this.dict, row.yomi, row.word);
-    UserDictStore.save(getContext(this), this.dict).then(() => {
-      this.rebuildRows();
+  private openEditor(row?: DictRow): void {
+    router.pushUrl({
+      url: 'pages/DictionaryEditPage',
+      params: { yomi: row?.yomi ?? '', word: row?.word ?? '' },
     });
   }
 
   build() {
     Stack() {
-    Column() {
-      // ── Header ──────────────────────────────────────────────
-      Row() {
-        Text('ユーザー辞書')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(20)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
-          .onClick(() => { this.onTitleTap(); })
-      }
-      .width('100%')
-      .height(56)
-      .padding({ left: 16 })
-      .backgroundColor('#4A90E2')
+      Column() {
+        // ── Header: symmetric 56px gutters so the title stays centered ──
+        Row() {
+          Row().width(56)
+          Text('ユーザー辞書')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(16)
+            .fontWeight(FontWeight.Bold)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .layoutWeight(1)
+            .textAlign(TextAlign.Center)
+            .onClick(() => { this.onTitleTap(); })
+          Row() {
+            Text('＋')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(17)
+              .textAlign(TextAlign.Center)
+              .width(28).height(28)
+              .fontColor(kbTheme(this.isDark).accent)
+              .backgroundColor(kbTheme(this.isDark).funcBg)
+              .borderRadius(14)
+              .onClick(() => { this.openEditor(); })
+          }
+          .width(56)
+          .justifyContent(FlexAlign.End)
+        }
+        .width('100%')
+        .height(52)
+        .padding({ left: 16, right: 16 })
+        .alignItems(VerticalAlign.Center)
+        .border({ width: { bottom: 1 }, color: kbTheme(this.isDark).divider })
 
-      // ── Registration form ───────────────────────────────────
-      Column({ space: 10 }) {
-        TextInput({ placeholder: 'よみ（ひらがな）', text: this.yomiInput })
-          .fontFamily(JP_FONT_FAMILY)
-          .onChange((v: string) => { this.yomiInput = v; })
-          .height(44)
-          .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
-          .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
-          .borderRadius(8)
-
-        TextInput({ placeholder: '単語', text: this.wordInput })
-          .fontFamily(JP_FONT_FAMILY)
-          .onChange((v: string) => { this.wordInput = v; })
-          .height(44)
-          .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
-          .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
-          .borderRadius(8)
-
-        Button('登録')
-          .fontFamily(JP_FONT_FAMILY)
-          .width('100%')
-          .height(44)
-          .fontSize(16)
-          .backgroundColor('#4A90E2')
-          .onClick(() => { this.addEntry(); })
-      }
-      .width('100%')
-      .padding(16)
-
-      Divider().color(this.isDark ? '#333333' : '#E0E0E0')
-
-      // ── 登録済み一覧 ─────────────────────────────────────
-      Row() {
-        Text(`登録済み（${this.rows.length}件）`)
+        // ── Search bar ──────────────────────────────────────────
+        TextInput({ placeholder: '単語・読みで検索', text: this.searchQuery })
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
-          .fontColor('#888888')
-      }
-      .width('100%')
-      .padding({ left: 16, top: 12, bottom: 4 })
+          .onChange((v: string) => { this.searchQuery = v; })
+          .height(38)
+          .backgroundColor(kbTheme(this.isDark).funcBg)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .placeholderColor(kbTheme(this.isDark).textSecondary)
+          .borderRadius(11)
+          .margin({ left: 16, right: 16, top: 10, bottom: 10 })
 
-      if (this.rows.length === 0) {
-        Column() {
-          Text('まだ登録がありません')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(15)
-            .fontColor('#AAAAAA')
-        }
-        .width('100%')
-        .padding({ top: 40 })
-      } else {
-        List({ space: 1 }) {
-          ForEach(this.rows, (row: DictRow) => {
-            ListItem() {
-              Row() {
-                Column({ space: 2 }) {
-                  Text(row.word)
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(17)
-                    .fontColor(this.isDark ? '#F0F0F0' : Color.Black)
-                  Text(row.yomi)
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(13)
-                    .fontColor('#999999')
+        // ── 登録済み一覧 ─────────────────────────────────────
+        if (this.visibleRows().length === 0) {
+          Column() {
+            Text(this.rows.length === 0
+              ? '登録された単語がありません\n右上の＋から追加できます'
+              : '一致する単語が見つかりません')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(13)
+              .fontColor(kbTheme(this.isDark).textSecondary)
+              .textAlign(TextAlign.Center)
+          }
+          .width('100%')
+          .padding({ top: 64 })
+        } else {
+          Scroll() {
+            Column() {
+              ForEach(this.visibleRows(), (row: DictRow, index: number) => {
+                Column() {
+                  Row() {
+                    Column({ space: 2 }) {
+                      Text(row.word)
+                        .fontFamily(JP_FONT_FAMILY)
+                        .fontSize(15)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(kbTheme(this.isDark).textPrimary)
+                      Text(row.yomi)
+                        .fontFamily(JP_FONT_FAMILY)
+                        .fontSize(12)
+                        .fontColor(kbTheme(this.isDark).textSecondary)
+                    }
+                    .alignItems(HorizontalAlign.Start)
+                    .layoutWeight(1)
+
+                    Text('›')
+                      .fontFamily(JP_FONT_FAMILY)
+                      .fontSize(15)
+                      .fontColor(kbTheme(this.isDark).textSecondary)
+                  }
+                  .width('100%')
+                  .padding({ top: 13, bottom: 13 })
+                  .onClick(() => { this.openEditor(row); })
+
+                  if (index < this.visibleRows().length - 1) {
+                    Divider().color(kbTheme(this.isDark).divider)
+                  }
                 }
-                .alignItems(HorizontalAlign.Start)
-                .layoutWeight(1)
-
-                Button('削除')
-                  .fontFamily(JP_FONT_FAMILY)
-                  .fontSize(14)
-                  .height(34)
-                  .backgroundColor(this.isDark ? '#3A3A3A' : '#F0F0F0')
-                  .fontColor('#D9534F')
-                  .onClick(() => { this.removeEntry(row); })
-              }
-              .width('100%')
-              .padding({ left: 16, right: 16, top: 10, bottom: 10 })
-              .backgroundColor(this.isDark ? '#252525' : '#FFFFFF')
+              }, (row: DictRow) => row.yomi + '' + row.word)
             }
-          }, (row: DictRow) => row.yomi + '' + row.word)
+            .width('100%')
+            .backgroundColor(kbTheme(this.isDark).cardBg)
+            .borderRadius(CARD_RADIUS)
+            .padding({ left: 14, right: 14 })
+          }
+          .width('100%')
+          .layoutWeight(1)
+          .padding({ left: 16, right: 16 })
+          .align(Alignment.Top)
+        }
+
+        // Footer
+        Row() {
+          Text('プライバシーポリシー')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).accent)
+            .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
+          Text('  ·  ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+          Text('v1.1.0')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
         }
         .width('100%')
-        .layoutWeight(1)
-        .divider({ strokeWidth: 1, color: this.isDark ? '#333333' : '#EEEEEE' })
-      }
-      // Footer
-      Row() {
-        Text('プライバシーポリシー')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(12)
-          .fontColor('#4A90E2')
-          .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
-        Text('  ·  ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(12)
-          .fontColor('#BBBBBB')
-        Text('v1.1.0')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(12)
-          .fontColor('#BBBBBB')
+        .justifyContent(FlexAlign.Center)
+        .padding({ top: 12, bottom: 16 })
       }
       .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .padding({ top: 12, bottom: 16 })
-    }
-    .width('100%')
-    .height('100%')
-    .backgroundColor(this.isDark ? '#121212' : '#F5F5F5')
+      .height('100%')
+      .backgroundColor(kbTheme(this.isDark).panelBg)
 
       if (this.showConsent) {
         this.ConsentOverlay()
@@ -297,7 +299,7 @@ struct Index {
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
-          .fontColor(this.isDark ? '#F0F0F0' : '#222222')
+          .fontColor(kbTheme(this.isDark).textPrimary)
 
         Text('shunti Japanese IME をご利用いただく前に、プライバシーポリシーをお読みください。\n\n' +
              '・入力内容・変換履歴はすべて端末内でのみ処理されます\n' +
@@ -305,15 +307,15 @@ struct Index {
              '・分析ツールや広告 SDK は使用していません')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
-          .fontColor(this.isDark ? '#AAAAAA' : '#555555')
+          .fontColor(kbTheme(this.isDark).textSecondary)
           .lineHeight(22)
           .width('100%')
 
         Text('プライバシーポリシー全文を読む')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
-          .fontColor('#4A90E2')
-          .decoration({ type: TextDecorationType.Underline, color: '#4A90E2' })
+          .fontColor(kbTheme(this.isDark).accent)
+          .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
           .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
 
         Button('同意して始める')
@@ -321,19 +323,19 @@ struct Index {
           .width('100%')
           .height(46)
           .fontSize(16)
-          .backgroundColor('#4A90E2')
+          .backgroundColor(kbTheme(this.isDark).accent)
           .onClick(() => { this.acceptConsent(); })
 
         Text('同意しない（アプリを終了）')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(13)
-          .fontColor('#999999')
+          .fontColor(kbTheme(this.isDark).textSecondary)
           .onClick(() => { this.declineConsent(); })
       }
       .width('86%')
       .padding(24)
-      .backgroundColor(this.isDark ? '#252525' : '#FFFFFF')
-      .borderRadius(16)
+      .backgroundColor(kbTheme(this.isDark).cardBg)
+      .borderRadius(CARD_RADIUS)
     }
     .width('100%')
     .height('100%')

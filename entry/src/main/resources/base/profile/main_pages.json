@@ -4,6 +4,7 @@
     "pages/Index",
     "pages/DevDict",
     "pages/PrivacyPolicy",
-    "pages/WebViewPage"
+    "pages/WebViewPage",
+    "pages/DictionaryEditPage"
   ]
 }
