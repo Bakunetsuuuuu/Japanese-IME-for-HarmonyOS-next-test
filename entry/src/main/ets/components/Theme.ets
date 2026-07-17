@@ -2,69 +2,67 @@
 // Light and dark variants are selected via the 'isDark' AppStorage flag,
 // which KeyboardController populates from the system color mode and keeps
 // in sync through InputMethodExtAbility.onConfigurationUpdate.
+//
+// Token names/values match the "Harmony Next 風" redesign handoff
+// (design_handoff_ime_redesign/README.md) so the code and design spec read
+// as the same vocabulary. accent/accentStrong are the two roles the redesign
+// calls out as a single overridable pair -- swap them to recolor Enter, the
+// selected candidate, active toggles/segments, and the active flick-drag
+// hint everywhere at once.
 
 export interface KbTheme {
   // Backgrounds
-  panelBg: ResourceColor;        // outer keyboard panel
-  previewBarBg: ResourceColor;   // candidate/toggle row
-  composingBarBg: ResourceColor; // composing kana strip
-  selectingBarBg: ResourceColor; // preview row while a candidate is selected
+  panelBg: ResourceColor;        // outer keyboard panel + preview/candidate row
   keyBg: ResourceColor;          // normal character keys
-  specialKeyBg: ResourceColor;   // shift / backspace / mode keys
-  funcKeyBg: ResourceColor;      // layout-toggle and secondary buttons
-  candidateBg: ResourceColor;    // candidate chip background
+  candidateBg: ResourceColor;    // candidate/bunsetsu chip background (unselected)
+  specialBg: ResourceColor;      // shift / backspace / mode / enter-adjacent keys
+  funcBg: ResourceColor;         // secondary buttons, inactive segmented-control track
+  cardBg: ResourceColor;         // settings row cards
   // Accents
-  accentBg: ResourceColor;       // enter / selected candidate
-  accentStrongBg: ResourceColor; // active bunsetsu segment
+  accent: ResourceColor;         // enter / selected candidate / active segment / active toggle
+  accentSoft: ResourceColor;     // active flick-drag cell background
+  accentStrong: ResourceColor;   // active flick-drag hint glyph color
   // Text
-  keyText: ResourceColor;        // text on normal keys
-  onAccentText: ResourceColor;   // text on accent / special keys
-  previewText: ResourceColor;    // composing / candidate text
-  subText: ResourceColor;        // secondary labels, flick hints
+  textPrimary: ResourceColor;
+  textSecondary: ResourceColor;  // secondary labels, flick hints, section headers
+  onAccent: ResourceColor;       // text/glyph on accent-filled surfaces
   // Lines / shadow
-  borderColor: ResourceColor;
+  divider: ResourceColor;
   shadowColor: ResourceColor;
 }
 
 export const LIGHT_THEME: KbTheme = {
-  panelBg: '#D1D5DB',
-  previewBarBg: '#F0F2F5',
-  composingBarBg: '#FAFAFA',
-  selectingBarBg: '#E0E3E8',
+  panelBg: '#EEF1F5',
   keyBg: '#FFFFFF',
-  specialKeyBg: '#ADB5BD',
-  funcKeyBg: '#C0C5CC',
   candidateBg: '#FFFFFF',
-  accentBg: '#4A90E2',
-  accentStrongBg: '#1565C0',
-  keyText: '#111111',
-  onAccentText: '#FFFFFF',
-  previewText: '#111111',
-  subText: '#444444',
-  borderColor: '#CCCCCC',
-  shadowColor: '#33000000',
+  specialBg: '#E3E7EC',
+  funcBg: '#DFE3E9',
+  cardBg: '#FFFFFF',
+  accent: '#2F6FED',
+  accentSoft: '#DCE7FD',
+  accentStrong: '#1E54C7',
+  textPrimary: '#1C1C1E',
+  textSecondary: '#7A7F87',
+  onAccent: '#FFFFFF',
+  divider: '#E2E5EA',
+  shadowColor: '#0F142B0F', // rgba(20,20,43,0.06)
 };
 
 export const DARK_THEME: KbTheme = {
-  // Matches HUAWEI's stock keyboard panel background so there's no visible
-  // seam where the system draws around/behind this panel (e.g. the reserved
-  // strip alongside a landscape panel — see KeyboardController.computeKeyWidths).
-  panelBg: '#242424',
-  previewBarBg: '#202022',
-  composingBarBg: '#242426',
-  selectingBarBg: '#2C2C2E',
-  keyBg: '#48484A',
-  specialKeyBg: '#2E2E30',
-  funcKeyBg: '#3A3A3C',
-  candidateBg: '#48484A',
-  accentBg: '#3A6FB0',
-  accentStrongBg: '#2A5A96',
-  keyText: '#F5F5F5',
-  onAccentText: '#FFFFFF',
-  previewText: '#F0F0F0',
-  subText: '#C0C0C0',
-  borderColor: '#000000',
-  shadowColor: '#55000000',
+  panelBg: '#1C1C1E',
+  keyBg: '#2C2C2E',
+  candidateBg: '#2C2C2E',
+  specialBg: '#3A3A3C',
+  funcBg: '#333336',
+  cardBg: '#232325',
+  accent: '#4C8DFF',
+  accentSoft: '#274070',
+  accentStrong: '#5B9BFF',
+  textPrimary: '#F2F2F7',
+  textSecondary: '#9A9AA0',
+  onAccent: '#FFFFFF',
+  divider: '#3A3A3C',
+  shadowColor: '#0F142B1F',
 };
 
 export function kbTheme(isDark: boolean): KbTheme {

@@ -13,6 +13,10 @@ export interface KeyboardSettings {
   // 'mozc' = optional statistical engine derived from mozc (see
   // KanaKanjiConverter.loadMozcEngine / THIRD_PARTY_NOTICES.md).
   conversionEngine: string;
+  // 'system' (default) follows the OS color mode, same as before this
+  // setting existed. 'light'/'dark' pin the keyboard's own theme regardless
+  // of the OS setting (design redesign's 外観 > テーマ control).
+  themeMode: string;
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -20,6 +24,7 @@ const DEFAULTS: KeyboardSettings = {
   oneHandedMode: false,
   oneHandedSide: 'right',
   conversionEngine: 'custom',
+  themeMode: 'system',
 };
 
 export class SettingsStore {
@@ -35,16 +40,18 @@ export class SettingsStore {
       const oneHanded = await prefs.get('oneHandedMode', DEFAULTS.oneHandedMode);
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
       const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, engine, forceReload }));
+      const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, engine, themeMode, forceReload }));
       return {
         keyboardLayout: String(layout),
         oneHandedMode: oneHanded === true,
         oneHandedSide: String(side),
         conversionEngine: String(engine),
+        themeMode: String(themeMode),
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
-      return { keyboardLayout: DEFAULTS.keyboardLayout, oneHandedMode: DEFAULTS.oneHandedMode, oneHandedSide: DEFAULTS.oneHandedSide, conversionEngine: DEFAULTS.conversionEngine };
+      return { keyboardLayout: DEFAULTS.keyboardLayout, oneHandedMode: DEFAULTS.oneHandedMode, oneHandedSide: DEFAULTS.oneHandedSide, conversionEngine: DEFAULTS.conversionEngine, themeMode: DEFAULTS.themeMode };
     }
   }
 
@@ -76,6 +83,17 @@ export class SettingsStore {
       console.info('shuntiIME SettingsStore.saveConversionEngine ok', engine);
     } catch (e) {
       console.error('shuntiIME SettingsStore.saveConversionEngine error', JSON.stringify(e));
+    }
+  }
+
+  static async saveThemeMode(context: common.Context, mode: string): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('themeMode', mode);
+      await prefs.flush();
+      console.info('shuntiIME SettingsStore.saveThemeMode ok', mode);
+    } catch (e) {
+      console.error('shuntiIME SettingsStore.saveThemeMode error', JSON.stringify(e));
     }
   }
 }

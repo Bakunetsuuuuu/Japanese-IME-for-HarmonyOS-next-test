@@ -20,6 +20,9 @@ const ROW1_ALPHANUMERIC: string[] = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'
 
 const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
+// Key corner radius (design tokens: "regular keys 14px").
+const KEY_RADIUS = 14;
+
 @Component
 export struct KeyboardView {
   @Prop inputMode: string = InputMode.HIRAGANA;
@@ -56,11 +59,11 @@ export struct KeyboardView {
   }
 
   build() {
-    Column({ space: 2 }) {
+    Column({ space: 5 }) {
       // Number row — dropped in landscape to give the letter rows more height;
       // vertical space is tight there and this row is the least-used one.
       if (!this.isLandscape) {
-        Row({ space: 2 }) {
+        Row({ space: 5 }) {
           ForEach(NUMBER_ROW, (key: string) => {
             this.RegularKey(key, this.keyWidthVp)
           }, (key: string) => key)
@@ -73,7 +76,7 @@ export struct KeyboardView {
       // QWERTY rows 0 and 1. Row 1 drops the kana-only ー-shortcut '-' key in
       // ALPHANUMERIC mode, where it serves no purpose.
       ForEach([0, 1], (rowIdx: number) => {
-        Row({ space: 2 }) {
+        Row({ space: 5 }) {
           ForEach(rowIdx === 1 && this.inputMode === InputMode.ALPHANUMERIC ? ROW1_ALPHANUMERIC : ROWS[rowIdx], (key: string) => {
             this.RegularKey(key, this.keyWidthVp)
           }, (key: string) => key)
@@ -84,7 +87,7 @@ export struct KeyboardView {
       }, (rowIdx: number) => String(rowIdx))
 
       // Bottom letter row (z-m) with shift and backspace
-      Row({ space: 2 }) {
+      Row({ space: 5 }) {
         this.ShiftKey()
         ForEach(ROWS[2], (key: string) => {
           this.RegularKey(key, this.keyWidthVp)
@@ -100,7 +103,7 @@ export struct KeyboardView {
       // choosing among whole-sentence candidates; FlickKeyboardView already
       // exposes this via its own dedicated key) sits right after the space
       // key, which is sized shorter to make room for it.
-      Row({ space: 2 }) {
+      Row({ space: 5 }) {
         this.ModeKey()
         this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
           const ch = this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、';
@@ -133,13 +136,14 @@ export struct KeyboardView {
     Text((this.isShift || this.isCapsLock) ? value.toUpperCase() : value)
       .fontFamily(JP_FONT_FAMILY)
       .fontSize(17)
-      .fontColor(kbTheme(this.isDark).keyText)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(kbTheme(this.isDark).textPrimary)
       .textAlign(TextAlign.Center)
       .width(width)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .borderRadius(KEY_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
         const key = (this.isShift || this.isCapsLock) ? value.toUpperCase() : value;
         this.getHandler().handleKeyPress(key);
@@ -156,10 +160,10 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height('100%')
-      .backgroundColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark).accentBg : kbTheme(this.isDark).specialKeyBg)
-      .fontColor(kbTheme(this.isDark).onAccentText)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .backgroundColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark).accent : kbTheme(this.isDark).specialBg)
+      .fontColor(kbTheme(this.isDark).onAccent)
+      .borderRadius(KEY_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
         if (this.isCapsLock) {
           this.isCapsLock = false;
@@ -179,10 +183,10 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height('100%')
-      .backgroundColor(kbTheme(this.isDark).specialKeyBg)
-      .fontColor(kbTheme(this.isDark).onAccentText)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .backgroundColor(kbTheme(this.isDark).specialBg)
+      .fontColor(kbTheme(this.isDark).onAccent)
+      .borderRadius(KEY_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) {
           this.startBsRepeat();
@@ -199,10 +203,10 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height('100%')
-      .backgroundColor(kbTheme(this.isDark).specialKeyBg)
-      .fontColor(kbTheme(this.isDark).onAccentText)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .backgroundColor(kbTheme(this.isDark).specialBg)
+      .fontColor(kbTheme(this.isDark).onAccent)
+      .borderRadius(KEY_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
         this.getHandler().handleBunsetsu();
       })
@@ -211,14 +215,14 @@ export struct KeyboardView {
   @Builder SpaceKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'かな' : 'space')
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(14)
-      .fontColor(kbTheme(this.isDark).keyText)
+      .fontSize(15)
+      .fontColor(kbTheme(this.isDark).textPrimary)
       .textAlign(TextAlign.Center)
       .width(this.spaceKeyWidthVp)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .borderRadius(KEY_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
         this.getHandler().handleSpaceKey();
       })
@@ -227,14 +231,14 @@ export struct KeyboardView {
   @Builder ModeKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(12)
+      .fontSize(13)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height('100%')
-      .backgroundColor(kbTheme(this.isDark).specialKeyBg)
-      .fontColor(kbTheme(this.isDark).onAccentText)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .backgroundColor(kbTheme(this.isDark).specialBg)
+      .fontColor(kbTheme(this.isDark).onAccent)
+      .borderRadius(KEY_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
         this.getHandler().commitRaw();
         const current = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
@@ -247,13 +251,14 @@ export struct KeyboardView {
     Text(label)
       .fontFamily(JP_FONT_FAMILY)
       .fontSize(17)
-      .fontColor(kbTheme(this.isDark).keyText)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(kbTheme(this.isDark).textPrimary)
       .textAlign(TextAlign.Center)
       .width(this.keyWidthVp)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .borderRadius(KEY_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(action)
   }
 
@@ -264,10 +269,10 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height('100%')
-      .backgroundColor(kbTheme(this.isDark).accentBg)
-      .fontColor(kbTheme(this.isDark).onAccentText)
-      .borderRadius(5)
-      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 2 })
+      .backgroundColor(kbTheme(this.isDark).accent)
+      .fontColor(kbTheme(this.isDark).onAccent)
+      .borderRadius(KEY_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
         this.getHandler().handleEnterKey();
       })

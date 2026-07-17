@@ -23,7 +23,7 @@ const SYMBOL_CATEGORIES: string[][][] = [
     ['&', '*', '(', ')', "'", '"', '=', '_'],
     ['`', ':', ';', '?', '~', '|', '+', '-'],
     ['\\', '/', '[', ']', '{', '}', '<', '>'],
-    ['“', '”', '.', '\u2018', '\u2019', 'ı', '¿', '¥'],
+    ['“', '”', '.', '‘', '’', 'ı', '¿', '¥'],
     ['€', '£', '¢', '©', '®', '™', '℃', '°F'],
   ],
   // 2: ( ) brackets / Japanese punctuation
@@ -107,6 +107,25 @@ const LICENSE_TEXT: string =
   '■ アプリコード\n' +
   'MIT License';
 
+// Grid area budget (unchanged from before the redesign, so the overall
+// keyboard body height doesn't shift when switching into the symbol panel).
+const GRID_AREA_H = 252;
+const GRID_ROW_GAP = 4;
+// Row height is computed per tab (row count ranges 1-7 across categories/the
+// usage-based recent tab) but capped so a low-row tab (e.g. 🕐 with only 1-3
+// rows) gets modestly bigger buttons instead of a few buttons stretched into
+// tall rectangles — the remaining slack is centered as padding instead
+// (design review flag: avoid disproportionate cell stretching).
+const GRID_ROW_MAX = 48;
+const GRID_ROW_MIN = 24;
+
+function gridRowHeight(numRows: number): number {
+  if (numRows <= 0) { return GRID_ROW_MAX; }
+  const gaps = GRID_ROW_GAP * (numRows - 1);
+  const raw = Math.floor((GRID_AREA_H - gaps) / numRows);
+  return Math.max(GRID_ROW_MIN, Math.min(GRID_ROW_MAX, raw));
+}
+
 @Component
 export struct SymbolView {
   @StorageLink('symKeyWidthVp') symKeyWidthVp: number = 46;
@@ -142,15 +161,15 @@ export struct SymbolView {
   build() {
     Column({ space: 0 }) {
       // ── Top tab row ──────────────────────────────────────────
-      Row({ space: 2 }) {
+      Row({ space: 4 }) {
         // ← back to kana
         Text('←')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(48).height(40)
-          .fontColor(kbTheme(this.isDark).onAccentText)
-          .backgroundColor(kbTheme(this.isDark).specialKeyBg)
+          .fontColor(kbTheme(this.isDark).onAccent)
+          .backgroundColor(kbTheme(this.isDark).specialBg)
           .borderRadius(20)
           .onClick(() => {
             this.showLicense = false;
@@ -165,9 +184,9 @@ export struct SymbolView {
               .fontSize(i === 1 ? 12 : 13)
               .textAlign(TextAlign.Center)
               .width(38).height(32)
-              .fontColor(this.currentTab === i ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).subText)
-              .backgroundColor(this.currentTab === i ? '#6C757D' : kbTheme(this.isDark).funcKeyBg)
-              .borderRadius(8)
+              .fontColor(this.currentTab === i ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+              .backgroundColor(this.currentTab === i ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+              .borderRadius(12)
               .onClick(() => {
                 this.currentTab = i;
               })
@@ -176,7 +195,7 @@ export struct SymbolView {
           Text('ⓘ ライセンス')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(13)
-            .fontColor(kbTheme(this.isDark).subText)
+            .fontColor(kbTheme(this.isDark).textSecondary)
             .padding({ left: 8 })
         }
       }
@@ -191,45 +210,44 @@ export struct SymbolView {
           Text(LICENSE_TEXT)
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
-            .fontColor(kbTheme(this.isDark).previewText)
+            .fontColor(kbTheme(this.isDark).textPrimary)
             .lineHeight(20)
             .width('100%')
             .padding({ left: 12, right: 12, top: 8, bottom: 8 })
         }
         .width('100%')
-        .height(252)
-        .backgroundColor(kbTheme(this.isDark).composingBarBg)
+        .height(GRID_AREA_H)
+        .backgroundColor(kbTheme(this.isDark).panelBg)
       } else {
-        // ── Symbol grid (scrollable) ──────────────────────────────
-        Scroll() {
-          Column({ space: 2 }) {
-            ForEach([0, 1, 2, 3, 4, 5, 6], (rowIdx: number) => {
-              if (rowIdx < this.currentRows().length) {
-                Row({ space: 2 }) {
-                  ForEach(this.currentRows()[rowIdx], (sym: string) => {
-                    Text(sym)
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(sym.length > 1 ? 12 : 17)
-                      .textAlign(TextAlign.Center)
-                      .width(this.symKeyWidthVp)
-                      .height(34)
-                      .fontColor(kbTheme(this.isDark).keyText)
-                      .backgroundColor(kbTheme(this.isDark).keyBg)
-                      .borderRadius(6)
-                      .shadow({ radius: 1, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-                      .onClick(() => { this.insert(sym); })
-                  }, (sym: string) => String(this.currentTab) + sym)
-                }
-                .width('100%')
-                .justifyContent(FlexAlign.Center)
+        // ── Symbol grid: row height fills the fixed grid budget (capped —
+        // see gridRowHeight above), extra slack centers as padding so
+        // switching tabs never changes the panel's total height. ──
+        Column({ space: GRID_ROW_GAP }) {
+          ForEach([0, 1, 2, 3, 4, 5, 6], (rowIdx: number) => {
+            if (rowIdx < this.currentRows().length) {
+              Row({ space: 4 }) {
+                ForEach(this.currentRows()[rowIdx], (sym: string) => {
+                  Text(sym)
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(sym.length > 1 ? 12 : 18)
+                    .textAlign(TextAlign.Center)
+                    .width(this.symKeyWidthVp)
+                    .height(gridRowHeight(this.currentRows().length))
+                    .fontColor(kbTheme(this.isDark).textPrimary)
+                    .backgroundColor(kbTheme(this.isDark).keyBg)
+                    .borderRadius(10)
+                    .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+                    .onClick(() => { this.insert(sym); })
+                }, (sym: string) => String(this.currentTab) + sym)
               }
-            }, (rowIdx: number) => String(rowIdx))
-          }
-          .width('100%')
-          .padding({ top: 2 })
+              .width('100%')
+              .justifyContent(FlexAlign.Center)
+            }
+          }, (rowIdx: number) => String(rowIdx))
         }
         .width('100%')
-        .height(252)
+        .height(GRID_AREA_H)
+        .justifyContent(FlexAlign.Center)
       }
 
       // ── Bottom function row ───────────────────────────────────
@@ -239,7 +257,7 @@ export struct SymbolView {
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(13).textAlign(TextAlign.Center)
           .width(68).height(44)
-          .fontColor(kbTheme(this.isDark).subText)
+          .fontColor(kbTheme(this.isDark).textSecondary)
           .onClick(() => {
             this.showLicense = false;
             AppStorage.setOrCreate('keyboardSubMode', 'kana');
@@ -251,9 +269,9 @@ export struct SymbolView {
           .fontSize(17)
           .textAlign(TextAlign.Center)
           .width(46).height(44)
-          .fontColor(kbTheme(this.isDark).subText)
-          .backgroundColor(kbTheme(this.isDark).funcKeyBg)
-          .borderRadius(8)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+          .backgroundColor(kbTheme(this.isDark).funcBg)
+          .borderRadius(12)
           .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'emoji'); })
 
         // ⓘ license info toggle
@@ -261,9 +279,9 @@ export struct SymbolView {
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(18).textAlign(TextAlign.Center)
           .width(46).height(44)
-          .fontColor(this.showLicense ? kbTheme(this.isDark).onAccentText : kbTheme(this.isDark).subText)
-          .backgroundColor(this.showLicense ? '#6C757D' : kbTheme(this.isDark).funcKeyBg)
-          .borderRadius(8)
+          .fontColor(this.showLicense ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+          .backgroundColor(this.showLicense ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+          .borderRadius(12)
           .onClick(() => { this.showLicense = !this.showLicense; })
 
         // ⌫ backspace
@@ -271,9 +289,9 @@ export struct SymbolView {
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(18).textAlign(TextAlign.Center)
           .width(52).height(44)
-          .fontColor(kbTheme(this.isDark).onAccentText)
-          .backgroundColor(kbTheme(this.isDark).specialKeyBg)
-          .borderRadius(8)
+          .fontColor(kbTheme(this.isDark).onAccent)
+          .backgroundColor(kbTheme(this.isDark).specialBg)
+          .borderRadius(14)
           .onClick(() => { this.h().handleBackspace(); })
       }
       .width('100%')

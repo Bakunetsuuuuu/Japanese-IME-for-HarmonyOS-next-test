@@ -245,8 +245,38 @@ export class InputHandler {
         AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
         AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
+        AppStorage.setOrCreate('themeMode', s.themeMode);
         this.applyConversionEngine(s.conversionEngine);
+        this.applyThemeMode(s.themeMode);
       });
+  }
+
+  // Resolves isDark from a themeMode setting ('system'/'light'/'dark'),
+  // reading the OS color mode itself only when actually needed ('system').
+  // Mirrors KeyboardController.applyColorMode's system-read but is callable
+  // from InputHandler, which has its own imeContext rather than sharing
+  // KeyboardController's.
+  private applyThemeMode(mode: string): void {
+    if (mode === 'light') { AppStorage.setOrCreate('isDark', false); return; }
+    if (mode === 'dark') { AppStorage.setOrCreate('isDark', true); return; }
+    try {
+      // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
+      const cm = (this.imeContext?.config as ESObject)['colorMode'] as number;
+      AppStorage.setOrCreate('isDark', cm === 0);
+    } catch (_e) {
+      AppStorage.setOrCreate('isDark', false);
+    }
+  }
+
+  // Settings-panel テーマ control (外観 > テーマ) — pins the keyboard's own
+  // theme independent of the OS color mode, or 'system' to go back to
+  // following it. Applies immediately, same pattern as setKeyboardLayout.
+  setThemeMode(mode: string): void {
+    AppStorage.setOrCreate('themeMode', mode);
+    this.applyThemeMode(mode);
+    if (this.imeContext) {
+      SettingsStore.saveThemeMode(this.imeContext, mode);
+    }
   }
 
   // Track B (mozc-derived) is loaded lazily -- only the first time the
@@ -1112,9 +1142,15 @@ export class KeyboardController {
     this.loadViterbiData();
   }
 
-  // Detect system dark mode via the extension context configuration.
+  // Detect system dark mode via the extension context configuration —
+  // unless the user has pinned an explicit テーマ (themeMode 'light'/'dark'
+  // in the settings panel), in which case that wins over the OS setting
+  // until they switch back to 'system'.
   // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
   applyColorMode(): void {
+    const mode = AppStorage.get<string>('themeMode') ?? 'system';
+    if (mode === 'light') { AppStorage.setOrCreate('isDark', false); return; }
+    if (mode === 'dark') { AppStorage.setOrCreate('isDark', true); return; }
     try {
       const cm = (this.context.config as ESObject)['colorMode'] as number;
       AppStorage.setOrCreate('isDark', cm === 0);
