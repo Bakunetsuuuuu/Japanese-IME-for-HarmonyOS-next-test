@@ -2,7 +2,6 @@ import { UserDictStore } from '../ime/UserDictStore';
 import { promptAction, router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
-import display from '@ohos.display';
 import { JP_FONT_FAMILY } from '../components/JpFont';
 
 const CONSENT_STORE: string = 'shunti_consent';
@@ -22,7 +21,8 @@ struct Index {
   @State wordInput: string = '';
   // First-launch privacy consent gate. true = block UI until the user agrees.
   @State showConsent: boolean = false;
-  @State isDark: boolean = false;
+  // Set by EntryAbility.applyThemeMode (テーマ setting + OS color mode).
+  @StorageLink('isDark') isDark: boolean = false;
 
   // Set by EntryAbility (onCreate for a cold start, onNewWant for a
   // re-launch into an already-running instance -- see its own comment) when
@@ -47,15 +47,6 @@ struct Index {
   aboutToAppear(): void {
     this.reload();
     this.checkConsent();
-    try {
-      const dis = display.getDefaultDisplaySync();
-      // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1
-      // (previous comment/check here had this inverted -- see PrivacyPolicy.ets/
-      // DevDict.ets/KeyboardController.applyColorMode, which all agree on 0=dark).
-      this.isDark = (dis as ESObject)['colorMode'] === 0;
-    } catch (_e) {
-      this.isDark = false;
-    }
     this.onPendingWebViewUrlChanged();
   }
 

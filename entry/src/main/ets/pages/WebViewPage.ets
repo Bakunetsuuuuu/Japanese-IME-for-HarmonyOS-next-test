@@ -1,6 +1,5 @@
 import { router } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
-import display from '@ohos.display';
 import { JP_FONT_FAMILY } from '../components/JpFont';
 
 interface WebViewParams {
@@ -17,20 +16,17 @@ interface WebViewParams {
 @Entry
 @Component
 struct WebViewPage {
-  @State isDark: boolean = false;
+  // Set by EntryAbility.applyThemeMode (テーマ setting + OS color mode).
+  // Only affects this page's own header/background chrome -- the loaded
+  // website's own content styles itself (ArkWeb, like any browser, respects
+  // the page's own prefers-color-scheme handling, which is unrelated).
+  @StorageLink('isDark') isDark: boolean = false;
   @State pageTitle: string = '';
   @State canGoBack: boolean = false;
   controller: webview.WebviewController = new webview.WebviewController();
   private url: string = '';
 
   aboutToAppear(): void {
-    try {
-      const dis = display.getDefaultDisplaySync();
-      // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1
-      this.isDark = (dis as ESObject)['colorMode'] === 0;
-    } catch (_e) {
-      this.isDark = false;
-    }
     const params = router.getParams() as WebViewParams | undefined;
     this.url = params?.url ?? '';
     this.pageTitle = params?.title ?? this.url;

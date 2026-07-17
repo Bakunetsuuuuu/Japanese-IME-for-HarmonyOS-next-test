@@ -1,20 +1,11 @@
 import { router } from '@kit.ArkUI';
-import display from '@ohos.display';
 import { JP_FONT_FAMILY } from '../components/JpFont';
 
 @Entry
 @Component
 struct PrivacyPolicy {
-  @State isDark: boolean = false;
-
-  aboutToAppear(): void {
-    try {
-      const dis = display.getDefaultDisplaySync();
-      this.isDark = (dis as ESObject)['colorMode'] === 0;
-    } catch (_e) {
-      this.isDark = false;
-    }
-  }
+  // Set by EntryAbility.applyThemeMode (テーマ setting + OS color mode).
+  @StorageLink('isDark') isDark: boolean = false;
 
   build() {
     Column() {

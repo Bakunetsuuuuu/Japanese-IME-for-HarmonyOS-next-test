@@ -2,6 +2,7 @@ import { UIAbility } from '@kit.AbilityKit';
 import type { Want, AbilityConstant } from '@kit.AbilityKit';
 import type { window } from '@kit.ArkUI';
 import { registerJpFont } from '../components/JpFont';
+import { resolveMainAppIsDark } from '../ime/SettingsStore';
 
 // Stashes a "please open this URL in the in-app browser" request (see
 // KeyboardController.openGithubRepo) into AppStorage for Index.ets to pick
@@ -21,10 +22,30 @@ function applyOpenUrlWant(want: Want): void {
 export default class EntryAbility extends UIAbility {
   onCreate(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
     applyOpenUrlWant(want);
+    this.applyThemeMode();
   }
 
   onNewWant(want: Want, _launchParam: AbilityConstant.LaunchParam): void {
     applyOpenUrlWant(want);
+  }
+
+  // Resolves the persisted テーマ setting (SettingsBar's 外観 > テーマ, same
+  // store the keyboard extension reads) into AppStorage('isDark'), which
+  // every main-app page (Index/DevDict/PrivacyPolicy/WebViewPage) now reads
+  // via @StorageLink instead of each independently reading the OS color
+  // mode -- so an explicit ライト/ダーク choice made from the keyboard's
+  // settings panel applies here too, not just the keyboard itself.
+  private applyThemeMode(): void {
+    resolveMainAppIsDark(this.context)
+      .then((isDark: boolean) => { AppStorage.setOrCreate('isDark', isDark); })
+      .catch((err: Error) => console.error('shuntiIME applyThemeMode error', JSON.stringify(err)));
+  }
+
+  // Fires on an OS-level color-mode change while the app is already
+  // running (system config changed, not window-stage recreated) -- without
+  // this, isDark would only ever be (re-)computed at the next cold start.
+  onConfigurationUpdate(_newConfig: object): void {
+    this.applyThemeMode();
   }
 
   onDestroy(): void {
@@ -43,6 +64,10 @@ export default class EntryAbility extends UIAbility {
   }
 
   onForeground(): void {
+    // Also covers "app already open, user switches OS dark mode in Settings,
+    // comes back" on OS versions where onConfigurationUpdate doesn't fire
+    // for a backgrounded (not destroyed) ability.
+    this.applyThemeMode();
   }
 
   onBackground(): void {

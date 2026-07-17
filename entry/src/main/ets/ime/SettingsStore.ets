@@ -1,5 +1,6 @@
 import dataPreferences from '@ohos.data.preferences';
 import type common from '@ohos.app.ability.common';
+import display from '@ohos.display';
 
 // Keyboard-wide settings persisted via @ohos.data.preferences, shared between
 // the main app (settings UI) and the IME extension — same idiom as
@@ -95,5 +96,27 @@ export class SettingsStore {
     } catch (e) {
       console.error('shuntiIME SettingsStore.saveThemeMode error', JSON.stringify(e));
     }
+  }
+}
+
+// Resolves the persisted themeMode ('system'/'light'/'dark') into an actual
+// isDark boolean, reading the OS color mode only when actually needed
+// ('system'). Shared by both processes: KeyboardController.applyThemeMode
+// has its own copy (it reads InputMethodExtensionContext.config directly,
+// a different config shape than display.getDefaultDisplaySync() used here),
+// this one is for the main app (EntryAbility / Index / DevDict /
+// PrivacyPolicy / WebViewPage) so a テーマ choice made from the keyboard's
+// own settings panel (SettingsBar's 外観 > テーマ) applies consistently to
+// the main app too, instead of the main app only ever following the OS.
+export async function resolveMainAppIsDark(context: common.Context): Promise<boolean> {
+  const settings = await SettingsStore.load(context);
+  if (settings.themeMode === 'light') { return false; }
+  if (settings.themeMode === 'dark') { return true; }
+  try {
+    const dis = display.getDefaultDisplaySync();
+    // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
+    return (dis as ESObject)['colorMode'] === 0;
+  } catch (_e) {
+    return false;
   }
 }
