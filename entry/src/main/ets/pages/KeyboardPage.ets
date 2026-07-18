@@ -1,7 +1,6 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import util from '@ohos.util';
 import { promptAction } from '@kit.ArkUI';
-import { unifiedDataChannel, uniformTypeDescriptor } from '@kit.ArkData';
 import { InputHandler, InputState, InputMode, applyKeyboardWidthsForVp } from '../ime/KeyboardController';
 import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
@@ -37,9 +36,6 @@ struct KeyboardPage {
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
-  @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
-  @StorageLink('clipboardIsFile') clipboardIsFile: boolean = false;
-  @StorageLink('clipboardUri') clipboardUri: string = '';
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
@@ -187,42 +183,20 @@ struct KeyboardPage {
                     .borderRadius(this.isLandscape ? 11 : 17)
                     .backgroundColor(kbTheme(this.isDark).candidateBg)
                     .fontColor(kbTheme(this.isDark).textSecondary)
-                    // Best-effort second path for image/file clips (see
-                    // pasteClipboard's comment): drag this chip onto a
-                    // compatible drop target in the app being typed into.
-                    // Only wired up when a real URI is available -- a raw
-                    // pixelmap-only image clip has no drag payload to offer.
-                    .draggable(this.clipboardIsFile && this.clipboardUri.length > 0)
-                    .onDragStart((event: DragEvent) => {
-                      try {
-                        const fileType = this.clipboardIsImage ? 'general.image' : 'general.file';
-                        const fileUriData: ESObject = {
-                          uniformDataType: 'general.file-uri',
-                          oriUri: this.clipboardUri,
-                          fileType,
-                        };
-                        const record = new unifiedDataChannel.UnifiedRecord(
-                          uniformTypeDescriptor.UniformDataType.FILE_URI, fileUriData);
-                        event.setData(new unifiedDataChannel.UnifiedData(record));
-                      } catch (e) {
-                        console.error('shuntiIME clipboard chip drag data build failed', JSON.stringify(e));
-                      }
-                    })
                     .onClick(() => {
-                      const pasted = InputHandler.getInstance().pasteClipboard();
-                      if (!pasted) {
-                        // Image/file clipboard contents -- no IME can inject
-                        // non-text content into a third-party app's field via
-                        // the text-commit API (see pasteClipboard's own
-                        // comment for why this is a platform limit, not a
-                        // bug). When a real URI is available, offer the drag
-                        // path as an alternative instead of just explaining
-                        // the dead end.
-                        const canDrag = this.clipboardIsFile && this.clipboardUri.length > 0;
+                      const result = InputHandler.getInstance().pasteClipboard();
+                      if (result === 'extendAction') {
+                        // Fire-and-forget request to the focused field's own
+                        // paste handler (see pasteClipboard's comment) --
+                        // there's no reliable signal for whether it actually
+                        // had anything to paste, so this can only say the
+                        // request went out, not that it definitely worked.
                         promptAction.showToast({
-                          message: canDrag
-                            ? 'タップでは貼り付けできません。このチップを入力欄までドラッグしてみてください（対応していないアプリもあります）'
-                            : '画像・ファイルはキーボードから直接貼り付けできません。貼り付け先アプリ自体の貼り付け機能をご利用ください',
+                          message: '貼り付け操作を送信しました（アプリによっては反映されないことがあります）',
+                        });
+                      } else if (result === 'none') {
+                        promptAction.showToast({
+                          message: '画像・ファイルはキーボードから直接貼り付けできません。貼り付け先アプリ自体の貼り付け機能をご利用ください',
                         });
                       }
                     })

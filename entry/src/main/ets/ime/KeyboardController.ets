@@ -637,9 +637,7 @@ export class InputHandler {
       // A file (from Files/a Gallery share sheet) shows up as a URI record.
       // A directly-copied image often carries BOTH a pixelmap record and a
       // URI record (many apps populate both), so check for a URI regardless
-      // of isImage -- it's what lets pasteClipboard's drag-out path (see
-      // KeyboardPage.ets) attach real content instead of just a preview
-      // string. Preview it as a filename rather than the raw URI.
+      // of isImage. Preview it as a filename rather than the raw URI.
       const uri = data.getPrimaryUri();
       if (uri && uri.length > 0) {
         const preview = isImage ? '画像' : InputHandler.formatFileClipPreview(uri);
@@ -648,8 +646,9 @@ export class InputHandler {
       }
       if (isImage) {
         // Raw pixels only, no URI to point at (e.g. some apps' plain
-        // "コピー" on an image) -- preview-only, same as before; see
-        // pasteClipboard()'s comment for why this can't go further.
+        // "コピー" on an image) -- pasteClipboard() still works fine here
+        // since sendPasteExtendAction doesn't need the URI, just the
+        // isImage/isFile flag; only the filename preview text is degraded.
         InputHandler.setClipboardPreviewState('画像', true, false, '');
         return;
       }
@@ -690,41 +689,54 @@ export class InputHandler {
     AppStorage.setOrCreate('clipboardHistory', next);
   }
 
-  // Returns false (and pastes nothing) for image/file clipboard contents.
   // No input method on any platform can inject non-text content into an
   // arbitrary third-party app's text field through the standard IME
   // text-commit API (insertText here) -- that's not a bug to fix in this
-  // app, it's what every keyboard app is limited to. Twitter/Discord/etc.
-  // pasting an image already works today via their OWN paste UI (long-press
-  // → 貼り付け, or Ctrl+V), which reads the system clipboard directly and
-  // doesn't go through the keyboard at all. The caller uses this return
-  // value to tell the user that, instead of silently doing nothing.
+  // app, it's what every keyboard app is limited to.
   //
-  // When a real file/image URI is available (clipboardUri, set by
-  // refreshClipboardPreview above), KeyboardPage.ets's clipboard chip offers
-  // a SEPARATE drag-out path via ArkUI's system drag-and-drop
-  // (unifiedDataChannel/DragEvent), which unlike insertText() can carry
-  // arbitrary content -- dragging the chip onto a compatible drop target
-  // (e.g. Twitter/LINE/Discord's own attachment/input area) can work where
-  // a tap-to-paste never could. This is best-effort and unverified: it
-  // depends on (a) this keyboard panel being allowed to originate a system
-  // drag at all, and (b) the target app's field actually implementing
-  // onDrop for the dragged type -- neither is guaranteed, and there's no
-  // way to detect either failure ahead of time, so it may just silently not
-  // work in some apps. Tap-to-paste keeps failing the same documented way.
-  pasteClipboard(): boolean {
+  // For image/file clipboard contents this instead asks the host app's OWN
+  // focused field to run ITS native paste (sendPasteExtendAction below) --
+  // that reads the same system pasteboard the field's own long-press
+  // 貼り付け already uses, so any editor that supports pasting an image at
+  // all picks it up through its own existing handling. An earlier attempt
+  // used ArkUI drag-and-drop instead (dragging the clipboard chip onto the
+  // focused field), but that turned out not to work in nearly any real app
+  // -- most fields' drop targets don't accept a dragged UnifiedData record
+  // the way they accept their own paste action, so this replaces it as the
+  // primary mechanism rather than sitting alongside it as a "maybe" path.
+  pasteClipboard(): 'text' | 'extendAction' | 'none' {
     const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
     const isFile = AppStorage.get<boolean>('clipboardIsFile') ?? false;
     if (isImage || isFile) {
-      return false;
+      return this.sendPasteExtendAction() ? 'extendAction' : 'none';
     }
     const text = AppStorage.get<string>('clipboardPreview') ?? '';
     if (text.length === 0) {
-      return false;
+      return 'none';
     }
     this.insertText(text);
     this.refreshClipboardPreview();
-    return true;
+    return 'text';
+  }
+
+  // Tells the currently-focused edit box to run its own native paste
+  // operation (inputMethodEngine.ExtendAction.PASTE) instead of the IME
+  // trying to supply the content itself. Fire-and-forget: sendExtendAction
+  // resolves/rejects on whether the *request* was delivered, not on whether
+  // the field actually had a paste handler for image/file content -- both
+  // "field doesn't support pasting images" and "there's nothing to paste"
+  // look the same from here, so the caller can only report that the request
+  // was sent, not that it definitely worked.
+  private sendPasteExtendAction(): boolean {
+    if (!this.inputClient) { return false; }
+    try {
+      this.inputClient.sendExtendAction(inputMethodEngine.ExtendAction.PASTE)
+        .catch((err: Error) => console.error('shuntiIME sendExtendAction(PASTE) error', JSON.stringify(err)));
+      return true;
+    } catch (e) {
+      console.error('shuntiIME sendExtendAction(PASTE) threw', JSON.stringify(e));
+      return false;
+    }
   }
 
   // Paste an arbitrary entry from clipboard history (not necessarily the
