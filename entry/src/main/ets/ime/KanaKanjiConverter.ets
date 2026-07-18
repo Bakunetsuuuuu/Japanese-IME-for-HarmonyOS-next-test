@@ -31709,9 +31709,13 @@ export class KanaKanjiConverter {
       // てきた/てきて aspectual aux ("空が曇ってきた"): きた/きて directly after a
       // segment ending in て/で is the auxiliary, not 来た/来て — the te-form
       // already attaches the verb, so a homograph lookup would be double
-      // counting a second verb.
-      if ((seg === 'きた' || seg === 'きて') && idx > 0 && segs[idx - 1].length > 1 &&
-          /[てで]$/.test(segs[idx - 1])) {
+      // counting a second verb. Bare き gets the same treatment when it's
+      // the further-contracted casual form (忘れてきちゃった -> わすれて+き+
+      // ちゃった, where き alone is 来[た/て] before ちゃう swallows the
+      // rest) -- lookup('き') alone would pick 気/木/黄 over this 来る stem.
+      if (idx > 0 && segs[idx - 1].length > 1 && /[てで]$/.test(segs[idx - 1]) &&
+          ((seg === 'きた' || seg === 'きて') ||
+           (seg === 'き' && idx + 1 < segs.length && segs[idx + 1].startsWith('ちゃ')))) {
         best = seg;
       }
       // やすい directly after another segment (not sentence-initial) is
@@ -32295,6 +32299,12 @@ export class KanaKanjiConverter {
         !KanaKanjiConverter.CASE_PARTICLES.has(prevSeg) &&
         !KanaKanjiConverter.FW_CLASS_MAP[prevSeg]) {
       return 'やすい';
+    }
+    // てきた/てきて/き(ちゃ...): see joinSegs' matching special case for why.
+    if (prevSeg !== undefined && prevSeg.length > 1 && /[てで]$/.test(prevSeg) &&
+        ((kana === 'きた' || kana === 'きて') ||
+         (kana === 'き' && nextSeg !== undefined && nextSeg.startsWith('ちゃ')))) {
+      return kana;
     }
     return this.lookup(kana)[0];
   }
