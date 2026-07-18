@@ -16,7 +16,7 @@ shunti IMEは広告なし・完全無料で個人が開発しているオープ�
 - **GitHub Sponsors**: **[github.com/sponsors/shuntilettuce](https://github.com/sponsors/shuntilettuce)**
   GitHubアカウントがあればカード情報の入力だけで、月額の継続支援または一度きりの支援ができます。
 
-いただいたご支援は変換精度向上のためのAI利用料に充てさせていただきます。
+いただいたご支援は変換精度向上のためのAI利用料等に充てさせていただきます。
 
 ---
 
