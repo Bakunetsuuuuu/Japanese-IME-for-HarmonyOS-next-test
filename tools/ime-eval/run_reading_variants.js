@@ -50,7 +50,7 @@ function main() {
       if (hasRealHit) {
         candidates = fullCands;
       } else {
-        const prefixParts = segs.slice(0, -1).map((s) => conv.autoConvert(s));
+        const prefixParts = segs.slice(0, -1).map((s, i) => conv.autoConvert(s, segs[i + 1]));
         const hasSymbolPrefix = prefixParts.some((p) => KanaKanjiConverter.isSymbolOnly(p));
         const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
         const lastSeg = segs[segs.length - 1];

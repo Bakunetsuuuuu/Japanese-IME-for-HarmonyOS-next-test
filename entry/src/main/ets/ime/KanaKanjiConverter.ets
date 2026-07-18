@@ -206,6 +206,8 @@ const DICTIONARY: Record<string, string[]> = {
   'ふん': ['分'],
   'びょう': ['秒'],
   'あさ': ['朝', '麻'],
+  'あさいち': ['朝一', 'あさいち'],
+  'たからもの': ['宝物', 'たからもの'],
   'ひる': ['昼'],
   'よる': ['夜', '余'],
   'よなか': ['夜中'],
@@ -31693,10 +31695,26 @@ export class KanaKanjiConverter {
         const next = segs[idx + 1];
         if (next === 'た' && (seg === 'あいて' || seg === 'すいて')) {
           best = seg === 'あいて' ? '開いて' : '空いて';
-        } else if (/^(てる|てい|てた|た)/.test(next)) {
+        } else if (/^(てる|てい|てた|た|ます|ませ)/.test(next)) {
           if (seg === 'あい') { best = '開い'; }
           else if (seg === 'すい') { best = '空い'; }
+          // はなし directly before a continuation aux is the renyou stem of
+          // 話す ("よく話してる" = talks a lot), not the bare noun 話 (story/
+          // topic) that lookup('はなし') ranks first on its own.
+          else if (seg === 'はなし') { best = '話し'; }
         }
+        // なん directly before ちゃう is the casual/Kansai-dialect filler of
+        // なんちゃう(か) ("だけなんちゃうか" = "isn't it just that..."), not
+        // the interrogative 何 that lookup('なん') ranks first on its own --
+        // 何 essentially never precedes the てしまう-contraction ちゃう in
+        // legitimate formal usage, so this is safe to key on the bigram alone.
+        if (seg === 'なん' && next.startsWith('ちゃう')) { best = 'なん'; }
+        // は directly before を can't be the topic particle は (grammatically,
+        // は never precedes another particle -- there'd have to be a noun in
+        // between) -- it's the noun 歯 (tooth) instead. Overrides the
+        // FUNCTION_WORDS['は']=true short-circuit above, which otherwise
+        // always keeps a bare は in kana regardless of context.
+        if (seg === 'は' && next === 'を') { best = '歯'; }
       }
       // Noun+particle→verb collocation (COLLOCATION_HINTS): 「〜を<noun>を
       // <verb>」within the same phrase picks the verb kanji that noun
@@ -32200,9 +32218,33 @@ export class KanaKanjiConverter {
   }
 
   // Returns the best single conversion: keeps kana for function words, else first lookup candidate.
-  autoConvert(kana: string): string {
+  // nextSeg (the segment immediately following this one in the caller's
+  // segmentation, if any) lets a small set of homograph readings pick the
+  // verb-stem sense over lookup()'s default top candidate when a
+  // continuation aux follows -- e.g. はなし+てる is 話して(い)る (話し, the
+  // renyou stem of 話す), not the bare noun 話 that lookup('はなし') ranks
+  // first on its own. Same shape of fix as joinSegs' あい/すい special case
+  // below, different call site: joinSegs only runs for readings that
+  // resolve through the whole-string lookup fallback, while this covers the
+  // per-segment reconstruction path used when that fallback doesn't fire
+  // (e.g. an earlier segment in a long casual sentence isn't independently
+  // recognized, so lookup() never reaches segmentJoinFallback for it).
+  autoConvert(kana: string, nextSeg?: string): string {
+    // は directly before を: see joinSegs' matching special case for why --
+    // checked before the FUNCTION_WORDS short-circuit below, which would
+    // otherwise always keep a bare は in kana regardless of context.
+    if (kana === 'は' && nextSeg === 'を') {
+      return '歯';
+    }
     if (KanaKanjiConverter.FUNCTION_WORDS[kana]) {
       return kana;
+    }
+    if (kana === 'はなし' && nextSeg !== undefined && /^(てる|てい|てた|た|ます|ませ)/.test(nextSeg)) {
+      return '話し';
+    }
+    // なん directly before ちゃう: see joinSegs' matching special case for why.
+    if (kana === 'なん' && nextSeg !== undefined && nextSeg.startsWith('ちゃう')) {
+      return 'なん';
     }
     return this.lookup(kana)[0];
   }
