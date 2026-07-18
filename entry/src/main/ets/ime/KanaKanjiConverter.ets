@@ -31392,7 +31392,7 @@ export class KanaKanjiConverter {
     // already forced kana — しまい itself was missed, so it kept losing to
     // the rarer noun homograph 姉妹 (siblings) in that position.
     'しまい': true,
-    'によると': true, 'により': true,
+    'によると': true, 'により': true, 'による': true,
     // 複合助詞（連語）。かな表記が標準のもの。に+動詞（に着いて/に置ける/
     // に取って）へ誤分割されるのを防ぐため一語の機能語として扱う。関/対/基/
     // 通/従 など漢字を含む複合助詞（に関して等）はかな固定にできないので
@@ -31712,6 +31712,19 @@ export class KanaKanjiConverter {
       // counting a second verb.
       if ((seg === 'きた' || seg === 'きて') && idx > 0 && segs[idx - 1].length > 1 &&
           /[てで]$/.test(segs[idx - 1])) {
+        best = seg;
+      }
+      // やすい directly after another segment (not sentence-initial) is
+      // almost always the "-yasui" (easy to ~) auxiliary attaching to a verb
+      // stem (くずしやすい, こわれやすい), not the standalone adjective 安い/
+      // 易しい that lookup('やすい') ranks first alone -- 安い as a genuine
+      // independent adjective needs its own subject marking (は/が) or comes
+      // sentence-initially, so a やすい directly glued onto a non-particle
+      // segment with no particle between them essentially never means
+      // "cheap" in real text.
+      if (seg === 'やすい' && idx > 0 &&
+          !KanaKanjiConverter.CASE_PARTICLES.has(segs[idx - 1]) &&
+          !KanaKanjiConverter.FW_CLASS_MAP[segs[idx - 1]]) {
         best = seg;
       }
       // あい/すい directly before てる/てい(る)/てた/た is the い-form of
@@ -32259,7 +32272,7 @@ export class KanaKanjiConverter {
   // per-segment reconstruction path used when that fallback doesn't fire
   // (e.g. an earlier segment in a long casual sentence isn't independently
   // recognized, so lookup() never reaches segmentJoinFallback for it).
-  autoConvert(kana: string, nextSeg?: string): string {
+  autoConvert(kana: string, nextSeg?: string, prevSeg?: string): string {
     // は directly before を: see joinSegs' matching special case for why --
     // checked before the FUNCTION_WORDS short-circuit below, which would
     // otherwise always keep a bare は in kana regardless of context.
@@ -32275,6 +32288,13 @@ export class KanaKanjiConverter {
     // なん directly before ちゃう: see joinSegs' matching special case for why.
     if (kana === 'なん' && nextSeg !== undefined && nextSeg.startsWith('ちゃう')) {
       return 'なん';
+    }
+    // やすい directly after another segment: see joinSegs' matching special
+    // case for why.
+    if (kana === 'やすい' && prevSeg !== undefined &&
+        !KanaKanjiConverter.CASE_PARTICLES.has(prevSeg) &&
+        !KanaKanjiConverter.FW_CLASS_MAP[prevSeg]) {
+      return 'やすい';
     }
     return this.lookup(kana)[0];
   }
@@ -32535,7 +32555,7 @@ export class KanaKanjiConverter {
     'しまった': 74, 'しまって': 74,
     // により/によると: idiomatic "according to ~" attaches to a preceding
     // noun; treat as one conjunctive unit so it doesn't fragment into に+よる+と.
-    'によると': 63, 'により': 63,
+    'によると': 63, 'により': 63, 'による': 63,
     // 複合助詞（連語）を一語の接続助詞として扱い、に+動詞への誤分割を防ぐ。
     'ご': 91,
     'について': 63, 'については': 63, 'についても': 63,

@@ -855,7 +855,7 @@ export class InputHandler {
         // means Viterbi split a casual word across a symbol "word" — joining
         // it would produce nonsense like "()よ" for かっこよ. Fall back to the
         // plain kana/katakana candidates instead of using that prefix.
-        const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1]));
+        const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1], segs[i - 1]));
         const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
         const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
         const lastSeg = segs[segs.length - 1];
@@ -974,7 +974,7 @@ export class InputHandler {
     }
     if (composing.length === 0) { return; }
     this.bSegs = this.kanjiConverter.segment(composing);
-    this.bChosen = this.bSegs.map((seg: string, i: number) => this.kanjiConverter.autoConvert(seg, this.bSegs[i + 1]));
+    this.bChosen = this.bSegs.map((seg: string, i: number) => this.kanjiConverter.autoConvert(seg, this.bSegs[i + 1], this.bSegs[i - 1]));
     this.bCur = 0;
     this.updateBunsetsuStorage();
   }
