@@ -374,7 +374,7 @@ export struct SettingsBar {
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('登録不要・コンビニ決済も可・単発の投げ銭')
+          Text('登録不要・Apple Pay/Google Pay対応・単発の投げ銭')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
