@@ -212,6 +212,72 @@ comparatively small accuracy return. See "This is still not
 'Gboard-adjacent' quality" below for the harder ceiling full-spec mode
 doesn't touch.
 
+### The 2026-07 deep-fix round (327 → 360/529, 61.8% → 68.1%)
+
+A systematic miss-categorization pass (dump every TRAIN+TEST1-10 miss with
+its segmentation, trace representative cases against the raw data, fix the
+structural cause, re-measure) landed these, in order of measured impact:
+
+- **HIRA_MARGIN mis-implementation** (build): the "prefer hiragana in the
+  same class" tie-break (for です/デス) never checked that the entry it was
+  replacing was a katakana styling of the reading — so it also replaced
+  KANJI winners (取っ 2345, mozc's own preferred surface) with kana rows
+  within 500 cost (とっ 2464), silently kana-locking thousands of ordinary
+  verbs (とった/たりない/つかれた...). Now gated on
+  `to_hiragana(best_surface) == reading`.
+- **Track A hand-tuning leaking into track B's composition**: autoConvert's
+  FUNCTION_WORDS short-circuit and homograph overrides (ね/でる/たり →
+  forced kana) applied regardless of engine, overwriting the mozc DP's
+  correct 寝/出る/足り choices. Track B now goes straight to its own
+  hint-first lookup.
+- **Missing EOS edge cost** (runtime): the DP picked its final state without
+  the word→EOS transition (matrix[cls][0]) real mozc adds -- no signal to
+  prefer sentence-terminal forms. Structural omission of the port, fixed.
+- **Proper-noun steamrolling** (build): mozc prices many proper nouns
+  cheaply enough to hijack ordinary sentences (あすか人名+くぎ over
+  あす+かくぎ閣議, にしの姓 over 西+の). PROPER_NOUN_PENALTY=2500 (swept
+  1500/2500/3500 on TRAIN) on 固有名詞 senses.
+- **Numeral handling** (build + runtime): three interlocking fixes -- 名詞,数
+  excluded from the short-span content penalty (numbers are legitimately
+  typed one unit at a time), ARABIC_DIGIT_PENALTY=3000 on kana-typed
+  digit senses (typing ご in kana means 五, not 5), and a runtime numeral
+  pre-pass (findMozcNumeralRuns) that offers composed kanji-number spans
+  (さんじゅっ→三十, ごひゃく→五百) as proper 漢数字-class DP senses --
+  mozc's own lexicalized entries for these are junk (さんじゅっ→三拾 as a
+  PLACE NAME) and its per-token numeral costs lose to homophone noise
+  (産=10 vs 三=3248). This is the moral equivalent of real mozc's
+  NumberRewriter, which its OSS lattice data alone doesn't reproduce.
+- **2-char content penalty removed** (runtime): the half-strength penalty on
+  2-mora content spans hit nouns but not verbs (動詞 excluded from the
+  mask), tilting every 2-mora noun-vs-verb ambiguity ~1250 toward the verb
+  (しゅうまつはうみにいく → 生み). Traced via a full Python re-simulation
+  of the DP; len==1 keeps the full penalty.
+- **MAX_LEN 10 → 16** (runtime, mozc only): 5.7% of mozc's readings (42k,
+  including common polite phrases like ありがとうございました) were longer
+  than the DP's span cap and structurally unconvertible.
+- **Kana-first unknown fallback**: unknown readings only lead with katakana
+  when they contain ー (loanword signal); それって no longer becomes
+  ソレッテ.
+
+Plus three user-facing layers the corpus numbers don't capture:
+
+- **Composed whole-input candidates** (composeMozcCandidates): the
+  candidate list for a multi-segment input used to be whatever junk entry
+  the concatenated reading happened to have (とった → [トッタ], nothing
+  else -- 撮った was unreachable by cycling). Now built from the winning
+  path with one-segment-at-a-time same-reading swaps (取った/撮った/
+  獲った...), the dominant real-world correction pattern.
+- **Learned-choice and user-dictionary layering in lookupMozc**: track B
+  now applies the same user-intent priority order as track A (user dict >
+  learned > engine), where it previously consulted neither -- a homophone
+  the user had corrected a hundred times kept defaulting to mozc's
+  statistical pick. Learned surfaces absent from the candidate list are
+  prepended (not just reordered), since track B's per-reading lists
+  genuinely lack many valid conversions the user built through 文節変換.
+- **User-dictionary spans in the DP**: readings mozc doesn't know but the
+  user registered are now DP-eligible (scored as 名詞,一般 at mid cost via
+  nounGeneralClass) instead of being unconvertible line noise.
+
 (Original baseline before any track B accuracy work: 2/20 and not
 measured, respectively.) Removing class reduction and then fixing the
 single-state-per-position Viterbi bug are the two largest improvements
