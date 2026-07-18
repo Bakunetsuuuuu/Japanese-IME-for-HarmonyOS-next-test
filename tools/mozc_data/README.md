@@ -41,9 +41,20 @@ is absent.
 All three caches (`tools/mozc_data/cache/`, `cache_jmdict/`, `cache_sudachi/`
 -- ~90MB + ~120MB + ~270MB) are gitignored; only the derived output
 (`entry/src/main/resources/rawfile/mozc_dict.json` / `mozc_costs.json` /
-`mozc_matrix.json`, ~52MB combined -- see "No class reduction" below for
-why `mozc_matrix.json` alone is ~36.5MB of that) is committed and shipped
-in the app.
+`mozc_matrix.json`, ~120MB combined as of the "full spec" pruning removal
+below -- see "No class reduction" for why `mozc_matrix.json` alone is
+~36.5MB of that) is committed and shipped in the app.
+
+**"Full spec" mode**: `MAX_COST`/`MAX_CANDIDATES_PER_READING`/
+`MAX_SENSES_PER_READING` in `build_mozc_engine.py` were relaxed to mozc's
+own true observed maximums (no reading dropped by cost, every candidate
+surface and every distinct grammatical sense kept), at explicit user
+request accepting the app-size cost. `mozc_dict.json`/`mozc_costs.json`
+grew from ~8.8MB/~8.0MB (138k readings, the old MAX_COST=6000 cutoff) to
+~38MB/~47MB (all 745,964 readings). `mozc_matrix.json` is unaffected (it
+was already shipped unreduced, see "No class reduction" below). See the
+constants' own comment block in `build_mozc_engine.py` for the exact
+percentiles this was measured against.
 
 ## How it plugs in
 
@@ -184,10 +195,22 @@ Both verified empirically against `compare_engines.js`:
 
 `compare_engines.js` strict-match rate:
 
-| Corpus | track A (unchanged throughout) | sense-aware Viterbi only | + real-ipadic matrix merge (removed) | + no class reduction | + per-class Viterbi states (current) |
-|---|---|---|---|---|---|
-| `corpus_test10.js` (20 sentences) | 16/20 (80.0%) | 4/20 (20.0%) | 6/20 (30.0%) | 12/20 (60.0%) | **14/20 (70.0%)** |
-| `corpus_test9.js` (49 sentences, 16 registers) | 35/49 (71.4%) | 9/49 (18.4%) | 13/49 (26.5%) | 20/49 (40.8%) | **26/49 (53.1%)** |
+| Corpus | track A (unchanged throughout) | sense-aware Viterbi only | + real-ipadic matrix merge (removed) | + no class reduction | + per-class Viterbi states | + full-spec pruning removal (current) |
+|---|---|---|---|---|---|---|
+| `corpus_test10.js` (20 sentences) | 16/20 (80.0%) | 4/20 (20.0%) | 6/20 (30.0%) | 12/20 (60.0%) | 14/20 (70.0%) | 14/20 (70.0%) |
+| `corpus_test9.js` (49 sentences, 16 registers) | 35/49 (71.4%) | 9/49 (18.4%) | 13/49 (26.5%) | 20/49 (40.8%) | 26/49 (53.1%) | **29/49 (59.2%)** |
+
+Across the full `tools/ime-eval` suite (TRAIN+TEST1-10, 529 sentences), the
+full-spec pruning removal moved track B from 309/529 (58.4%) to 327/529
+(61.8%) strict-match — a real, modest gain (every sub-corpus non-negative,
+none regressed), not the large jump the earlier no-class-reduction/
+per-class-state fixes were. Track A remains clearly ahead (76.2%): the
+pruning caps this removed were mostly trimming genuinely rare vocabulary,
+not silently hobbling common-case accuracy, so most of this mode's cost is
+paid in app size (mozc_dict.json/mozc_costs.json roughly quadrupled) for a
+comparatively small accuracy return. See "This is still not
+'Gboard-adjacent' quality" below for the harder ceiling full-spec mode
+doesn't touch.
 
 (Original baseline before any track B accuracy work: 2/20 and not
 measured, respectively.) Removing class reduction and then fixing the
@@ -239,10 +262,10 @@ DP-eligible spans before and after augmentation. Only `lookup()`/
 — e.g. more kanji options when cycling candidates for a reading typed and
 converted on its own.
 
-Effect: scanned 258,109 JMdict reading/kanji pairs, augmented 11,859 of the
-137,869 readings already in `mozc_dict.json` (8.6%), adding 20,913
-candidate surfaces total (mozc_dict.json: 7,360,801 → 7,586,929 bytes,
-+3.1%). Per-reading additions are capped (`MAX_NEW_PER_READING=12` new
+Effect (full-spec base, see above): scanned 258,176 JMdict reading/kanji
+pairs, augmented 26,618 of the 745,964 readings already in `mozc_dict.json`
+(3.6%), adding 42,122 candidate surfaces total (mozc_dict.json: 35,436,895
+→ 35,932,327 bytes, +1.4%). Per-reading additions are capped (`MAX_NEW_PER_READING=12` new
 surfaces, `MAX_TOTAL_CANDIDATES=40` overall per reading) and ordered with
 JMdict's own priority-tagged (news1/ichi1/spec1/spec2/gai1) spellings
 first, since JMdict carries no cost/frequency number the way mozc's
@@ -285,11 +308,11 @@ are filtered to open-class content-word POS categories (名詞/動詞/形容詞/
 symbols/whitespace/particles/auxiliary-verb entries in the lexicon don't
 pollute candidate lists.
 
-Effect: scanned 1,580,626 content-word lexicon rows (small + core tiers),
-augmented 38,286 of the 137,869 readings already in `mozc_dict.json`
-(27.8%), adding 106,032 candidate surfaces total (mozc_dict.json:
-7,586,929 → 8,836,108 bytes, +16.5%). Same caps as the JMdict augmentation
-(`MAX_NEW_PER_READING=12`, `MAX_TOTAL_CANDIDATES=40`).
+Effect (full-spec base, see above): scanned 1,580,626 content-word lexicon
+rows (small + core tiers), augmented 78,145 of the 745,964 readings
+already in `mozc_dict.json` (10.5%), adding 177,421 candidate surfaces
+total (mozc_dict.json: 35,932,327 → 38,097,254 bytes, +6.0%). Same caps as
+the JMdict augmentation (`MAX_NEW_PER_READING=12`, `MAX_TOTAL_CANDIDATES=40`).
 
 ## Do not hand-patch individual words/sentences here
 
