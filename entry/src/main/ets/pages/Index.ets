@@ -11,9 +11,13 @@ const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
 const CARD_RADIUS = 16;
 
-const POS_LABELS: Record<string, string> = {
-  verb: '動詞', adjective: '形容詞', person: '人名', place: '地名',
-};
+// A top-level Record<string,string> object literal with actual entries
+// doesn't compile under ArkTS's stricter object-literal typing (unlike a
+// class-member initializer, or an empty {} -- see ConjugationEngine.ets's
+// GODAN_BUILDERS for the same issue with function values); a Map sidesteps it.
+const POS_LABELS: Map<string, string> = new Map<string, string>([
+  ['verb', '動詞'], ['adjective', '形容詞'], ['person', '人名'], ['place', '地名'],
+]);
 
 interface DictRow {
   yomi: string;
@@ -146,7 +150,7 @@ struct Index {
     for (const yomi of keys) {
       for (const word of this.dict[yomi]) {
         const entry = UserPosStore.get(this.posMap, yomi, word);
-        const posLabel = entry ? (POS_LABELS[entry.pos] ?? '') : '';
+        const posLabel = entry ? (POS_LABELS.get(entry.pos) ?? '') : '';
         list.push({ yomi: yomi, word: word, posLabel: posLabel });
       }
     }

@@ -88,9 +88,12 @@ export class SettingsStore {
 // applyColorMode -- NOT display.getDefaultDisplaySync(), whose Display
 // object has no colorMode field at all (that was the earlier bug: the
 // field read back undefined, so isDark always resolved to false).
+// common.Context's declared type has no `config` property (unlike the
+// concrete InputMethodExtensionContext type KeyboardController.applyColorMode
+// reads, which does) -- cast the context itself rather than context.config.
 export function resolveMainAppIsDark(context: common.Context): boolean {
   try {
-    const cm = (context.config as ESObject)['colorMode'] as number;
+    const cm = (context as ESObject)['config']['colorMode'] as number;
     // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
     return cm === 0;
   } catch (_e) {

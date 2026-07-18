@@ -168,10 +168,14 @@ function conjGodanRu(r: string, k: string): Record<string, string[]> {
   ]);
 }
 
-const GODAN_BUILDERS: Record<GodanRow, (r: string, k: string) => Record<string, string[]>> = {
-  u: conjGodanU, ku: conjGodanKu, gu: conjGodanGu, su: conjGodanSu, tsu: conjGodanTsu,
-  nu: conjGodanNu, bu: conjGodanBu, mu: conjGodanMu, ru: conjGodanRu,
-};
+// ArkTS doesn't allow an object literal keyed by a union type with function
+// values (each property widens to a distinct call signature, which ArkTS's
+// static object-literal typing rejects) -- a Map sidesteps that.
+type GodanBuilder = (r: string, k: string) => Record<string, string[]>;
+const GODAN_BUILDERS: Map<GodanRow, GodanBuilder> = new Map<GodanRow, GodanBuilder>([
+  ['u', conjGodanU], ['ku', conjGodanKu], ['gu', conjGodanGu], ['su', conjGodanSu], ['tsu', conjGodanTsu],
+  ['nu', conjGodanNu], ['bu', conjGodanBu], ['mu', conjGodanMu], ['ru', conjGodanRu],
+]);
 
 // Generates {conjugatedReading: [conjugatedSurface]} for a verb whose
 // dictionary-form reading/surface stems are rStem/kStem (i.e. with the final
@@ -180,7 +184,8 @@ const GODAN_BUILDERS: Record<GodanRow, (r: string, k: string) => Record<string, 
 export function conjugateVerb(rStem: string, kStem: string, group: VerbGroup, row?: GodanRow): Record<string, string[]> {
   if (group === 'ichidan') { return conjIchidan(rStem, kStem); }
   if (row === undefined) { return {}; }
-  return GODAN_BUILDERS[row](rStem, kStem);
+  const builder = GODAN_BUILDERS.get(row);
+  return builder === undefined ? {} : builder(rStem, kStem);
 }
 
 // Mirrors classify_verb_right_class in tools/build_inline_dict.py. Order

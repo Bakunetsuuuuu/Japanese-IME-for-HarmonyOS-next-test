@@ -14,6 +14,17 @@ import type { UserPosEntry } from './ConjugationEngine';
 // additive metadata the extension consults separately (see
 // ConjugationEngine.buildUserExpansion / KeyboardController.reloadUserDict).
 
+// ArkTS doesn't support the `delete` operator on index-signature types --
+// rebuild the record without the given key instead (used by set()/remove()
+// below in place of `delete map[k]`).
+function omitKey(map: Record<string, UserPosEntry>, key: string): Record<string, UserPosEntry> {
+  const out: Record<string, UserPosEntry> = {};
+  for (const k of Object.keys(map)) {
+    if (k !== key) { out[k] = map[k]; }
+  }
+  return out;
+}
+
 export class UserPosStore {
   private static readonly STORE: string = 'shunti_userpos';
   private static readonly KEY: string = 'v1';
@@ -60,10 +71,9 @@ export class UserPosStore {
   ): Record<string, UserPosEntry> {
     const k = UserPosStore.key(yomi, word);
     if (entry.pos === 'noun') {
-      delete map[k];
-    } else {
-      map[k] = entry;
+      return omitKey(map, k);
     }
+    map[k] = entry;
     return map;
   }
 
@@ -72,8 +82,7 @@ export class UserPosStore {
     yomi: string,
     word: string
   ): Record<string, UserPosEntry> {
-    delete map[UserPosStore.key(yomi, word)];
-    return map;
+    return omitKey(map, UserPosStore.key(yomi, word));
   }
 
   static get(
