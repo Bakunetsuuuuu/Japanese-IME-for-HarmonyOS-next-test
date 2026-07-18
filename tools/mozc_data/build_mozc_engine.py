@@ -179,6 +179,17 @@ DICT_SHARDS = [f"dictionary{i:02d}.txt" for i in range(10)]
 MAX_COST = None  # no cap: keep every reading regardless of cost
 MAX_CANDIDATES_PER_READING = 300  # true observed max is 296
 MAX_SENSES_PER_READING = 30  # true observed max is 29
+# See the アラビア数字 comment in build_dict_and_costs for why kana-typed
+# readings penalize Arabic-digit senses.
+ARABIC_DIGIT_PENALTY = 3000
+# Flat penalty on proper-noun senses (名詞,固有名詞,人名/地域/組織). mozc
+# prices many proper nouns cheaply enough to steal spans from ordinary
+# segmentations (あすか人名+くぎ over あす+かくぎ閣議, にしの姓 over 西+の,
+# あすも over あす+も, おおや→大谷さん...) -- a phone IME converting
+# ordinary sentences should require stronger evidence before dropping a
+# person/place name into the middle of one. Candidate lists still carry
+# the proper noun for cycling; this only weights the DP's default path.
+PROPER_NOUN_PENALTY = 2500
 
 
 # Major POS categories (id.def's first comma field) that are open-class
@@ -224,6 +235,17 @@ def compute_content_class_mask(raw_pos: dict, num_raw: int) -> list:
     mask = [0] * num_raw
     for rid, fields in raw_pos.items():
         if fields[0] in CONTENT_POS_MAJOR:
+            # 名詞,数 (numerals) excluded: a number sequence is legitimately
+            # spelled one short span per digit/unit (ご|ひゃく|えん...,
+            # さん|じゅっ|ぷん), so the short-span content penalty was
+            # actively breaking numbers apart -- e.g. pushing the DP off
+            # さん+じゅっ+ぷん onto a junk single-span place-name entry
+            # (さんじゅっ→三拾, 名詞,固有名詞,地域). Numerals behave like
+            # function words for segmentation purposes: short by nature,
+            # licensed by context (the connection matrix already prices
+            # 数→数/数→助数詞 transitions properly).
+            if fields[0] == "名詞" and len(fields) > 1 and fields[1] == "数":
+                continue
             mask[rid] = 1
     return mask
 
@@ -237,7 +259,18 @@ def load_raw_connection_matrix() -> np.ndarray:
     return raw.reshape(n, n)
 
 
-def build_dict_and_costs(raw_to_reduced: dict):
+def to_hiragana(s: str) -> str:
+    """Katakana -> hiragana (U+30A1-U+30F6 -> U+3041-U+3096); other chars
+    (kanji, ー, ASCII) pass through unchanged."""
+    return "".join(
+        chr(ord(c) - 0x60) if 0x30A1 <= ord(c) <= 0x30F6 else c
+        for c in s
+    )
+
+
+def build_dict_and_costs(raw_to_reduced: dict, raw_pos_fields: dict):
+    global RAW_POS_FIELDS
+    RAW_POS_FIELDS = raw_pos_fields
     # reading -> list of (cost, surface), append order preserved for stable tie-break
     per_reading = {}
     for shard in DICT_SHARDS:
@@ -269,19 +302,30 @@ def build_dict_and_costs(raw_to_reduced: dict):
         # class per reading" section for why this replaced the old
         # single-representative-triple design.
         #
-        # Within a class, normally take the cheapest entry -- but if the
-        # cheapest entry's surface is katakana and another entry IN THE SAME
-        # CLASS (same grammatical role) spells the reading in plain
-        # hiragana at a comparably low cost (within HIRA_MARGIN), prefer
-        # that one instead. E.g. です's copula sense (助動詞,特殊・デス,
-        # 基本形) has both a です (cost 40) and デス (cost 0) row -- purely
-        # taking cheapest picked デス, so the extremely common polite copula
-        # defaulted to katakana. This is a narrow, POS-driven tie-break
-        # (same class = same grammatical role by construction, since
-        # です/デス share the same raw leftId/rightId), not a per-word patch
-        # -- it applies uniformly to every reading with this hiragana/
-        # katakana class-mate pattern (~29 groups have it, spot-checked:
-        # です/デス, べし/ベシ, ござる/ゴザル, ...).
+        # Within a class, normally take the cheapest entry -- but if that
+        # cheapest surface is merely a KATAKANA-STYLED VARIANT of the
+        # reading itself (to_hiragana(surface) == reading: デス, マジ,
+        # ヤバい, ホンマ -- no lexical content beyond the reading, just
+        # script styling) and another entry IN THE SAME CLASS (same
+        # grammatical role) spells the reading in plain hiragana at a
+        # comparably low cost (within HIRA_MARGIN), prefer the hiragana
+        # one. E.g. です's copula sense (助動詞,特殊・デス,基本形) has both
+        # a です (cost 40) and デス (cost 0) row -- purely taking cheapest
+        # picked デス, so the extremely common polite copula defaulted to
+        # katakana; same pattern across casual/slang vocabulary (まじ/マジ,
+        # やばい/ヤバい, えぐい/エグい, ほんま/ホンマ, ...).
+        #
+        # The "cheapest is a katakana variant" gate is load-bearing: an
+        # earlier version omitted it and flipped ANY class where a kana row
+        # sat within 500 cost of the winner -- e.g. とっ's 五段促音便 class
+        # has 取っ (2345, mozc's own cheapest = its own preferred surface)
+        # and とっ (2464), so the ungated margin overrode mozc's real
+        # ranking with bare kana across thousands of ordinary verbs/nouns
+        # (とった/たりない/つかれた...). With the gate, a kanji winner is
+        # never touched; only katakana-vs-hiragana styling of the same word
+        # is tie-broken toward hiragana. Genuine loanwords (ばす→バス,
+        # めーる→メール) are unaffected in practice because mozc carries no
+        # cheap plain-hiragana row for them in the same class.
         HIRA_MARGIN = 500
         groups: dict = {}
         group_order = []
@@ -298,10 +342,25 @@ def build_dict_and_costs(raw_to_reduced: dict):
         for key in group_order:
             items = groups[key]
             best_cost, best_surface = items[0]  # cheapest, since entries was cost-sorted
-            for cost, surface in items[1:]:
-                if surface == reading and cost <= best_cost + HIRA_MARGIN:
-                    best_cost, best_surface = cost, surface
-                    break
+            if to_hiragana(best_surface) == reading and best_surface != reading:
+                for cost, surface in items[1:]:
+                    if surface == reading and cost <= best_cost + HIRA_MARGIN:
+                        best_cost, best_surface = cost, surface
+                        break
+            # Arabic-digit senses (名詞,数,アラビア数字 -- surfaces like "5"
+            # for reading ご) get a flat register penalty: these senses are
+            # only ever reachable here through a KANA-TYPED reading (this
+            # whole dictionary is kana-keyed), and a user who typed いち/ご
+            # in kana wants 一/五, not 1/5 -- digits are typed on the number
+            # pad. Without this, unpenalized digit entries (mozc prices some
+            # very low, e.g. 2/に at 998) win numeral spans and produce
+            # mixed-register output like 1日/1週間分 for いちにち typed in
+            # kana. Kanji-numeral (漢数字) senses are untouched.
+            if RAW_POS_FIELDS[key[0]][:3] == ["名詞", "数", "アラビア数字"]:
+                best_cost += ARABIC_DIGIT_PENALTY
+            fields = RAW_POS_FIELDS[key[0]]
+            if fields[0] == "名詞" and len(fields) > 1 and fields[1] == "固有名詞":
+                best_cost += PROPER_NOUN_PENALTY
             reps.append([best_cost, key[0], key[1], best_surface])
         reps.sort(key=lambda r: r[0])
         senses = reps[:MAX_SENSES_PER_READING]
@@ -334,7 +393,8 @@ def build_dict_and_costs(raw_to_reduced: dict):
 
 def write_outputs(mozc_dict: dict, mozc_costs: dict, size: int, bos_class: int,
                    unknown_class: int, content_class_mask: list, matrix: np.ndarray,
-                   class_labels: list) -> None:
+                   class_labels: list, noun_general_class: int,
+                   kanji_number_class: int) -> None:
     os.makedirs(RAWFILE_DIR, exist_ok=True)
     with open(os.path.join(RAWFILE_DIR, "mozc_dict.json"), "w", encoding="utf-8") as f:
         json.dump(mozc_dict, f, ensure_ascii=False, separators=(",", ":"))
@@ -345,6 +405,8 @@ def write_outputs(mozc_dict: dict, mozc_costs: dict, size: int, bos_class: int,
             "size": size,
             "bosClass": bos_class,
             "unknownClass": unknown_class,
+            "nounGeneralClass": noun_general_class,
+            "kanjiNumberClass": kanji_number_class,
             "contentClassMask": content_class_mask,
             "matrix": matrix.reshape(-1).tolist(),
         }, f, separators=(",", ":"))
@@ -397,15 +459,35 @@ def main():
     print(f"  + BOS/EOS class {bos_class}, + synthetic UNKNOWN class {unknown_class} "
           f"(discourage cost {discourage_cost}) -> final size {size}")
 
+    # Raw id of plain 名詞,一般 -- shipped so the runtime can score
+    # user-dictionary spans (readings mozc doesn't know) as ordinary nouns
+    # instead of the punitive synthetic-UNKNOWN class.
+    noun_general_class = -1
+    for rid, fields in raw_pos.items():
+        if fields[:2] == ["名詞", "一般"] and all(f == "*" for f in fields[2:]):
+            noun_general_class = rid
+            break
+    print(f"  名詞,一般 raw id: {noun_general_class}")
+
+    # Generic 名詞,数,漢数字 id -- the class the runtime's numeral pre-pass
+    # (see KanaKanjiConverter.ets, mozcNumeralRuns) scores its composed
+    # kanji-numeral spans as.
+    kanji_number_class = -1
+    for rid, fields in raw_pos.items():
+        if fields[:3] == ["名詞", "数", "漢数字"] and all(f == "*" for f in fields[3:]):
+            kanji_number_class = rid
+            break
+    print(f"  名詞,数,漢数字 raw id: {kanji_number_class}")
+
     print("parsing dictionary shards and building dict/costs tables...")
-    mozc_dict, mozc_costs = build_dict_and_costs(raw_to_raw)
+    mozc_dict, mozc_costs = build_dict_and_costs(raw_to_raw, raw_pos)
     print(f"  {len(mozc_dict)} distinct readings")
 
     class_labels = [None] * size
     for rid, fields in raw_pos.items():
         class_labels[rid] = ",".join(fields)
 
-    write_outputs(mozc_dict, mozc_costs, size, bos_class, unknown_class, content_class_mask, matrix, class_labels)
+    write_outputs(mozc_dict, mozc_costs, size, bos_class, unknown_class, content_class_mask, matrix, class_labels, noun_general_class, kanji_number_class)
     print("done.")
 
 

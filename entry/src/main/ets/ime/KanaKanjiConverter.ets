@@ -30743,11 +30743,38 @@ const MISTYPE_READINGS: Record<string, string> = {
 // Shape of entry/src/main/resources/rawfile/mozc_matrix.json, produced by
 // tools/mozc_data/build_mozc_engine.py. `matrix` is the size*size reduced
 // connection-cost table flattened row-major (matrix[left*size+right]).
+// Kana numeral tokens for track B's numeral pre-pass (see
+// findMozcNumeralRuns): parallel arrays of reading / kanji surface / rank
+// (0 = digit 一..九; units ranked 十=1 百=2 千=3 万=4 億=5 so a run can
+// require strictly descending unit order, the shape real numbers have).
+// Deliberately omitted as too homophone-ambiguous to trigger a numeral
+// parse on their own: し(四)=death/poem/city..., く(九), れい(零)=例/礼,
+// ちょう(兆)=超/町/庁. Rendaku unit variants (びゃく/ぴゃく/ぜん) are only
+// valid after the specific digits that trigger the rendaku -- ごぜん must
+// stay 午前, not 五千.
+const MOZC_NUM_READINGS: string[] = ['じゅう', 'じゅっ', 'じっ', 'ひゃく', 'びゃく', 'ぴゃく', 'せん', 'ぜん', 'まん', 'おく', 'いち', 'いっ', 'に', 'さん', 'よん', 'ご', 'ろく', 'ろっ', 'なな', 'しち', 'はち', 'はっ', 'きゅう'];
+const MOZC_NUM_KANJI: string[] = ['十', '十', '十', '百', '百', '百', '千', '千', '万', '億', '一', '一', '二', '三', '四', '五', '六', '六', '七', '七', '八', '八', '九'];
+const MOZC_NUM_RANK: number[] = [1, 1, 1, 2, 2, 2, 3, 3, 4, 5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+
+// A maximal kana-numeral run found in an input (start position implied by
+// the map key it's stored under).
+interface MozcNumeralRun {
+  len: number;
+  surface: string;
+}
+
 export interface MozcMatrixData {
   size: number;
   bosClass: number;
   unknownClass: number;
   contentClassMask: number[]; // 1 = open-class content POS (名詞/形容詞/副詞/連体詞/接頭詞 -- 動詞 deliberately excluded, see build_mozc_engine.py's CONTENT_POS_MAJOR comment), 0 = function-word-ish
+  // Raw id of 名詞,一般 -- the class user-dictionary spans are scored as
+  // (a user-registered word is a generic noun as far as the DP is
+  // concerned). Optional: older generated files predate it.
+  nounGeneralClass?: number;
+  // Raw id of generic 名詞,数,漢数字 -- the class the numeral pre-pass
+  // scores composed kanji-number spans as. Optional, same reason.
+  kanjiNumberClass?: number;
   matrix: number[];
 }
 
@@ -31310,6 +31337,8 @@ export class KanaKanjiConverter {
   private static mozcMatrix: number[][] = [];
   private static mozcBosClass: number = 0;
   private static mozcUnknownClass: number = 0;
+  private static mozcNounGeneralClass: number = -1;
+  private static mozcKanjiNumberClass: number = -1;
   private static mozcContentClassMask: number[] = [];
   // Populated by segment() (mozc engine only) during backtrace: surface
   // segment()'s Viterbi DP actually picked for a given reading fragment, so
@@ -31318,6 +31347,13 @@ export class KanaKanjiConverter {
   // general, regardless of which sense won). Cleared/rebuilt at the start of
   // every segment() call; only meaningful immediately after one.
   private mozcLastHints: Map<string, string> = new Map();
+  // The exact input and (merged) segmentation of the most recent mozc
+  // segment() call on this instance -- lets lookupMozc recognize "this is
+  // the whole just-segmented input" and build a composed candidate list
+  // from the winning path instead of a raw (usually absent or junk)
+  // whole-reading dictionary hit. See composeMozcCandidates.
+  private mozcLastInput: string = '';
+  private mozcLastSegs: string[] = [];
   // Ring buffer of up to 15 recently confirmed output strings for context re-ranking.
   private static contextBuffer: string[] = [];
   // True when the most recently committed text ended in an Arabic digit (half- or full-width).
@@ -31492,6 +31528,8 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.mozcMatrix = KanaKanjiConverter.reshapeMozcMatrix(matrixData);
     KanaKanjiConverter.mozcBosClass = matrixData.bosClass;
     KanaKanjiConverter.mozcUnknownClass = matrixData.unknownClass;
+    KanaKanjiConverter.mozcNounGeneralClass = matrixData.nounGeneralClass ?? -1;
+    KanaKanjiConverter.mozcKanjiNumberClass = matrixData.kanjiNumberClass ?? -1;
     KanaKanjiConverter.mozcContentClassMask = matrixData.contentClassMask;
   }
 
@@ -32255,15 +32293,114 @@ export class KanaKanjiConverter {
   private lookupMozc(kana: string): string[] {
     const entry = KanaKanjiConverter.mozcDict[kana];
     const hint = this.mozcLastHints.get(kana);
-    if (hint !== undefined) {
+    let list: string[];
+    if (kana === this.mozcLastInput && this.mozcLastSegs.length > 1) {
+      // Whole just-segmented input: compose real alternatives from the
+      // winning path instead of returning whatever junk single entry the
+      // raw dictionary happens to have for the concatenated reading
+      // (とった -> [トッタ] was the whole list before this).
+      list = this.composeMozcCandidates();
+    } else if (hint !== undefined) {
       if (entry && entry.length > 0) {
-        return [hint, ...entry.filter((c: string) => c !== hint)];
+        list = [hint, ...entry.filter((c: string) => c !== hint)];
+      } else {
+        list = [hint];
       }
-      return [hint];
+    } else if (entry && entry.length > 0) {
+      list = entry;
+    } else {
+      const kata = KanaKanjiConverter.toKatakana(kana);
+      if (kata === kana) {
+        list = [kana];
+      } else {
+        // Unknown reading: katakana leads only when the reading carries a
+        // long-vowel mark ー (a strong loanword signal -- こんさーと etc.);
+        // otherwise plain kana leads. The old unconditional katakana-first
+        // fallback turned ordinary casual contractions the dictionary happens
+        // to miss (それって, あれって, ほんまに) into gratuitous katakana
+        // (ソレッテ...) at the top of the candidate list.
+        list = kana.indexOf('ー') >= 0 ? [kata, kana] : [kana, kata];
+      }
     }
-    if (entry && entry.length > 0) { return entry; }
-    const kata = KanaKanjiConverter.toKatakana(kana);
-    return kata !== kana ? [kata, kana] : [kana];
+    // Same user-intent layering as track A's lookupCore (and in the same
+    // priority order): the user's learned candidate choices outrank raw
+    // dictionary/DP-hint order, and explicitly registered user-dictionary
+    // words (including POS-expanded conjugated forms, see
+    // ConjugationEngine.ets) outrank everything. Track B previously
+    // consulted neither -- so a homophone the user had corrected a hundred
+    // times (or even explicitly registered) kept defaulting to mozc's
+    // statistical pick. This is exactly the layer real mozc leans on for
+    // same-class homophones (撮った vs 取った), where POS statistics alone
+    // genuinely cannot decide.
+    //
+    // Unlike track A's applyLearning (which only reorders candidates already
+    // in the list), learned surfaces absent from the list are PREPENDED:
+    // track B's per-reading lists genuinely lack many valid conversions
+    // (e.g. a surface the user previously built through 文節変換), and a
+    // choice the user actually made before is valid by construction.
+    const counts = KanaKanjiConverter.learned[kana];
+    if (counts && Object.keys(counts).length > 0) {
+      const missing = Object.keys(counts)
+        .filter((c: string) => list.indexOf(c) < 0)
+        .sort((a: string, b: string) => (counts[b] ?? 0) - (counts[a] ?? 0));
+      list = [...missing, ...list];
+    }
+    const ordered = KanaKanjiConverter.applyLearning(kana, list);
+    return KanaKanjiConverter.withRegisteredWords(KanaKanjiConverter.userDict[kana], ordered);
+  }
+
+  // Builds the candidate list for the whole most-recently-segmented input
+  // by composing the winning path's per-segment choices, then generating
+  // alternatives that swap ONE segment at a time to its other same-reading
+  // surfaces (取った -> 撮った/獲った..., ordered by each segment's own
+  // candidate ranking). This is the poor-IME's n-best: real mozc derives
+  // whole-sentence alternatives from its lattice; the class-keyed DP here
+  // collapses same-class homophones into one state, so the lattice alone
+  // cannot enumerate them -- but the per-segment dictionaries still know
+  // every surface, and one-segment-at-a-time swaps cover the dominant
+  // real-world correction pattern (exactly one word wrong).
+  private composeMozcCandidates(): string[] {
+    const segs = this.mozcLastSegs;
+    const chosen: string[] = [];
+    for (let i = 0; i < segs.length; i++) {
+      const hint = this.mozcLastHints.get(segs[i]);
+      if (hint !== undefined) {
+        chosen.push(hint);
+      } else {
+        const e = KanaKanjiConverter.mozcDict[segs[i]];
+        if (e && e.length > 0) {
+          chosen.push(e[0]);
+        } else {
+          const kata = KanaKanjiConverter.toKatakana(segs[i]);
+          chosen.push(segs[i].indexOf('ー') >= 0 ? kata : segs[i]);
+        }
+      }
+    }
+    const base = chosen.join('');
+    const out: string[] = [base];
+    const MAX_ALTS_PER_SEG = 4;
+    const MAX_TOTAL = 24;
+    for (let i = 0; i < segs.length && out.length < MAX_TOTAL; i++) {
+      const e = KanaKanjiConverter.mozcDict[segs[i]];
+      if (!e || e.length < 2) { continue; }
+      const prefix = chosen.slice(0, i).join('');
+      const suffix = chosen.slice(i + 1).join('');
+      let added = 0;
+      for (let j = 0; j < e.length && added < MAX_ALTS_PER_SEG && out.length < MAX_TOTAL; j++) {
+        if (e[j] === chosen[i]) { continue; }
+        const cand = prefix + e[j] + suffix;
+        if (out.indexOf(cand) < 0) {
+          out.push(cand);
+          added++;
+        }
+      }
+    }
+    // Full-katakana and as-typed forms as final fallbacks, same contract as
+    // every other candidate list in this app.
+    const kata = KanaKanjiConverter.toKatakana(this.mozcLastInput);
+    if (out.indexOf(kata) < 0) { out.push(kata); }
+    if (out.indexOf(this.mozcLastInput) < 0) { out.push(this.mozcLastInput); }
+    return out;
   }
 
   // Closed set of compound-verb second elements (as they appear at the end of
@@ -32313,6 +32450,17 @@ export class KanaKanjiConverter {
   // (e.g. an earlier segment in a long casual sentence isn't independently
   // recognized, so lookup() never reaches segmentJoinFallback for it).
   autoConvert(kana: string, nextSeg?: string, prevSeg?: string): string {
+    // Track B: the DP already picked a context-aware sense for this segment
+    // (threaded through mozcLastHints into lookup()'s top candidate), so go
+    // straight there. Every override below this line is track-A hand-tuning
+    // (FUNCTION_WORDS kana-locking, は→歯, はなし→話し, ...) that must NOT
+    // leak into track B's composition: e.g. FUNCTION_WORDS['ね']/['でる']/
+    // ['たり'] would force kana for what mozc's DP correctly resolved as
+    // 寝/出る/足り (verb senses), silently overwriting the statistical
+    // engine's actual decision with track A's opinions.
+    if (KanaKanjiConverter.engine === 'mozc') {
+      return this.lookup(kana)[0];
+    }
     // は directly before を: see joinSegs' matching special case for why --
     // checked before the FUNCTION_WORDS short-circuit below, which would
     // otherwise always keep a bare は in kana regardless of context.
@@ -32527,8 +32675,12 @@ export class KanaKanjiConverter {
     if (KanaKanjiConverter.engine === 'mozc') {
       // Track B is deliberately its own closed world (see field comments
       // near `engine`) -- FUNCTION_WORDS/FW_CLASS_MAP are track-A hand-tuned
-      // grammar tables, not part of mozc's own data, so they don't apply here.
-      return !!KanaKanjiConverter.mozcDict[sub];
+      // grammar tables, not part of mozc's own data, so they don't apply
+      // here. The USER dictionary is the one exception: explicit user
+      // registrations are engine-independent intent, and without this a
+      // registered novel word could never even become a DP span in track B
+      // (getWordInfoCandidatesMozc gives such spans a generic-noun sense).
+      return !!(KanaKanjiConverter.mozcDict[sub] || KanaKanjiConverter.userDict[sub]);
     }
     return !!(KanaKanjiConverter.globalDict[sub]
       || KanaKanjiConverter.userDict[sub]
@@ -32821,9 +32973,84 @@ export class KanaKanjiConverter {
   // DP-eligible) -- the latter gets the same "discourage but don't forbid"
   // treatment track A's VN_UNKNOWN_SINGLE/VC_UNKNOWN gives an unrecognized
   // single character, as a one-element fallback array.
+  // Finds, for every start position in `kana`, the longest valid kana-
+  // numeral run beginning there (三十七 shapes: optional digit before each
+  // unit, units in strictly descending rank, at most one trailing bare
+  // digit for the ones place, and at least one unit so a lone ambiguous
+  // digit reading never triggers). Returns start position -> run. This is
+  // the equivalent of real mozc's number-candidate generation, which its
+  // OSS lattice data alone doesn't reproduce: mozc prices whole-number
+  // spans like さんじゅっ only as junk lexicalized entries (三拾 as a
+  // place name...), and the per-token 漢数字 entries carry wildly uneven
+  // costs (三=3248 vs 産=10 for さん), so composed numbers routinely lost
+  // to homophone noise without this.
+  private static findMozcNumeralRuns(kana: string): Map<number, MozcNumeralRun> {
+    const runs: Map<number, MozcNumeralRun> = new Map();
+    const n = kana.length;
+    for (let start = 0; start < n; start++) {
+      let pos = start;
+      let surface = '';
+      let lastUnitRank = 99;
+      let pendingDigit = false;
+      let pendingDigitReading = '';
+      let unitSeen = false;
+      while (pos < n) {
+        // Longest token match at pos.
+        let tokIdx = -1;
+        let tokLen = 0;
+        for (let t = 0; t < MOZC_NUM_READINGS.length; t++) {
+          const r = MOZC_NUM_READINGS[t];
+          if (r.length > tokLen && kana.startsWith(r, pos)) {
+            // Rendaku unit variants only after their triggering digit.
+            if (r === 'ぜん' && pendingDigitReading !== 'さん') { continue; }
+            if (r === 'びゃく' && pendingDigitReading !== 'さん') { continue; }
+            if (r === 'ぴゃく' && pendingDigitReading !== 'ろっ' && pendingDigitReading !== 'はっ') { continue; }
+            tokIdx = t;
+            tokLen = r.length;
+          }
+        }
+        if (tokIdx < 0) { break; }
+        const rank = MOZC_NUM_RANK[tokIdx];
+        if (rank === 0) {
+          if (pendingDigit) { break; } // two bare digits in a row: not one number
+          pendingDigit = true;
+          pendingDigitReading = MOZC_NUM_READINGS[tokIdx];
+        } else {
+          if (rank >= lastUnitRank) { break; } // units must descend (十 after 百...)
+          lastUnitRank = rank;
+          pendingDigit = false;
+          pendingDigitReading = '';
+          unitSeen = true;
+        }
+        surface += MOZC_NUM_KANJI[tokIdx];
+        pos += tokLen;
+      }
+      if (unitSeen && pos > start) {
+        runs.set(start, { len: pos - start, surface });
+      }
+    }
+    return runs;
+  }
+
   private getWordInfoCandidatesMozc(sub: string): MozcSense[] {
     const senses = KanaKanjiConverter.mozcCosts[sub];
     if (senses !== undefined && senses.length > 0) { return senses; }
+    // User-registered reading with no mozc entry: score it as an ordinary
+    // 名詞,一般 at a mid-range word cost instead of the punitive UNKNOWN
+    // fallback below -- an explicitly registered word should compete on
+    // roughly even footing with mozc's own mid-frequency nouns, not be
+    // priced like line noise. Surface comes from the user's own
+    // registration so the DP hint shows their word directly.
+    const userWords = KanaKanjiConverter.userDict[sub];
+    if (userWords !== undefined && userWords.length > 0 &&
+        KanaKanjiConverter.mozcNounGeneralClass >= 0) {
+      return [{
+        cost: 4000,
+        leftClass: KanaKanjiConverter.mozcNounGeneralClass,
+        rightClass: KanaKanjiConverter.mozcNounGeneralClass,
+        surface: userWords[0],
+      }];
+    }
     return [{
       cost: KanaKanjiConverter.VN_UNKNOWN_SINGLE,
       leftClass: KanaKanjiConverter.mozcUnknownClass,
@@ -33100,8 +33327,16 @@ export class KanaKanjiConverter {
     const n = kana.length;
     if (n === 0) { return []; }
     const INF = 1000000000;
-    const MAX_LEN = 10;
     const isMozc = KanaKanjiConverter.engine === 'mozc';
+    // Track B's dictionary has real entries well past 10 kana (5.7% of its
+    // 745k readings -- ありがとうございました is 11, common polite phrases
+    // run longer), which a 10-cap made structurally unreachable no matter
+    // what the costs said. 16 covers 99.34% of its readings; the inDict()
+    // gate below keeps the extra loop lengths nearly free (a span is only
+    // scored when it's actually a dictionary hit). Track A keeps 10 -- its
+    // own dictionaries were built around that cap and its scores are
+    // regression-gated bit-for-bit.
+    const MAX_LEN = isMozc ? 16 : 10;
 
     // best[i]       = minimum total cost to reach position i
     // prevPos[i]    = starting position of the segment ending at i (for backtrace)
@@ -33156,8 +33391,13 @@ export class KanaKanjiConverter {
       for (let j = 0; j <= n; j++) { states.push(new Map<number, MozcDpState>()); }
       states[0].set(bosClass, { cost: 0, prevPos: -1, prevClass: -1, surface: undefined });
 
+      // Numeral pre-pass: composed kana-number runs become DP-eligible
+      // spans with a proper 漢数字-class sense (see findMozcNumeralRuns).
+      const numRuns = KanaKanjiConverter.findMozcNumeralRuns(kana);
+
       for (let i = 0; i < n; i++) {
         if (states[i].size === 0) { continue; }
+        const numRun = numRuns.get(i);
         const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
         for (let len = 1; len <= maxLen; len++) {
           // forceSplit forbids the whole reading as a single span, so callers
@@ -33167,31 +33407,56 @@ export class KanaKanjiConverter {
           // dict entry (→変換精度) vs へんかん+せいど split (→返還+制度).
           if (forceSplit && i === 0 && len === n) { continue; }
           const sub = kana.slice(i, i + len);
-          if (len > 1 && !this.inDict(sub)) { continue; }
+          const isNumSpan = numRun !== undefined && numRun.len === len;
+          if (len > 1 && !this.inDict(sub) && !isNumSpan) { continue; }
           // A span can carry several distinct grammatical senses (see
           // getWordInfoCandidatesMozc) — try each and let normal cost
           // minimization pick whichever actually fits the surrounding
           // context, rather than committing to one representative sense
           // before context is even known.
-          const candidates = this.getWordInfoCandidatesMozc(sub);
+          let candidates = this.getWordInfoCandidatesMozc(sub);
+          if (isNumSpan && KanaKanjiConverter.mozcKanjiNumberClass >= 0) {
+            // Composed kanji-numeral sense for this exact run (三十, 五百,
+            // 二千二十五...) at a flat favorable cost -- mozc's own
+            // per-token 漢数字 entry costs are wildly uneven (三=3248 while
+            // homophone noise like 産=10 undercuts it), so whole numbers
+            // need their own sense to reliably beat that noise. Real dict
+            // senses for the same span (e.g. ごじゅう→五重) still compete.
+            const numSense: MozcSense = {
+              cost: 2500,
+              leftClass: KanaKanjiConverter.mozcKanjiNumberClass,
+              rightClass: KanaKanjiConverter.mozcKanjiNumberClass,
+              surface: numRun.surface,
+            };
+            const hasReal = KanaKanjiConverter.mozcCosts[sub] !== undefined;
+            candidates = hasReal ? [...candidates, numSense] : [numSense];
+          }
           for (let ci = 0; ci < candidates.length; ci++) {
             const cand = candidates[ci];
-            // A single mora, and to a lesser extent a 2-mora span, almost
-            // always has SOME dictionary sense (mozc has raw kanji-homophone
-            // dumps per short reading, same as the hand-built dictionary did
-            // before reorder_kana_dumps.py), so an unpenalized content-word
-            // sense here frequently steals a short span from what should
-            // have been part of a longer word or a different grammatical
-            // decomposition. Mirrors track A's singleContentPenalty, extended
-            // one mora further since 2-char spans showed the identical
-            // failure pattern in validation; only applies to open-class
-            // content senses (mozcContentClassMask) -- a genuine short
-            // particle/auxiliary (は/を/に/した=する's past/ます/...) must
-            // stay cheap.
+            // A single mora almost always has SOME dictionary sense (mozc
+            // has raw kanji-homophone dumps per short reading, same as the
+            // hand-built dictionary did before reorder_kana_dumps.py), so
+            // an unpenalized content-word sense here frequently steals a
+            // short span from what should have been part of a longer word
+            // or a different grammatical decomposition. Mirrors track A's
+            // singleContentPenalty; only applies to open-class content
+            // senses (mozcContentClassMask) -- a genuine short particle/
+            // auxiliary (は/を/に/した=する's past/ます/...) must stay cheap.
+            //
+            // Deliberately len==1 ONLY. An earlier version also charged
+            // 2-char content spans half the penalty; traced (via a full
+            // Python re-simulation of this DP on real data) as the deciding
+            // factor mis-converting しゅうまつはうみにいく to 生み: the
+            // penalty hits 2-char NOUNS (海, mask=1) but not verbs
+            // (生み 連用形, mask=0 -- 動詞 excluded from the mask, see
+            // build_mozc_engine.py), so every noun-vs-verb ambiguity over a
+            // 2-mora span was tilted ~1250 toward the verb reading. mozc's
+            // own costs already price 2-mora words fairly; the mora-count
+            // crutch is only needed at 1 char where homophone dumping is
+            // extreme.
             let singlePenalty = 0;
-            if (KanaKanjiConverter.mozcContentClassMask[cand.leftClass] === 1) {
-              if (len === 1) { singlePenalty = KanaKanjiConverter.MOZC_SINGLE_CONTENT_PENALTY; }
-              else if (len === 2) { singlePenalty = KanaKanjiConverter.MOZC_SINGLE_CONTENT_PENALTY / 2; }
+            if (len === 1 && KanaKanjiConverter.mozcContentClassMask[cand.leftClass] === 1) {
+              singlePenalty = KanaKanjiConverter.MOZC_SINGLE_CONTENT_PENALTY;
             }
             const nextStates = states[i + len];
             states[i].forEach((state: MozcDpState, prevClass: number) => {
@@ -33205,16 +33470,24 @@ export class KanaKanjiConverter {
         }
       }
 
-      // Pick whichever class reached position n cheapest, then backtrace
-      // through the (position, class) chain into the same prevPos[]/
-      // winSurface[] arrays the shared backtrace code below already expects
-      // -- prevPos[j] stays -1 / winSurface[j] stays undefined for any
+      // Pick whichever class reached position n cheapest INCLUDING its
+      // edge cost into EOS -- mozc's BOS and EOS share raw id 0, so
+      // matrix[cls][0] is the word→EOS transition cost, exactly what real
+      // mozc's own lattice adds for the final word. Without this term the
+      // DP had no signal at all to prefer sentence-terminal forms (基本形/
+      // 終止形 connect cheaply into EOS; continuation forms like 連用形 or
+      // a dangling 格助詞 connect expensively) -- a structural omission of
+      // this port, not a tuning choice. Then backtrace through the
+      // (position, class) chain into the same prevPos[]/winSurface[]
+      // arrays the shared backtrace code below already expects --
+      // prevPos[j] stays -1 / winSurface[j] stays undefined for any
       // position this backward walk never reaches, matching the convention
       // an unreachable position had under the old scalar (INF) version.
       let bestFinalClass = -1;
       let bestFinalCost = INF;
       states[n].forEach((state: MozcDpState, cls: number) => {
-        if (state.cost < bestFinalCost) { bestFinalCost = state.cost; bestFinalClass = cls; }
+        const total = state.cost + this.getEdgeCost(cls, bosClass);
+        if (total < bestFinalCost) { bestFinalCost = total; bestFinalClass = cls; }
       });
       if (bestFinalClass >= 0) {
         let pos = n;
@@ -33310,6 +33583,10 @@ export class KanaKanjiConverter {
         const hint = merged2Hints[k];
         if (hint !== undefined) { this.mozcLastHints.set(merged2[k], hint); }
       }
+      // Remember this exact segmentation so lookupMozc(wholeInput) can
+      // compose a real candidate list from it (see composeMozcCandidates).
+      this.mozcLastInput = kana;
+      this.mozcLastSegs = merged2;
     }
     return merged2;
   }
