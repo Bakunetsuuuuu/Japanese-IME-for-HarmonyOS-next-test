@@ -35,25 +35,36 @@ const MAX_KB_VP = 620;
 export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boolean): void {
   const screenVp = isTabletClass ? Math.min(rawScreenVp, MAX_KB_VP) : rawScreenVp;
   AppStorage.setOrCreate('keyboardContentVp', screenVp);
-  // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead. The
-  // middle letter row (asdfghjkl + ー) and bottom row (shift + zxcvbnm +
-  // backspace) also reuse this width; they aren't a fixed-width fit like
-  // this row, just centered, so a different key count is harmless.
-  const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
+  // 10-key rows (KeyboardView's number row / qwerty row / romaji asdfghjklー
+  // row): 4vp total H-padding + 9 gaps × 5vp (KeyboardView's Row({space:5}),
+  // not the 2vp this used to assume before the design-token pass bumped row
+  // spacing -- that mismatch was the actual bug: keys came out ~2.7vp too
+  // wide each, ~27vp of overflow past the right edge on any 10-key row) =
+  // 49vp overhead. The middle letter row (asdfghjkl + ー) and bottom row
+  // (shift + zxcvbnm + backspace) also reuse this width; they aren't a
+  // fixed-width fit like this row, just centered, so a different key count
+  // is harmless.
+  const kwVp = Math.max(Math.floor((screenVp - 49) / 10), 24);
   const skwVp = Math.round(kwVp * 1.2);
-  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps
+  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps × 5vp
   // (文節 sits right after space, at the same special-key width as
   // mode/enter — the row would overflow if it were sized on top of them
-  // instead of space giving up the room).
-  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 10), 60);
-  // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
+  // instead of space giving up the room). Same space:5 vs assumed-2vp
+  // mismatch as kwVp above.
+  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 25), 60);
+  // Flick keys: 5 columns + 4 gaps × 4vp (FlickKeyboardView's Row({space:4}))
+  // + 0vp H-padding (its Column has no left/right padding) = 16vp overhead --
+  // same total as the old "4 gaps × 3vp + 4vp H-padding" comment assumed, by
+  // coincidence, so this one was never actually broken.
   const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
   AppStorage.setOrCreate('keyWidthVp', kwVp);
   AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
   AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
   AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
-  // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
-  const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
+  // Symbol panel: 8 columns + 7 gaps × 4vp (SymbolView's Row({space:4})) +
+  // 8vp H-padding (left:4 + right:4) = 36vp overhead -- was assuming 2vp
+  // gaps + 6vp padding (20vp) here too, same class of bug as kwVp above.
+  const symKwVp = Math.max(Math.floor((screenVp - 36) / 8), 36);
   AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
 }
 

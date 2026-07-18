@@ -286,7 +286,7 @@ struct Index {
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).textSecondary)
-          Text('v1.1.0')
+          Text('v1.5.0')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).textSecondary)

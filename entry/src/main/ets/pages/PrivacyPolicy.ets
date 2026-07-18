@@ -1,10 +1,11 @@
 import { router } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from '../components/JpFont';
+import { kbTheme } from '../components/Theme';
 
 @Entry
 @Component
 struct PrivacyPolicy {
-  // Set by EntryAbility.applyThemeMode (テーマ setting + OS color mode).
+  // Set by EntryAbility.applyColorMode (OS color mode only).
   @StorageLink('isDark') isDark: boolean = false;
 
   build() {
@@ -14,19 +15,19 @@ struct PrivacyPolicy {
         Text('← 戻る')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(15)
-          .fontColor(Color.White)
+          .fontColor(kbTheme(this.isDark).onAccent)
           .onClick(() => { router.back(); })
         Text('プライバシーポリシー')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
+          .fontColor(kbTheme(this.isDark).onAccent)
           .margin({ left: 12 })
       }
       .width('100%')
       .height(56)
       .padding({ left: 16 })
-      .backgroundColor('#4A90E2')
+      .backgroundColor(kbTheme(this.isDark).accent)
 
       Scroll() {
         Column({ space: 20 }) {

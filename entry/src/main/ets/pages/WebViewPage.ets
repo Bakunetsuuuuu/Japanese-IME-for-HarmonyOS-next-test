@@ -1,6 +1,7 @@
 import { router } from '@kit.ArkUI';
 import { webview } from '@kit.ArkWeb';
 import { JP_FONT_FAMILY } from '../components/JpFont';
+import { kbTheme } from '../components/Theme';
 
 interface WebViewParams {
   url?: string;
@@ -16,10 +17,10 @@ interface WebViewParams {
 @Entry
 @Component
 struct WebViewPage {
-  // Set by EntryAbility.applyThemeMode (テーマ setting + OS color mode).
-  // Only affects this page's own header/background chrome -- the loaded
-  // website's own content styles itself (ArkWeb, like any browser, respects
-  // the page's own prefers-color-scheme handling, which is unrelated).
+  // Set by EntryAbility.applyColorMode (OS color mode only). Only affects
+  // this page's own header/background chrome -- the loaded website's own
+  // content styles itself (ArkWeb, like any browser, respects the page's own
+  // prefers-color-scheme handling, which is unrelated).
   @StorageLink('isDark') isDark: boolean = false;
   @State pageTitle: string = '';
   @State canGoBack: boolean = false;
@@ -49,13 +50,13 @@ struct WebViewPage {
         Text('← 戻る')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(15)
-          .fontColor(Color.White)
+          .fontColor(kbTheme(this.isDark).onAccent)
           .onClick(() => { this.handleBack(); })
         Text(this.pageTitle)
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(16)
           .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
+          .fontColor(kbTheme(this.isDark).onAccent)
           .maxLines(1)
           .textOverflow({ overflow: TextOverflow.Ellipsis })
           .layoutWeight(1)
@@ -64,7 +65,7 @@ struct WebViewPage {
       .width('100%')
       .height(52)
       .padding({ left: 16, right: 16 })
-      .backgroundColor('#4A90E2')
+      .backgroundColor(kbTheme(this.isDark).accent)
       .alignItems(VerticalAlign.Center)
 
       if (this.url.length > 0) {
