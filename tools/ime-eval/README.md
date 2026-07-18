@@ -15,41 +15,92 @@ labeled corpus of natural Japanese `[reading, goldSurface]` pairs.
 ```sh
 node tools/ime-eval/run.js            # TRAIN summary accuracy
 node tools/ime-eval/run.js --misses   # also print every miss (gold vs got)
-node tools/ime-eval/run_test.js           # held-out TEST summary accuracy
+node tools/ime-eval/run_test.js           # held-out TEST summary accuracy (rounds 1-9, see below)
 node tools/ime-eval/run_test.js --misses  # also print every miss
+node tools/ime-eval/run_vocab.js           # bare single-word dictionary coverage check
+node tools/ime-eval/run_vocab.js --misses  # also print every miss
+node tools/ime-eval/run_all.js        # one build, every corpus (TRAIN/TEST1-10/VOCAB1-3) -- fastest way to get a full picture
+node tools/ime-eval/sweep.js          # 4000-key dict-sampling old(HEAD)-vs-new(working tree) kanji-loss check
+node tools/ime-eval/sweep_join.js     # same, but sampling concatenated dict-key PAIRS -- see "Regression tooling" below
+node tools/ime-eval/regress.js        # classifies every corpus row that changed into FIXED/REGRESSED/CHANGED_STILL_WRONG
 ```
 
-Requires a local `typescript` (`npx tsc`).
+Requires a local `typescript` (`npx tsc`). `run_test2.js` … `run_test9.js` and
+`run_vocab2.js`/`run_vocab3.js` follow the same naming pattern as `run_test.js`/
+`run_vocab.js` for the later rounds.
 
-## Train/test split
+## Train/test split — and its limits
 
 `run.js` (corpus.js/corpus2.js/corpus3.js) is the **train** set: the one
-actually used to decide what to fix. `run_test.js` (corpus_test.js/
-accept_test.js) is a separately-authored **held-out test** set — never used to
-pick or shape a fix, only to check the result afterward. This matters because
-tuning repeatedly against one small corpus makes it stop measuring
-generalization: an earlier round of this converter scored 89% against a
-130-sentence corpus it had been tuned against, but only 70% against a larger
-held-out corpus of the same difficulty. Keep that separation when adding
-cases — a bug found via corpus_test.js should be fixed by reasoning about the
-general rule (or by adding the fix to the train corpus for regression
-coverage), not by hand-tuning to the exact test sentence.
+actually used to decide what to fix. `run_test*.js` (corpus_test*.js/
+accept_test*.js) are **held-out test** sets — never used to pick or shape a
+fix, only to check the result afterward. This matters because tuning
+repeatedly against one small corpus makes it stop measuring generalization:
+an earlier round of this converter scored 89% against a 130-sentence corpus
+it had been tuned against, but only 70% against a larger held-out corpus of
+the same difficulty.
+
+**A single held-out corpus is not enough if the same person writes both the
+fixes and the test sentences.** Round 1 (`corpus_test.js`) turned out to
+overlap in spirit with words patched the same session that authored it — no
+literal sentence duplication, but 30% of its sentences directly exercised a
+word just patched, which quietly inflates the score without proving anything
+generalizes. Two mitigations are in place:
+
+1. **Rotate the corpus every round.** `corpus_test2.js` through
+   `corpus_test6.js` were each measured exactly once, *before* any fix aimed at
+   that round's failures, to get an honest baseline; after fixing, that
+   corpus is "spent" (informative, but no longer blind) and the next round
+   uses a fresh one. Don't keep re-measuring against the same held-out file
+   round after round while tuning — write a new one.
+2. **Prefer corpora whose *wording* isn't yours.** `corpus_test6.js` is
+   sampled from the [Tatoeba Project](https://tatoeba.org) (CC BY 2.0 FR),
+   real sentences from independent contributors — only the hiragana reading
+   column was transcribed by hand for this project, not the sentence content
+   itself. This is more rigorous than corpus_test.js–corpus_test5.js (all
+   hand-authored by whoever was doing the fixing that session), which still
+   carries an unconscious vocabulary-selection bias even when no fix is
+   deliberately targeted. Prefer sourcing more real-corpus sentences (with a
+   compatible license) over hand-authoring when starting a new round.
+   Tatoeba itself skews toward polite/textbook-style example sentences,
+   though, not genuine casual speech — `corpus_test7.js` instead samples the
+   [Open 2channel Dialogue Corpus](https://github.com/1never/open2ch-dialogue-corpus)
+   (Apache 2.0), real casual message-board conversation, and scores
+   noticeably lower (22.7% first-measurement) than the more formal-register
+   sources. That gap is itself informative: this converter's dictionary/
+   grammar coverage is much better tuned to neutral/written register than to
+   live colloquial speech, and any accuracy number should be read alongside
+   *what register the test corpus is drawn from*, not as a single scalar.
+
+Even with both mitigations, expect the *first-measurement* score on a fresh
+round to land well below any previously-reported number — that gap is the
+honest one. Fixing what a fresh corpus reveals is legitimate; re-running the
+*same* corpus after patching it and reporting the new number as if it were
+still a blind measurement is not.
 
 ## Corpus
 
-- `corpus.js` — everyday sentences, colloquial/casual forms, and readings known
-  to surface garbage candidates.
-- `corpus2.js` — additional held-out sentences used to validate that a change
-  generalizes rather than overfitting.
-- `corpus3.js` — a larger, independently-authored held-out corpus (news/forum
-  register plus more grammar patterns: passive/causative/potential forms,
-  questions, counters) for the same generalization check at greater scale.
-- `accept.js` — per-reading map of *additional* valid natural-Japanese outputs
-  (okurigana / kana-kanji / standard homophones the IME can't disambiguate
-  without context). Garbage is never listed here.
-- `corpus_test.js` / `accept_test.js` — the held-out TEST set (see above).
-  Same format as corpus.js/accept.js, kept in separate files so it's obvious
-  which corpus a given tuning session is/isn't allowed to look at.
+- `corpus.js` / `corpus2.js` / `corpus3.js` / `accept.js` — the TRAIN set (see
+  above).
+- `corpus_test.js` … `corpus_test9.js` (with matching `accept_test*.js`) —
+  successive held-out TEST rounds, each authored/sourced fresh and measured
+  once before any fix targeted it. Treat all of them as "spent" (no longer
+  blind) once a fix round has run against them; write a new one for the next
+  round rather than reusing. `corpus_test9.js` was promoted from a
+  49-sentence, 16-register benchmark (news/business/casual/recipe/weather/
+  travel/shopping/health/tech/sports/finance/school/family/entertainment/
+  nature) authored specifically to cover registers the contemporaneous
+  "LONGTEXT" tuning loop hadn't touched; see its header comment for its
+  own spent/first-measurement history before reusing it as if still blind.
+- `vocab_test.js` / `run_vocab.js` — a separate check: ~250 common everyday
+  N5–N3 words as bare single-reading `lookup()` calls (not sentences), to
+  measure raw dictionary/ranking coverage independent of segmentation.
+- `corpus_test10.js` — authored fresh, not reused from TEST1-9. Doubles as
+  the held-out corpus for `tools/mozc_data/compare_engines.js`, which scores
+  the optional mozc-derived "track B" engine (see `tools/mozc_data/README.md`
+  for what that is and its known quality limitations) side by side with the
+  default hand-built dictionary on the same sentences. Not a regression gate
+  the way TEST1-9 are against track A — track B isn't expected to match it.
 
 Two metrics are reported:
 - **strict** — output equals the one authored gold exactly.
@@ -86,12 +137,53 @@ quality — extend these, plus the segmentation cost constants in `getWordInfo` 
   set phrases (あけまし→あけましておめでとうございます), independent of the
   regular whole-reading dictionary lookup.
 
+## Regression tooling
+
+Corpus scoring (`run.js`/`run_test*.js`/`run_all.js`) tells you the aggregate
+number moved the right way. It doesn't tell you *why*, or catch a regression
+outside the ~600 labeled sentences currently in this directory. Three tools
+fill that gap, all comparing committed `HEAD` against the current working
+tree so they also catch uncommitted changes:
+
+- **`sweep.js`** — samples 4000 keys from `Object.keys(dict.json) ∪
+  Object.keys(global_dict.json)` (seeded PRNG, reproducible), builds the
+  converter twice (HEAD vs. working tree), and diffs `lookup(key)[0]`,
+  flagging any sample that lost kanji (`kanjiLoss`) it had before. Cheap,
+  broad, dictionary-ordering/candidate-ranking regressions.
+  **Blind spot:** every sampled key already has a direct dictionary entry,
+  so this never exercises `lookupCore()`'s "not in any dict" branch and
+  therefore never calls `segmentJoinFallback()`/`joinSegs()`. A change to
+  that code path can look completely clean under `sweep.js` alone and still
+  be a regression.
+- **`sweep_join.js`** — same methodology, but samples *concatenated pairs*
+  of existing dict keys (which usually aren't themselves dict keys), forcing
+  `lookupCore()` down the `segmentJoinFallback()`/`joinSegs()` path that
+  `sweep.js` can't reach. Use this whenever a change touches segmentation
+  joining, not just dictionary data.
+- **`regress.js`** — runs every corpus in this directory (TRAIN/TEST1-10/
+  VOCAB1-3) through both the HEAD and working-tree converter and classifies
+  every row whose answer changed as `FIXED` (was wrong, now matches gold/
+  accept), `REGRESSED` (matched before, wrong now), or
+  `CHANGED_STILL_WRONG` (wrong both times, different guess). `REGRESSED`
+  rows where the *old* answer had kanji and the *new* one is a plain-kana
+  fallback are worth eyeballing individually: an honest "I don't know" kana
+  fallback is very often a net improvement over a confidently wrong kanji
+  guess, even though it counts as a strict-match loss in the corpus score.
+
 ## Workflow
 
-1. `node tools/ime-eval/run.js` to get the current baseline.
+1. `node tools/ime-eval/run_all.js` to get the current baseline across every
+   corpus in one build (equivalent to running `run.js` + every `run_test*.js`
+   + every `run_vocab*.js` separately, but only transpiles once).
 2. Change the converter (ranking, segmentation cost, dictionary pruning, …).
-3. Re-run. A change ships only if accuracy rises **and** no previously-correct
-   labeled sentence regresses (diff the `--misses` output before/after).
+3. Re-run `run_all.js`. A change ships only if accuracy rises **and** no
+   previously-correct labeled sentence regresses (`regress.js`'s
+   `REGRESSED` list should be empty or each entry manually judged
+   net-acceptable, per "Regression tooling" above).
+4. Also run `sweep.js` for a broader dictionary-level sanity check. If the
+   change touches `joinSegs()`, `segmentJoinFallback()`, or `lookupCore()`'s
+   no-dict-entry branch specifically, `sweep.js` alone is **not** sufficient
+   — also run `sweep_join.js`.
 
 Some "misses" are valid homophones of the gold (e.g. `撮った` vs `取った`,
 `聞く` vs `聴く`), so real-world quality is a little higher than the raw score.

@@ -1,5 +1,6 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import util from '@ohos.util';
+import { promptAction } from '@kit.ArkUI';
 import { InputHandler, InputState, InputMode, applyKeyboardWidthsForVp } from '../ime/KeyboardController';
 import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
@@ -12,6 +13,7 @@ import { BunsetsuBar } from '../components/BunsetsuBar';
 import { SettingsBar } from '../components/SettingsBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
+import { JP_FONT_FAMILY } from '../components/JpFont';
 
 let _inputStartRegistered = false;
 let _dictLoaded = false;
@@ -34,11 +36,9 @@ struct KeyboardPage {
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
-  @StorageLink('clipboardIsImage') clipboardIsImage: boolean = false;
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
-  @State showSettingsBar: boolean = false;
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -91,19 +91,28 @@ struct KeyboardPage {
       AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
       AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
       AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
+      // This panel and the extension's InputHandler share the same process/
+      // KanaKanjiConverter static state (see setConversionEngine's own
+      // lazy-load comment), but this aboutToAppear-driven reload is the more
+      // reliable refresh point per the comment above -- route through
+      // InputHandler.setConversionEngine so a setting persisted from the main
+      // app (a different process) actually applies the mozc engine switch
+      // here too, not just update the SettingsBar toggle's own display value.
+      InputHandler.getInstance().setConversionEngine(s.conversionEngine);
     });
   }
 
   build() {
-    Stack() {
     Column() {
-      // Symbol/Emoji views take the full panel (no preview bar). Numeric keeps
-      // the preview bar — without it the pad's rows stretch to fill the whole
-      // panel height and end up uncomfortably tall.
+      // Symbol/Emoji/Settings views take the full panel (no preview bar).
+      // Numeric keeps the preview bar — without it the pad's rows stretch to
+      // fill the whole panel height and end up uncomfortably tall.
       if (this.keyboardSubMode === 'symbol') {
         SymbolView()
       } else if (this.keyboardSubMode === 'emoji') {
         EmojiView()
+      } else if (this.keyboardSubMode === 'settings') {
+        SettingsBar()
       } else {
         // Preview bar
         if (this.inputState === InputState.BUNSETSU) {
@@ -119,9 +128,9 @@ struct KeyboardPage {
             })
           }
           .width('100%')
-          .backgroundColor(kbTheme(this.isDark).selectingBarBg)
+          .backgroundColor(kbTheme(this.isDark).panelBg)
           .borderWidth({ bottom: 1 })
-          .borderColor(kbTheme(this.isDark).borderColor)
+          .borderColor(kbTheme(this.isDark).divider)
         } else {
           Column() {
             // Composing kana strip — always visible to prevent layout shifts.
@@ -129,18 +138,21 @@ struct KeyboardPage {
             // so this strip and the candidate row underneath both run compact.
             Row() {
               Text(this.composingText + this.pendingRomaji)
+                .fontFamily(JP_FONT_FAMILY)
                 .fontSize(this.isLandscape ? 11 : 16)
-                .fontColor(kbTheme(this.isDark).previewText)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(kbTheme(this.isDark).textPrimary)
                 .maxLines(1)
                 .textOverflow({ overflow: TextOverflow.Ellipsis })
                 .padding({ left: 12, right: 8 })
+                .border((this.composingText + this.pendingRomaji).length > 0 ?
+                  { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
+                  { width: { bottom: 0 } })
                 .layoutWeight(1)
             }
             .width('100%')
             .height(this.isLandscape ? 14 : 28)
-            .backgroundColor(kbTheme(this.isDark).composingBarBg)
-            .borderWidth({ bottom: 1 })
-            .borderColor(kbTheme(this.isDark).borderColor)
+            .backgroundColor(kbTheme(this.isDark).panelBg)
             .alignItems(VerticalAlign.Center)
 
             // Candidate bar row + layout toggle
@@ -156,6 +168,7 @@ struct KeyboardPage {
                   // Gboard-style: centered paste suggestion when nothing is composing,
                   // rather than left-aligned like an actual conversion candidate.
                   Text(this.clipboardPreview)
+                    .fontFamily(JP_FONT_FAMILY)
                     .fontSize(this.isLandscape ? 11 : 16)
                     .maxLines(1)
                     .textOverflow({ overflow: TextOverflow.Ellipsis })
@@ -167,11 +180,25 @@ struct KeyboardPage {
                     .padding(this.isLandscape ?
                       { left: 8, right: 8, top: 2, bottom: 2 } :
                       { left: 12, right: 12, top: 6, bottom: 6 })
-                    .borderRadius(4)
+                    .borderRadius(this.isLandscape ? 11 : 17)
                     .backgroundColor(kbTheme(this.isDark).candidateBg)
-                    .fontColor(kbTheme(this.isDark).subText)
+                    .fontColor(kbTheme(this.isDark).textSecondary)
                     .onClick(() => {
-                      InputHandler.getInstance().pasteClipboard();
+                      const result = InputHandler.getInstance().pasteClipboard();
+                      if (result === 'extendAction') {
+                        // Fire-and-forget request to the focused field's own
+                        // paste handler (see pasteClipboard's comment) --
+                        // there's no reliable signal for whether it actually
+                        // had anything to paste, so this can only say the
+                        // request went out, not that it definitely worked.
+                        promptAction.showToast({
+                          message: '貼り付け操作を送信しました（アプリによっては反映されないことがあります）',
+                        });
+                      } else if (result === 'none') {
+                        promptAction.showToast({
+                          message: '画像・ファイルはキーボードから直接貼り付けできません。貼り付け先アプリ自体の貼り付け機能をご利用ください',
+                        });
+                      }
                     })
                 }
               }
@@ -184,24 +211,21 @@ struct KeyboardPage {
               // AppGallery review. The flick/QWERTY toggle that used to live here
               // moved into the main app's settings screen (SettingsStore-backed).
               Text('⚙')
+                .fontFamily(JP_FONT_FAMILY)
                 .fontSize(this.isLandscape ? 12 : 16)
-                .fontColor(kbTheme(this.isDark).subText)
+                .fontColor(kbTheme(this.isDark).textSecondary)
                 .textAlign(TextAlign.Center)
                 .width(this.isLandscape ? 32 : 50)
                 .height(this.isLandscape ? 20 : 40)
-                .backgroundColor(kbTheme(this.isDark).funcKeyBg)
-                .borderRadius(6)
+                .backgroundColor(kbTheme(this.isDark).funcBg)
+                .borderRadius(this.isLandscape ? 10 : 16)
                 .onClick(() => {
-                  this.showSettingsBar = !this.showSettingsBar;
+                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
                 })
             }
             .width('100%')
             .height(this.isLandscape ? 22 : 48)
-            .backgroundColor(
-              this.inputState === InputState.SELECTING ? kbTheme(this.isDark).selectingBarBg : kbTheme(this.isDark).previewBarBg
-            )
-            .borderWidth({ bottom: 1 })
-            .borderColor(kbTheme(this.isDark).borderColor)
+            .backgroundColor(kbTheme(this.isDark).panelBg)
             .alignItems(VerticalAlign.Center)
             .padding({ right: 4 })
           }
@@ -264,12 +288,5 @@ struct KeyboardPage {
         }
       }
     })
-
-    if (this.showSettingsBar) {
-      SettingsBar({ visible: this.showSettingsBar })
-    }
-    }
-    .width('100%')
-    .height('100%')
   }
 }

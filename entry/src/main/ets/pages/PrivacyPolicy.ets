@@ -1,38 +1,33 @@
 import { router } from '@kit.ArkUI';
-import display from '@ohos.display';
+import { JP_FONT_FAMILY } from '../components/JpFont';
+import { kbTheme } from '../components/Theme';
 
 @Entry
 @Component
 struct PrivacyPolicy {
-  @State isDark: boolean = false;
-
-  aboutToAppear(): void {
-    try {
-      const dis = display.getDefaultDisplaySync();
-      this.isDark = (dis as ESObject)['colorMode'] === 0;
-    } catch (_e) {
-      this.isDark = false;
-    }
-  }
+  // Set by EntryAbility.applyColorMode (OS color mode only).
+  @StorageLink('isDark') isDark: boolean = false;
 
   build() {
     Column() {
       // Header
       Row() {
         Text('← 戻る')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(15)
-          .fontColor(Color.White)
+          .fontColor(kbTheme(this.isDark).onAccent)
           .onClick(() => { router.back(); })
         Text('プライバシーポリシー')
+          .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
-          .fontColor(Color.White)
+          .fontColor(kbTheme(this.isDark).onAccent)
           .margin({ left: 12 })
       }
       .width('100%')
       .height(56)
       .padding({ left: 16 })
-      .backgroundColor('#4A90E2')
+      .backgroundColor(kbTheme(this.isDark).accent)
 
       Scroll() {
         Column({ space: 20 }) {
@@ -80,6 +75,7 @@ struct PrivacyPolicy {
             'プライバシーに関するご質問は、AppGallery の開発者情報に記載のメールアドレスまでお問い合わせください。')
 
           Text('最終更新: 2026年6月')
+            .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor('#999999')
             .width('100%')
@@ -100,11 +96,13 @@ struct PrivacyPolicy {
   @Builder Section(title: string, body: string) {
     Column({ space: 8 }) {
       Text(title)
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(16)
         .fontWeight(FontWeight.Bold)
         .fontColor(this.isDark ? '#E0E0E0' : '#333333')
         .width('100%')
       Text(body)
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(14)
         .fontColor(this.isDark ? '#AAAAAA' : '#555555')
         .lineHeight(22)

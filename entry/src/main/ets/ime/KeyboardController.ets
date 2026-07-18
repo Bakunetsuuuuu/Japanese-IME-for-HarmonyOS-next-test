@@ -6,10 +6,14 @@ import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
-import { KanaKanjiConverter } from './KanaKanjiConverter';
+import { KanaKanjiConverter, MozcMatrixData } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
+import { UserPosStore } from './UserPosStore';
+import type { UserPosEntry } from './ConjugationEngine';
+import { buildUserExpansion } from './ConjugationEngine';
 import { SettingsStore, KeyboardSettings } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
+import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
   id: string;
@@ -31,25 +35,36 @@ const MAX_KB_VP = 620;
 export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boolean): void {
   const screenVp = isTabletClass ? Math.min(rawScreenVp, MAX_KB_VP) : rawScreenVp;
   AppStorage.setOrCreate('keyboardContentVp', screenVp);
-  // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead. The
-  // middle letter row (asdfghjkl + ー) and bottom row (shift + zxcvbnm +
-  // backspace) also reuse this width; they aren't a fixed-width fit like
-  // this row, just centered, so a different key count is harmless.
-  const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
+  // 10-key rows (KeyboardView's number row / qwerty row / romaji asdfghjklー
+  // row): 4vp total H-padding + 9 gaps × 5vp (KeyboardView's Row({space:5}),
+  // not the 2vp this used to assume before the design-token pass bumped row
+  // spacing -- that mismatch was the actual bug: keys came out ~2.7vp too
+  // wide each, ~27vp of overflow past the right edge on any 10-key row) =
+  // 49vp overhead. The middle letter row (asdfghjkl + ー) and bottom row
+  // (shift + zxcvbnm + backspace) also reuse this width; they aren't a
+  // fixed-width fit like this row, just centered, so a different key count
+  // is harmless.
+  const kwVp = Math.max(Math.floor((screenVp - 49) / 10), 24);
   const skwVp = Math.round(kwVp * 1.2);
-  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps
+  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps × 5vp
   // (文節 sits right after space, at the same special-key width as
   // mode/enter — the row would overflow if it were sized on top of them
-  // instead of space giving up the room).
-  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 10), 60);
-  // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
+  // instead of space giving up the room). Same space:5 vs assumed-2vp
+  // mismatch as kwVp above.
+  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 25), 60);
+  // Flick keys: 5 columns + 4 gaps × 4vp (FlickKeyboardView's Row({space:4}))
+  // + 0vp H-padding (its Column has no left/right padding) = 16vp overhead --
+  // same total as the old "4 gaps × 3vp + 4vp H-padding" comment assumed, by
+  // coincidence, so this one was never actually broken.
   const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
   AppStorage.setOrCreate('keyWidthVp', kwVp);
   AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
   AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
   AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
-  // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
-  const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
+  // Symbol panel: 8 columns + 7 gaps × 4vp (SymbolView's Row({space:4})) +
+  // 8vp H-padding (left:4 + right:4) = 36vp overhead -- was assuming 2vp
+  // gaps + 6vp padding (20vp) here too, same class of bug as kwVp above.
+  const symKwVp = Math.max(Math.floor((screenVp - 36) / 8), 36);
   AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
 }
 
@@ -221,13 +236,23 @@ export class InputHandler {
     AppStorage.setOrCreate('frequentSymbols', syms.slice(0, 24));
   }
 
-  // Reload the user dictionary from disk (picks up words added in the main app).
+  // Reload the user dictionary from disk (picks up words added in the main
+  // app), plus its 品詞 metadata (DictionaryEditPage's POS picker) --
+  // expanded into conjugated forms + connection-matrix class overrides via
+  // ConjugationEngine before handing off to KanaKanjiConverter, so a verb/
+  // adjective/person/place entry gets real segmentation behaviour instead of
+  // the flat noun default (see UserPosStore/ConjugationEngine.ets).
   private reloadUserDict(): void {
     if (!this.imeContext) { return; }
-    UserDictStore.load(this.imeContext, true)
-      .then((dict: Record<string, string[]>) => {
-        KanaKanjiConverter.setUserDict(dict);
-      });
+    const ctx = this.imeContext;
+    Promise.all([
+      UserDictStore.load(ctx, true),
+      UserPosStore.load(ctx, true),
+    ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
+      const expansion = buildUserExpansion(results[0], results[1]);
+      KanaKanjiConverter.setUserDict(expansion.dict);
+      KanaKanjiConverter.setUserClassMap(expansion.classMap);
+    });
   }
 
   // Reload keyboard-wide settings from disk (picks up the layout choice made
@@ -243,6 +268,47 @@ export class InputHandler {
         AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
         AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
+        AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
+        this.applyConversionEngine(s.conversionEngine);
+      });
+  }
+
+  // Track B (mozc-derived) is loaded lazily -- only the first time the
+  // conversionEngine setting is actually 'mozc' -- so users who never touch
+  // the toggle pay zero extra startup cost/memory for it. Safe to call
+  // repeatedly: loadMozcEngine() is a no-op cost-wise once already loaded
+  // (isMozcLoaded() short-circuits), and setEngine('custom') is always cheap.
+  private applyConversionEngine(engine: string): void {
+    if (engine !== 'mozc') {
+      KanaKanjiConverter.setEngine('custom');
+      return;
+    }
+    if (KanaKanjiConverter.isMozcLoaded()) {
+      KanaKanjiConverter.setEngine('mozc');
+      return;
+    }
+    if (!this.imeContext) { return; }
+    const rm = this.imeContext.resourceManager;
+    const decoder = new util.TextDecoder('utf-8');
+    // Chained (not Promise.all + destructuring) to match this file's existing
+    // getRawFileContent().then() style (see loadDictionary/loadGlobalDictionary
+    // above) rather than introduce a new pattern.
+    rm.getRawFileContent('mozc_dict.json')
+      .then((dictData: Uint8Array) => {
+        const dict = JSON.parse(decoder.decode(dictData)) as Record<string, string[]>;
+        return rm.getRawFileContent('mozc_costs.json').then((costsData: Uint8Array) => {
+          const costs = JSON.parse(decoder.decode(costsData)) as Record<string, (number | string)[][]>;
+          return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
+            const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
+            KanaKanjiConverter.loadMozcEngine(dict, costs, matrix);
+            KanaKanjiConverter.setEngine('mozc');
+            console.info('shuntiIME mozc engine loaded');
+          });
+        });
+      })
+      .catch((e: Error) => {
+        console.error('shuntiIME mozc engine load failed, staying on custom', JSON.stringify(e));
+        KanaKanjiConverter.setEngine('custom');
       });
   }
 
@@ -264,6 +330,16 @@ export class InputHandler {
     AppStorage.setOrCreate('keyboardLayout', layout);
     if (this.imeContext) {
       SettingsStore.saveKeyboardLayout(this.imeContext, layout);
+    }
+  }
+
+  // Same immediate-switch pattern as setKeyboardLayout above. applyConversionEngine
+  // lazily fetches the mozc rawfiles the first time 'mozc' is actually selected.
+  setConversionEngine(engine: string): void {
+    AppStorage.setOrCreate('conversionEngine', engine);
+    this.applyConversionEngine(engine);
+    if (this.imeContext) {
+      SettingsStore.saveConversionEngine(this.imeContext, engine);
     }
   }
 
@@ -538,46 +614,48 @@ export class InputHandler {
   // keyboard extension process restarts.
   private static readonly MAX_CLIPBOARD_HISTORY = 8;
 
+  private static setClipboardPreviewState(preview: string, isImage: boolean, isFile: boolean, uri: string): void {
+    AppStorage.setOrCreate('clipboardPreview', preview);
+    AppStorage.setOrCreate('clipboardIsImage', isImage);
+    AppStorage.setOrCreate('clipboardIsFile', isFile);
+    AppStorage.setOrCreate('clipboardUri', uri);
+  }
+
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
       if (!data || data.getRecordCount() === 0) {
-        AppStorage.setOrCreate('clipboardPreview', '');
-        AppStorage.setOrCreate('clipboardIsImage', false);
-        AppStorage.setOrCreate('clipboardIsFile', false);
+        InputHandler.setClipboardPreviewState('', false, false, '');
         return;
       }
-      if (data.hasType(pasteboard.MIMETYPE_PIXELMAP)) {
-        AppStorage.setOrCreate('clipboardPreview', '画像');
-        AppStorage.setOrCreate('clipboardIsImage', true);
-        AppStorage.setOrCreate('clipboardIsFile', false);
-        return;
-      }
+      const isImage = data.hasType(pasteboard.MIMETYPE_PIXELMAP);
       const text = data.getPrimaryText();
       if (text && text.length > 0) {
-        AppStorage.setOrCreate('clipboardPreview', text);
-        AppStorage.setOrCreate('clipboardIsImage', false);
-        AppStorage.setOrCreate('clipboardIsFile', false);
+        InputHandler.setClipboardPreviewState(text, false, false, '');
         this.recordClipboardHistory(text);
         return;
       }
-      // No text/image record -- a copied file (e.g. from Files/a Gallery share
-      // sheet) shows up as a URI record instead. Preview it as a filename
-      // rather than leaving the chip blank or showing the raw URI.
+      // A file (from Files/a Gallery share sheet) shows up as a URI record.
+      // A directly-copied image often carries BOTH a pixelmap record and a
+      // URI record (many apps populate both), so check for a URI regardless
+      // of isImage. Preview it as a filename rather than the raw URI.
       const uri = data.getPrimaryUri();
       if (uri && uri.length > 0) {
-        AppStorage.setOrCreate('clipboardPreview', InputHandler.formatFileClipPreview(uri));
-        AppStorage.setOrCreate('clipboardIsImage', false);
-        AppStorage.setOrCreate('clipboardIsFile', true);
+        const preview = isImage ? '画像' : InputHandler.formatFileClipPreview(uri);
+        InputHandler.setClipboardPreviewState(preview, isImage, true, uri);
         return;
       }
-      AppStorage.setOrCreate('clipboardPreview', '');
-      AppStorage.setOrCreate('clipboardIsImage', false);
-      AppStorage.setOrCreate('clipboardIsFile', false);
+      if (isImage) {
+        // Raw pixels only, no URI to point at (e.g. some apps' plain
+        // "コピー" on an image) -- pasteClipboard() still works fine here
+        // since sendPasteExtendAction doesn't need the URI, just the
+        // isImage/isFile flag; only the filename preview text is degraded.
+        InputHandler.setClipboardPreviewState('画像', true, false, '');
+        return;
+      }
+      InputHandler.setClipboardPreviewState('', false, false, '');
     }).catch((err: Error) => {
       console.error('shuntiIME refreshClipboardPreview error', JSON.stringify(err));
-      AppStorage.setOrCreate('clipboardPreview', '');
-      AppStorage.setOrCreate('clipboardIsImage', false);
-      AppStorage.setOrCreate('clipboardIsFile', false);
+      InputHandler.setClipboardPreviewState('', false, false, '');
     });
   }
 
@@ -611,18 +689,54 @@ export class InputHandler {
     AppStorage.setOrCreate('clipboardHistory', next);
   }
 
-  pasteClipboard(): void {
+  // No input method on any platform can inject non-text content into an
+  // arbitrary third-party app's text field through the standard IME
+  // text-commit API (insertText here) -- that's not a bug to fix in this
+  // app, it's what every keyboard app is limited to.
+  //
+  // For image/file clipboard contents this instead asks the host app's OWN
+  // focused field to run ITS native paste (sendPasteExtendAction below) --
+  // that reads the same system pasteboard the field's own long-press
+  // 貼り付け already uses, so any editor that supports pasting an image at
+  // all picks it up through its own existing handling. An earlier attempt
+  // used ArkUI drag-and-drop instead (dragging the clipboard chip onto the
+  // focused field), but that turned out not to work in nearly any real app
+  // -- most fields' drop targets don't accept a dragged UnifiedData record
+  // the way they accept their own paste action, so this replaces it as the
+  // primary mechanism rather than sitting alongside it as a "maybe" path.
+  pasteClipboard(): 'text' | 'extendAction' | 'none' {
     const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
     const isFile = AppStorage.get<boolean>('clipboardIsFile') ?? false;
     if (isImage || isFile) {
-      return;
+      return this.sendPasteExtendAction() ? 'extendAction' : 'none';
     }
     const text = AppStorage.get<string>('clipboardPreview') ?? '';
     if (text.length === 0) {
-      return;
+      return 'none';
     }
     this.insertText(text);
     this.refreshClipboardPreview();
+    return 'text';
+  }
+
+  // Tells the currently-focused edit box to run its own native paste
+  // operation (inputMethodEngine.ExtendAction.PASTE) instead of the IME
+  // trying to supply the content itself. Fire-and-forget: sendExtendAction
+  // resolves/rejects on whether the *request* was delivered, not on whether
+  // the field actually had a paste handler for image/file content -- both
+  // "field doesn't support pasting images" and "there's nothing to paste"
+  // look the same from here, so the caller can only report that the request
+  // was sent, not that it definitely worked.
+  private sendPasteExtendAction(): boolean {
+    if (!this.inputClient) { return false; }
+    try {
+      this.inputClient.sendExtendAction(inputMethodEngine.ExtendAction.PASTE)
+        .catch((err: Error) => console.error('shuntiIME sendExtendAction(PASTE) error', JSON.stringify(err)));
+      return true;
+    } catch (e) {
+      console.error('shuntiIME sendExtendAction(PASTE) threw', JSON.stringify(e));
+      return false;
+    }
   }
 
   // Paste an arbitrary entry from clipboard history (not necessarily the
@@ -667,6 +781,31 @@ export class InputHandler {
     return true;
   }
 
+  // Opens this project's GitHub repository (README, source code, and the
+  // GitHub Sponsors link at the top of the README) in the main app's own
+  // in-app browser (pages/WebViewPage, an ArkWeb view) rather than handing
+  // off to the system's "choose a browser" chooser -- routed through
+  // EntryAbility's want parameters (see EntryAbility.ets/Index.ets) since a
+  // URL want here would open the system browser chooser instead.
+  // Deliberately routed through GitHub rather than a payment link embedded
+  // directly in the app -- keeps any donation ask entirely outside the
+  // app binary/store listing, avoiding AppGallery review ambiguity around
+  // in-app payment/donation solicitation.
+  openGithubRepo(): boolean {
+    if (!this.imeContext) { return false; }
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+      parameters: {
+        openUrl: 'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next',
+        openTitle: 'GitHub',
+      },
+    };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openGithubRepo error', JSON.stringify(err)));
+    return true;
+  }
+
   private updateCandidates(): void {
     const composing = AppStorage.get<string>('composingText') ?? '';
     if (composing.length === 0) {
@@ -686,7 +825,12 @@ export class InputHandler {
       // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
       const fullCands = this.kanjiConverter.lookup(composing);
       const fullFirst = fullCands[0];
-      const hasRealHit = fullFirst !== fullKatakana && fullFirst !== composing;
+      // A dict-authored loanword (こんびに→コンビニ) has fullFirst === the
+      // auto-katakana, so the plain fullFirst!==fullKatakana test would reject
+      // it and fall to segmentation (こんび+に → garbage). Treat a whole
+      // reading that IS a dictionary word as a real hit regardless.
+      const hasRealHit = (fullFirst !== fullKatakana && fullFirst !== composing) ||
+        KanaKanjiConverter.isDictionaryWord(composing);
 
       if (hasRealHit) {
         candidates = fullCands;
@@ -699,7 +843,7 @@ export class InputHandler {
         // means Viterbi split a casual word across a symbol "word" — joining
         // it would produce nonsense like "()よ" for かっこよ. Fall back to the
         // plain kana/katakana candidates instead of using that prefix.
-        const prefixParts = segs.slice(0, -1).map((s: string) => this.kanjiConverter.autoConvert(s));
+        const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1]));
         const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
         const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
         const lastSeg = segs[segs.length - 1];
@@ -818,7 +962,7 @@ export class InputHandler {
     }
     if (composing.length === 0) { return; }
     this.bSegs = this.kanjiConverter.segment(composing);
-    this.bChosen = this.bSegs.map((seg: string) => this.kanjiConverter.autoConvert(seg));
+    this.bChosen = this.bSegs.map((seg: string, i: number) => this.kanjiConverter.autoConvert(seg, this.bSegs[i + 1]));
     this.bCur = 0;
     this.updateBunsetsuStorage();
   }
@@ -953,12 +1097,38 @@ export class InputHandler {
   private static readonly BRACKET_PAIRS: Set<string> =
     new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
 
+  // Move the caret one position left after inserting a bracket pair so it lands
+  // between them. Read the caret's absolute index (getTextIndexAtCursor resolves
+  // after the editor has applied the just-inserted pair, since requests to the
+  // editor are processed in order) and collapse the selection one code unit
+  // earlier via selectByRange — timing-independent and exact. Fall back to a
+  // relative moveCursor for editors that reject range selection.
+  private placeCaretBetweenBrackets(client: inputMethodEngine.InputClient): void {
+    const moveBack = (delayed: boolean): void => {
+      const step = (): void => {
+        client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+          .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
+      };
+      if (delayed) { setTimeout(step, 16); } else { step(); }
+    };
+    client.getTextIndexAtCursor().then((idx: number) => {
+      const target: number = idx > 0 ? idx - 1 : 0;
+      client.selectByRange({ start: target, end: target }).catch((e: Error) => {
+        console.error('shuntiIME selectByRange(bracket) failed', JSON.stringify(e));
+        moveBack(false);
+      });
+    }).catch((e: Error) => {
+      console.error('shuntiIME getTextIndexAtCursor(bracket) failed', JSON.stringify(e));
+      moveBack(true);
+    });
+  }
+
   insertText(text: string): void {
     if (InputHandler.BRACKET_PAIRS.has(text) && this.inputClient) {
       const client = this.inputClient;
       client.insertText(text).then(() => {
-        client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT).catch((_e: Error) => {});
-      }).catch((_e: Error) => {});
+        this.placeCaretBetweenBrackets(client);
+      }).catch((e: Error) => console.error('shuntiIME insertText(bracket) failed', JSON.stringify(e)));
     } else {
       this.inputClient?.insertText(text);
     }
@@ -995,6 +1165,7 @@ export class KeyboardController {
   }
 
   onCreate(): void {
+    registerJpFont();
     this.inputHandle.setContext(this.context);
     this.applyColorMode();
     this.initPanel();
