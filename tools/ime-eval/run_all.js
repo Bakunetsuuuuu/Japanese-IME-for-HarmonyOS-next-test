@@ -49,7 +49,7 @@ function main() {
     if (segs.length <= 1) return conv.lookup(reading)[0];
     const full = conv.lookup(reading);
     if ((full[0] !== fullKata && full[0] !== reading) || KanaKanjiConverter.isDictionaryWord(reading)) return full[0];
-    const prefixParts = segs.slice(0, -1).map((s, i) => conv.autoConvert(s, segs[i + 1]));
+    const prefixParts = segs.slice(0, -1).map((s, i) => conv.autoConvert(s, segs[i + 1], segs[i - 1]));
     if (prefixParts.some((p) => KanaKanjiConverter.isSymbolOnly(p))) return reading;
     return prefixParts.join('') + conv.lookup(segs[segs.length - 1])[0];
   };
