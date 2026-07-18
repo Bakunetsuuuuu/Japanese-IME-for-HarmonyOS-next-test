@@ -155,28 +155,30 @@ RAWFILE_DIR = os.path.join(ROOT, "entry/src/main/resources/rawfile")
 
 DICT_SHARDS = [f"dictionary{i:02d}.txt" for i in range(10)]
 
-# mozc's raw dictionary has 745,964 distinct readings -- far more than a
-# phone IME needs (the existing hand-built dict.json has 78,562 keys;
-# global_dict.json, the largest existing shipped asset, has 280,351 and is
-# 12.9MB). mozc cost is inversely related to frequency, so we prune the very
-# rare/obscure tail by cost and cap per-reading candidate count (median is 1
-# candidate/reading, so this mainly trims pathological outliers like a
-# single mora with 261 homophone-kanji candidates -- the same class of
-# scrape-order noise track A's reorder_kana_dumps.py cleans up separately).
-# MAX_COST=6000 keeps ~138k readings (18.5% of the raw set, empirically
-# checked against the cost percentile table) -- comparable in scale to the
-# existing hand-built dict.json (78,562 keys) while cutting the bulk of the
-# long, rarely-typed tail (obscure place names, technical terms). Raise this
-# if validation (tools/ime-eval) shows real coverage gaps.
-MAX_COST = 6000
-MAX_CANDIDATES_PER_READING = 30
-# Most readings only have one grammatical sense (median distinct-class-pair
-# count is 1), so this cap mainly bounds the rare, genuinely ambiguous
-# readings (particles/auxiliaries like し, で, た that serve multiple
-# grammatical roles) -- keeps mozc_costs.json from growing large while still
-# giving segment()'s DP real alternatives to choose from for exactly the
-# readings that need it.
-MAX_SENSES_PER_READING = 6
+# "Full spec" mode: no pruning at all, at the user's explicit request
+# ("重くなって良いので、mozcはフルスペックを開放" -- app-size cost accepted
+# in exchange for full coverage of mozc's own bundled OSS data). Every
+# constant below is set to mozc's own true observed maximum (checked
+# directly against the raw dictionary shards, not guessed), so nothing is
+# silently dropped:
+#   - raw entry cost: median 7378, 100th pct (true max) 18318 -- no MAX_COST
+#     cap at all keeps every one of the 745,964 distinct readings, not just
+#     the ~138k that survived the old MAX_COST=6000 cutoff.
+#   - distinct surface candidates per reading: 100th pct (true max) 296.
+#   - distinct grammatical senses per reading: 100th pct (true max) 29 --
+#     this is the one knob with a real runtime cost beyond static file size
+#     (segment()'s Viterbi DP tracks one state per (position, class) it
+#     reaches, so more senses per span means more states -- still small in
+#     absolute terms since even the worst-case reading only has 29, not
+#     thousands, but real on a phone's CPU, unlike the other two which are
+#     pure download-size tradeoffs).
+# See tools/mozc_data/README.md's "No class reduction" section for the
+# matrix.json side of this: that file was already shipped unreduced
+# (2,672x2,672, ~36.5MB) before this change, so it doesn't grow further here
+# -- this only affects mozc_dict.json/mozc_costs.json's reading coverage.
+MAX_COST = None  # no cap: keep every reading regardless of cost
+MAX_CANDIDATES_PER_READING = 300  # true observed max is 296
+MAX_SENSES_PER_READING = 30  # true observed max is 29
 
 
 # Major POS categories (id.def's first comma field) that are open-class
@@ -258,7 +260,7 @@ def build_dict_and_costs(raw_to_reduced: dict):
     mozc_costs = {}
     for reading, entries in per_reading.items():
         entries.sort(key=lambda e: e[0])  # ascending cost, stable
-        if entries[0][0] > MAX_COST:
+        if MAX_COST is not None and entries[0][0] > MAX_COST:
             continue  # prune the long rare/obscure tail (see MAX_COST comment above)
 
         # One sense per distinct (leftId, rightId) raw id pair (mozc's own,
@@ -284,7 +286,7 @@ def build_dict_and_costs(raw_to_reduced: dict):
         groups: dict = {}
         group_order = []
         for cost, left_id, right_id, surface in entries:
-            if cost > MAX_COST:
+            if MAX_COST is not None and cost > MAX_COST:
                 break
             key = (raw_to_reduced[left_id], raw_to_reduced[right_id])
             if key not in groups:
