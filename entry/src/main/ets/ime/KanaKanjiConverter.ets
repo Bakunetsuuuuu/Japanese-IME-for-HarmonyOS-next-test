@@ -31718,6 +31718,22 @@ export class KanaKanjiConverter {
            (seg === 'き' && idx + 1 < segs.length && segs[idx + 1].startsWith('ちゃ')))) {
         best = seg;
       }
+      // いった directly after a て/で-ending segment ("着ていった") is the
+      // literal verb 行った (went) coordinated with the preceding action, not
+      // 言った (said) -- 言う attaches after a quotation/topic (と言った),
+      // essentially never directly onto a bare te-form.
+      if (seg === 'いった' && idx > 0 && segs[idx - 1].length > 1 &&
+          /[てで]$/.test(segs[idx - 1])) {
+        best = '行った';
+      }
+      // なくなった directly after a segment ending in れ (a potential-verb
+      // stem: 眠れ/食べられ/見れ/来れ, ...) is the auxiliary negation
+      // ("〜れなくなった" = became unable to ~"), conventionally kana, not
+      // the standalone verb 無くなった ("ran out/disappeared") that
+      // lookup('なくなった') ranks first alone.
+      if (seg === 'なくなった' && idx > 0 && segs[idx - 1].endsWith('れ')) {
+        best = seg;
+      }
       // やすい directly after another segment (not sentence-initial) is
       // almost always the "-yasui" (easy to ~) auxiliary attaching to a verb
       // stem (くずしやすい, こわれやすい), not the standalone adjective 安い/
@@ -32304,6 +32320,15 @@ export class KanaKanjiConverter {
     if (prevSeg !== undefined && prevSeg.length > 1 && /[てで]$/.test(prevSeg) &&
         ((kana === 'きた' || kana === 'きて') ||
          (kana === 'き' && nextSeg !== undefined && nextSeg.startsWith('ちゃ')))) {
+      return kana;
+    }
+    // いった after て/で: see joinSegs' matching special case for why.
+    if (kana === 'いった' && prevSeg !== undefined && prevSeg.length > 1 &&
+        /[てで]$/.test(prevSeg)) {
+      return '行った';
+    }
+    // なくなった after れ: see joinSegs' matching special case for why.
+    if (kana === 'なくなった' && prevSeg !== undefined && prevSeg.endsWith('れ')) {
       return kana;
     }
     return this.lookup(kana)[0];
