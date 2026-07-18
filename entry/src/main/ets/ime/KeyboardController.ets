@@ -781,29 +781,41 @@ export class InputHandler {
     return true;
   }
 
-  // Opens this project's GitHub repository (README, source code, and the
-  // GitHub Sponsors link at the top of the README) in the main app's own
-  // in-app browser (pages/WebViewPage, an ArkWeb view) rather than handing
-  // off to the system's "choose a browser" chooser -- routed through
-  // EntryAbility's want parameters (see EntryAbility.ets/Index.ets) since a
-  // URL want here would open the system browser chooser instead.
-  // Deliberately routed through GitHub rather than a payment link embedded
-  // directly in the app -- keeps any donation ask entirely outside the
-  // app binary/store listing, avoiding AppGallery review ambiguity around
-  // in-app payment/donation solicitation.
-  openGithubRepo(): boolean {
+  // Opens an arbitrary URL in the main app's own in-app browser
+  // (pages/WebViewPage, an ArkWeb view) rather than handing off to the
+  // system's "choose a browser" chooser -- routed through EntryAbility's
+  // want parameters (see EntryAbility.ets/Index.ets) since a URL want here
+  // would open the system browser chooser instead.
+  openExternalUrl(url: string, title: string): boolean {
     if (!this.imeContext) { return false; }
     const want: Want = {
       bundleName: 'com.shunti.japaneseime',
       abilityName: 'EntryAbility',
-      parameters: {
-        openUrl: 'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next',
-        openTitle: 'GitHub',
-      },
+      parameters: { openUrl: url, openTitle: title },
     };
     this.imeContext.startAbility(want)
-      .catch((err: Error) => console.error('shuntiIME openGithubRepo error', JSON.stringify(err)));
+      .catch((err: Error) => console.error('shuntiIME openExternalUrl error', JSON.stringify(err)));
     return true;
+  }
+
+  // Opens this project's GitHub repository (README, source code, etc).
+  openGithubRepo(): boolean {
+    return this.openExternalUrl(
+      'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next', 'GitHub');
+  }
+
+  // Linked directly from the settings panel's 寄付 section (SettingsBar.ets)
+  // rather than only from the README as before -- a deliberate call after
+  // reviewing AppGallery's review guidelines (App Payment/Functions/Content/
+  // Ads sections): no rule found prohibiting a plain external donation link
+  // that doesn't gate any app feature, and HUAWEI IAP integration is stated
+  // as recommended, not required.
+  openOfuseLink(): boolean {
+    return this.openExternalUrl('https://ofuse.me/shunti', 'OFUSE');
+  }
+
+  openGithubSponsorsLink(): boolean {
+    return this.openExternalUrl('https://github.com/sponsors/shuntilettuce', 'GitHub Sponsors');
   }
 
   private updateCandidates(): void {
