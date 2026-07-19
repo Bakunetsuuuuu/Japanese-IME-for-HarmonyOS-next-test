@@ -249,9 +249,26 @@ export class InputHandler {
       UserDictStore.load(ctx, true),
       UserPosStore.load(ctx, true),
     ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
-      const expansion = buildUserExpansion(results[0], results[1]);
-      KanaKanjiConverter.setUserDict(expansion.dict);
-      KanaKanjiConverter.setUserClassMap(expansion.classMap);
+      // Guarded: corrupt/unexpected persisted user data must NEVER take the
+      // whole keyboard extension down. buildUserExpansion runs the
+      // conjugation engine over on-disk data every launch, so a single bad
+      // entry throwing here used to become an unhandled rejection that
+      // recurred on every restart until the store was wiped (a
+      // "reinstall-only" crash). On any failure, fall back to no user
+      // dictionary rather than crashing — the keyboard still works.
+      try {
+        const expansion = buildUserExpansion(results[0], results[1]);
+        KanaKanjiConverter.setUserDict(expansion.dict);
+        KanaKanjiConverter.setUserClassMap(expansion.classMap);
+      } catch (e) {
+        console.error('shuntiIME reloadUserDict expansion failed', JSON.stringify(e));
+        KanaKanjiConverter.setUserDict({});
+        KanaKanjiConverter.setUserClassMap({});
+      }
+    }).catch((err: Error) => {
+      console.error('shuntiIME reloadUserDict load failed', JSON.stringify(err));
+      KanaKanjiConverter.setUserDict({});
+      KanaKanjiConverter.setUserClassMap({});
     });
   }
 
@@ -288,7 +305,16 @@ export class InputHandler {
       return;
     }
     if (!this.imeContext) { return; }
-    const rm = this.imeContext.resourceManager;
+    this.loadMozcRawfiles(this.imeContext);
+  }
+
+  // Fetch + parse the three mozc rawfiles and hand them to the converter. The
+  // heavy part (dict/costs JSON) used to risk an OOM crash on launch; the
+  // connection matrix -- by far the biggest structure -- now loads as a compact
+  // uint16 binary (see loadMozcEngine), which is what brought the load within
+  // the extension's heap budget. A catchable failure just falls back to custom.
+  private loadMozcRawfiles(ctx: InputMethodExtensionContext): void {
+    const rm = ctx.resourceManager;
     const decoder = new util.TextDecoder('utf-8');
     // Chained (not Promise.all + destructuring) to match this file's existing
     // getRawFileContent().then() style (see loadDictionary/loadGlobalDictionary
@@ -300,9 +326,20 @@ export class InputHandler {
           const costs = JSON.parse(decoder.decode(costsData)) as Record<string, (number | string)[][]>;
           return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
             const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
-            KanaKanjiConverter.loadMozcEngine(dict, costs, matrix);
-            KanaKanjiConverter.setEngine('mozc');
-            console.info('shuntiIME mozc engine loaded');
+            // The connection matrix cells ship as a separate flat uint16 binary
+            // (mozc_matrix.bin) rather than inside the JSON, so it can be read
+            // straight into a Uint16Array without a multi-megabyte JSON parse or
+            // a boxed number[][] -- the change that keeps mozc inside the heap.
+            return rm.getRawFileContent('mozc_matrix.bin').then((binData: Uint8Array) => {
+              // Copy to a fresh 2-byte-aligned buffer: getRawFileContent's
+              // Uint8Array may sit at a non-even byteOffset, which Uint16Array
+              // can't wrap directly. (Device is little-endian, matching the file.)
+              const buf = binData.buffer.slice(binData.byteOffset, binData.byteOffset + binData.byteLength);
+              const cells = new Uint16Array(buf);
+              KanaKanjiConverter.loadMozcEngine(dict, costs, matrix, cells);
+              KanaKanjiConverter.setEngine('mozc');
+              console.info('shuntiIME mozc engine loaded');
+            });
           });
         });
       })
@@ -810,8 +847,8 @@ export class InputHandler {
   // Ads sections): no rule found prohibiting a plain external donation link
   // that doesn't gate any app feature, and HUAWEI IAP integration is stated
   // as recommended, not required.
-  openOfuseLink(): boolean {
-    return this.openExternalUrl('https://ofuse.me/shunti', 'OFUSE');
+  openBuyMeACoffeeLink(): boolean {
+    return this.openExternalUrl('https://buymeacoffee.com/shunti', 'Buy Me a Coffee');
   }
 
   openGithubSponsorsLink(): boolean {

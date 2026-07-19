@@ -30775,7 +30775,9 @@ export interface MozcMatrixData {
   // Raw id of generic 名詞,数,漢数字 -- the class the numeral pre-pass
   // scores composed kanji-number spans as. Optional, same reason.
   kanjiNumberClass?: number;
-  matrix: number[];
+  // The N*N connection matrix itself is no longer part of this JSON header --
+  // it ships as a flat uint16 binary (mozc_matrix.bin) passed to loadMozcEngine
+  // separately. See build_mozc_engine.py's write_outputs.
 }
 
 // One grammatical sense a reading can take (see tools/mozc_data/
@@ -31334,7 +31336,12 @@ export class KanaKanjiConverter {
   private static engine: 'custom' | 'mozc' = 'custom';
   private static mozcDict: Record<string, string[]> = {};
   private static mozcCosts: Record<string, MozcSense[]> = {}; // reading -> every distinct grammatical sense
-  private static mozcMatrix: number[][] = [];
+  // Connection matrix as a FLAT row-major Uint16 array (cell [a][b] lives at
+  // a*mozcMatrixSize + b), read straight from mozc_matrix.bin. Storing it as a
+  // typed array instead of a boxed number[][] of ~7.14M cells is what keeps the
+  // mozc engine inside the IME extension's heap budget (see loadMozcEngine).
+  private static mozcMatrix: Uint16Array = new Uint16Array(0);
+  private static mozcMatrixSize: number = 0;
   private static mozcBosClass: number = 0;
   private static mozcUnknownClass: number = 0;
   private static mozcNounGeneralClass: number = -1;
@@ -31522,10 +31529,14 @@ export class KanaKanjiConverter {
   // user switches the conversionEngine setting to 'mozc' — see
   // KeyboardController.reloadSettings().
   static loadMozcEngine(dict: Record<string, string[]>, rawCosts: Record<string, (number | string)[][]>,
-      matrixData: MozcMatrixData): void {
+      matrixData: MozcMatrixData, matrixCells: Uint16Array): void {
     KanaKanjiConverter.mozcDict = dict;
     KanaKanjiConverter.mozcCosts = KanaKanjiConverter.parseMozcCosts(rawCosts);
-    KanaKanjiConverter.mozcMatrix = KanaKanjiConverter.reshapeMozcMatrix(matrixData);
+    // Flat row-major connection matrix straight from mozc_matrix.bin -- no
+    // reshape into a boxed number[][] (that array was the mozc engine's biggest
+    // heap cost and the OOM crash's dominant driver).
+    KanaKanjiConverter.mozcMatrix = matrixCells;
+    KanaKanjiConverter.mozcMatrixSize = matrixData.size;
     KanaKanjiConverter.mozcBosClass = matrixData.bosClass;
     KanaKanjiConverter.mozcUnknownClass = matrixData.unknownClass;
     KanaKanjiConverter.mozcNounGeneralClass = matrixData.nounGeneralClass ?? -1;
@@ -31559,21 +31570,8 @@ export class KanaKanjiConverter {
     return costs;
   }
 
-  private static reshapeMozcMatrix(matrixData: MozcMatrixData): number[][] {
-    const size = matrixData.size;
-    const flat = matrixData.matrix;
-    const m: number[][] = [];
-    for (let i = 0; i < size; i++) {
-      const row: number[] = [];
-      const base = i * size;
-      for (let j = 0; j < size; j++) { row.push(flat[base + j]); }
-      m.push(row);
-    }
-    return m;
-  }
-
   static isMozcLoaded(): boolean {
-    return KanaKanjiConverter.mozcMatrix.length > 0;
+    return KanaKanjiConverter.mozcMatrixSize > 0;
   }
 
   // 'mozc' is only actually honored if loadMozcEngine() has already been
@@ -33072,11 +33070,13 @@ export class KanaKanjiConverter {
   // Track B's getEdgeCost: a direct lookup into the reduced mozc connection
   // matrix (tools/mozc_data/build_mozc_engine.py), no hand-tuned fv() rules.
   private getEdgeCostMozc(prevRightClass: number, curLeftClass: number): number {
-    const m = KanaKanjiConverter.mozcMatrix;
-    if (m.length === 0) { return 0; }
-    const row = m[prevRightClass];
-    if (!row) { return 0; }
-    return row[curLeftClass] ?? 0;
+    const size = KanaKanjiConverter.mozcMatrixSize;
+    if (size === 0) { return 0; }
+    const idx = prevRightClass * size + curLeftClass;
+    // Out-of-range class ids can't index a valid cell -- treat as free, same as
+    // the old row/?? 0 guards did.
+    if (idx < 0 || idx >= KanaKanjiConverter.mozcMatrix.length) { return 0; }
+    return KanaKanjiConverter.mozcMatrix[idx];
   }
 
   // Build the 100×100 Phase-2.5 POS connection-cost matrix from grammar rules.

@@ -133,8 +133,10 @@ augmentation from JMdict/SudachiDict if that's wanted:
   - mozc_costs.json   { reading: [[cost, leftClass, rightClass, surface], ...] }
                         one entry per distinct (leftClass, rightClass) sense,
                         ascending cost, capped at MAX_SENSES_PER_READING
-  - mozc_matrix.json  { size: N, matrix: [cost, ...],          N*N, row-major
-                         contentClassMask: [0|1, ...] }        length N, see
+  - mozc_matrix.json  { size: N, contentClassMask: [0|1, ...], class-id header
+                         bosClass, ... }                       only (no matrix)
+  - mozc_matrix.bin   flat uint16 LE connection costs          N*N, row-major
+                         (device reads into Uint16Array; contentClassMask, see
                         compute_content_class_mask below (single-mora content-
                         word senses get a segment()-side penalty, mirroring
                         track A's singleContentPenalty; a real 1-char
@@ -400,6 +402,22 @@ def write_outputs(mozc_dict: dict, mozc_costs: dict, size: int, bos_class: int,
         json.dump(mozc_dict, f, ensure_ascii=False, separators=(",", ":"))
     with open(os.path.join(RAWFILE_DIR, "mozc_costs.json"), "w", encoding="utf-8") as f:
         json.dump(mozc_costs, f, ensure_ascii=False, separators=(",", ":"))
+    # The N*N connection matrix is by far the heaviest structure (2,673^2 =
+    # ~7.14M cells). Shipping it as a JSON array of ints and reshaping it into
+    # a JS number[][] on device was the dominant driver of the IME extension's
+    # out-of-memory crash: a boxed number[][] of 7.14M elements is well over
+    # 50MB resident, on top of a ~35MB JSON string that has to be parsed cell by
+    # cell. Instead we ship the matrix as a flat little-endian uint16 binary
+    # (mozc_matrix.bin) the device reads straight into a Uint16Array -- ~14MB,
+    # no JSON parse. mozc_matrix.json keeps only the small header (class ids +
+    # contentClassMask). Connection costs are non-negative and observed <=~15k,
+    # so uint16 (0..65535) is safe; assert it so a future data change can't
+    # silently wrap.
+    flat = matrix.reshape(-1)
+    assert flat.min() >= 0 and flat.max() <= 65535, (
+        f"connection cost out of uint16 range: min={flat.min()} max={flat.max()}")
+    with open(os.path.join(RAWFILE_DIR, "mozc_matrix.bin"), "wb") as f:
+        f.write(flat.astype("<u2").tobytes())
     with open(os.path.join(RAWFILE_DIR, "mozc_matrix.json"), "w", encoding="utf-8") as f:
         json.dump({
             "size": size,
@@ -408,7 +426,7 @@ def write_outputs(mozc_dict: dict, mozc_costs: dict, size: int, bos_class: int,
             "nounGeneralClass": noun_general_class,
             "kanjiNumberClass": kanji_number_class,
             "contentClassMask": content_class_mask,
-            "matrix": matrix.reshape(-1).tolist(),
+            # matrix cells live in mozc_matrix.bin (row-major uint16 LE, N*N).
         }, f, separators=(",", ":"))
 
     # Reference-only (not shipped in the app): class id -> label, for
@@ -416,7 +434,7 @@ def write_outputs(mozc_dict: dict, mozc_costs: dict, size: int, bos_class: int,
     with open(os.path.join(HERE, "mozc_classes_reference.json"), "w", encoding="utf-8") as f:
         json.dump(class_labels, f, ensure_ascii=False, indent=1)
 
-    for name in ("mozc_dict.json", "mozc_costs.json", "mozc_matrix.json"):
+    for name in ("mozc_dict.json", "mozc_costs.json", "mozc_matrix.json", "mozc_matrix.bin"):
         path = os.path.join(RAWFILE_DIR, name)
         print(f"  {name}: {os.path.getsize(path):,} bytes")
 
