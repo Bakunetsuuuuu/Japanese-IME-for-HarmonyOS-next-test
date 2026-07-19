@@ -249,9 +249,26 @@ export class InputHandler {
       UserDictStore.load(ctx, true),
       UserPosStore.load(ctx, true),
     ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
-      const expansion = buildUserExpansion(results[0], results[1]);
-      KanaKanjiConverter.setUserDict(expansion.dict);
-      KanaKanjiConverter.setUserClassMap(expansion.classMap);
+      // Guarded: corrupt/unexpected persisted user data must NEVER take the
+      // whole keyboard extension down. buildUserExpansion runs the
+      // conjugation engine over on-disk data every launch, so a single bad
+      // entry throwing here used to become an unhandled rejection that
+      // recurred on every restart until the store was wiped (a
+      // "reinstall-only" crash). On any failure, fall back to no user
+      // dictionary rather than crashing — the keyboard still works.
+      try {
+        const expansion = buildUserExpansion(results[0], results[1]);
+        KanaKanjiConverter.setUserDict(expansion.dict);
+        KanaKanjiConverter.setUserClassMap(expansion.classMap);
+      } catch (e) {
+        console.error('shuntiIME reloadUserDict expansion failed', JSON.stringify(e));
+        KanaKanjiConverter.setUserDict({});
+        KanaKanjiConverter.setUserClassMap({});
+      }
+    }).catch((err: Error) => {
+      console.error('shuntiIME reloadUserDict load failed', JSON.stringify(err));
+      KanaKanjiConverter.setUserDict({});
+      KanaKanjiConverter.setUserClassMap({});
     });
   }
 

@@ -43,7 +43,18 @@ export class UserPosStore {
       }
       const prefs = await dataPreferences.getPreferences(context, UserPosStore.STORE);
       const raw = await prefs.get(UserPosStore.KEY, '{}');
-      return JSON.parse(String(raw)) as Record<string, UserPosEntry>;
+      const parsed = JSON.parse(String(raw)) as Record<string, UserPosEntry>;
+      const clean: Record<string, UserPosEntry> = {};
+      if (parsed === null || typeof parsed !== 'object') { return clean; }
+      for (const k of Object.keys(parsed)) {
+        // Only keep entries with a valid pos string; anything malformed is
+        // dropped so buildUserExpansion never sees a surprise shape.
+        const e = parsed[k];
+        if (e !== null && typeof e === 'object' && typeof e.pos === 'string') {
+          clean[k] = e;
+        }
+      }
+      return clean;
     } catch (_e) {
       return {};
     }

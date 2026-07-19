@@ -1,7 +1,8 @@
 import { UserDictStore } from '../ime/UserDictStore';
 import { UserPosStore } from '../ime/UserPosStore';
 import type { UserPosEntry } from '../ime/ConjugationEngine';
-import { router } from '@kit.ArkUI';
+import { AppMaintenance } from '../ime/AppMaintenance';
+import { router, promptAction } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { JP_FONT_FAMILY } from '../components/JpFont';
@@ -10,6 +11,7 @@ import { kbTheme } from '../components/Theme';
 const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
 const CARD_RADIUS = 16;
+const DELETE_RED = '#E5484D';
 
 // A top-level Record<string,string> object literal with actual entries
 // doesn't compile under ArkTS's stricter object-literal typing (unlike a
@@ -42,6 +44,12 @@ struct Index {
   @State searchQuery: string = '';
   // First-launch privacy consent gate. true = block UI until the user agrees.
   @State showConsent: boolean = false;
+  // Repair sheet (footer "修復" link): recover from a corrupt-state crash
+  // without reinstalling. confirmFullReset gates the destructive option
+  // behind a second tap.
+  @State showRepair: boolean = false;
+  @State confirmFullReset: boolean = false;
+  @State repairBusy: boolean = false;
   // Set by EntryAbility.applyColorMode (OS color mode only -- no manual
   // override, see git history if that's ever wanted again).
   @StorageLink('isDark') isDark: boolean = false;
@@ -140,6 +148,14 @@ struct Index {
     ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
       this.dict = results[0];
       this.posMap = results[1];
+      this.rebuildRows();
+    }).catch((err: Error) => {
+      // The main app is the recovery surface (it hosts the repair option),
+      // so it must render even if the stores are unreadable -- show an
+      // empty list rather than letting an unhandled rejection take it down.
+      console.error('shuntiIME Index.reload failed', JSON.stringify(err));
+      this.dict = {};
+      this.posMap = {};
       this.rebuildRows();
     });
   }
@@ -290,6 +306,15 @@ struct Index {
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).textSecondary)
+          Text('  ·  ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+          Text('修復')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).accent)
+            .onClick(() => { this.confirmFullReset = false; this.showRepair = true; })
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
@@ -302,9 +327,121 @@ struct Index {
       if (this.showConsent) {
         this.ConsentOverlay()
       }
+      if (this.showRepair) {
+        this.RepairOverlay()
+      }
     }
     .width('100%')
     .height('100%')
+  }
+
+  private doResetLearning(): void {
+    if (this.repairBusy) { return; }
+    this.repairBusy = true;
+    AppMaintenance.resetLearning(getContext(this)).then(() => {
+      this.repairBusy = false;
+      this.showRepair = false;
+      promptAction.showToast({ message: '変換学習・入力履歴をリセットしました' });
+    });
+  }
+
+  private doResetAll(): void {
+    if (this.repairBusy) { return; }
+    this.repairBusy = true;
+    AppMaintenance.resetAll(getContext(this)).then(() => {
+      // Reflect the wipe in the list immediately.
+      this.dict = {};
+      this.posMap = {};
+      this.rows = [];
+      this.repairBusy = false;
+      this.showRepair = false;
+      this.confirmFullReset = false;
+      promptAction.showToast({ message: 'アプリのデータを初期化しました。キーボードを一度閉じて開き直してください' });
+    });
+  }
+
+  @Builder RepairOverlay() {
+    Column() {
+      Column({ space: 14 }) {
+        Text('困ったときの修復')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(18)
+          .fontWeight(FontWeight.Bold)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+
+        Text('アプリやキーボードの動作がおかしいとき、保存データをリセットして回復できます。再インストールせずに直せる場合があります。')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+          .lineHeight(22)
+          .width('100%')
+
+        // ── Safe reset: keeps registered words ──
+        Column({ space: 3 }) {
+          Text('変換学習・入力履歴をリセット')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(15)
+            .fontWeight(FontWeight.Medium)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('登録した単語は残ります')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .width('100%')
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(10)
+        .padding({ left: 14, right: 14, top: 12, bottom: 12 })
+        .onClick(() => { this.doResetLearning(); })
+
+        Divider().color(kbTheme(this.isDark).divider)
+
+        // ── Full reset: destructive, second-tap gated ──
+        if (!this.confirmFullReset) {
+          Text('アプリのデータをすべて初期化…')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(DELETE_RED)
+            .width('100%')
+            .textAlign(TextAlign.Center)
+            .padding({ top: 4, bottom: 4 })
+            .onClick(() => { this.confirmFullReset = true; })
+        } else {
+          Text('登録単語・設定を含むすべての保存データを削除します。この操作は取り消せません。')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(13)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .lineHeight(20)
+            .width('100%')
+          Button('すべて削除して初期化する')
+            .fontFamily(JP_FONT_FAMILY)
+            .width('100%')
+            .height(46)
+            .fontSize(15)
+            .fontColor(Color.White)
+            .backgroundColor(DELETE_RED)
+            .onClick(() => { this.doResetAll(); })
+        }
+
+        Text('閉じる')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(13)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+          .padding({ top: 2 })
+          .onClick(() => { this.showRepair = false; this.confirmFullReset = false; })
+      }
+      .width('86%')
+      .padding(24)
+      .backgroundColor(kbTheme(this.isDark).cardBg)
+      .borderRadius(CARD_RADIUS)
+    }
+    .width('100%')
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(HorizontalAlign.Center)
+    .backgroundColor('#99000000')
   }
 
   @Builder ConsentOverlay() {

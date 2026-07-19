@@ -289,16 +289,31 @@ export function buildUserExpansion(
   dict: Record<string, string[]>,
   posMap: Record<string, UserPosEntry>
 ): UserExpansion {
+  // Defensive throughout: this runs over on-disk user data every keyboard
+  // launch, so a corrupt/unexpected shape here must degrade (skip the bad
+  // entry) rather than throw -- an uncaught throw here was a "reinstall-only"
+  // crash source (see KeyboardController.reloadUserDict). Every array/field
+  // access below is shape-checked; the per-word body is additionally wrapped
+  // so one bad entry can't abort the whole expansion.
   const outDict: Record<string, string[]> = {};
-  for (const yomi of Object.keys(dict)) {
-    outDict[yomi] = dict[yomi].slice();
-  }
   const classMap: Record<string, number[]> = {};
+  if (dict === null || typeof dict !== 'object') { return { dict: outDict, classMap }; }
+  const safePos: Record<string, UserPosEntry> =
+    (posMap !== null && typeof posMap === 'object') ? posMap : {};
 
   for (const yomi of Object.keys(dict)) {
-    for (const word of dict[yomi]) {
-      const entry = posMap[yomi + '\t' + word];
-      if (entry === undefined || entry.pos === 'noun') { continue; }
+    const words = dict[yomi];
+    if (!Array.isArray(words)) { continue; }
+    outDict[yomi] = words.slice();
+  }
+
+  for (const yomi of Object.keys(outDict)) {
+    for (const word of outDict[yomi]) {
+      try {
+      if (typeof word !== 'string' || word.length === 0) { continue; }
+      const entry = safePos[yomi + '\t' + word];
+      if (entry === undefined || entry === null || typeof entry !== 'object' ||
+          entry.pos === 'noun') { continue; }
 
       if (entry.pos === 'person') { classMap[yomi] = [N_PROPER_P, N_PROPER_P]; continue; }
       if (entry.pos === 'place') { classMap[yomi] = [N_PROPER_L, N_PROPER_L]; continue; }
@@ -338,6 +353,9 @@ export function buildUserExpansion(
         for (const reading of Object.keys(cm)) {
           classMap[reading] = cm[reading];
         }
+      }
+      } catch (_e) {
+        // Bad single entry -- skip it, keep expanding the rest.
       }
     }
   }
