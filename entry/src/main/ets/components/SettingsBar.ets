@@ -370,11 +370,11 @@ export struct SettingsBar {
     Column() {
       Row() {
         Column({ space: 2 }) {
-          Text('OFUSE')
+          Text('Buy Me a Coffee')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('登録不要・Apple Pay/Google Pay対応・単発の投げ銭')
+          Text('カード決済対応・登録不要・缶コーヒー1杯から応援')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
@@ -389,7 +389,7 @@ export struct SettingsBar {
       .width('100%')
       .padding({ top: 12, bottom: 12 })
       .onClick(() => {
-        InputHandler.getInstance().openOfuseLink();
+        InputHandler.getInstance().openBuyMeACoffeeLink();
         this.close();
       })
 

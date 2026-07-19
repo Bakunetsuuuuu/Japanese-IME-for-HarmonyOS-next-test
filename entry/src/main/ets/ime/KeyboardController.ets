@@ -881,8 +881,8 @@ export class InputHandler {
   // Ads sections): no rule found prohibiting a plain external donation link
   // that doesn't gate any app feature, and HUAWEI IAP integration is stated
   // as recommended, not required.
-  openOfuseLink(): boolean {
-    return this.openExternalUrl('https://ofuse.me/shunti', 'OFUSE');
+  openBuyMeACoffeeLink(): boolean {
+    return this.openExternalUrl('https://buymeacoffee.com/shunti', 'Buy Me a Coffee');
   }
 
   openGithubSponsorsLink(): boolean {
