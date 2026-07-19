@@ -308,37 +308,63 @@ export class InputHandler {
     this.loadMozcRawfiles(this.imeContext);
   }
 
-  // Fetch + parse the three mozc rawfiles and hand them to the converter. The
-  // heavy part (dict/costs JSON) used to risk an OOM crash on launch; the
-  // connection matrix -- by far the biggest structure -- now loads as a compact
-  // uint16 binary (see loadMozcEngine), which is what brought the load within
-  // the extension's heap budget. A catchable failure just falls back to custom.
+  // Fetch + parse the mozc rawfiles and hand them to the converter. Every
+  // per-reading structure (dict surfaces, cost/class/surface per sense) is
+  // pre-flattened at build time by tools/mozc_data/convert_to_binary.py --
+  // the device only JSON.parses three plain string[] arrays (no per-key
+  // object/hash overhead, unlike the old Record<string, ...> shape) and
+  // reads the rest as typed-array binaries with zero parse cost. This is
+  // what fixed the OOM crash: the old code's JSON.parse of mozc_dict.json/
+  // mozc_costs.json built a transient object tree (~183MB + ~286MB
+  // resident) that coexisted with its own flattened output at the peak,
+  // well over the extension's ~464MB heap budget. A catchable failure just
+  // falls back to custom.
   private loadMozcRawfiles(ctx: InputMethodExtensionContext): void {
     const rm = ctx.resourceManager;
     const decoder = new util.TextDecoder('utf-8');
+    // toU16Array: getRawFileContent's Uint8Array may sit at a non-even
+    // byteOffset, which Uint16Array/Int32Array can't wrap directly -- copy
+    // into a fresh aligned buffer first. Device is little-endian, matching
+    // the files written by convert_to_binary.py.
+    const toBuf = (data: Uint8Array, byteOffset: number, byteLength: number): ArrayBuffer =>
+      data.buffer.slice(data.byteOffset + byteOffset, data.byteOffset + byteOffset + byteLength);
     // Chained (not Promise.all + destructuring) to match this file's existing
     // getRawFileContent().then() style (see loadDictionary/loadGlobalDictionary
     // above) rather than introduce a new pattern.
-    rm.getRawFileContent('mozc_dict.json')
-      .then((dictData: Uint8Array) => {
-        const dict = JSON.parse(decoder.decode(dictData)) as Record<string, string[]>;
-        return rm.getRawFileContent('mozc_costs.json').then((costsData: Uint8Array) => {
-          const costs = JSON.parse(decoder.decode(costsData)) as Record<string, (number | string)[][]>;
-          return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
-            const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
-            // The connection matrix cells ship as a separate flat uint16 binary
-            // (mozc_matrix.bin) rather than inside the JSON, so it can be read
-            // straight into a Uint16Array without a multi-megabyte JSON parse or
-            // a boxed number[][] -- the change that keeps mozc inside the heap.
-            return rm.getRawFileContent('mozc_matrix.bin').then((binData: Uint8Array) => {
-              // Copy to a fresh 2-byte-aligned buffer: getRawFileContent's
-              // Uint8Array may sit at a non-even byteOffset, which Uint16Array
-              // can't wrap directly. (Device is little-endian, matching the file.)
-              const buf = binData.buffer.slice(binData.byteOffset, binData.byteOffset + binData.byteLength);
-              const cells = new Uint16Array(buf);
-              KanaKanjiConverter.loadMozcEngine(dict, costs, matrix, cells);
-              KanaKanjiConverter.setEngine('mozc');
-              console.info('shuntiIME mozc engine loaded');
+    rm.getRawFileContent('mozc_readings.json')
+      .then((readingsData: Uint8Array) => {
+        const readings = JSON.parse(decoder.decode(readingsData)) as string[];
+        return rm.getRawFileContent('mozc_dict_surfaces.json').then((dictSurfacesData: Uint8Array) => {
+          const dictSurfaces = JSON.parse(decoder.decode(dictSurfacesData)) as string[];
+          return rm.getRawFileContent('mozc_dict_index.bin').then((dictIndexData: Uint8Array) => {
+            const dictIndex = new Uint32Array(toBuf(dictIndexData, 0, dictIndexData.byteLength));
+            return rm.getRawFileContent('mozc_costs_surfaces.json').then((costsSurfacesData: Uint8Array) => {
+              const costsSurfaces = JSON.parse(decoder.decode(costsSurfacesData)) as string[];
+              return rm.getRawFileContent('mozc_costs_index.bin').then((costsIndexData: Uint8Array) => {
+                const costsIndex = new Uint32Array(toBuf(costsIndexData, 0, costsIndexData.byteLength));
+                return rm.getRawFileContent('mozc_costs.bin').then((costsBinData: Uint8Array) => {
+                  // mozc_costs.bin layout: int32 cost[n] + uint16 left[n] + uint16 right[n]
+                  // (see convert_to_binary.py write_outputs). n_senses = last cumulative index.
+                  const nSenses = costsIndex[costsIndex.length - 1];
+                  const costsCost = new Int32Array(toBuf(costsBinData, 0, nSenses * 4));
+                  const costsLeft = new Uint16Array(toBuf(costsBinData, nSenses * 4, nSenses * 2));
+                  const costsRight = new Uint16Array(toBuf(costsBinData, nSenses * 4 + nSenses * 2, nSenses * 2));
+                  return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
+                    const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
+                    // The connection matrix cells ship as a separate flat uint16 binary
+                    // (mozc_matrix.bin) rather than inside the JSON, so it can be read
+                    // straight into a Uint16Array without a multi-megabyte JSON parse or
+                    // a boxed number[][] -- the change that keeps mozc inside the heap.
+                    return rm.getRawFileContent('mozc_matrix.bin').then((binData: Uint8Array) => {
+                      const cells = new Uint16Array(toBuf(binData, 0, binData.byteLength));
+                      KanaKanjiConverter.loadMozcEngine(readings, dictSurfaces, dictIndex,
+                        costsSurfaces, costsIndex, costsCost, costsLeft, costsRight, matrix, cells);
+                      KanaKanjiConverter.setEngine('mozc');
+                      console.info('shuntiIME mozc engine loaded');
+                    });
+                  });
+                });
+              });
             });
           });
         });

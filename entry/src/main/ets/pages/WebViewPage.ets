@@ -44,6 +44,11 @@ struct WebViewPage {
     router.back();
   }
 
+  onBackPress(): boolean {
+    this.handleBack();
+    return true;
+  }
+
   build() {
     Column() {
       Row() {
@@ -94,9 +99,5 @@ struct WebViewPage {
     .width('100%')
     .height('100%')
     .backgroundColor(this.isDark ? '#121212' : '#FFFFFF')
-    .onBackPressed(() => {
-      this.handleBack();
-      return true;
-    })
   }
 }

@@ -5,7 +5,9 @@
     "description": "$string:entry_desc",
     "mainElement": "InputMethodExtAbility",
     "deviceTypes": [
-      "default"
+      "phone",
+      "2in1",
+      "tablet"
     ],
     "deliveryWithInstall": true,
     "installationFree": false,

@@ -9,8 +9,8 @@ import { JP_FONT_FAMILY } from './JpFont';
 const CARD_RADIUS = 16;
 const TRACK_RADIUS = 11;
 const PILL_RADIUS = 8;
-const SELECTED_SHADOW = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
-const NO_SHADOW = { radius: 0, color: 'transparent' };
+const SELECTED_SHADOW: ShadowOptions = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
+const NO_SHADOW: ShadowOptions = { radius: 0, color: 'transparent' };
 
 // Dedicated settings sub-mode, entered via keyboardSubMode === 'settings'
 // (the ⚙ button in KeyboardPage). Takes the full IME panel the same way
