@@ -305,43 +305,14 @@ export class InputHandler {
       return;
     }
     if (!this.imeContext) { return; }
-    const ctx = this.imeContext;
-    // Crash-loop breaker. Loading the mozc rawfiles (~119MB of JSON) can exhaust
-    // the IME extension's heap and OOM-crash the process mid-parse. Because
-    // conversionEngine='mozc' is persisted, a naive retry OOMs again on every
-    // relaunch -- an infinite crash loop that historically could only be escaped
-    // by reinstalling (which wipes the setting). Guard: read a "load pending"
-    // flag first; if it's still set, the previous attempt never finished
-    // (crashed), so abandon mozc, revert the persisted setting to custom, and
-    // stay usable instead of crashing again.
-    SettingsStore.getMozcLoadPending(ctx)
-      .then((pending: boolean) => {
-        if (pending) {
-          console.error('shuntiIME mozc load previously did not finish (OOM?); reverting to custom');
-          KanaKanjiConverter.setEngine('custom');
-          AppStorage.setOrCreate('conversionEngine', 'custom');
-          SettingsStore.saveConversionEngine(ctx, 'custom');
-          SettingsStore.saveMozcLoadPending(ctx, false);
-          return;
-        }
-        // Mark pending and make sure it is durably on disk BEFORE the heavy
-        // parse that might OOM, so the next launch can detect a crash.
-        SettingsStore.saveMozcLoadPending(ctx, true).then(() => {
-          this.loadMozcRawfiles(ctx);
-        });
-      })
-      .catch((e: Error) => {
-        console.error('shuntiIME mozc guard read failed, staying on custom', JSON.stringify(e));
-        KanaKanjiConverter.setEngine('custom');
-      });
+    this.loadMozcRawfiles(this.imeContext);
   }
 
-  // Fetch + parse the three mozc rawfiles and hand them to the converter. Only
-  // reached once the crash-loop guard (applyConversionEngine) has flagged a
-  // load as pending; clears that flag on either outcome so the guard reflects
-  // "this attempt finished" -- a survived load enables mozc, a catchable
-  // failure falls back to custom. (An uncatchable OOM crash leaves the flag
-  // set, which is exactly what the next launch's guard looks for.)
+  // Fetch + parse the three mozc rawfiles and hand them to the converter. The
+  // heavy part (dict/costs JSON) used to risk an OOM crash on launch; the
+  // connection matrix -- by far the biggest structure -- now loads as a compact
+  // uint16 binary (see loadMozcEngine), which is what brought the load within
+  // the extension's heap budget. A catchable failure just falls back to custom.
   private loadMozcRawfiles(ctx: InputMethodExtensionContext): void {
     const rm = ctx.resourceManager;
     const decoder = new util.TextDecoder('utf-8');
@@ -367,8 +338,6 @@ export class InputHandler {
               const cells = new Uint16Array(buf);
               KanaKanjiConverter.loadMozcEngine(dict, costs, matrix, cells);
               KanaKanjiConverter.setEngine('mozc');
-              // Survived the load -- clear the crash-loop guard.
-              SettingsStore.saveMozcLoadPending(ctx, false);
               console.info('shuntiIME mozc engine loaded');
             });
           });
@@ -377,9 +346,6 @@ export class InputHandler {
       .catch((e: Error) => {
         console.error('shuntiIME mozc engine load failed, staying on custom', JSON.stringify(e));
         KanaKanjiConverter.setEngine('custom');
-        // A catchable failure (not an OOM crash) -- clear the guard so a later
-        // deliberate re-enable isn't pre-emptively blocked.
-        SettingsStore.saveMozcLoadPending(ctx, false);
       });
   }
 
