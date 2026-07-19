@@ -355,11 +355,22 @@ export class InputHandler {
           const costs = JSON.parse(decoder.decode(costsData)) as Record<string, (number | string)[][]>;
           return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
             const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
-            KanaKanjiConverter.loadMozcEngine(dict, costs, matrix);
-            KanaKanjiConverter.setEngine('mozc');
-            // Survived the load -- clear the crash-loop guard.
-            SettingsStore.saveMozcLoadPending(ctx, false);
-            console.info('shuntiIME mozc engine loaded');
+            // The connection matrix cells ship as a separate flat uint16 binary
+            // (mozc_matrix.bin) rather than inside the JSON, so it can be read
+            // straight into a Uint16Array without a multi-megabyte JSON parse or
+            // a boxed number[][] -- the change that keeps mozc inside the heap.
+            return rm.getRawFileContent('mozc_matrix.bin').then((binData: Uint8Array) => {
+              // Copy to a fresh 2-byte-aligned buffer: getRawFileContent's
+              // Uint8Array may sit at a non-even byteOffset, which Uint16Array
+              // can't wrap directly. (Device is little-endian, matching the file.)
+              const buf = binData.buffer.slice(binData.byteOffset, binData.byteOffset + binData.byteLength);
+              const cells = new Uint16Array(buf);
+              KanaKanjiConverter.loadMozcEngine(dict, costs, matrix, cells);
+              KanaKanjiConverter.setEngine('mozc');
+              // Survived the load -- clear the crash-loop guard.
+              SettingsStore.saveMozcLoadPending(ctx, false);
+              console.info('shuntiIME mozc engine loaded');
+            });
           });
         });
       })

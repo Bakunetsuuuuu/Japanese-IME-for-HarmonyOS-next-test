@@ -25,6 +25,7 @@ const GDICT = path.join(ROOT, 'entry/src/main/resources/rawfile/global_dict.json
 const MOZC_DICT = path.join(ROOT, 'entry/src/main/resources/rawfile/mozc_dict.json');
 const MOZC_COSTS = path.join(ROOT, 'entry/src/main/resources/rawfile/mozc_costs.json');
 const MOZC_MATRIX = path.join(ROOT, 'entry/src/main/resources/rawfile/mozc_matrix.json');
+const MOZC_MATRIX_BIN = path.join(ROOT, 'entry/src/main/resources/rawfile/mozc_matrix.bin');
 
 function build() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cmpeng-'));
@@ -41,10 +42,16 @@ function main() {
   KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(DICT, 'utf-8')));
   KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(GDICT, 'utf-8')));
   KanaKanjiConverter.initConnectionMatrix();
+  // Connection matrix ships as a flat uint16 binary (mozc_matrix.bin) plus a
+  // small header JSON; read the bytes into a Uint16Array (fresh 2-byte-aligned
+  // buffer) to match loadMozcEngine's new signature.
+  const mbin = fs.readFileSync(MOZC_MATRIX_BIN);
+  const mcells = new Uint16Array(mbin.buffer.slice(mbin.byteOffset, mbin.byteOffset + mbin.byteLength));
   KanaKanjiConverter.loadMozcEngine(
     JSON.parse(fs.readFileSync(MOZC_DICT, 'utf-8')),
     JSON.parse(fs.readFileSync(MOZC_COSTS, 'utf-8')),
-    JSON.parse(fs.readFileSync(MOZC_MATRIX, 'utf-8')));
+    JSON.parse(fs.readFileSync(MOZC_MATRIX, 'utf-8')),
+    mcells);
   const conv = new KanaKanjiConverter();
 
   const convert = (reading) => {
