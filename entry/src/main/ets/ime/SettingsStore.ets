@@ -78,6 +78,34 @@ export class SettingsStore {
       console.error('shuntiIME SettingsStore.saveConversionEngine error', JSON.stringify(e));
     }
   }
+
+  // Crash-loop breaker flag for the mozc engine load. Loading the ~119MB of
+  // mozc rawfiles (dict/costs/matrix JSON) can exhaust the IME extension's
+  // heap and OOM-crash the process mid-parse. Since conversionEngine='mozc'
+  // is persisted, the next launch would retry the same load and OOM again —
+  // an infinite crash loop that historically could only be escaped by
+  // reinstalling (which wipes the setting). KeyboardController sets this flag
+  // to true and flushes it to disk BEFORE the heavy parse, then clears it on
+  // success; if a launch reads it back still true, the previous attempt never
+  // finished (crashed), so mozc is abandoned and the engine reverts to custom.
+
+  static async getMozcLoadPending(context: common.Context): Promise<boolean> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      const v = await prefs.get('mozcLoadPending', false);
+      return v === true;
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  static async saveMozcLoadPending(context: common.Context, pending: boolean): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('mozcLoadPending', pending);
+      await prefs.flush();
+    } catch (_e) {}
+  }
 }
 
 // Reads whether the OS is in dark mode -- the main app (EntryAbility) uses
