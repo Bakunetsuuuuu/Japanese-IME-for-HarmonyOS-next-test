@@ -31335,7 +31335,21 @@ export class KanaKanjiConverter {
   // unmodified, byte-for-byte the same code path as before this field existed.
   private static engine: 'custom' | 'mozc' = 'custom';
   private static mozcDict: Record<string, string[]> = {};
-  private static mozcCosts: Record<string, MozcSense[]> = {}; // reading -> every distinct grammatical sense
+  // Costs stored columnar: three parallel Int32Arrays (cost/leftClass/
+  // rightClass) + a surface string[], indexed by a global sense index, plus a
+  // reading -> packed(start,count) map. This replaces a
+  // Record<reading, MozcSense[]> of ~906k 4-field objects that measured ~286MB
+  // resident and was the mozc engine's single largest heap user (the "gets
+  // heavier then crashes" memory-pressure symptom). The columnar form is ~55MB.
+  // getWordInfoCandidatesMozc rebuilds the handful of MozcSense objects for a
+  // queried reading on demand (transient, GC'd), so every hot-path consumer of
+  // those objects stays unchanged. Packing: index = start*32 + count, with
+  // count <= MAX_SENSES_PER_READING (30) — see build_mozc_engine.py.
+  private static mozcCostIndex: Record<string, number> = {};
+  private static mozcCostCostArr: Int32Array = new Int32Array(0);
+  private static mozcCostLeftArr: Int32Array = new Int32Array(0);
+  private static mozcCostRightArr: Int32Array = new Int32Array(0);
+  private static mozcCostSurfaceArr: string[] = [];
   // Connection matrix as a FLAT row-major Uint16 array (cell [a][b] lives at
   // a*mozcMatrixSize + b), read straight from mozc_matrix.bin. Storing it as a
   // typed array instead of a boxed number[][] of ~7.14M cells is what keeps the
@@ -31531,7 +31545,7 @@ export class KanaKanjiConverter {
   static loadMozcEngine(dict: Record<string, string[]>, rawCosts: Record<string, (number | string)[][]>,
       matrixData: MozcMatrixData, matrixCells: Uint16Array): void {
     KanaKanjiConverter.mozcDict = dict;
-    KanaKanjiConverter.mozcCosts = KanaKanjiConverter.parseMozcCosts(rawCosts);
+    KanaKanjiConverter.buildColumnarCosts(rawCosts);
     // Flat row-major connection matrix straight from mozc_matrix.bin -- no
     // reshape into a boxed number[][] (that array was the mozc engine's biggest
     // heap cost and the OOM crash's dominant driver).
@@ -31545,29 +31559,44 @@ export class KanaKanjiConverter {
   }
 
   // mozc_costs.json ships each sense as a compact [cost,leftClass,rightClass,
-  // surface] array (see build_mozc_engine.py) rather than named fields, to
-  // keep the file small — most readings only have one sense, so per-sense
-  // field-name overhead would add up. Expand into MozcSense objects once at
-  // load time rather than re-indexing raw arrays everywhere they're used.
-  private static parseMozcCosts(rawCosts: Record<string, (number | string)[][]>): Record<string, MozcSense[]> {
-    const costs: Record<string, MozcSense[]> = {};
+  // surface] array (see build_mozc_engine.py). Rather than expand every sense
+  // into a persistent MozcSense object (which measured ~286MB resident and
+  // drove the memory-pressure crash), flatten all senses into parallel columnar
+  // arrays once at load and record each reading's [start,count] into a single
+  // packed map value. getWordInfoCandidatesMozc reconstructs the objects for a
+  // queried reading on demand.
+  private static buildColumnarCosts(rawCosts: Record<string, (number | string)[][]>): void {
     const readings = Object.keys(rawCosts);
+    let total = 0;
+    for (let i = 0; i < readings.length; i++) { total += rawCosts[readings[i]].length; }
+    const costArr = new Int32Array(total);
+    const leftArr = new Int32Array(total);
+    const rightArr = new Int32Array(total);
+    const surfaceArr: string[] = new Array<string>(total);
+    const index: Record<string, number> = {};
+    let p = 0;
     for (let i = 0; i < readings.length; i++) {
       const reading = readings[i];
       const rawSenses = rawCosts[reading];
-      const senses: MozcSense[] = [];
-      for (let j = 0; j < rawSenses.length; j++) {
+      const start = p;
+      const count = rawSenses.length;
+      for (let j = 0; j < count; j++) {
         const s = rawSenses[j];
-        senses.push({
-          cost: s[0] as number,
-          leftClass: s[1] as number,
-          rightClass: s[2] as number,
-          surface: s[3] as string,
-        });
+        costArr[p] = s[0] as number;
+        leftArr[p] = s[1] as number;
+        rightArr[p] = s[2] as number;
+        surfaceArr[p] = s[3] as string;
+        p++;
       }
-      costs[reading] = senses;
+      // count <= MAX_SENSES_PER_READING (30) so 5 bits is plenty; start*32
+      // stays well within a safe integer for ~906k total senses.
+      index[reading] = start * 32 + count;
     }
-    return costs;
+    KanaKanjiConverter.mozcCostCostArr = costArr;
+    KanaKanjiConverter.mozcCostLeftArr = leftArr;
+    KanaKanjiConverter.mozcCostRightArr = rightArr;
+    KanaKanjiConverter.mozcCostSurfaceArr = surfaceArr;
+    KanaKanjiConverter.mozcCostIndex = index;
   }
 
   static isMozcLoaded(): boolean {
@@ -33031,8 +33060,25 @@ export class KanaKanjiConverter {
   }
 
   private getWordInfoCandidatesMozc(sub: string): MozcSense[] {
-    const senses = KanaKanjiConverter.mozcCosts[sub];
-    if (senses !== undefined && senses.length > 0) { return senses; }
+    const packed = KanaKanjiConverter.mozcCostIndex[sub];
+    if (packed !== undefined) {
+      // Rebuild this reading's senses from the columnar arrays (see
+      // buildColumnarCosts). count is 1 for ~85% of readings, so this is a
+      // tiny transient allocation; the persistent store stays compact.
+      const count = packed % 32;
+      const start = (packed - count) / 32;
+      const senses: MozcSense[] = new Array<MozcSense>(count);
+      for (let j = 0; j < count; j++) {
+        const idx = start + j;
+        senses[j] = {
+          cost: KanaKanjiConverter.mozcCostCostArr[idx],
+          leftClass: KanaKanjiConverter.mozcCostLeftArr[idx],
+          rightClass: KanaKanjiConverter.mozcCostRightArr[idx],
+          surface: KanaKanjiConverter.mozcCostSurfaceArr[idx],
+        };
+      }
+      return senses;
+    }
     // User-registered reading with no mozc entry: score it as an ordinary
     // 名詞,一般 at a mid-range word cost instead of the punitive UNKNOWN
     // fallback below -- an explicitly registered word should compete on
@@ -33428,7 +33474,7 @@ export class KanaKanjiConverter {
               rightClass: KanaKanjiConverter.mozcKanjiNumberClass,
               surface: numRun.surface,
             };
-            const hasReal = KanaKanjiConverter.mozcCosts[sub] !== undefined;
+            const hasReal = KanaKanjiConverter.mozcCostIndex[sub] !== undefined;
             candidates = hasReal ? [...candidates, numSense] : [numSense];
           }
           for (let ci = 0; ci < candidates.length; ci++) {
