@@ -78,6 +78,24 @@ and diff against the gold column. The corpus file is plain JSON
 (`[[reading, gold], ...]`) precisely so it can be used as a manual test
 script.
 
+## Testing on-device IMEs by hand (`manual_test.html`)
+
+`manual_test.html` is a self-contained page (no server, no network — the 350
+pairs and the precomputed track A / track B / Google results are all
+embedded) for scoring a real device IME against the same corpus.
+
+Open it in the device's browser, name the IME you're testing, pick a subset
+size (a fixed RNG seed means **every IME sees the same subset in the same
+order**, so runs are comparable), then for each item type the shown reading
+using that IME, convert, and submit. The page scores your exact-match,
+character-level, and "alternate-valid-OK" accuracy and shows track A /
+track B / Google on the identical subset next to it. Progress auto-saves to
+the browser so a long run can be resumed.
+
+This is how Gboard / HUAWEI / Apple / Microsoft get benchmarked despite
+having no API: a human + the device IME is the "engine," the page is the
+scorer.
+
 ## Attribution
 
 Sentence source: **Tatoeba** (https://tatoeba.org/), released under
