@@ -11,8 +11,8 @@ shunti IMEは広告なし・完全無料で個人が開発しているオープ�
 
 もし shunti を気に入っていただけましたら、開発継続のために缶コーヒー1杯分だけでもご支援（寄付）をいただけますと大変励みになります。
 
-- **OFUSE**: **[ofuse.me/shunti](https://ofuse.me/shunti)**
-  クレジットカード・Apple Pay・Google Payなどに対応した日本の投げ銭サービスです。GitHubアカウントは不要で、応援メッセージを添えて一度きりの寄付ができます。
+- **Buy Me a Coffee**: **[buymeacoffee.com/shunti](https://buymeacoffee.com/shunti)**
+  クレジットカードなどに対応した支援サービスです。GitHubアカウントは不要で、缶コーヒー1杯分から気軽に、応援メッセージを添えて支援ができます。
 - **GitHub Sponsors**: **[github.com/sponsors/shuntilettuce](https://github.com/sponsors/shuntilettuce)**
   GitHubアカウントがあればカード情報の入力だけで、月額の継続支援または一度きりの支援ができます。
 

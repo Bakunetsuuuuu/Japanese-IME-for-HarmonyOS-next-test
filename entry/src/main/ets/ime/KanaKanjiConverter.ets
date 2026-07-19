@@ -17310,7 +17310,6 @@ const DICTIONARY: Record<string, string[]> = {
   'こういう': ['こういう'],
   'そういう': ['そういう'],
   'ああいう': ['ああいう'],
-  'どういう': ['どういう'],
   'このような': ['このような'],
   'このため': ['このため'],
   'あのため': ['あのため'],
@@ -21988,23 +21987,16 @@ const DICTIONARY: Record<string, string[]> = {
   'なれて': ['慣れて', '馴れて'],
   'なれ': ['慣れ', '馴れ'],
   'ふられて': ['降られて'],
-  'てもらった': ['てもらった'],
-  'はしって': ['走って'],
   'おかけします': ['おかけします'],
   'おかけしますが': ['おかけしますが'],
   'せんたくものが': ['洗濯物が'],
   'うたれた': ['打たれた'],
-  'だした': ['出した'],
   'みがいて': ['磨いて'],
   'たまっている': ['たまっている'],
-  'ないて': ['鳴いて'],
-  'ないている': ['鳴いている'],
   'しんきかく': ['新企画'],
   'ねびきけん': ['値引き券'],
   'がちした': ['勝ちした'],
   'こうしんしたら': ['更新したら'],
-  'さつえいして': ['撮影して'],
-  'へんしゅうした': ['編集した'],
   'おおくて': ['多くて'],
   'つながりにくい': ['繋がりにくい'],
   'やりわすれた': ['やり忘れた'],
@@ -22014,7 +22006,6 @@ const DICTIONARY: Record<string, string[]> = {
   'きいてあげた': ['聞いてあげた'],
   'ききながら': ['聞きながら'],
   'あせっている': ['焦っている'],
-  'やすんだ': ['休んだ'],
   'ながめた': ['眺めた'],
   'うりきれて': ['売り切れて'],
   'つぎのひ': ['次の日'],
@@ -22033,26 +22024,21 @@ const DICTIONARY: Record<string, string[]> = {
   'みなおさん': ['見直さん'],
   'つきすすむ': ['突き進む'],
   'つめた': ['詰めた', '積めた'],
-  'おとして': ['落として', '落として'],
   'おとしてしまった': ['落としてしまった'],
   'あずけて': ['預けて'],
   'あずけている': ['預けている'],
   'ねつけなかった': ['寝つけなかった'],
   'もうからない': ['儲からない'],
   'たべきれなかった': ['食べきれなかった'],
-  'ほしがって': ['欲しがって'],
   'ほしがっている': ['欲しがっている'],
   'かちそう': ['勝ちそう'],
   'かちそうだ': ['勝ちそうだ'],
-  'てつだって': ['手伝って'],
   'てつだわせて': ['手伝わせて'],
   'てつだわせてください': ['手伝わせてください'],
   'いかなければ': ['行かなければ'],
   'いかなきゃ': ['行かなきゃ'],
   'みなければ': ['見なければ'],
   'みなければならない': ['見なければならない'],
-  'しなければ': ['しなければ'],
-  'しなければならない': ['しなければならない'],
   'ねすぎた': ['寝過ぎた'],
   'ねすぎ': ['寝過ぎ'],
   'おきなければ': ['起きなければ'],
@@ -22060,7 +22046,6 @@ const DICTIONARY: Record<string, string[]> = {
   'あせた': ['褪せた'],
   'よばれて': ['呼ばれて'],
   'ねっとで': ['ネットで'],
-  'たのんで': ['頼んで'],
   'ふゆよう': ['冬用'],
   'かいにいった': ['買いに行った'],
   'かわいた': ['乾いた'],
@@ -30775,7 +30760,9 @@ export interface MozcMatrixData {
   // Raw id of generic 名詞,数,漢数字 -- the class the numeral pre-pass
   // scores composed kanji-number spans as. Optional, same reason.
   kanjiNumberClass?: number;
-  matrix: number[];
+  // The N*N connection matrix itself is no longer part of this JSON header --
+  // it ships as a flat uint16 binary (mozc_matrix.bin) passed to loadMozcEngine
+  // separately. See build_mozc_engine.py's write_outputs.
 }
 
 // One grammatical sense a reading can take (see tools/mozc_data/
@@ -31332,9 +31319,42 @@ export class KanaKanjiConverter {
   // it is 'custom' (the default), every existing method runs completely
   // unmodified, byte-for-byte the same code path as before this field existed.
   private static engine: 'custom' | 'mozc' = 'custom';
-  private static mozcDict: Record<string, string[]> = {};
-  private static mozcCosts: Record<string, MozcSense[]> = {}; // reading -> every distinct grammatical sense
-  private static mozcMatrix: number[][] = [];
+  // reading -> its shared index into dict/costs below (mozc_readings.json,
+  // built by tools/mozc_data/convert_to_binary.py). A Map<string,number> of
+  // ~746k entries is far lighter than the old Record<string, string[]>: no
+  // per-key array-object allocation, and it's the ONLY structure the reading
+  // string itself is duplicated into (dict/costs below reference readings
+  // only by integer index).
+  private static mozcReadingIndex: Map<string, number> = new Map();
+  // Flattened surfaces (all readings' candidate lists concatenated) + a
+  // cumulative uint32 start-offset per reading (length = readings.length+1,
+  // so surface count for reading i = dictIndex[i+1]-dictIndex[i]). Replaces
+  // a Record<reading, string[]> of ~746k array objects (one per reading) --
+  // see mozc_dict_index.bin / mozc_dict_surfaces.json.
+  private static mozcDictSurfaces: string[] = [];
+  private static mozcDictIndex: Uint32Array = new Uint32Array(0);
+  // Costs stored columnar: three parallel typed arrays (cost/leftClass/
+  // rightClass) + a surface string[], indexed by a global sense index, plus a
+  // cumulative uint32 start-offset per reading (mozc_costs_index.bin,
+  // parallel scheme to mozc_dict_index.bin above). Both the raw JSON parse
+  // tree AND this columnar flattening used to happen on-device (~286MB and
+  // ~55MB resident respectively, coexisting at the peak) -- now the
+  // flattening is done once at build time (convert_to_binary.py) and the
+  // device only reads typed-array binaries, no JSON.parse of the numeric
+  // data at all. getWordInfoCandidatesMozc rebuilds the handful of MozcSense
+  // objects for a queried reading on demand (transient, GC'd), so every
+  // hot-path consumer of those objects stays unchanged.
+  private static mozcCostIndex: Uint32Array = new Uint32Array(0);
+  private static mozcCostCostArr: Int32Array = new Int32Array(0);
+  private static mozcCostLeftArr: Uint16Array = new Uint16Array(0);
+  private static mozcCostRightArr: Uint16Array = new Uint16Array(0);
+  private static mozcCostSurfaceArr: string[] = [];
+  // Connection matrix as a FLAT row-major Uint16 array (cell [a][b] lives at
+  // a*mozcMatrixSize + b), read straight from mozc_matrix.bin. Storing it as a
+  // typed array instead of a boxed number[][] of ~7.14M cells is what keeps the
+  // mozc engine inside the IME extension's heap budget (see loadMozcEngine).
+  private static mozcMatrix: Uint16Array = new Uint16Array(0);
+  private static mozcMatrixSize: number = 0;
   private static mozcBosClass: number = 0;
   private static mozcUnknownClass: number = 0;
   private static mozcNounGeneralClass: number = -1;
@@ -31517,15 +31537,33 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.connectionMatrix = KanaKanjiConverter.buildConnectionMatrix();
   }
 
-  // Track B (see field comments above). Loads the mozc-derived rawfiles;
-  // does not touch any track-A state. Call once, lazily, the first time the
-  // user switches the conversionEngine setting to 'mozc' — see
+  // Track B (see field comments above). Loads the mozc-derived rawfiles,
+  // pre-flattened at build time by tools/mozc_data/convert_to_binary.py --
+  // no JSON.parse of any per-reading structure happens on-device anymore
+  // (that parse tree, plus the columnar flattening this function used to do
+  // from it, is what drove the OOM: both existed in memory at once). Does
+  // not touch any track-A state. Call once, lazily, the first time the user
+  // switches the conversionEngine setting to 'mozc' — see
   // KeyboardController.reloadSettings().
-  static loadMozcEngine(dict: Record<string, string[]>, rawCosts: Record<string, (number | string)[][]>,
-      matrixData: MozcMatrixData): void {
-    KanaKanjiConverter.mozcDict = dict;
-    KanaKanjiConverter.mozcCosts = KanaKanjiConverter.parseMozcCosts(rawCosts);
-    KanaKanjiConverter.mozcMatrix = KanaKanjiConverter.reshapeMozcMatrix(matrixData);
+  static loadMozcEngine(readings: string[], dictSurfaces: string[], dictIndex: Uint32Array,
+      costsSurfaces: string[], costsIndex: Uint32Array, costsCost: Int32Array,
+      costsLeft: Uint16Array, costsRight: Uint16Array,
+      matrixData: MozcMatrixData, matrixCells: Uint16Array): void {
+    const readingIndex = new Map<string, number>();
+    for (let i = 0; i < readings.length; i++) { readingIndex.set(readings[i], i); }
+    KanaKanjiConverter.mozcReadingIndex = readingIndex;
+    KanaKanjiConverter.mozcDictSurfaces = dictSurfaces;
+    KanaKanjiConverter.mozcDictIndex = dictIndex;
+    KanaKanjiConverter.mozcCostIndex = costsIndex;
+    KanaKanjiConverter.mozcCostCostArr = costsCost;
+    KanaKanjiConverter.mozcCostLeftArr = costsLeft;
+    KanaKanjiConverter.mozcCostRightArr = costsRight;
+    KanaKanjiConverter.mozcCostSurfaceArr = costsSurfaces;
+    // Flat row-major connection matrix straight from mozc_matrix.bin -- no
+    // reshape into a boxed number[][] (that array was the mozc engine's biggest
+    // heap cost and the OOM crash's dominant driver).
+    KanaKanjiConverter.mozcMatrix = matrixCells;
+    KanaKanjiConverter.mozcMatrixSize = matrixData.size;
     KanaKanjiConverter.mozcBosClass = matrixData.bosClass;
     KanaKanjiConverter.mozcUnknownClass = matrixData.unknownClass;
     KanaKanjiConverter.mozcNounGeneralClass = matrixData.nounGeneralClass ?? -1;
@@ -31533,47 +31571,19 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.mozcContentClassMask = matrixData.contentClassMask;
   }
 
-  // mozc_costs.json ships each sense as a compact [cost,leftClass,rightClass,
-  // surface] array (see build_mozc_engine.py) rather than named fields, to
-  // keep the file small — most readings only have one sense, so per-sense
-  // field-name overhead would add up. Expand into MozcSense objects once at
-  // load time rather than re-indexing raw arrays everywhere they're used.
-  private static parseMozcCosts(rawCosts: Record<string, (number | string)[][]>): Record<string, MozcSense[]> {
-    const costs: Record<string, MozcSense[]> = {};
-    const readings = Object.keys(rawCosts);
-    for (let i = 0; i < readings.length; i++) {
-      const reading = readings[i];
-      const rawSenses = rawCosts[reading];
-      const senses: MozcSense[] = [];
-      for (let j = 0; j < rawSenses.length; j++) {
-        const s = rawSenses[j];
-        senses.push({
-          cost: s[0] as number,
-          leftClass: s[1] as number,
-          rightClass: s[2] as number,
-          surface: s[3] as string,
-        });
-      }
-      costs[reading] = senses;
-    }
-    return costs;
-  }
-
-  private static reshapeMozcMatrix(matrixData: MozcMatrixData): number[][] {
-    const size = matrixData.size;
-    const flat = matrixData.matrix;
-    const m: number[][] = [];
-    for (let i = 0; i < size; i++) {
-      const row: number[] = [];
-      const base = i * size;
-      for (let j = 0; j < size; j++) { row.push(flat[base + j]); }
-      m.push(row);
-    }
-    return m;
+  // mozc_dict_surfaces.json / mozc_dict_index.bin equivalent of
+  // mozcDict[reading] under the old Record<string,string[]> shape --
+  // reconstructs a plain string[] slice on demand (transient, GC'd).
+  private static getMozcDictSurfaces(reading: string): string[] | undefined {
+    const idx = KanaKanjiConverter.mozcReadingIndex.get(reading);
+    if (idx === undefined) { return undefined; }
+    const start = KanaKanjiConverter.mozcDictIndex[idx];
+    const end = KanaKanjiConverter.mozcDictIndex[idx + 1];
+    return KanaKanjiConverter.mozcDictSurfaces.slice(start, end);
   }
 
   static isMozcLoaded(): boolean {
-    return KanaKanjiConverter.mozcMatrix.length > 0;
+    return KanaKanjiConverter.mozcMatrixSize > 0;
   }
 
   // 'mozc' is only actually honored if loadMozcEngine() has already been
@@ -32291,7 +32301,7 @@ export class KanaKanjiConverter {
   // mozcDict[kana][0] (whichever surface is cheapest for the reading with no
   // context at all).
   private lookupMozc(kana: string): string[] {
-    const entry = KanaKanjiConverter.mozcDict[kana];
+    const entry = KanaKanjiConverter.getMozcDictSurfaces(kana);
     const hint = this.mozcLastHints.get(kana);
     let list: string[];
     if (kana === this.mozcLastInput && this.mozcLastSegs.length > 1) {
@@ -32367,7 +32377,7 @@ export class KanaKanjiConverter {
       if (hint !== undefined) {
         chosen.push(hint);
       } else {
-        const e = KanaKanjiConverter.mozcDict[segs[i]];
+        const e = KanaKanjiConverter.getMozcDictSurfaces(segs[i]);
         if (e && e.length > 0) {
           chosen.push(e[0]);
         } else {
@@ -32381,7 +32391,7 @@ export class KanaKanjiConverter {
     const MAX_ALTS_PER_SEG = 4;
     const MAX_TOTAL = 24;
     for (let i = 0; i < segs.length && out.length < MAX_TOTAL; i++) {
-      const e = KanaKanjiConverter.mozcDict[segs[i]];
+      const e = KanaKanjiConverter.getMozcDictSurfaces(segs[i]);
       if (!e || e.length < 2) { continue; }
       const prefix = chosen.slice(0, i).join('');
       const suffix = chosen.slice(i + 1).join('');
@@ -32680,7 +32690,7 @@ export class KanaKanjiConverter {
       // registrations are engine-independent intent, and without this a
       // registered novel word could never even become a DP span in track B
       // (getWordInfoCandidatesMozc gives such spans a generic-noun sense).
-      return !!(KanaKanjiConverter.mozcDict[sub] || KanaKanjiConverter.userDict[sub]);
+      return KanaKanjiConverter.mozcReadingIndex.has(sub) || !!KanaKanjiConverter.userDict[sub];
     }
     return !!(KanaKanjiConverter.globalDict[sub]
       || KanaKanjiConverter.userDict[sub]
@@ -32698,7 +32708,7 @@ export class KanaKanjiConverter {
   // katakana (which the segment path can't distinguish from an auto-fallback).
   static isDictionaryWord(reading: string): boolean {
     if (KanaKanjiConverter.engine === 'mozc') {
-      return !!KanaKanjiConverter.mozcDict[reading];
+      return KanaKanjiConverter.mozcReadingIndex.has(reading);
     }
     return !!(DICTIONARY[reading]
       || KanaKanjiConverter.globalDict[reading]
@@ -32785,18 +32795,17 @@ export class KanaKanjiConverter {
     'わけだ': 81, 'はずだ': 81,
     'でしょう': 82, 'だろう': 82, 'だろ': 82,
     // Negation / auxiliary compounds
-    'じゃない': 75, 'じゃなく': 76, 'じゃなくて': 76, 'じゃありません': 78,
+    'じゃなく': 76, 'じゃなくて': 76, 'じゃありません': 78,
     'じゃあ': 74, 'じゃあな': 70,  // casual, sentence-final tendency
     // として-compounds: handle として + は as cohesive unit
     'として': 81, 'としては': 58,  // としては → topic particle role
     // Contrast / comparison particles
     'にしては': 61, 'かと思って': 63, 'かのような': 65, 'かのように': 65,
-    'かもしれない': 69, 'かもしれません': 69,
     // Degree/extent particles (extend class 61)
-    'ぐらい': 61, 'くらい': 61, 'ばかり': 61, 'ばかりか': 62,
+    'ばかりか': 62,
     'のみならず': 87, 'ばかりでなく': 65,
     // Negation compounds
-    'ではない': 75, 'ではなく': 76, 'でない': 75, 'でなく': 76,
+    'ではなく': 76, 'でない': 75, 'でなく': 76,
     'ではありません': 78, 'ではないか': 69,
     'だけではない': 75, 'だけではなく': 76,
     'のではない': 75, 'のではなく': 76,
@@ -33033,8 +33042,26 @@ export class KanaKanjiConverter {
   }
 
   private getWordInfoCandidatesMozc(sub: string): MozcSense[] {
-    const senses = KanaKanjiConverter.mozcCosts[sub];
-    if (senses !== undefined && senses.length > 0) { return senses; }
+    const readingIdx = KanaKanjiConverter.mozcReadingIndex.get(sub);
+    if (readingIdx !== undefined) {
+      // Rebuild this reading's senses from the columnar arrays (see
+      // loadMozcEngine/convert_to_binary.py). count is 1 for ~85% of
+      // readings, so this is a tiny transient allocation; the persistent
+      // store stays compact.
+      const start = KanaKanjiConverter.mozcCostIndex[readingIdx];
+      const count = KanaKanjiConverter.mozcCostIndex[readingIdx + 1] - start;
+      const senses: MozcSense[] = new Array<MozcSense>(count);
+      for (let j = 0; j < count; j++) {
+        const idx = start + j;
+        senses[j] = {
+          cost: KanaKanjiConverter.mozcCostCostArr[idx],
+          leftClass: KanaKanjiConverter.mozcCostLeftArr[idx],
+          rightClass: KanaKanjiConverter.mozcCostRightArr[idx],
+          surface: KanaKanjiConverter.mozcCostSurfaceArr[idx],
+        };
+      }
+      return senses;
+    }
     // User-registered reading with no mozc entry: score it as an ordinary
     // 名詞,一般 at a mid-range word cost instead of the punitive UNKNOWN
     // fallback below -- an explicitly registered word should compete on
@@ -33072,11 +33099,13 @@ export class KanaKanjiConverter {
   // Track B's getEdgeCost: a direct lookup into the reduced mozc connection
   // matrix (tools/mozc_data/build_mozc_engine.py), no hand-tuned fv() rules.
   private getEdgeCostMozc(prevRightClass: number, curLeftClass: number): number {
-    const m = KanaKanjiConverter.mozcMatrix;
-    if (m.length === 0) { return 0; }
-    const row = m[prevRightClass];
-    if (!row) { return 0; }
-    return row[curLeftClass] ?? 0;
+    const size = KanaKanjiConverter.mozcMatrixSize;
+    if (size === 0) { return 0; }
+    const idx = prevRightClass * size + curLeftClass;
+    // Out-of-range class ids can't index a valid cell -- treat as free, same as
+    // the old row/?? 0 guards did.
+    if (idx < 0 || idx >= KanaKanjiConverter.mozcMatrix.length) { return 0; }
+    return KanaKanjiConverter.mozcMatrix[idx];
   }
 
   // Build the 100×100 Phase-2.5 POS connection-cost matrix from grammar rules.
@@ -33428,7 +33457,7 @@ export class KanaKanjiConverter {
               rightClass: KanaKanjiConverter.mozcKanjiNumberClass,
               surface: numRun.surface,
             };
-            const hasReal = KanaKanjiConverter.mozcCosts[sub] !== undefined;
+            const hasReal = KanaKanjiConverter.mozcReadingIndex.has(sub);
             candidates = hasReal ? [...candidates, numSense] : [numSense];
           }
           for (let ci = 0; ci < candidates.length; ci++) {

@@ -9,8 +9,8 @@ import { JP_FONT_FAMILY } from './JpFont';
 const CARD_RADIUS = 16;
 const TRACK_RADIUS = 11;
 const PILL_RADIUS = 8;
-const SELECTED_SHADOW = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
-const NO_SHADOW = { radius: 0, color: 'transparent' };
+const SELECTED_SHADOW: ShadowOptions = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
+const NO_SHADOW: ShadowOptions = { radius: 0, color: 'transparent' };
 
 // Dedicated settings sub-mode, entered via keyboardSubMode === 'settings'
 // (the ⚙ button in KeyboardPage). Takes the full IME panel the same way
@@ -370,11 +370,11 @@ export struct SettingsBar {
     Column() {
       Row() {
         Column({ space: 2 }) {
-          Text('OFUSE')
+          Text('Buy Me a Coffee')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('登録不要・Apple Pay/Google Pay対応・単発の投げ銭')
+          Text('カード決済対応・登録不要・缶コーヒー1杯から応援')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
@@ -389,7 +389,7 @@ export struct SettingsBar {
       .width('100%')
       .padding({ top: 12, bottom: 12 })
       .onClick(() => {
-        InputHandler.getInstance().openOfuseLink();
+        InputHandler.getInstance().openBuyMeACoffeeLink();
         this.close();
       })
 

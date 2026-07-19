@@ -7,10 +7,16 @@ const {KanaKanjiConverter}=require(path.join(tmp,'KKC.js'));
 KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(RAW,'dict.json'),'utf-8')));
 KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(RAW,'global_dict.json'),'utf-8')));
 KanaKanjiConverter.initConnectionMatrix();
+// Connection matrix now ships as a flat uint16 binary (mozc_matrix.bin) with a
+// small header JSON; read the bytes into a Uint16Array (copy to a fresh buffer
+// so the offset is 2-byte aligned) to match loadMozcEngine's new signature.
+const _mbin=fs.readFileSync(path.join(RAW,'mozc_matrix.bin'));
+const _mcells=new Uint16Array(_mbin.buffer.slice(_mbin.byteOffset,_mbin.byteOffset+_mbin.byteLength));
 KanaKanjiConverter.loadMozcEngine(
   JSON.parse(fs.readFileSync(path.join(RAW,'mozc_dict.json'),'utf-8')),
   JSON.parse(fs.readFileSync(path.join(RAW,'mozc_costs.json'),'utf-8')),
-  JSON.parse(fs.readFileSync(path.join(RAW,'mozc_matrix.json'),'utf-8')));
+  JSON.parse(fs.readFileSync(path.join(RAW,'mozc_matrix.json'),'utf-8')),
+  _mcells);
 const conv=new KanaKanjiConverter();
 function convert(reading){
   if(!reading)return'';

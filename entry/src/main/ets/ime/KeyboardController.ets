@@ -249,9 +249,26 @@ export class InputHandler {
       UserDictStore.load(ctx, true),
       UserPosStore.load(ctx, true),
     ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
-      const expansion = buildUserExpansion(results[0], results[1]);
-      KanaKanjiConverter.setUserDict(expansion.dict);
-      KanaKanjiConverter.setUserClassMap(expansion.classMap);
+      // Guarded: corrupt/unexpected persisted user data must NEVER take the
+      // whole keyboard extension down. buildUserExpansion runs the
+      // conjugation engine over on-disk data every launch, so a single bad
+      // entry throwing here used to become an unhandled rejection that
+      // recurred on every restart until the store was wiped (a
+      // "reinstall-only" crash). On any failure, fall back to no user
+      // dictionary rather than crashing — the keyboard still works.
+      try {
+        const expansion = buildUserExpansion(results[0], results[1]);
+        KanaKanjiConverter.setUserDict(expansion.dict);
+        KanaKanjiConverter.setUserClassMap(expansion.classMap);
+      } catch (e) {
+        console.error('shuntiIME reloadUserDict expansion failed', JSON.stringify(e));
+        KanaKanjiConverter.setUserDict({});
+        KanaKanjiConverter.setUserClassMap({});
+      }
+    }).catch((err: Error) => {
+      console.error('shuntiIME reloadUserDict load failed', JSON.stringify(err));
+      KanaKanjiConverter.setUserDict({});
+      KanaKanjiConverter.setUserClassMap({});
     });
   }
 
@@ -288,21 +305,67 @@ export class InputHandler {
       return;
     }
     if (!this.imeContext) { return; }
-    const rm = this.imeContext.resourceManager;
+    this.loadMozcRawfiles(this.imeContext);
+  }
+
+  // Fetch + parse the mozc rawfiles and hand them to the converter. Every
+  // per-reading structure (dict surfaces, cost/class/surface per sense) is
+  // pre-flattened at build time by tools/mozc_data/convert_to_binary.py --
+  // the device only JSON.parses three plain string[] arrays (no per-key
+  // object/hash overhead, unlike the old Record<string, ...> shape) and
+  // reads the rest as typed-array binaries with zero parse cost. This is
+  // what fixed the OOM crash: the old code's JSON.parse of mozc_dict.json/
+  // mozc_costs.json built a transient object tree (~183MB + ~286MB
+  // resident) that coexisted with its own flattened output at the peak,
+  // well over the extension's ~464MB heap budget. A catchable failure just
+  // falls back to custom.
+  private loadMozcRawfiles(ctx: InputMethodExtensionContext): void {
+    const rm = ctx.resourceManager;
     const decoder = new util.TextDecoder('utf-8');
+    // toU16Array: getRawFileContent's Uint8Array may sit at a non-even
+    // byteOffset, which Uint16Array/Int32Array can't wrap directly -- copy
+    // into a fresh aligned buffer first. Device is little-endian, matching
+    // the files written by convert_to_binary.py.
+    const toBuf = (data: Uint8Array, byteOffset: number, byteLength: number): ArrayBuffer =>
+      data.buffer.slice(data.byteOffset + byteOffset, data.byteOffset + byteOffset + byteLength);
     // Chained (not Promise.all + destructuring) to match this file's existing
     // getRawFileContent().then() style (see loadDictionary/loadGlobalDictionary
     // above) rather than introduce a new pattern.
-    rm.getRawFileContent('mozc_dict.json')
-      .then((dictData: Uint8Array) => {
-        const dict = JSON.parse(decoder.decode(dictData)) as Record<string, string[]>;
-        return rm.getRawFileContent('mozc_costs.json').then((costsData: Uint8Array) => {
-          const costs = JSON.parse(decoder.decode(costsData)) as Record<string, (number | string)[][]>;
-          return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
-            const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
-            KanaKanjiConverter.loadMozcEngine(dict, costs, matrix);
-            KanaKanjiConverter.setEngine('mozc');
-            console.info('shuntiIME mozc engine loaded');
+    rm.getRawFileContent('mozc_readings.json')
+      .then((readingsData: Uint8Array) => {
+        const readings = JSON.parse(decoder.decode(readingsData)) as string[];
+        return rm.getRawFileContent('mozc_dict_surfaces.json').then((dictSurfacesData: Uint8Array) => {
+          const dictSurfaces = JSON.parse(decoder.decode(dictSurfacesData)) as string[];
+          return rm.getRawFileContent('mozc_dict_index.bin').then((dictIndexData: Uint8Array) => {
+            const dictIndex = new Uint32Array(toBuf(dictIndexData, 0, dictIndexData.byteLength));
+            return rm.getRawFileContent('mozc_costs_surfaces.json').then((costsSurfacesData: Uint8Array) => {
+              const costsSurfaces = JSON.parse(decoder.decode(costsSurfacesData)) as string[];
+              return rm.getRawFileContent('mozc_costs_index.bin').then((costsIndexData: Uint8Array) => {
+                const costsIndex = new Uint32Array(toBuf(costsIndexData, 0, costsIndexData.byteLength));
+                return rm.getRawFileContent('mozc_costs.bin').then((costsBinData: Uint8Array) => {
+                  // mozc_costs.bin layout: int32 cost[n] + uint16 left[n] + uint16 right[n]
+                  // (see convert_to_binary.py write_outputs). n_senses = last cumulative index.
+                  const nSenses = costsIndex[costsIndex.length - 1];
+                  const costsCost = new Int32Array(toBuf(costsBinData, 0, nSenses * 4));
+                  const costsLeft = new Uint16Array(toBuf(costsBinData, nSenses * 4, nSenses * 2));
+                  const costsRight = new Uint16Array(toBuf(costsBinData, nSenses * 4 + nSenses * 2, nSenses * 2));
+                  return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
+                    const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
+                    // The connection matrix cells ship as a separate flat uint16 binary
+                    // (mozc_matrix.bin) rather than inside the JSON, so it can be read
+                    // straight into a Uint16Array without a multi-megabyte JSON parse or
+                    // a boxed number[][] -- the change that keeps mozc inside the heap.
+                    return rm.getRawFileContent('mozc_matrix.bin').then((binData: Uint8Array) => {
+                      const cells = new Uint16Array(toBuf(binData, 0, binData.byteLength));
+                      KanaKanjiConverter.loadMozcEngine(readings, dictSurfaces, dictIndex,
+                        costsSurfaces, costsIndex, costsCost, costsLeft, costsRight, matrix, cells);
+                      KanaKanjiConverter.setEngine('mozc');
+                      console.info('shuntiIME mozc engine loaded');
+                    });
+                  });
+                });
+              });
+            });
           });
         });
       })
@@ -810,8 +873,8 @@ export class InputHandler {
   // Ads sections): no rule found prohibiting a plain external donation link
   // that doesn't gate any app feature, and HUAWEI IAP integration is stated
   // as recommended, not required.
-  openOfuseLink(): boolean {
-    return this.openExternalUrl('https://ofuse.me/shunti', 'OFUSE');
+  openBuyMeACoffeeLink(): boolean {
+    return this.openExternalUrl('https://buymeacoffee.com/shunti', 'Buy Me a Coffee');
   }
 
   openGithubSponsorsLink(): boolean {
