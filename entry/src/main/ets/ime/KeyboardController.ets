@@ -296,16 +296,17 @@ export class InputHandler {
   // repeatedly: loadMozcEngine() is a no-op cost-wise once already loaded
   // (isMozcLoaded() short-circuits), and setEngine('custom') is always cheap.
   private applyConversionEngine(engine: string): void {
-    if (engine !== 'mozc') {
+    if (engine !== 'mozc' && engine !== 'hybrid') {
       KanaKanjiConverter.setEngine('custom');
       return;
     }
+    const target: 'mozc' | 'hybrid' = engine === 'hybrid' ? 'hybrid' : 'mozc';
     if (KanaKanjiConverter.isMozcLoaded()) {
-      KanaKanjiConverter.setEngine('mozc');
+      KanaKanjiConverter.setEngine(target);
       return;
     }
     if (!this.imeContext) { return; }
-    this.loadMozcRawfiles(this.imeContext);
+    this.loadMozcRawfiles(this.imeContext, target);
   }
 
   // Fetch + parse the mozc rawfiles and hand them to the converter. Every
@@ -319,7 +320,7 @@ export class InputHandler {
   // resident) that coexisted with its own flattened output at the peak,
   // well over the extension's ~464MB heap budget. A catchable failure just
   // falls back to custom.
-  private loadMozcRawfiles(ctx: InputMethodExtensionContext): void {
+  private loadMozcRawfiles(ctx: InputMethodExtensionContext, target: 'mozc' | 'hybrid' = 'mozc'): void {
     const rm = ctx.resourceManager;
     const decoder = new util.TextDecoder('utf-8');
     // toU16Array: getRawFileContent's Uint8Array may sit at a non-even
@@ -359,8 +360,8 @@ export class InputHandler {
                       const cells = new Uint16Array(toBuf(binData, 0, binData.byteLength));
                       KanaKanjiConverter.loadMozcEngine(readings, dictSurfaces, dictIndex,
                         costsSurfaces, costsIndex, costsCost, costsLeft, costsRight, matrix, cells);
-                      KanaKanjiConverter.setEngine('mozc');
-                      console.info('shuntiIME mozc engine loaded');
+                      KanaKanjiConverter.setEngine(target);
+                      console.info('shuntiIME mozc engine loaded, engine =', target);
                     });
                   });
                 });
