@@ -24,30 +24,34 @@ function getCharByDir(key: FlickKeyDef, dir: FlickDir): string {
 // Same 5-column (side keys + 3 digit columns) grid as FlickKeyboardView so it
 // reuses flickKeyWidthVp and never fights that keyboard's width sizing.
 // Symbol input from the digit-only pad was poor (記号 panel is a whole extra
-// trip) -- each key now flicks to the calculator/punctuation symbols users
-// reach for most while entering numbers (brackets, math operators, currency,
-// quotes), the same up/right/down/left gesture FlickKeyboardView already
-// teaches users for kana, so there's no new interaction to learn.
+// trip) -- each digit now flicks to a symbol, the same gesture
+// FlickKeyboardView already teaches users for kana, so there's no new
+// interaction to learn. Digits 1-9/0 match Gboard's own number pad exactly
+// (confirmed against a real device screenshot: LEFT/UP/RIGHT only, no down
+// direction used anywhere on Gboard's pad). -/. aren't part of that
+// reference screenshot (Gboard replaces them with its own tap-cycle bracket/
+// punctuation keys, a different interaction this file doesn't have yet), so
+// they keep the same 3-direction shape with a reasonable symbol pick instead.
 const NUM_FLICK_GRID: FlickKeyDef[][] = [
   [
-    { center: '1', up: '(', right: ')', down: '%', left: '#' },
-    { center: '2', up: '+', right: '−', down: '×', left: '÷' },
-    { center: '3', up: '=', right: '≠', down: '±', left: '√' },
+    { center: '1', left: '☆', up: '♪', right: '→' },
+    { center: '2', left: '¥', up: '$', right: '€' },
+    { center: '3', left: '%', up: '°', right: '#' },
   ],
   [
-    { center: '4', up: '¥', right: '$', down: '€', left: '£' },
-    { center: '5', up: '「', right: '」', down: '『', left: '』' },
-    { center: '6', up: '@', right: '&', down: '*', left: '/' },
+    { center: '4', left: '○', up: '*', right: '・' },
+    { center: '5', left: '+', up: '×', right: '÷' },
+    { center: '6', left: '<', up: '=', right: '>' },
   ],
   [
-    { center: '7', up: '"', right: '\'', down: ':', left: ';' },
-    { center: '8', up: '<', right: '>', down: '~', left: '^' },
-    { center: '9', up: '[', right: ']', down: '{', left: '}' },
+    { center: '7', left: '「', up: '」', right: ':' },
+    { center: '8', left: '〒', up: '々', right: '〆' },
+    { center: '9', left: '^', up: '|', right: '\\' },
   ],
   [
-    { center: '-', up: '…', right: '・', down: '_', left: '|' },
-    { center: '0', up: 'ー', right: '~', down: '\\', left: '°' },
-    { center: '.', up: '、', right: '。', down: ',', left: '!' },
+    { center: '-', left: '(', up: ')', right: '_' },
+    { center: '0', left: '~', up: '…', right: '@' },
+    { center: '.', left: ',', up: ';', right: '/' },
   ],
 ];
 
