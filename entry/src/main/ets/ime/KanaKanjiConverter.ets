@@ -30839,6 +30839,9 @@ export class KanaKanjiConverter {
     // bonus keeps 昼寝/靴下/本棚/半袖/長袖/初詣 intact.
     'ひるね','くつした','ほんだな','はんそで','ながそで','はつもうで',
     'はなみず','あしあと','ひので','おりもの','ほんもの',
+    // なにとぞ (何卒, formal "please/kindly"): a dictionary word, but the
+    // segmenter split it なに+と+ぞ (何とぞ) since と/ぞ are cheap particles.
+    'なにとぞ',
     // おかず (side dish) ends in ず, which is now a forced-kana FUNCTION_WORD
     // (the classical negative auxiliary, …ず) — without this bonus the
     // segmenter split it as おか+ず instead of keeping the whole word.
