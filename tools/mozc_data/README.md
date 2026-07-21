@@ -17,13 +17,15 @@ data carries.
 
 ```sh
 python3 tools/mozc_data/fetch_mozc.py            # downloads + caches raw mozc data (not committed)
-python3 tools/mozc_data/build_mozc_engine.py     # writes entry/src/main/resources/rawfile/mozc_*.json
+python3 tools/mozc_data/build_mozc_engine.py     # writes entry/src/main/resources/rawfile/mozc_*.json (intermediate, see below)
 python3 tools/mozc_data/fetch_jmdict.py          # downloads + caches raw JMdict.xml (not committed)
 python3 tools/mozc_data/build_jmdict_augment.py  # augments mozc_dict.json in place (run AFTER build_mozc_engine.py)
 python3 tools/mozc_data/fetch_sudachi.py         # downloads + caches SudachiDict lexicon CSVs (not committed)
 python3 tools/mozc_data/build_sudachi_augment.py # augments mozc_dict.json in place (run AFTER build_mozc_engine.py)
-node tools/mozc_data/compare_engines.js --misses          # custom vs mozc on corpus_test10.js
-node tools/mozc_data/compare_engines.js corpus_test9.js   # or any other tools/ime-eval/ corpus
+python3 tools/mozc_data/convert_to_binary.py     # flattens mozc_dict.json/mozc_costs.json into the shipped mozc_*.bin/*.json (see "On-device format" below)
+node tools/ime-eval/regress.js                             # confirm zero change to track A (custom)
+node tools/mozc_data/compare_engines.js --misses            # custom vs mozc on corpus_test10.js
+node tools/mozc_data/compare_engines.js corpus_test9.js     # or any other tools/ime-eval/ corpus
 ```
 
 Order matters: `build_mozc_engine.py` always regenerates `mozc_dict.json`
@@ -33,17 +35,36 @@ surfaces -- must run after it, every time. The two augmentation scripts
 can run in either order relative to each other. Re-running
 `build_mozc_engine.py` alone discards any previous JMdict/SudachiDict
 augmentation; re-run both augmentation scripts again afterward to restore
-it.
+it. `convert_to_binary.py` must run last, after both augmentation scripts,
+since it's what actually produces the files read on-device (see "On-device
+format" below) -- forgetting this step leaves the shipped rawfiles stale
+even though `mozc_dict.json`/`mozc_costs.json` were regenerated correctly.
 
 Each augmentation script skips with a note if its own fetch script's cache
 is absent.
 
 All three caches (`tools/mozc_data/cache/`, `cache_jmdict/`, `cache_sudachi/`
--- ~90MB + ~120MB + ~270MB) are gitignored; only the derived output
-(`entry/src/main/resources/rawfile/mozc_dict.json` / `mozc_costs.json` /
-`mozc_matrix.json`, ~120MB combined as of the "full spec" pruning removal
-below -- see "No class reduction" for why `mozc_matrix.json` alone is
-~36.5MB of that) is committed and shipped in the app.
+-- ~90MB + ~120MB + ~270MB) are gitignored; only the derived output is
+committed and shipped in the app.
+
+### On-device format
+
+`build_mozc_engine.py`/the augmentation scripts write their output as
+`entry/src/main/resources/rawfile/mozc_dict.json` / `mozc_costs.json` /
+`mozc_matrix.json` (JSON, easy to inspect/diff) -- but these are build
+**intermediates** only, gitignored (see
+`entry/src/main/resources/rawfile/.gitignore`) and
+never shipped in the app as of the OOM fix below. `convert_to_binary.py`
+reads them and writes the actual shipped files: `mozc_readings.json` /
+`mozc_dict_surfaces.json` / `mozc_dict_index.bin` / `mozc_costs_surfaces.json`
+/ `mozc_costs_index.bin` / `mozc_costs.bin` (plus `mozc_matrix.bin`, written
+directly by `build_mozc_engine.py` itself). These flattened files (~76MB
+combined) are what's committed and what `KeyboardController.ets`'s
+`loadMozcRawfiles` fetches on-device -- see `convert_to_binary.py`'s module
+docstring for why (JSON.parsing the un-flattened `Record<reading, ...>`
+JSON directly on-device peaked past the IME extension's memory budget and
+crashed it). `tools/mozc_data/load_mozc.js` is the Node-side equivalent
+loader, used by `compare_engines.js`/the eval harness.
 
 **"Full spec" mode**: `MAX_COST`/`MAX_CANDIDATES_PER_READING`/
 `MAX_SENSES_PER_READING` in `build_mozc_engine.py` were relaxed to mozc's
@@ -328,14 +349,33 @@ DP-eligible spans before and after augmentation. Only `lookup()`/
 — e.g. more kanji options when cycling candidates for a reading typed and
 converted on its own.
 
-Effect (full-spec base, see above): scanned 258,176 JMdict reading/kanji
-pairs, augmented 26,618 of the 745,964 readings already in `mozc_dict.json`
-(3.6%), adding 42,122 candidate surfaces total (mozc_dict.json: 35,436,895
-→ 35,932,327 bytes, +1.4%). Per-reading additions are capped (`MAX_NEW_PER_READING=12` new
-surfaces, `MAX_TOTAL_CANDIDATES=40` overall per reading) and ordered with
-JMdict's own priority-tagged (news1/ichi1/spec1/spec2/gai1) spellings
-first, since JMdict carries no cost/frequency number the way mozc's
-dictionary does.
+Effect (full-spec base, 2026-07-21 data, see below): scanned 258,285 JMdict
+reading/kanji pairs, augmented 28,690 of the 745,964 readings already in
+`mozc_dict.json` (3.8%), adding 45,014 candidate surfaces total
+(mozc_dict.json: 35,436,895 → 35,973,210 bytes, +1.5%). Per-reading
+additions are capped (`MAX_NEW_PER_READING=12` new surfaces,
+`MAX_TOTAL_CANDIDATES=40` overall per reading) and ordered with JMdict's own
+priority-tagged (news1/ichi1/spec1/spec2/gai1) spellings first, since
+JMdict carries no cost/frequency number the way mozc's dictionary does.
+
+**Katakana-reading normalization (2026-07 freshness pass)**: `mozc_dict.json`'s
+reading keys are, with a handful of iteration-mark exceptions, entirely
+hiragana (mozc's own dictionary is keyed by hiragana IME input, never
+katakana) — but about a third of JMdict's own `<reb>` reading elements are
+written in katakana (slang/emphasis forms like アカン, gairaigo-style
+readings like アソコ, etc.). `build_jmdict_augment.py` didn't normalize
+`<reb>` before checking it against `mozc_dict.json`, so it silently dropped
+every katakana-written reading before the "does this reading already exist"
+check even ran — measured at 33,971 of 258,285 (reading, kanji) pairs
+(13.2%) never getting a chance to match, e.g. アセビ→馬酔木, アソコ→彼処/
+彼所, アマゴ→甘子, アカン→明かん, アホンダラ→阿呆陀羅. Fixed by adding the
+same katakana→hiragana `kata_to_hira` helper `build_sudachi_augment.py`
+already uses for its own (katakana-only) reading field. Effect of the fix
+alone (isolated from the same-week JMdict data refresh above): +2,057
+readings augmented, +2,850 candidate surfaces, all still within the same
+safe-mode scope (no new reading keys, no DP/segmentation change — verified
+via `regress.js` and a full TRAIN+TEST1-10 `compare_engines.js` run showing
+0 strict-match change for both `mozc` and `hybrid`).
 
 ### SudachiDict vocabulary augmentation
 
@@ -374,11 +414,19 @@ are filtered to open-class content-word POS categories (名詞/動詞/形容詞/
 symbols/whitespace/particles/auxiliary-verb entries in the lexicon don't
 pollute candidate lists.
 
-Effect (full-spec base, see above): scanned 1,580,626 content-word lexicon
-rows (small + core tiers), augmented 78,145 of the 745,964 readings
-already in `mozc_dict.json` (10.5%), adding 177,421 candidate surfaces
-total (mozc_dict.json: 35,932,327 → 38,097,254 bytes, +6.0%). Same caps as
-the JMdict augmentation (`MAX_NEW_PER_READING=12`, `MAX_TOTAL_CANDIDATES=40`).
+Effect (full-spec base, 2026-07-21 data, run after the JMdict fix above):
+scanned 1,580,626 content-word lexicon rows (small + core tiers), augmented
+78,019 of the 745,964 readings already in `mozc_dict.json` (10.5%), adding
+177,201 candidate surfaces total (mozc_dict.json: 35,973,210 →
+38,135,419 bytes, +6.0%). Same caps as the JMdict augmentation
+(`MAX_NEW_PER_READING=12`, `MAX_TOTAL_CANDIDATES=40`) -- SudachiDict's own
+raw scan count and reading-key set are unaffected by the JMdict fix
+(SudachiDict's reading field was already hiragana-normalized), but its
+*augmented* count is very slightly lower than before (78,145 → 78,019)
+because more readings now already have their `MAX_TOTAL_CANDIDATES` room
+filled by JMdict's own newly-recovered candidates by the time this script
+runs -- combined coverage (JMdict ∪ SudachiDict) is strictly larger than
+before the fix.
 
 ## Do not hand-patch individual words/sentences here
 
@@ -391,6 +439,44 @@ unmodified-data second opinion, distinct from track A's approach). If a
 new failure class is found, look for the generic/structural cause first
 (as every fix documented here did) before reaching for a word-specific
 patch.
+
+### 2026-07 weakness survey (observed, not acted on)
+
+A pass over plain mozc's misses on TRAIN (`corpus.js`/`corpus2.js`/
+`corpus3.js`) surfaced a few recurring homophone-choice patterns, noted here
+for whoever picks this up next rather than hand-patched now (see the
+warning above -- none of these has an identified generic/POS-level cause
+yet, only the surface symptom):
+
+- **雨 context + ふる homophones**: mozc's Viterbi consistently prefers
+  振る/振った/振られて over 降る/降った/降られて whenever ふる follows 雨
+  (weather-verb sense), e.g. あめがふっている → 雨が振っている (gold: 雨が
+  降っている). Recurs across multiple independent sentences, so it's mozc's
+  raw cost ordering for this reading, not sentence-specific noise -- but no
+  POS-driven fix was identified (both senses are ordinary 動詞 with
+  otherwise-unremarkable classes; this isn't the proper-noun/numeral/
+  short-span pattern the existing penalties target).
+- **たほうがいい idiom**: 方 stays hiragana (ほう) in mozc's output inside
+  this construction (寝たほうがいい, 買ったほうがいい) where the corpus
+  gold consistently wants 方. Possibly a real ipadic-derived cost gap
+  specific to this reading+context rather than something the existing
+  short-span/proper-noun/numeral penalties touch.
+- **Small-count + counter-word combinations**: ふたつ (二つ) and ごにん
+  (五人) lose outright to unrelated kanji homophones (布達, 誤認) rather
+  than composing as numeral+counter the way `findMozcNumeralRuns`'s
+  existing pre-pass handles larger composed numbers (さんじゅっ→三十). The
+  existing numeral pre-pass appears scoped to multi-digit compositions, not
+  small numeral+counter pairs -- a possible extension, not attempted here
+  since it touches DP-time behavior (the exact area with three prior failed
+  rounds, see `applyHybridHintOverride`'s comment block in
+  `KanaKanjiConverter.ets`).
+
+None of these were pursued into an actual fix in this round: each would
+mean touching `segment()`'s DP-time behavior (cost tables or the runtime
+penalty mechanisms), the same territory the three prior hybrid-override
+attempts tried and never beat plain mozc with. Flagging the *pattern* here
+(not a per-sentence fix) so a future attempt has a documented starting
+point instead of re-discovering these from scratch.
 
 ## Considered, not yet done
 

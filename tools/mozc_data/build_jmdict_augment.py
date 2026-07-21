@@ -40,6 +40,22 @@ JMdict carries no cost/frequency number the way mozc's dictionary does.
 Entries with no k_ele at all (pure-kana words) are skipped: this script
 only ever adds KANJI candidates, never touches which reading keys exist.
 
+Reading normalization (katakana -> hiragana)
+---------------------------------------------
+mozc_dict.json's reading keys are (with a handful of iteration-mark
+exceptions) entirely hiragana -- mozc's own dictionary is keyed by the
+IME's hiragana input, never katakana. JMdict, however, writes a real
+reading element (<reb>) in katakana whenever the word is conventionally
+spelled that way (slang/emphasis forms like アカン, gairaigo-style
+readings like アソコ, etc.) -- about a third of JMdict's <reb> elements
+contain at least one katakana character. Left unconverted, none of those
+readings can ever match a mozc_dict key, silently dropping ~13% of the
+(reading, kanji) pairs this script would otherwise consider (measured:
+33,971 of 258,285) before the "already exists in mozc_dict" check even
+runs. build_sudachi_augment.py already normalizes its own katakana
+readings the same way (its lexicon's reading field is katakana-only) --
+this mirrors that with the same helper.
+
 Usage:
     python3 tools/mozc_data/build_jmdict_augment.py
 """
@@ -55,6 +71,11 @@ RAWFILE_DIR = os.path.join(ROOT, "entry/src/main/resources/rawfile")
 MOZC_DICT_PATH = os.path.join(RAWFILE_DIR, "mozc_dict.json")
 
 PRIORITY_TAGS = {"news1", "ichi1", "spec1", "spec2", "gai1"}
+
+
+def kata_to_hira(s: str) -> str:
+    return "".join(chr(ord(c) - 0x60) if "ァ" <= c <= "ヶ" else c for c in s)
+
 
 # Overall cap on candidates per reading after augmentation, so a reading
 # with an unusually large number of JMdict kanji variants (rare, but some
@@ -92,6 +113,7 @@ def iter_reading_to_kanji(path: str):
                 reb = r.findtext("reb")
                 if not reb:
                     continue
+                reb = kata_to_hira(reb)
                 restr = {e.text for e in r.findall("re_restr")}
                 applicable = [(keb, is_pri) for keb, is_pri in kebs
                               if not restr or keb in restr]
