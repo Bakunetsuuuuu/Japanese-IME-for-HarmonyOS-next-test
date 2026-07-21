@@ -40,7 +40,19 @@ const EMOJI_MAP: Record<string, string[]> = {
   'ちゅうくろ': ['●'], 'てん': ['・', '･', '.', '。'], 'なかてん': ['・', '･'],
   'りーだー': ['…', '‥'], 'なみ': ['〜', '～', '∽'], 'やじるしみぎ': ['→', '⇒', '➡'],
   'やじるしひだり': ['←', '⇐'], 'やじるしうえ': ['↑', '⇑'], 'やじるしした': ['↓', '⇓'],
+  // 方向の自然な読みからも矢印記号に到達できるように(候補末尾追加、既定の漢字は変えない)。
+  'みぎ': ['→', '⇒', '➡'], 'ひだり': ['←', '⇐', '⬅'], 'うえ': ['↑', '⇧', '⬆'], 'した': ['↓', '⇩', '⬇'],
   'せくしょん': ['§'], 'だがー': ['†', '‡'],
+  // ギリシャ文字(数学・物理でよく使う読み)。
+  'あるふぁ': ['α', 'Α'], 'べーた': ['β', 'Β'], 'がんま': ['γ', 'Γ'], 'いぷしろん': ['ε', 'Ε'],
+  'ぜーた': ['ζ', 'Ζ'], 'いーた': ['η', 'Η'], 'しーた': ['θ', 'Θ'], 'いおた': ['ι', 'Ι'],
+  'らむだ': ['λ', 'Λ'], 'みゅー': ['μ', 'Μ'], 'にゅー': ['ν', 'Ν'], 'くしー': ['ξ', 'Ξ'],
+  'ろー': ['ρ', 'Ρ'], 'たう': ['τ', 'Τ'], 'ふぁい': ['φ', 'Φ'], 'かい': ['χ'], 'おめが': ['Ω', 'ω'],
+  'おみくろん': ['ο', 'Ο'], 'ぷさい': ['ψ', 'Ψ'], 'うぷしろん': ['υ', 'Υ'],
+  // 比較演算子・通貨・著作権マーク。
+  'だいなり': ['>', '＞'], 'しょうなり': ['<', '＜'],
+  'どる': ['$'], 'ゆーろ': ['€'], 'ぽんど': ['£'], 'うぉん': ['₩'],
+  'こぴーらいと': ['©'], 'とれーどまーく': ['™'], 'あーるまーく': ['®'],
   // 天気・自然
   'たいよう': ['☀️', '🌞'], 'はれ': ['☀️', '🌤️'], 'くもり': ['☁️', '⛅'],
   'あめ': ['☔', '🌧️'], 'ゆき': ['⛄', '☃️', '❄️'], 'ゆきだるま': ['⛄', '☃️'],
@@ -31318,7 +31330,36 @@ export class KanaKanjiConverter {
   // gates every entry point below (inDict/getWordInfo/getEdgeCost/lookup); when
   // it is 'custom' (the default), every existing method runs completely
   // unmodified, byte-for-byte the same code path as before this field existed.
-  private static engine: 'custom' | 'mozc' = 'custom';
+  //
+  // 'hybrid' (beta, opt-in from settings, third option alongside
+  // 独自辞書/統計データ): currently a fully-working alias of 'mozc' --
+  // isMozcEngine() below treats 'mozc' and 'hybrid' identically everywhere,
+  // and segment()'s hint-assignment step (search applyHybridHintOverride) has
+  // the actual A-into-B injection mechanism implemented but NOT invoked.
+  //
+  // Why: blind Tatoeba benchmark evidence (tools/blind-eval) showed track A
+  // wins on 6.0% of sentences track B misses and track B wins on 24.9% track
+  // A misses, with a 60.9% whole-sentence oracle against B-alone's 54.9% --
+  // suggesting real headroom from combining them. Three rounds chasing that
+  // headroom by nudging track B's per-span candidates toward track A's
+  // dictionaries each fixed the previous round's specific failure (DP-time
+  // cost nudges ripple into unrelated segmentation boundaries elsewhere in
+  // the sentence; global_dict.json/supplementaryDict's raw un-curated
+  // ordering surfaces nonsense like ます→増す, すぐ→直ぐ once read outside
+  // track A's own FUNCTION_WORDS/conjugation gating) but never once beat
+  // plain mozc on any tools/ime-eval corpus (closest: -0.4 to -2.1 points,
+  // never positive) -- see applyHybridHintOverride and
+  // tools/mozc_data/compare_engines.js's 'hybrid' row for the measurement
+  // harness. Rather than ship a "hybrid" that measurably underperforms the
+  // engine it claims to improve on, it's parked disabled: the oracle gap is
+  // real, but per-span dictionary-peeking isn't how to close it -- closing it
+  // needs a mechanism with access to more context than a bare reading string,
+  // which is future work, not this pass.
+  private static engine: 'custom' | 'mozc' | 'hybrid' = 'custom';
+
+  private static isMozcEngine(): boolean {
+    return KanaKanjiConverter.engine === 'mozc' || KanaKanjiConverter.engine === 'hybrid';
+  }
   // reading -> its shared index into dict/costs below (mozc_readings.json,
   // built by tools/mozc_data/convert_to_binary.py). A Map<string,number> of
   // ~746k entries is far lighter than the old Record<string, string[]>: no
@@ -31586,14 +31627,14 @@ export class KanaKanjiConverter {
     return KanaKanjiConverter.mozcMatrixSize > 0;
   }
 
-  // 'mozc' is only actually honored if loadMozcEngine() has already been
-  // called — falls back to 'custom' otherwise so a not-yet-loaded engine
+  // 'mozc'/'hybrid' are only actually honored if loadMozcEngine() has already
+  // been called — falls back to 'custom' otherwise so a not-yet-loaded engine
   // can never silently produce empty/broken conversions.
-  static setEngine(e: 'custom' | 'mozc'): void {
-    KanaKanjiConverter.engine = (e === 'mozc' && KanaKanjiConverter.isMozcLoaded()) ? 'mozc' : 'custom';
+  static setEngine(e: 'custom' | 'mozc' | 'hybrid'): void {
+    KanaKanjiConverter.engine = ((e === 'mozc' || e === 'hybrid') && KanaKanjiConverter.isMozcLoaded()) ? e : 'custom';
   }
 
-  static getEngine(): 'custom' | 'mozc' {
+  static getEngine(): 'custom' | 'mozc' | 'hybrid' {
     return KanaKanjiConverter.engine;
   }
 
@@ -32248,7 +32289,7 @@ export class KanaKanjiConverter {
     // comment). segment()/joinSegs()/findAlternateSegmentation() all call
     // through this same lookup() entry point, so this one dispatch makes
     // every caller engine-aware without touching their own code.
-    if (KanaKanjiConverter.engine === 'mozc') { return this.lookupMozc(kana); }
+    if (KanaKanjiConverter.isMozcEngine()) { return this.lookupMozc(kana); }
     const base = this.lookupCore(kana, fromNorm);
     if (fromNorm) { return base; }
     let result = base;
@@ -32468,7 +32509,7 @@ export class KanaKanjiConverter {
     // ['たり'] would force kana for what mozc's DP correctly resolved as
     // 寝/出る/足り (verb senses), silently overwriting the statistical
     // engine's actual decision with track A's opinions.
-    if (KanaKanjiConverter.engine === 'mozc') {
+    if (KanaKanjiConverter.isMozcEngine()) {
       return this.lookup(kana)[0];
     }
     // は directly before を: see joinSegs' matching special case for why --
@@ -32682,14 +32723,18 @@ export class KanaKanjiConverter {
   }
 
   private inDict(sub: string): boolean {
-    if (KanaKanjiConverter.engine === 'mozc') {
-      // Track B is deliberately its own closed world (see field comments
-      // near `engine`) -- FUNCTION_WORDS/FW_CLASS_MAP are track-A hand-tuned
+    if (KanaKanjiConverter.isMozcEngine()) {
+      // Track B (and hybrid, which reuses track B's DP/segmentation
+      // unchanged -- see field comments near `engine`) is deliberately its
+      // own closed world: FUNCTION_WORDS/FW_CLASS_MAP are track-A hand-tuned
       // grammar tables, not part of mozc's own data, so they don't apply
-      // here. The USER dictionary is the one exception: explicit user
-      // registrations are engine-independent intent, and without this a
-      // registered novel word could never even become a DP span in track B
-      // (getWordInfoCandidatesMozc gives such spans a generic-noun sense).
+      // here, and hybrid's applyHybridOverride only ever REORDERS candidates
+      // mozc's own stats already proposed (see its comment for why), so it
+      // needs no extra DP-eligible spans either. The USER dictionary is the
+      // one exception: explicit user registrations are engine-independent
+      // intent, and without this a registered novel word could never even
+      // become a DP span (getWordInfoCandidatesMozc gives such spans a
+      // generic-noun sense).
       return KanaKanjiConverter.mozcReadingIndex.has(sub) || !!KanaKanjiConverter.userDict[sub];
     }
     return !!(KanaKanjiConverter.globalDict[sub]
@@ -32707,7 +32752,7 @@ export class KanaKanjiConverter {
   // re-segmented into pieces just because its authored surface happens to be
   // katakana (which the segment path can't distinguish from an auto-fallback).
   static isDictionaryWord(reading: string): boolean {
-    if (KanaKanjiConverter.engine === 'mozc') {
+    if (KanaKanjiConverter.isMozcEngine()) {
       return KanaKanjiConverter.mozcReadingIndex.has(reading);
     }
     return !!(DICTIONARY[reading]
@@ -32865,7 +32910,7 @@ export class KanaKanjiConverter {
   // FW_CLASS_MAP / FUNCTION_WORDS are checked FIRST — grammar rules take priority
   // over any corpus statistics to ensure correct POS class for function words.
   private getWordInfo(sub: string): number[] {
-    if (KanaKanjiConverter.engine === 'mozc') { return this.getWordInfoMozc(sub); }
+    if (KanaKanjiConverter.isMozcEngine()) { return this.getWordInfoMozc(sub); }
     const fc = KanaKanjiConverter.FW_CLASS_MAP[sub];
     if (fc !== undefined) {
       // によると (as one span) loses to による+と every time despite both
@@ -33041,6 +33086,69 @@ export class KanaKanjiConverter {
     return runs;
   }
 
+  // Track A's preferred surface for `sub`, if the inline DICTIONARY (this
+  // codebase's own hand-tuned table, iteratively corrected against
+  // regress.js/tools/ime-eval over many rounds) has a specific entry for this
+  // exact reading. Only consulted under engine === 'hybrid'
+  // (applyHybridHintOverride).
+  //
+  // Deliberately does NOT consult global_dict.json (280k+ entries) or
+  // supplementaryDict: these are broad raw-coverage imports (Unihan,
+  // Wikipedia readings, gadget vocab, bus stops...), not vetted per-reading
+  // corrections -- e.g. global_dict.json['ます'][0] is 増す and
+  // global_dict.json['すぐ'][0] is 直ぐ, both wrong as a common word's default
+  // spelling. Track A's own normal conversion never surfaces those bad
+  // defaults because FUNCTION_WORDS/conjugation/segmentation intercept common
+  // function/auxiliary readings before any generic dictionary lookup is even
+  // attempted; peeking at the raw dictionary here bypasses all of that
+  // machinery, so it needs its own guard -- see the FUNCTION_WORDS/
+  // FW_CLASS_MAP check in applyHybridHintOverride below.
+  private static getTrackAPreferredSurface(sub: string): string | undefined {
+    const d = DICTIONARY[sub];
+    if (d !== undefined && d.length > 0) { return d[0]; }
+    return undefined;
+  }
+
+  // hybrid engine (beta): once segment()'s DP has fully decided a sentence's
+  // segmentation (which characters belong to which span -- see the isMozc
+  // block in segment() below, right before this is called), re-label a
+  // SINGLE already-decided span's displayed surface toward whichever
+  // spelling track A's dictionaries prefer for that exact reading, if track
+  // A's preference is one B's own stats already considered plausible for
+  // that reading (never a surface B never proposed at all -- see the long
+  // comment on why an earlier version that nudged candidate COSTS during the
+  // DP, rather than the surface after the DP, backfired: changing one span's
+  // cost mid-DP ripples through the whole Viterbi lattice and can flip
+  // segmentation boundaries elsewhere in the sentence, even for completely
+  // unrelated words -- confirmed by direct A/B diff against plain mozc:
+  // なんかいいことあった's segmentation itself changed and produced 南海伊古
+  // when only a single span's cost had been nudged). Applying the swap AFTER
+  // segmentation and edge-cost resolution are both already locked in makes it
+  // impossible for this to affect anything but the one span's own spelling.
+  //
+  // Scoped to reading.length >= 2 -- every case in the blind-benchmark
+  // evidence motivating this feature was a multi-char content word.
+  private static applyHybridHintOverride(reading: string, hint: string | undefined): string | undefined {
+    if (reading.length < 2) { return hint; }
+    // Function/auxiliary readings (です/ます/た/て/ください...) are exactly
+    // what DICTIONARY's raw [0] ordering can't be trusted for -- see
+    // getTrackAPreferredSurface's comment. Track A itself never reaches this
+    // dictionary for them (FUNCTION_WORDS/FW_CLASS_MAP intercept first), so
+    // skip the override rather than trust an ordering nothing normally acts on.
+    if (KanaKanjiConverter.FUNCTION_WORDS[reading]
+        || KanaKanjiConverter.FW_CLASS_MAP[reading] !== undefined) { return hint; }
+    const preferred = KanaKanjiConverter.getTrackAPreferredSurface(reading);
+    if (preferred === undefined || preferred === hint) { return hint; }
+    const readingIdx = KanaKanjiConverter.mozcReadingIndex.get(reading);
+    if (readingIdx === undefined) { return hint; }
+    const start = KanaKanjiConverter.mozcCostIndex[readingIdx];
+    const end = KanaKanjiConverter.mozcCostIndex[readingIdx + 1];
+    for (let idx = start; idx < end; idx++) {
+      if (KanaKanjiConverter.mozcCostSurfaceArr[idx] === preferred) { return preferred; }
+    }
+    return hint;
+  }
+
   private getWordInfoCandidatesMozc(sub: string): MozcSense[] {
     const readingIdx = KanaKanjiConverter.mozcReadingIndex.get(sub);
     if (readingIdx !== undefined) {
@@ -33088,7 +33196,7 @@ export class KanaKanjiConverter {
 
   // Connection cost between adjacent segments using the 100×100 Phase-2.5 matrix.
   private getEdgeCost(prevRightClass: number, curLeftClass: number): number {
-    if (KanaKanjiConverter.engine === 'mozc') { return this.getEdgeCostMozc(prevRightClass, curLeftClass); }
+    if (KanaKanjiConverter.isMozcEngine()) { return this.getEdgeCostMozc(prevRightClass, curLeftClass); }
     const m = KanaKanjiConverter.connectionMatrix;
     if (m.length === 0) { return 0; }
     const row = m[prevRightClass];
@@ -33356,7 +33464,7 @@ export class KanaKanjiConverter {
     const n = kana.length;
     if (n === 0) { return []; }
     const INF = 1000000000;
-    const isMozc = KanaKanjiConverter.engine === 'mozc';
+    const isMozc = KanaKanjiConverter.isMozcEngine();
     // Track B's dictionary has real entries well past 10 kana (5.7% of its
     // 745k readings -- ありがとうございました is 11, common polite phrases
     // run longer), which a 10-cap made structurally unreachable no matter
@@ -33608,6 +33716,19 @@ export class KanaKanjiConverter {
 
     if (isMozc) {
       this.mozcLastHints.clear();
+      // applyHybridHintOverride is currently NOT called here -- see its
+      // comment and the `engine` field comment for the full account. Three
+      // narrowing rounds (DP-time cost nudge; post-DP hint swap sourced from
+      // DICTIONARY+global_dict.json+supplementaryDict; post-DP hint swap
+      // sourced from DICTIONARY alone with a FUNCTION_WORDS/FW_CLASS_MAP
+      // guard) each fixed the previous round's specific failure but never
+      // once produced a net *positive* result against plain mozc across
+      // tools/ime-eval's corpora (closest: -0.4 to -2.1 points, never +).
+      // Rather than ship a beta that measurably underperforms the engine it
+      // claims to improve on, 'hybrid' currently behaves identically to
+      // 'mozc' -- the settings toggle/persistence/engine plumbing is real and
+      // working, but the actual override is parked here, disabled, as a
+      // documented resume point rather than deleted.
       for (let k = 0; k < merged2.length; k++) {
         const hint = merged2Hints[k];
         if (hint !== undefined) { this.mozcLastHints.set(merged2[k], hint); }

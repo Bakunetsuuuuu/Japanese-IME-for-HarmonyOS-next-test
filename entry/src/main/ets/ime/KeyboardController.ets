@@ -165,6 +165,11 @@ export class InputHandler {
   private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
+  // Cap for the persistent deleted-character log (recordDeletedChar) --
+  // unlike restoreStack above (a short-lived undo stack wiped by the next
+  // keystroke, see insertText), this survives typing and is only capped by
+  // size. Powers the 取消 panel (DeleteHistoryView.ets / restoreDeletedChar).
+  private static readonly MAX_DELETED_CHAR_HISTORY = 100;
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
@@ -286,6 +291,7 @@ export class InputHandler {
         AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
         AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
+        AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
         this.applyConversionEngine(s.conversionEngine);
       });
   }
@@ -296,16 +302,17 @@ export class InputHandler {
   // repeatedly: loadMozcEngine() is a no-op cost-wise once already loaded
   // (isMozcLoaded() short-circuits), and setEngine('custom') is always cheap.
   private applyConversionEngine(engine: string): void {
-    if (engine !== 'mozc') {
+    if (engine !== 'mozc' && engine !== 'hybrid') {
       KanaKanjiConverter.setEngine('custom');
       return;
     }
+    const target: 'mozc' | 'hybrid' = engine === 'hybrid' ? 'hybrid' : 'mozc';
     if (KanaKanjiConverter.isMozcLoaded()) {
-      KanaKanjiConverter.setEngine('mozc');
+      KanaKanjiConverter.setEngine(target);
       return;
     }
     if (!this.imeContext) { return; }
-    this.loadMozcRawfiles(this.imeContext);
+    this.loadMozcRawfiles(this.imeContext, target);
   }
 
   // Fetch + parse the mozc rawfiles and hand them to the converter. Every
@@ -319,7 +326,7 @@ export class InputHandler {
   // resident) that coexisted with its own flattened output at the peak,
   // well over the extension's ~464MB heap budget. A catchable failure just
   // falls back to custom.
-  private loadMozcRawfiles(ctx: InputMethodExtensionContext): void {
+  private loadMozcRawfiles(ctx: InputMethodExtensionContext, target: 'mozc' | 'hybrid' = 'mozc'): void {
     const rm = ctx.resourceManager;
     const decoder = new util.TextDecoder('utf-8');
     // toU16Array: getRawFileContent's Uint8Array may sit at a non-even
@@ -359,8 +366,8 @@ export class InputHandler {
                       const cells = new Uint16Array(toBuf(binData, 0, binData.byteLength));
                       KanaKanjiConverter.loadMozcEngine(readings, dictSurfaces, dictIndex,
                         costsSurfaces, costsIndex, costsCost, costsLeft, costsRight, matrix, cells);
-                      KanaKanjiConverter.setEngine('mozc');
-                      console.info('shuntiIME mozc engine loaded');
+                      KanaKanjiConverter.setEngine(target);
+                      console.info('shuntiIME mozc engine loaded, engine =', target);
                     });
                   });
                 });
@@ -393,6 +400,21 @@ export class InputHandler {
     AppStorage.setOrCreate('keyboardLayout', layout);
     if (this.imeContext) {
       SettingsStore.saveKeyboardLayout(this.imeContext, layout);
+    }
+  }
+
+  // Same immediate-switch pattern as setOneHandedMode/setKeyboardLayout
+  // above. Toggling this off while the 数字パッド (numeric subMode) happens
+  // to be open would strand the user on a panel its own entry key no longer
+  // shows -- fall back to kana so the flick keyboard's left-column key and
+  // the panel actually on screen never disagree.
+  setNumericPadEnabled(enabled: boolean): void {
+    AppStorage.setOrCreate('numericPadEnabled', enabled);
+    if (!enabled && AppStorage.get<string>('keyboardSubMode') === 'numeric') {
+      AppStorage.setOrCreate('keyboardSubMode', 'kana');
+    }
+    if (this.imeContext) {
+      SettingsStore.saveNumericPadEnabled(this.imeContext, enabled);
     }
   }
 
@@ -531,7 +553,7 @@ export class InputHandler {
 
     if (state === InputState.IDLE) {
       const deleted = this.insertedBuffer.pop() ?? '';
-      if (deleted.length > 0) { this.restoreStack.push(deleted); }
+      if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
       this.inputClient?.deleteForward(1);
       return;
     }
@@ -567,6 +589,7 @@ export class InputHandler {
         const composing = AppStorage.get<string>('composingText') ?? '';
         if (composing.length > 0) {
           this.lastDeletedChar = composing.slice(-1);
+          this.recordDeletedChar(this.lastDeletedChar);
           AppStorage.setOrCreate('composingText', composing.slice(0, -1));
         }
       }
@@ -813,6 +836,39 @@ export class InputHandler {
 
   clearClipboardHistory(): void {
     AppStorage.setOrCreate('clipboardHistory', [] as string[]);
+  }
+
+  // Newest-first, capped-size log of individually deleted characters --
+  // called from both handleBackspace branches that know exactly which
+  // character just disappeared (IDLE's own-typed-char pop, COMPOSING's
+  // pre-commit slice). Deliberately never cleared by subsequent typing
+  // (unlike restoreStack, wiped on the next insertText) so it survives across
+  // a whole typing session -- see DeleteHistoryView.ets / the 取消 panel.
+  private recordDeletedChar(ch: string): void {
+    if (ch.length === 0) { return; }
+    const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
+    const next = [ch, ...history].slice(0, InputHandler.MAX_DELETED_CHAR_HISTORY);
+    AppStorage.setOrCreate('deletedCharHistory', next);
+  }
+
+  // Restore an arbitrary entry from the deleted-character log by its
+  // (newest-first) index. Left in the log afterward -- same
+  // non-consuming choice as pasteFromHistory above -- so the same character
+  // can be restored more than once if needed.
+  restoreDeletedChar(index: number): void {
+    const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
+    const ch = history[index];
+    if (ch === undefined || ch.length === 0) { return; }
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.IDLE) {
+      this.insertText(ch);
+    } else {
+      this.handleDirectKana(ch);
+    }
+  }
+
+  clearDeletedCharHistory(): void {
+    AppStorage.setOrCreate('deletedCharHistory', [] as string[]);
   }
 
   // Launches the main app (settings / user dictionary screen) from the

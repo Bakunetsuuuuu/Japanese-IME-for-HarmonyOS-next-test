@@ -26,6 +26,7 @@ export struct SettingsBar {
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
   @StorageLink('conversionEngine') conversionEngine: string = 'custom';
+  @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @State showHistory: boolean = false;
 
   private close(): void {
@@ -176,6 +177,35 @@ export struct SettingsBar {
 
       Divider().color(kbTheme(this.isDark).divider)
 
+      // Off by default -- see SettingsStore's numericPadEnabled comment. The
+      // flick keyboard's left-column key shows 数字パッド when this is on,
+      // 取消 (restore a recently deleted character) when it's off.
+      Row() {
+        Column({ space: 2 }) {
+          Text('数字パッド')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text('オフの間はその枠に「取消」ボタンが表示されます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.numericPadEnabled })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setNumericPadEnabled(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
       Row() {
         Text('片手モード')
           .fontFamily(JP_FONT_FAMILY)
@@ -238,9 +268,9 @@ export struct SettingsBar {
             .fontWeight(FontWeight.Medium)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.conversionEngine !== 'mozc' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.conversionEngine !== 'mozc' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.conversionEngine !== 'mozc' ? SELECTED_SHADOW : NO_SHADOW)
+            .backgroundColor(this.conversionEngine === 'custom' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.conversionEngine === 'custom' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.conversionEngine === 'custom' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setConversionEngine('custom'); })
 
           Text('統計データ')
@@ -260,15 +290,44 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 13, bottom: 4 })
+      // hybrid supersedes this 2-way choice entirely while active -- see the
+      // beta toggle below. Dimmed + non-interactive rather than hidden, so
+      // switching back off is discoverable (just turn the beta toggle off).
+      .opacity(this.conversionEngine === 'hybrid' ? 0.4 : 1)
+      .enabled(this.conversionEngine !== 'hybrid')
 
       Text(this.conversionEngine === 'mozc'
         ? '高性能だが比較的鈍重（推奨）'
-        : '軽量だが発展途上')
+        : this.conversionEngine === 'hybrid' ? '' : '軽量だが発展途上')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(11)
         .fontColor(kbTheme(this.isDark).textSecondary)
         .width('100%')
-        .padding({ bottom: 13 })
+        .padding({ bottom: this.conversionEngine === 'hybrid' ? 4 : 13 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Column({ space: 2 }) {
+          Text('ハイブリッド（β）')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(13)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text('独自辞書と統計データの融合を試験中。有効にすると上の選択は一時的に無効になります')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.conversionEngine === 'hybrid' })
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setConversionEngine(isOn ? 'hybrid' : 'custom');
+          })
+      }
+      .width('100%')
+      .padding({ top: 10, bottom: 13 })
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
