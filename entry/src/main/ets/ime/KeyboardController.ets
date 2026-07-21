@@ -980,18 +980,38 @@ export class InputHandler {
       'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next', 'GitHub');
   }
 
-  // Linked directly from the settings panel's 寄付 section (SettingsBar.ets)
-  // rather than only from the README as before -- a deliberate call after
-  // reviewing AppGallery's review guidelines (App Payment/Functions/Content/
-  // Ads sections): no rule found prohibiting a plain external donation link
-  // that doesn't gate any app feature, and HUAWEI IAP integration is stated
+  // Hands a URL to the main app to raise the system share sheet on (see
+  // EntryAbility's shareUrl param / Index.onPendingShareUrlChanged). Routed
+  // through EntryAbility exactly like openExternalUrl -- the share sheet needs
+  // a UIAbilityContext, which an input-method extension doesn't have.
+  shareUrl(url: string): boolean {
+    if (!this.imeContext) { return false; }
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+      parameters: { shareUrl: url },
+    };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME shareUrl error', JSON.stringify(err)));
+    return true;
+  }
+
+  // The donation links raise the system share sheet instead of opening an
+  // in-app browser: entering card details on a soft-keyboard IME is awkward
+  // and the current device may not have a payment method registered at all,
+  // so sharing the link (Huawei Share to another device, a messaging app, copy
+  // link, …) lets the user complete payment wherever it's convenient. Linked
+  // directly from the settings panel's 開発を応援 section (SettingsBar.ets) --
+  // a deliberate call after reviewing AppGallery's review guidelines (App
+  // Payment/Functions/Content/Ads): no rule found prohibiting a plain external
+  // donation link that doesn't gate any app feature, and HUAWEI IAP is stated
   // as recommended, not required.
   openBuyMeACoffeeLink(): boolean {
-    return this.openExternalUrl('https://buymeacoffee.com/shunti', 'Buy Me a Coffee');
+    return this.shareUrl('https://buymeacoffee.com/shunti');
   }
 
   openGithubSponsorsLink(): boolean {
-    return this.openExternalUrl('https://github.com/sponsors/shuntilettuce', 'GitHub Sponsors');
+    return this.shareUrl('https://github.com/sponsors/shuntilettuce');
   }
 
   private updateCandidates(): void {

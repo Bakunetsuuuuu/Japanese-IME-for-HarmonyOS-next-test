@@ -5,6 +5,8 @@ import { AppMaintenance } from '../ime/AppMaintenance';
 import { router, promptAction } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
+import { systemShare } from '@kit.ShareKit';
+import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { JP_FONT_FAMILY } from '../components/JpFont';
 import { kbTheme } from '../components/Theme';
 
@@ -62,6 +64,12 @@ struct Index {
   @StorageLink('pendingWebViewUrl') @Watch('onPendingWebViewUrlChanged') pendingWebViewUrl: string = '';
   @StorageLink('pendingWebViewTitle') pendingWebViewTitle: string = '';
 
+  // Set by EntryAbility when the keyboard's 開発を応援 section asks to share a
+  // donation URL (KeyboardController.shareUrl). Raises the system share sheet
+  // so the link can be forwarded to a device that has a payment method
+  // registered, instead of opening a card form in the in-app browser.
+  @StorageLink('pendingShareUrl') @Watch('onPendingShareUrlChanged') pendingShareUrl: string = '';
+
   // Hidden access to the developer dictionary: 7 quick taps on the title.
   private titleTapCount: number = 0;
   private titleTapLast: number = 0;
@@ -74,10 +82,26 @@ struct Index {
     router.pushUrl({ url: 'pages/WebViewPage', params: { url, title } });
   }
 
+  private onPendingShareUrlChanged(): void {
+    if (this.pendingShareUrl.length === 0) { return; }
+    const url = this.pendingShareUrl;
+    AppStorage.setOrCreate('pendingShareUrl', '');
+    const data: systemShare.SharedData = new systemShare.SharedData({
+      utd: utd.UniformDataType.HYPERLINK,
+      content: url,
+    });
+    const controller: systemShare.ShareController = new systemShare.ShareController(data);
+    controller.show(getContext(this) as common.UIAbilityContext, {
+      selectionMode: systemShare.SelectionMode.SINGLE,
+      previewMode: systemShare.SharePreviewMode.DETAIL,
+    }).catch((err: Error) => console.error('shuntiIME share failed', JSON.stringify(err)));
+  }
+
   aboutToAppear(): void {
     this.reload();
     this.checkConsent();
     this.onPendingWebViewUrlChanged();
+    this.onPendingShareUrlChanged();
   }
 
   // Refresh the list when coming back from DictionaryEditPage (add/edit/
