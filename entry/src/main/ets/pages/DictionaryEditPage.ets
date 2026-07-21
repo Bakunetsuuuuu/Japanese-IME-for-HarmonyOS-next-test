@@ -191,11 +191,15 @@ struct DictionaryEditPage {
             .fontSize(14)
             .fontWeight(FontWeight.Bold)
             .fontColor(kbTheme(this.isDark).accent)
-            .opacity(this.canSave ? 1 : 0.4)
-            // saveEntry() already re-validates yomi/word itself and shows a
-            // toast on failure -- always call it (don't gate on canSave here)
-            // so a tap always gives feedback even if canSave's opacity hint
-            // is stale relative to the actual field contents.
+            // Always shown at full opacity now -- canSave (derived from
+            // editWord/editYomi, which text: $$this.editWord keeps correctly
+            // in sync even for IME-inserted text) stopped reliably re-
+            // triggering this opacity binding's re-render, leaving the
+            // button looking permanently disabled even though a tap did
+            // work (confirmed: tapping saved successfully despite the dim
+            // look). saveEntry() already re-validates yomi/word itself and
+            // shows a toast on failure, so gating the visual on canSave added
+            // a misleading "disabled" appearance without adding real safety.
             .onClick(() => { this.saveEntry(); })
         }
         .width(56)
