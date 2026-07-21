@@ -25370,6 +25370,19 @@ const DICTIONARY: Record<string, string[]> = {
   'こうにゅうれぽ': ['購入レポ'],
   'れびゅーき': ['レビュー機'],
   'じっそくち': ['実測値'],
+  // したくない (don't want to do [it], from する) wasn't reachable as a DP
+  // span at all -- unlike たべたくない/いきたくない/みたくない/etc, which
+  // all segment and convert fine on their own (their stems are 2+ chars and
+  // unambiguous), し alone is such a heavily overloaded single-mora reading
+  // that the segmenter split it off and independently resolved the
+  // remaining たくない to its own homophone 宅内, producing garbage like
+  // し宅内 for なにもしたくない.
+  'したくない': ['したくない'],
+  // めんどくさすぎ (too much of a hassle): めんどくさい itself has a direct
+  // dict.json/DICTIONARY entry, but the ~すぎ (too much) suffix wasn't
+  // itself a recognized span, so it lost the lattice contest and got
+  // fragmented into めん+どくさ+すぎ (nonsense, 麺+毒さ+過ぎ-shaped).
+  'めんどくさすぎ': ['めんどくさすぎ'],
 };
 
 // track A (engine='custom') POS/conjugation layer, Phase 1: whole-word
@@ -31325,7 +31338,12 @@ export class KanaKanjiConverter {
     // to stop it from wrongly demoting genuine katakana loanwords that also
     // list their bare reading as a fallback candidate (バター, リスク…) — see
     // isReduplicated. わろた doesn't fit that shape, so it needs its own entry.
-    'わろた':'わろた'};
+    'わろた':'わろた',
+    // しんど(すぎ/い) -- casual adjective stem for "tough/exhausting",
+    // collided with 震度 (seismic intensity), which lookup() otherwise
+    // ranks first. しんどい itself already defaults to kana correctly; only
+    // the bare stem (used before すぎる/すぎて) needed the same override.
+    'しんど':'しんど'};
   private static supplementaryDict: Record<string, string[]> = {};
   private static learned: Record<string, Record<string, number>> = {};
   private static userDict: Record<string, string[]> = {};
@@ -33025,7 +33043,7 @@ export class KanaKanjiConverter {
         sub === 'とばなかった' || sub === 'くもが' || sub === 'はいきした' ||
         sub === 'みとおしを' || sub === 'かわを' || sub === 'そこを' ||
         sub === 'たばねてとめた' || sub === 'かわいて' || sub === 'ごにん' ||
-        sub === 'ごほん') {
+        sub === 'ごほん' || sub === 'したくない' || sub === 'めんどくさすぎ') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
