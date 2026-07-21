@@ -405,9 +405,9 @@ export class InputHandler {
 
   // Same immediate-switch pattern as setOneHandedMode/setKeyboardLayout
   // above. Toggling this off while the 数字パッド (numeric subMode) happens
-  // to be open would strand the user on a panel its own entry key no longer
-  // shows -- fall back to kana so the flick keyboard's left-column key and
-  // the panel actually on screen never disagree.
+  // to be open would strand the user on a panel cycleInputMode's あA key can
+  // no longer reach -- fall back to kana so the setting and the panel
+  // actually on screen never disagree.
   setNumericPadEnabled(enabled: boolean): void {
     AppStorage.setOrCreate('numericPadEnabled', enabled);
     if (!enabled && AppStorage.get<string>('keyboardSubMode') === 'numeric') {
@@ -416,6 +416,24 @@ export class InputHandler {
     if (this.imeContext) {
       SettingsStore.saveNumericPadEnabled(this.imeContext, enabled);
     }
+  }
+
+  // Shared "あA"/"Aあ" mode-switch key handler for both FlickKeyboardView and
+  // KeyboardView. With 数字パッド enabled this cycles 日本語→アルファベット→数字→
+  // (back to 日本語 via NumericPadView's exit key); with it disabled the key
+  // only toggles 日本語⇔アルファベット, matching the pre-numeric-pad behavior.
+  cycleInputMode(): void {
+    const inputMode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
+    const numericPadEnabled = AppStorage.get<boolean>('numericPadEnabled') ?? false;
+    if (inputMode === InputMode.ALPHANUMERIC) {
+      if (numericPadEnabled) {
+        AppStorage.setOrCreate('keyboardSubMode', 'numeric');
+      } else {
+        AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
+      }
+      return;
+    }
+    AppStorage.setOrCreate('inputMode', InputMode.ALPHANUMERIC);
   }
 
   // Same immediate-switch pattern as setKeyboardLayout above. applyConversionEngine

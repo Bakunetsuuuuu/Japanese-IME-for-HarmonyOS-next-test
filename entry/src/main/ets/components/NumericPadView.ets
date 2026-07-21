@@ -1,4 +1,4 @@
-import { InputHandler, InputState } from '../ime/KeyboardController';
+import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
 import { JP_FONT_FAMILY } from './JpFont';
 
@@ -241,7 +241,13 @@ export struct NumericPadView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'kana'); })
+        .onClick(() => {
+          // 数字パッドへは「あA」キーの日本語→アルファベット→数字サイクルからのみ入る
+          // ため、抜けるときは常に日本語(ひらがな)へ戻す — 入る前のinputModeが何であれ
+          // ループが一貫した状態に着地するようにする。
+          AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
+          AppStorage.setOrCreate('keyboardSubMode', 'kana');
+        })
     } else if (rowIdx === 1) {
       Text('◄')
         .fontFamily(JP_FONT_FAMILY)

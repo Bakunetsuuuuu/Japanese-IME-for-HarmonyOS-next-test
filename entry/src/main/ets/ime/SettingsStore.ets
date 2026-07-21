@@ -13,11 +13,10 @@ export interface KeyboardSettings {
   // 'mozc' = optional statistical engine derived from mozc (see
   // KanaKanjiConverter.loadMozcEngine / THIRD_PARTY_NOTICES.md).
   conversionEngine: string;
-  // Whether the flick keyboard's left-column key opens the numeric pad
-  // ('123') or the 取消 (deleted-character restore) panel instead -- see
-  // FlickKeyboardView.ets's LeftKey. Off by default: most users reach digits
-  // fine from QWERTY/the number row, so the numeric pad's key slot defaults
-  // to the more broadly useful 取消 panel instead.
+  // Whether the "あA"/"Aあ" mode-switch key cycles 日本語→アルファベット→数字
+  // (numeric pad) or just 日本語⇔アルファベット -- see InputHandler.cycleInputMode
+  // and KeyboardView.ets/FlickKeyboardView.ets's ModeKey/LeftKey. Off by
+  // default: most users reach digits fine from QWERTY/the number row.
   numericPadEnabled: boolean;
 }
 

@@ -4,9 +4,10 @@ import { JP_FONT_FAMILY } from './JpFont';
 
 const CARD_RADIUS = 16;
 
-// 取消 panel: reached from the flick keyboard's left-column key when the
-// numeric pad is disabled in settings (see FlickKeyboardView.ets's LeftKey
-// and SettingsBar's 数字パッド toggle). Lists every individually deleted
+// 取消 panel: always reachable from the flick keyboard's left-column key
+// (see FlickKeyboardView.ets's LeftKey; the 数字パッド setting in SettingsBar
+// instead controls whether the あA key cycles through to the numeric pad).
+// Lists every individually deleted
 // character InputHandler.recordDeletedChar has logged (up to 100, newest
 // first -- see KeyboardController.ets), as a tap-to-restore chip grid rather
 // than one-row-per-character list rows, since a single glyph doesn't need a
