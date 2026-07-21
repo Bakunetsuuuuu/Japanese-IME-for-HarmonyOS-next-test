@@ -22,10 +22,7 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const SRC = path.join(ROOT, 'entry/src/main/ets/ime/KanaKanjiConverter.ets');
 const DICT = path.join(ROOT, 'entry/src/main/resources/rawfile/dict.json');
 const GDICT = path.join(ROOT, 'entry/src/main/resources/rawfile/global_dict.json');
-const MOZC_DICT = path.join(ROOT, 'entry/src/main/resources/rawfile/mozc_dict.json');
-const MOZC_COSTS = path.join(ROOT, 'entry/src/main/resources/rawfile/mozc_costs.json');
-const MOZC_MATRIX = path.join(ROOT, 'entry/src/main/resources/rawfile/mozc_matrix.json');
-const MOZC_MATRIX_BIN = path.join(ROOT, 'entry/src/main/resources/rawfile/mozc_matrix.bin');
+const { loadMozcArgs } = require('./load_mozc');
 
 function build() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cmpeng-'));
@@ -42,16 +39,10 @@ function main() {
   KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(DICT, 'utf-8')));
   KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(GDICT, 'utf-8')));
   KanaKanjiConverter.initConnectionMatrix();
-  // Connection matrix ships as a flat uint16 binary (mozc_matrix.bin) plus a
-  // small header JSON; read the bytes into a Uint16Array (fresh 2-byte-aligned
-  // buffer) to match loadMozcEngine's new signature.
-  const mbin = fs.readFileSync(MOZC_MATRIX_BIN);
-  const mcells = new Uint16Array(mbin.buffer.slice(mbin.byteOffset, mbin.byteOffset + mbin.byteLength));
-  KanaKanjiConverter.loadMozcEngine(
-    JSON.parse(fs.readFileSync(MOZC_DICT, 'utf-8')),
-    JSON.parse(fs.readFileSync(MOZC_COSTS, 'utf-8')),
-    JSON.parse(fs.readFileSync(MOZC_MATRIX, 'utf-8')),
-    mcells);
+  // Every per-reading mozc structure ships pre-flattened at build time (see
+  // tools/mozc_data/convert_to_binary.py); loadMozcArgs (load_mozc.js) reads
+  // the files and returns them in loadMozcEngine's argument order.
+  KanaKanjiConverter.loadMozcEngine(...loadMozcArgs());
   const conv = new KanaKanjiConverter();
 
   const convert = (reading) => {
@@ -83,13 +74,15 @@ function main() {
 
   const custom = run('custom');
   const mozc = run('mozc');
+  const hybrid = run('hybrid');
   const n = corpus.length;
   console.log(`[custom] strict ${custom.strict}/${n} (${(100 * custom.strict / n).toFixed(1)}%)`);
   console.log(`[mozc]   strict ${mozc.strict}/${n} (${(100 * mozc.strict / n).toFixed(1)}%)`);
+  console.log(`[hybrid] strict ${hybrid.strict}/${n} (${(100 * hybrid.strict / n).toFixed(1)}%)`);
 
   if (showMisses) {
-    console.log('\n--- mozc misses ---');
-    for (const [r, g, got] of mozc.misses) {
+    console.log('\n--- hybrid misses ---');
+    for (const [r, g, got] of hybrid.misses) {
       console.log(`${r}\n  gold: ${g}\n  got : ${got}`);
     }
   }
