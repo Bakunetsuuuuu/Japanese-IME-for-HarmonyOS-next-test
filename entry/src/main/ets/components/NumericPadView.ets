@@ -265,12 +265,12 @@ export struct NumericPadView {
         .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'symbol'); })
     } else {
       // '+' は5キーの左フリックで既に入力できるため、この枠は日本語入力に戻る
-      // 「あ」キーに差し替える(数字パッドへは「あA」キーのサイクルからのみ入る
+      // 「あA」キーに差し替える(数字パッドへは「あA」キーのサイクルからのみ入る
       // ため、抜けるときは常に日本語(ひらがな)へ戻す -- 入る前のinputModeが何で
       // あってもループが一貫した状態に着地するようにする)。
-      Text('あ')
+      Text('あA')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
+        .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
