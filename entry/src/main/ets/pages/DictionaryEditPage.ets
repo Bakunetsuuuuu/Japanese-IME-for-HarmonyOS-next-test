@@ -192,7 +192,11 @@ struct DictionaryEditPage {
             .fontWeight(FontWeight.Bold)
             .fontColor(kbTheme(this.isDark).accent)
             .opacity(this.canSave ? 1 : 0.4)
-            .onClick(() => { if (this.canSave) { this.saveEntry(); } })
+            // saveEntry() already re-validates yomi/word itself and shows a
+            // toast on failure -- always call it (don't gate on canSave here)
+            // so a tap always gives feedback even if canSave's opacity hint
+            // is stale relative to the actual field contents.
+            .onClick(() => { this.saveEntry(); })
         }
         .width(56)
         .justifyContent(FlexAlign.End)
