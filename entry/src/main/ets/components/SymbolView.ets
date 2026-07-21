@@ -136,6 +136,13 @@ export struct SymbolView {
 
   private h(): InputHandler { return InputHandler.getInstance(); }
 
+  // Snapshot the 🕐 "recent" tab ordering once, when the panel opens -- so it
+  // stays stable while the user taps within it (recordSymbolUse no longer
+  // re-sorts live). Re-runs each time the panel is reopened.
+  aboutToAppear(): void {
+    this.h().refreshFrequentSymbols();
+  }
+
   private insert(sym: string): void {
     this.h().commitTopCandidate();
     this.h().insertText(sym);

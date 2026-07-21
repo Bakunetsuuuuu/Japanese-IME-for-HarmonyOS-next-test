@@ -186,7 +186,7 @@ export class InputHandler {
   // Cap for the persistent deleted-character log (recordDeletedChar) --
   // unlike restoreStack above (a short-lived undo stack wiped by the next
   // keystroke, see insertText), this survives typing and is only capped by
-  // size. Powers the 取消 panel (DeleteHistoryView.ets / restoreDeletedChar).
+  // size. Powers the 取消 key's sequential undo (undoLastDeletion).
   private static readonly MAX_DELETED_CHAR_HISTORY = 100;
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
@@ -241,7 +241,12 @@ export class InputHandler {
   // guess at common punctuation.
   recordSymbolUse(sym: string): void {
     InputHandler.symbolFreq[sym] = (InputHandler.symbolFreq[sym] ?? 0) + 1;
-    InputHandler.publishFrequentSymbols();
+    // Deliberately does NOT republish the "recent" ordering here: doing so on
+    // every tap re-sorted the 🕐 tab in real time, so a key slid out from
+    // under the user's finger as they used it. The visible order is snapshotted
+    // when the symbol panel opens instead (SymbolView.aboutToAppear →
+    // refreshFrequentSymbols), so positions stay put during a tapping session
+    // and only settle into their new frequency order the next time it opens.
     clearTimeout(this.symbolSaveTimer);
     this.symbolSaveTimer = setTimeout(() => {
       const prefs = this.symbolPrefs;
@@ -250,6 +255,13 @@ export class InputHandler {
         .then(() => prefs.flush())
         .catch((_e: Error) => {});
     }, 2000);
+  }
+
+  // Re-sort the "recent" symbol tab by current tap frequency. Called on
+  // symbol-panel open (not per tap) so the ordering the user sees is stable
+  // while they tap within it -- see recordSymbolUse.
+  refreshFrequentSymbols(): void {
+    InputHandler.publishFrequentSymbols();
   }
 
   private static publishFrequentSymbols(): void {
@@ -900,7 +912,8 @@ export class InputHandler {
   // character just disappeared (IDLE's own-typed-char pop, COMPOSING's
   // pre-commit slice). Deliberately never cleared by subsequent typing
   // (unlike restoreStack, wiped on the next insertText) so it survives across
-  // a whole typing session -- see DeleteHistoryView.ets / the 取消 panel.
+  // a whole typing session -- consumed newest-first by the 取消 key's
+  // sequential undo (undoLastDeletion).
   private recordDeletedChar(ch: string): void {
     if (ch.length === 0) { return; }
     const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
@@ -908,24 +921,25 @@ export class InputHandler {
     AppStorage.setOrCreate('deletedCharHistory', next);
   }
 
-  // Restore an arbitrary entry from the deleted-character log by its
-  // (newest-first) index. Left in the log afterward -- same
-  // non-consuming choice as pasteFromHistory above -- so the same character
-  // can be restored more than once if needed.
-  restoreDeletedChar(index: number): void {
+  // Restore the most recently deleted character (or whole composing chunk),
+  // consuming it from the log. Pressing 取消 N times right after deleting too
+  // much brings back the last N deleted characters in order, as if they were
+  // never deleted -- a simple sequential undo of over-deletion, not a
+  // pick-any-past-character panel. handleBackspace pushes newest-first, so
+  // history[0] is always the last thing removed; restoring and popping it in
+  // turn replays the deletions in reverse, reconstructing the original text.
+  undoLastDeletion(): void {
     const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
-    const ch = history[index];
-    if (ch === undefined || ch.length === 0) { return; }
+    if (history.length === 0) { return; }
+    const ch = history[0];
+    AppStorage.setOrCreate('deletedCharHistory', history.slice(1));
+    if (ch.length === 0) { return; }
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.IDLE) {
       this.insertText(ch);
     } else {
       this.handleDirectKana(ch);
     }
-  }
-
-  clearDeletedCharHistory(): void {
-    AppStorage.setOrCreate('deletedCharHistory', [] as string[]);
   }
 
   // Launches the main app (settings / user dictionary screen) from the
