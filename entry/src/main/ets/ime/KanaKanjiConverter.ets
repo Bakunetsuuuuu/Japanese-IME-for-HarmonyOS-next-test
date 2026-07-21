@@ -30705,6 +30705,12 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'うけとり|いった': '行った',
   'しょうめいしゃしん|とった': '撮った',
   'やさい|かっている': '買っている',
+  // 風邪をひく (catch a cold): ひく-family conventionally stays kana even
+  // once かぜ itself is corrected to 風邪 by the idx+1 lookahead below (かぜ
+  // alone defaults to 風, and ひく alone defaults to 引く "to pull/draw" --
+  // neither is wrong on its own, but 風邪+を+引く isn't idiomatic Japanese).
+  'かぜ|ひい': 'ひい', 'かぜ|ひく': 'ひく', 'かぜ|ひき': 'ひき',
+  'かぜ|ひか': 'ひか', 'かぜ|ひこ': 'ひこ',
 };
 
 // Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
@@ -31885,6 +31891,16 @@ export class KanaKanjiConverter {
         // FUNCTION_WORDS['は']=true short-circuit above, which otherwise
         // always keeps a bare は in kana regardless of context.
         if (seg === 'は' && next === 'を') { best = '歯'; }
+        // かぜ directly before を+ひく-family (風邪をひいた/ひく/ひきそう/
+        // ひかない/ひこう) is always the illness 風邪, never the literal 風
+        // (wind) that lookup('かぜ') ranks first alone -- 風をひく isn't
+        // idiomatic Japanese. The ひく-family verb itself is separately kept
+        // in kana by the かぜ|ひい.../COLLOCATION_HINTS entries below, since
+        // this idiom conventionally writes it that way even once かぜ itself
+        // is kanji.
+        if (seg === 'かぜ' && next === 'を' && idx + 2 < segs.length && /^ひ[いくきかこ]/.test(segs[idx + 2])) {
+          best = '風邪';
+        }
       }
       // Noun+particle→verb collocation (COLLOCATION_HINTS): 「〜を<noun>を
       // <verb>」within the same phrase picks the verb kanji that noun
@@ -33678,11 +33694,34 @@ export class KanaKanjiConverter {
     // e.g. ["い","っしょ"] → ["いっしょ"]
     // A merged segment no longer corresponds to any single sense the DP
     // picked, so its hint (if any) is dropped rather than carried along.
+    //
+    // Exception: a 2+-char segment starting with ん is never merged.
+    // Restricted to ん specifically (not the rest of isNoStarter's set,
+    // っ/ゃ/ゅ/ょ/ぁ/ぃ/ぅ/ぇ/ぉ/ゎ/ー) -- unlike ん, several of those double as
+    // genuine verb-conjugation glue (って directly after a bare verb stem
+    // with no particle is the て-form ending, e.g. くも+って=曇って, and
+    // belongs merged onto the stem -- exempting FUNCTION_WORDS members here
+    // once regressed exactly that, そら+が+くも+って+きた -> 空が雲ってきた
+    // instead of 曇ってきた, since って's own FUNCTION_WORDS entry covers its
+    // *other*, quotative/topic role "Xっていう"). ん, by contrast, can never
+    // start a native Japanese word or conjugation ending at all -- every
+    // 2+-char segment here already passed segment()'s own inDict() gate to
+    // exist at all (a len==1 span is the only kind that's DP-eligible
+    // without a dictionary hit), so a 2+-char ん-starting segment is always
+    // some recognized colloquial contraction (んだ/んです/んだろう/
+    // んじゃない/んだよね/..., whichever dictionary source recognizes it --
+    // not just the hand-picked FUNCTION_WORDS entries), never a stray
+    // Viterbi split the way a lone ん character can be. Merging it into the
+    // preceding content word instead swallowed the whole rest of the
+    // sentence into one "not really in any dict" span, defeating that
+    // word's own kanji conversion (わからないんだ, ねむれないんだよね, ...
+    // all echoed back in bare kana until this carve-out).
     const merged: string[] = [];
     const mergedHints: (string | undefined)[] = [];
     for (let k = 0; k < segs.length; k++) {
       const seg = segs[k];
-      if (merged.length > 0 && KanaKanjiConverter.isNoStarter(seg[0])) {
+      const isProtectedNContraction = seg[0] === 'ん' && seg.length > 1;
+      if (merged.length > 0 && KanaKanjiConverter.isNoStarter(seg[0]) && !isProtectedNContraction) {
         merged[merged.length - 1] += seg;
         mergedHints[mergedHints.length - 1] = undefined;
       } else {
