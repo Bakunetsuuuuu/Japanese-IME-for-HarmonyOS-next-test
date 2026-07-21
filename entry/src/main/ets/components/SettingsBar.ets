@@ -178,15 +178,16 @@ export struct SettingsBar {
       Divider().color(kbTheme(this.isDark).divider)
 
       // Off by default -- see SettingsStore's numericPadEnabled comment. The
-      // flick keyboard's left-column key shows 数字パッド when this is on,
-      // 取消 (restore a recently deleted character) when it's off.
+      // 「あA」キーは常に日本語⇔アルファベットを切り替えるが、これがオンだと
+      // アルファベット状態からもう一度押すことで数字パッドまで進むようになる
+      // (InputHandler.cycleInputMode参照)。取消キーは常時表示のため文言不要。
       Row() {
         Column({ space: 2 }) {
           Text('数字パッド')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('オフの間はその枠に「取消」ボタンが表示されます')
+          Text('オンにすると「あA」キーで日本語→アルファベット→数字と切り替わります')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
