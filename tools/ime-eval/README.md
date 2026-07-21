@@ -15,17 +15,17 @@ labeled corpus of natural Japanese `[reading, goldSurface]` pairs.
 ```sh
 node tools/ime-eval/run.js            # TRAIN summary accuracy
 node tools/ime-eval/run.js --misses   # also print every miss (gold vs got)
-node tools/ime-eval/run_test.js           # held-out TEST summary accuracy (rounds 1-9, see below)
+node tools/ime-eval/run_test.js           # held-out TEST summary accuracy (rounds 1-11, see below)
 node tools/ime-eval/run_test.js --misses  # also print every miss
 node tools/ime-eval/run_vocab.js           # bare single-word dictionary coverage check
 node tools/ime-eval/run_vocab.js --misses  # also print every miss
-node tools/ime-eval/run_all.js        # one build, every corpus (TRAIN/TEST1-10/VOCAB1-3) -- fastest way to get a full picture
+node tools/ime-eval/run_all.js        # one build, every corpus (TRAIN/TEST1-11/VOCAB1-3) -- fastest way to get a full picture
 node tools/ime-eval/sweep.js          # 4000-key dict-sampling old(HEAD)-vs-new(working tree) kanji-loss check
 node tools/ime-eval/sweep_join.js     # same, but sampling concatenated dict-key PAIRS -- see "Regression tooling" below
 node tools/ime-eval/regress.js        # classifies every corpus row that changed into FIXED/REGRESSED/CHANGED_STILL_WRONG
 ```
 
-Requires a local `typescript` (`npx tsc`). `run_test2.js` … `run_test9.js` and
+Requires a local `typescript` (`npx tsc`). `run_test2.js` … `run_test11.js` and
 `run_vocab2.js`/`run_vocab3.js` follow the same naming pattern as `run_test.js`/
 `run_vocab.js` for the later rounds.
 
@@ -82,7 +82,7 @@ still a blind measurement is not.
 
 - `corpus.js` / `corpus2.js` / `corpus3.js` / `accept.js` — the TRAIN set (see
   above).
-- `corpus_test.js` … `corpus_test9.js` (with matching `accept_test*.js`) —
+- `corpus_test.js` … `corpus_test11.js` (with matching `accept_test*.js`) —
   successive held-out TEST rounds, each authored/sourced fresh and measured
   once before any fix targeted it. Treat all of them as "spent" (no longer
   blind) once a fix round has run against them; write a new one for the next
@@ -101,6 +101,25 @@ still a blind measurement is not.
   for what that is and its known quality limitations) side by side with the
   default hand-built dictionary on the same sentences. Not a regression gate
   the way TEST1-9 are against track A — track B isn't expected to match it.
+- `corpus_test11.js` — authored fresh after a fix round covering かぜ/風邪
+  collocation, the ん-starting function-word segment-merge bug, and the new
+  `findBoundaryDetourAlternate` N-best segmentation path. Deliberately
+  ordinary natural-Japanese sentences across mixed registers, not built
+  around any of that round's specific fixes, so the first-measurement number
+  (59.5%) was honest; investigating its misses directly (not deferred to a
+  later round, since none of them had been looked at before writing fixes)
+  surfaced several further real bugs -- most from `DICTIONARY` entries in
+  `KanaKanjiConverter.ets` that silently shadow a much better `dict.json`
+  entry for the same reading (checked first in `lookupCore`'s priority
+  chain), which a whole-corpus scan can't easily surface since it only
+  needs one bad key to slip through: `'あけ': ['朱']` alone was hiding
+  `dict.json`'s `開け/明け/空け` (あけたら → 朱たら), and
+  `'しおからい': ['しょっぱい', ...]` was substituting a *different* word
+  entirely instead of 塩辛い. Also fixed: あわず missing 会わず as a
+  candidate, いえ/びるをたてる not preferring 建てる over 立てる, さくげん
+  ranking kana ahead of 削減, and かわいて (乾いて) losing a lattice contest
+  to a cheaper かわ+いていない split despite already being a correct direct
+  dictionary hit on its own. Final score after those fixes: 75.7%.
 
 Two metrics are reported:
 - **strict** — output equals the one authored gold exactly.
@@ -160,7 +179,7 @@ tree so they also catch uncommitted changes:
   `lookupCore()` down the `segmentJoinFallback()`/`joinSegs()` path that
   `sweep.js` can't reach. Use this whenever a change touches segmentation
   joining, not just dictionary data.
-- **`regress.js`** — runs every corpus in this directory (TRAIN/TEST1-10/
+- **`regress.js`** — runs every corpus in this directory (TRAIN/TEST1-11/
   VOCAB1-3) through both the HEAD and working-tree converter and classifies
   every row whose answer changed as `FIXED` (was wrong, now matches gold/
   accept), `REGRESSED` (matched before, wrong now), or

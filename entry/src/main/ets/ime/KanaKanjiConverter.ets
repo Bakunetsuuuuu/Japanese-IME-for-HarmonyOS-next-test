@@ -19229,7 +19229,10 @@ const DICTIONARY: Record<string, string[]> = {
   'おみず': ['お水'],
   'ひやしたか': ['冷やした'],
   'あまい': ['甘い'],
-  'しおからい': ['しょっぱい', '塩辛い'],
+  // しょっぱい is a different word/reading (its own correct entry exists
+  // separately) -- listing it here made typing しおからい silently swap to
+  // an entirely different word instead of 塩辛い.
+  'しおからい': ['塩辛い'],
   'すっぱい': ['酸っぱい'],
   'にがい': ['苦い'],
   'つまらない': ['つまらない', '詰まらない'],
@@ -24381,7 +24384,13 @@ const DICTIONARY: Record<string, string[]> = {
   'オレンジ': ['オレンジ色'],
   'もみじいろ': ['紅葉色'],
   'くれない': ['紅'],
-  'あけ': ['朱'],
+  // 朱 (vermilion, the color sense this entry was originally added for)
+  // used to be the *only* candidate here, silently shadowing dict.json's
+  // much more commonly needed 開け/明け/空け (開ける/明ける/空ける's stem --
+  // DICTIONARY is checked before dict.json in lookupCore, so having any
+  // entry here at all, even a narrow one, hides everything dict.json has)
+  // -- あけたら (window "opening") was landing on 朱たら as a result.
+  'あけ': ['開け', '明け', '空け', '朱', '紅'],
   'もものいろ': ['桃色'],
   'さくらいろ': ['桜色'],
   'そらいろ': ['空色'],
@@ -30711,6 +30720,11 @@ const COLLOCATION_HINTS: Record<string, string> = {
   // neither is wrong on its own, but 風邪+を+引く isn't idiomatic Japanese).
   'かぜ|ひい': 'ひい', 'かぜ|ひく': 'ひく', 'かぜ|ひき': 'ひき',
   'かぜ|ひか': 'ひか', 'かぜ|ひこ': 'ひこ',
+  // いえをたてる (build a house): たてる alone defaults to 立てる (stand
+  // something up/erect) since that's the more common bare-reading sense,
+  // but a house/building as the object is always the construction sense.
+  'いえ|たてる': '建てる', 'いえ|たてた': '建てた', 'いえ|たてます': '建てます',
+  'びる|たてる': '建てる', 'いえ|たてない': '建てない',
 };
 
 // Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
@@ -33010,7 +33024,7 @@ export class KanaKanjiConverter {
         sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
         sub === 'とばなかった' || sub === 'くもが' || sub === 'はいきした' ||
         sub === 'みとおしを' || sub === 'かわを' || sub === 'そこを' ||
-        sub === 'たばねてとめた') {
+        sub === 'たばねてとめた' || sub === 'かわいて') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
