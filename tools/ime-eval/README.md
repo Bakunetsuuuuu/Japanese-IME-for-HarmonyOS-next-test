@@ -23,7 +23,14 @@ node tools/ime-eval/run_all.js        # one build, every corpus (TRAIN/TEST1-11/
 node tools/ime-eval/sweep.js          # 4000-key dict-sampling old(HEAD)-vs-new(working tree) kanji-loss check
 node tools/ime-eval/sweep_join.js     # same, but sampling concatenated dict-key PAIRS -- see "Regression tooling" below
 node tools/ime-eval/regress.js        # classifies every corpus row that changed into FIXED/REGRESSED/CHANGED_STILL_WRONG
+node tools/ime-eval/run_learning.js   # 文節-level learning: teaching a word via one sentence generalizes to others
 ```
+
+Note: the corpus scripts above never call `recordChoice`/`recordSegmentedChoice`,
+so they measure the converter with an **empty** learning store — a deliberate
+choice so accuracy numbers reflect the base dictionary/segmentation, not
+whatever a test happened to teach first. `run_learning.js` is the separate
+check for the learning layer itself.
 
 Requires a local `typescript` (`npx tsc`). `run_test2.js` … `run_test11.js` and
 `run_vocab2.js`/`run_vocab3.js` follow the same naming pattern as `run_test.js`/
