@@ -569,7 +569,7 @@ const DICTIONARY: Record<string, string[]> = {
   'も': ['も'],
   'か': ['か', '蚊'],
   'こ': ['子', '個', '戸', '古', '小', '故'],
-  'ね': ['ね', '根'],
+  'ね': ['ね', '根', '音'],
   'よ': ['よ'],
   'ひとつ': ['一つ'],
   'ふたつ': ['二つ'],
@@ -31949,14 +31949,18 @@ export class KanaKanjiConverter {
   // reading of the same text, not just a different word choice for the same
   // segmentation — e.g. へんかんせいど is one whole compound dict entry
   // (→変換精度), but splitting it へんかん+せいど instead gives 返還+制度,
-  // a genuinely different (and sometimes intended) parse. Only meaningful
-  // when the default segmentation collapsed the whole reading into a single
-  // span; if it's already multi-segment, ordinary candidate cycling already
-  // covers word-level alternatives within that one segmentation.
+  // a genuinely different (and sometimes intended) parse. Two cases:
+  // - primary collapsed the whole reading into one span: the curated
+  //   ALT_SEG_WORDS whole-string split below.
+  // - primary already split into multiple segments (the common case for any
+  //   real sentence): findBoundaryDetourAlternate's edge-by-edge detour.
+  //   Ordinary candidate cycling only ever varies word choice *within* the
+  //   primary's own segment boundaries, so a wrong boundary itself (not just
+  //   a wrong word for a correct segment) previously had no fallback here.
   findAlternateSegmentation(kana: string): string | null {
     if (kana.length < 4) { return null; }
     const primary = this.segment(kana);
-    if (primary.length !== 1) { return null; }
+    if (primary.length !== 1) { return this.findBoundaryDetourAlternate(kana, primary); }
     // Forcing the DP to merely avoid the whole-string span isn't enough — it
     // just finds whatever's next-cheapest overall, which can land on a split
     // point with no linguistic relation to the intended one (へんかんせいど ->
@@ -31993,6 +31997,51 @@ export class KanaKanjiConverter {
     const result = this.joinSegs(alt);
     if (result === null || result === kana) { return null; }
     return result;
+  }
+
+  // General case of the "自動区切り変更" idea above, for a primary segmentation
+  // that's *already* multiple segments: the whole-string ALT_SEG_WORDS split
+  // only ever helps when Viterbi collapsed everything into one span, so any
+  // sentence long enough to naturally segment at all (i.e. almost every real
+  // sentence) got zero benefit from it — a wrong boundary anywhere in the
+  // middle of an ordinary multi-word sentence had no alternate to fall back
+  // to; only the last segment's word choice was ever cyclable.
+  //
+  // Detours one primary-path edge at a time (Yen's-style single-edge detour,
+  // not a full N-best DP rewrite): for each segment the DP actually chose,
+  // re-run segment() with just that one span forbidden and see what it picks
+  // instead. A bare cost-based detour alone reliably produces linguistically
+  // meaningless splits (the exact failure the ALT_SEG_WORDS branch above was
+  // built to avoid for the single-span case) — joinSegs()'s existing
+  // allRecognized gate is reused here as the same hard quality filter,
+  // rather than inventing a second one. Among detours that clear it, the
+  // cheapest by the same getWordInfo()-sum metric the ALT_SEG_WORDS branch
+  // already uses wins.
+  private findBoundaryDetourAlternate(kana: string, primary: string[]): string | null {
+    const primaryResult = this.joinSegs(primary);
+    if (primaryResult === null) { return null; }
+    const bounds: number[] = [0];
+    for (const seg of primary) { bounds.push(bounds[bounds.length - 1] + seg.length); }
+    let best: string[] | null = null;
+    let bestResult = '';
+    let bestCost = Infinity;
+    for (let e = 0; e < primary.length; e++) {
+      const start = bounds[e];
+      const len = primary[e].length;
+      const detour = this.segment(kana, [start, len]);
+      if (detour.length === 0) { continue; }
+      const detourResult = this.joinSegs(detour);
+      // A detour that merely re-draws a boundary between two segments whose
+      // joined *text* comes out identical either way (で+は vs では -- both
+      // render "では") isn't a real alternative; comparing the segment
+      // arrays themselves would wrongly accept it, since the arrays differ
+      // even though nothing the user would see does.
+      if (detourResult === null || detourResult === primaryResult || detourResult === kana) { continue; }
+      let cost = 0;
+      for (const seg of detour) { cost += this.getWordInfo(seg)[0]; }
+      if (cost < bestCost) { bestCost = cost; best = detour; bestResult = detourResult; }
+    }
+    return best === null ? null : bestResult;
   }
 
   private static contextRerank(reading: string, cands: string[]): string[] {
@@ -33474,7 +33523,16 @@ export class KanaKanjiConverter {
   // Minimum-cost Viterbi lattice segmentation.
   // Node costs from grammar rules (VN_*); edge costs from buildConnectionMatrix().
   // Falls back gracefully to heuristic costs when data files are not loaded.
-  segment(kana: string, forceSplit: boolean = false): string[] {
+  // forbidSpan: [start, len] — when set, the DP may not use that exact span
+  // as a segment, so the result is the cheapest segmentation *avoiding* it.
+  // Used by findAlternateSegmentation's boundary-detour search to find a
+  // genuinely distinct 2nd-best parse edge-by-edge (Yen's-style single-edge
+  // detour) rather than re-deciding the whole sentence from scratch, which
+  // tends to land on a split with no linguistic relation to the primary one.
+  // A detour call never touches mozcLastHints/mozcLastInput/mozcLastSegs
+  // (see the isMozc branch below) since it's exploratory, not the sentence's
+  // real segmentation.
+  segment(kana: string, forbidSpan?: [number, number]): string[] {
     const n = kana.length;
     if (n === 0) { return []; }
     const INF = 1000000000;
@@ -33551,12 +33609,10 @@ export class KanaKanjiConverter {
         const numRun = numRuns.get(i);
         const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
         for (let len = 1; len <= maxLen; len++) {
-          // forceSplit forbids the whole reading as a single span, so callers
-          // that already have the single-segment Viterbi-best answer can ask
-          // for the best *alternative* segmentation instead (see
-          // findAlternateSegmentation) — e.g. へんかんせいど as one compound
-          // dict entry (→変換精度) vs へんかん+せいど split (→返還+制度).
-          if (forceSplit && i === 0 && len === n) { continue; }
+          // forbidSpan excludes one exact span from the DP, so a detour call
+          // (see findAlternateSegmentation) can ask for the cheapest
+          // segmentation that avoids one specific edge of the primary path.
+          if (forbidSpan !== undefined && i === forbidSpan[0] && len === forbidSpan[1]) { continue; }
           const sub = kana.slice(i, i + len);
           const isNumSpan = numRun !== undefined && numRun.len === len;
           if (len > 1 && !this.inDict(sub) && !isNumSpan) { continue; }
@@ -33656,12 +33712,10 @@ export class KanaKanjiConverter {
         if (best[i] === INF) { continue; }
         const maxLen = MAX_LEN < n - i ? MAX_LEN : n - i;
         for (let len = 1; len <= maxLen; len++) {
-          // forceSplit forbids the whole reading as a single span, so callers
-          // that already have the single-segment Viterbi-best answer can ask
-          // for the best *alternative* segmentation instead (see
-          // findAlternateSegmentation) — e.g. へんかんせいど as one compound
-          // dict entry (→変換精度) vs へんかん+せいど split (→返還+制度).
-          if (forceSplit && i === 0 && len === n) { continue; }
+          // forbidSpan excludes one exact span from the DP, so a detour call
+          // (see findAlternateSegmentation) can ask for the cheapest
+          // segmentation that avoids one specific edge of the primary path.
+          if (forbidSpan !== undefined && i === forbidSpan[0] && len === forbidSpan[1]) { continue; }
           const sub = kana.slice(i, i + len);
           if (len > 1 && !this.inDict(sub)) { continue; }
           const info = this.getWordInfo(sub);
@@ -33751,7 +33805,12 @@ export class KanaKanjiConverter {
       }
     }
 
-    if (isMozc) {
+    // A forbidSpan call is a throwaway exploratory detour (see
+    // findAlternateSegmentation), not the sentence's real segmentation --
+    // skip caching it as such so lookupMozc(wholeInput) still composes its
+    // candidate list from the actual primary parse, not whichever detour
+    // happened to run most recently on this instance.
+    if (isMozc && forbidSpan === undefined) {
       this.mozcLastHints.clear();
       // applyHybridHintOverride is currently NOT called here -- see its
       // comment and the `engine` field comment for the full account. Three
