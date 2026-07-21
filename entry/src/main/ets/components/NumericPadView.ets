@@ -20,8 +20,9 @@ function getCharByDir(key: FlickKeyDef, dir: FlickDir): string {
   return key.center;
 }
 
-// Gboard-style numeric pad, reached via the "123" key on the flick keyboard.
-// Same 5-column (side keys + 3 digit columns) grid as FlickKeyboardView so it
+// Gboard-style numeric pad, reached via the あA/Aあ key's 日本語→アルファベット→
+// 数字 cycle (see InputHandler.cycleInputMode) when 数字パッド is enabled in
+// settings. Same 5-column (side keys + 3 digit columns) grid as FlickKeyboardView so it
 // reuses flickKeyWidthVp and never fights that keyboard's width sizing.
 // Symbol input from the digit-only pad was poor (記号 panel is a whole extra
 // trip) -- each digit now flicks to a symbol, the same gesture
@@ -235,18 +236,16 @@ export struct NumericPadView {
 
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
-      Text('あ')
+      // フリックキーボードの左上枠と統一 -- 取消(直近削除した文字の復元)は
+      // どのパネルからでも同じ位置で開けるようにする。
+      Text('取消')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
+        .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
-          // 数字パッドへは「あA」キーの日本語→アルファベット→数字サイクルからのみ入る
-          // ため、抜けるときは常に日本語(ひらがな)へ戻す — 入る前のinputModeが何であれ
-          // ループが一貫した状態に着地するようにする。
-          AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
-          AppStorage.setOrCreate('keyboardSubMode', 'kana');
+          AppStorage.setOrCreate('keyboardSubMode', 'deleteHistory');
         })
     } else if (rowIdx === 1) {
       Text('◄')
@@ -265,13 +264,20 @@ export struct NumericPadView {
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'symbol'); })
     } else {
-      Text('+')
+      // '+' は5キーの左フリックで既に入力できるため、この枠は日本語入力に戻る
+      // 「あA」キーに差し替える(数字パッドへは「あA」キーのサイクルからのみ入る
+      // ため、抜けるときは常に日本語(ひらがな)へ戻す -- 入る前のinputModeが何で
+      // あってもループが一貫した状態に着地するようにする)。
+      Text('あA')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(20).textAlign(TextAlign.Center)
+        .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).keyBg).fontColor(kbTheme(this.isDark).textPrimary)
+        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => { this.insert('+'); })
+        .onClick(() => {
+          AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
+          AppStorage.setOrCreate('keyboardSubMode', 'kana');
+        })
     }
   }
 
