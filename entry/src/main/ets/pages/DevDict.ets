@@ -138,10 +138,9 @@ struct DevDict {
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(15)
             .fontColor(this.isDark ? '#AAAAAA' : '#666666')
-          TextInput({ placeholder: 'パスワード', text: this.passwordInput })
+          TextInput({ placeholder: 'パスワード', text: $$this.passwordInput })
             .fontFamily(JP_FONT_FAMILY)
             .type(InputType.Password)
-            .onChange((v: string) => { this.passwordInput = v; })
             .onSubmit(() => { this.tryUnlock(); })
             .height(44)
             .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
@@ -160,17 +159,15 @@ struct DevDict {
       } else {
         // ── Registration form ───────────────────────────────────
         Column({ space: 10 }) {
-          TextInput({ placeholder: 'よみ（ひらがな）', text: this.yomiInput })
+          TextInput({ placeholder: 'よみ（ひらがな）', text: $$this.yomiInput })
             .fontFamily(JP_FONT_FAMILY)
-            .onChange((v: string) => { this.yomiInput = v; })
             .height(44)
             .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
             .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
             .borderRadius(8)
 
-          TextInput({ placeholder: '単語', text: this.wordInput })
+          TextInput({ placeholder: '単語', text: $$this.wordInput })
             .fontFamily(JP_FONT_FAMILY)
-            .onChange((v: string) => { this.wordInput = v; })
             .height(44)
             .backgroundColor(this.isDark ? '#2A2A2A' : '#FFFFFF')
             .fontColor(this.isDark ? '#E0E0E0' : Color.Black)
