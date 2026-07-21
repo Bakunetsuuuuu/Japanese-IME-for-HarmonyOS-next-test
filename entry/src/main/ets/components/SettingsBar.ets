@@ -26,6 +26,7 @@ export struct SettingsBar {
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
   @StorageLink('conversionEngine') conversionEngine: string = 'custom';
+  @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @State showHistory: boolean = false;
 
   private close(): void {
@@ -170,6 +171,35 @@ export struct SettingsBar {
         .backgroundColor(kbTheme(this.isDark).funcBg)
         .borderRadius(TRACK_RADIUS)
         .padding(3)
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      // Off by default -- see SettingsStore's numericPadEnabled comment. The
+      // flick keyboard's left-column key shows 数字パッド when this is on,
+      // 取消 (restore a recently deleted character) when it's off.
+      Row() {
+        Column({ space: 2 }) {
+          Text('数字パッド')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text('オフの間はその枠に「取消」ボタンが表示されます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.numericPadEnabled })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setNumericPadEnabled(isOn);
+          })
       }
       .width('100%')
       .padding({ top: 13, bottom: 13 })
