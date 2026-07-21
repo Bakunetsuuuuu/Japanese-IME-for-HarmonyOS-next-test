@@ -221,10 +221,9 @@ struct Index {
         .border({ width: { bottom: 1 }, color: kbTheme(this.isDark).divider })
 
         // ── Search bar ──────────────────────────────────────────
-        TextInput({ placeholder: '単語・読みで検索', text: this.searchQuery })
+        TextInput({ placeholder: '単語・読みで検索', text: $$this.searchQuery })
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
-          .onChange((v: string) => { this.searchQuery = v; })
           .height(38)
           .backgroundColor(kbTheme(this.isDark).funcBg)
           .fontColor(kbTheme(this.isDark).textPrimary)
