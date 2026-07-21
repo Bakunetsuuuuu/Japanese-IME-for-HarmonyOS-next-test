@@ -33024,7 +33024,8 @@ export class KanaKanjiConverter {
         sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
         sub === 'とばなかった' || sub === 'くもが' || sub === 'はいきした' ||
         sub === 'みとおしを' || sub === 'かわを' || sub === 'そこを' ||
-        sub === 'たばねてとめた' || sub === 'かわいて') {
+        sub === 'たばねてとめた' || sub === 'かわいて' || sub === 'ごにん' ||
+        sub === 'ごほん') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
