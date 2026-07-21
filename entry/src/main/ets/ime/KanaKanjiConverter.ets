@@ -31694,6 +31694,25 @@ export class KanaKanjiConverter {
     }
   }
 
+  // Per-segment ("文節") learning for the ordinary whole-sentence commit path.
+  // Committing a multi-segment candidate used to record only the entire
+  // reading→surface pair (recordChoice(wholeReading, wholeSurface)), a key
+  // that essentially never recurs verbatim -- so correcting しゃしんをとった
+  // to 写真を撮った taught the IME nothing about とった→撮った for the next
+  // sentence. Recording each (segmentReading, segmentSurface) the accepted
+  // candidate is actually built from makes homophone corrections generalize
+  // word-by-word the way every mature IME's learning does. Only the common
+  // commit path lacked this; the 文節 editing flow (commitBunsetsu) already
+  // recorded per segment. `readings` and `surfaces` are parallel arrays (one
+  // entry per segment); recordChoice's own kana===surface guard drops the
+  // particles/auxiliaries that stayed hiragana, so only content words learn.
+  static recordSegmentedChoice(readings: string[], surfaces: string[]): void {
+    const n = Math.min(readings.length, surfaces.length);
+    for (let i = 0; i < n; i++) {
+      KanaKanjiConverter.recordChoice(readings[i], surfaces[i]);
+    }
+  }
+
   private static applyLearning(kana: string, cands: string[]): string[] {
     const counts = KanaKanjiConverter.learned[kana];
     if (!counts || Object.keys(counts).length === 0) { return cands; }

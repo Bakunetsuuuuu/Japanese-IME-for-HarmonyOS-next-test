@@ -22,6 +22,19 @@ interface InputMethodSubtype {
   mode?: string;
 }
 
+// Segmentation of the current composing text plus each non-final segment's
+// auto-converted surface, captured while updateCandidates runs (where the
+// segmentation and prefix conversions are already computed). A later
+// whole-sentence commit uses this to learn each 文節 individually: it peels
+// the known prefix off the committed text to recover the final segment's
+// accepted surface, so homophone corrections generalize word-by-word --
+// see learnCommit / KanaKanjiConverter.recordSegmentedChoice.
+interface ComposeAlignment {
+  segs: string[];            // per-segment readings
+  prefixSurfaces: string[];  // auto-converted surface of segs[0..n-2]
+  prefixText: string;        // prefixSurfaces joined
+}
+
 // Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
 const MAX_KB_VP = 620;
 
@@ -162,6 +175,11 @@ export class InputHandler {
   private bSegs: string[] = [];
   private bChosen: string[] = [];
   private bCur: number = 0;
+  // Segmentation + prefix surfaces of the most recent updateCandidates()
+  // composing text, or undefined when it was a single segment / had a symbol
+  // prefix. Lets a whole-sentence commit learn each 文節 individually (see
+  // learnCommit / KanaKanjiConverter.recordSegmentedChoice).
+  private lastAlignment: ComposeAlignment | undefined = undefined;
   private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
@@ -656,12 +674,33 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const text = index < candidates.length ? candidates[index] : '';
     if (text.length > 0) {
-      KanaKanjiConverter.recordChoice(composing, text);
+      this.learnCommit(composing, text);
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
       this.saveLearning();
     }
     this.resetComposition();
+  }
+
+  // Learn from a committed candidate. For a multi-segment sentence whose
+  // committed surface still begins with the auto-converted prefix captured in
+  // updateCandidates, peel that prefix off to recover the accepted final-
+  // segment surface, then learn every 文節 individually -- so correcting one
+  // homophone (しゃしんをとった→写真を撮った) teaches とった→撮った for the
+  // next sentence too, the way every mature IME's learning generalizes.
+  // Anything else (single segment, symbol prefix, a predictive/alt-segment
+  // pick whose surface no longer starts with the prefix) falls back to the
+  // plain whole reading→surface record.
+  private learnCommit(composing: string, text: string): void {
+    const a = this.lastAlignment;
+    if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
+      const lastSurface = text.slice(a.prefixText.length);
+      const surfaces = a.prefixSurfaces.slice();
+      surfaces.push(lastSurface);
+      KanaKanjiConverter.recordSegmentedChoice(a.segs, surfaces);
+    } else {
+      KanaKanjiConverter.recordChoice(composing, text);
+    }
   }
 
   commitTopCandidate(): void {
@@ -674,7 +713,7 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
-      KanaKanjiConverter.recordChoice(composing, candidates[idx]);
+      this.learnCommit(composing, candidates[idx]);
       this.insertText(candidates[idx]);
       KanaKanjiConverter.addContext(candidates[idx]);
       this.resetComposition();
@@ -965,10 +1004,30 @@ export class InputHandler {
     const fullKatakana = KanaKanjiConverter.toKatakana(composing);
     const segs = this.kanjiConverter.segment(composing);
     let candidates: string[];
+    // Recomputed below whenever the composing text is multi-segment. Reset
+    // here so a single-segment / symbol-prefix / stale commit falls back to
+    // the plain whole-string recordChoice instead of a stale alignment.
+    this.lastAlignment = undefined;
 
     if (segs.length <= 1) {
       candidates = this.kanjiConverter.lookup(composing);
     } else {
+      // Auto-converted prefix (all but the last segment). Computed once here
+      // so BOTH the whole-reading-hit branch and the decompose branch below
+      // can capture the same per-segment breakdown for learning -- most
+      // natural sentences take the hasRealHit branch (lookup already joins
+      // the segments), so an alignment built only inside the decompose branch
+      // would miss them.
+      const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1], segs[i - 1]));
+      const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
+      const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
+      // A prefix that resolves to a bare symbol (かっこ→"()") isn't a usable
+      // learning alignment either -- leave lastAlignment undefined so those
+      // commits fall back to whole-string learning.
+      if (!hasSymbolPrefix) {
+        this.lastAlignment = { segs: segs, prefixSurfaces: prefixParts, prefixText: prefixText };
+      }
+
       // Try full-text lookup first. If it returns a real dictionary hit
       // (not just the katakana/kana fallback), use it — this prevents
       // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
@@ -992,9 +1051,6 @@ export class InputHandler {
         // means Viterbi split a casual word across a symbol "word" — joining
         // it would produce nonsense like "()よ" for かっこよ. Fall back to the
         // plain kana/katakana candidates instead of using that prefix.
-        const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1], segs[i - 1]));
-        const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
-        const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
         const lastSeg = segs[segs.length - 1];
         const lastCands = this.kanjiConverter.lookup(lastSeg);
         const segCands = hasSymbolPrefix ? [] : lastCands.map((c: string) => prefixText + c);
