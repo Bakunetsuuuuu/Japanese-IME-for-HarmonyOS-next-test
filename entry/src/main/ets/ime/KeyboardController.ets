@@ -776,6 +776,17 @@ export class InputHandler {
     AppStorage.setOrCreate('clipboardUri', uri);
   }
 
+  // Public re-read of the system clipboard, for the settings panel to call
+  // when it (or its クリップボード履歴 view) opens -- refreshClipboardPreview
+  // otherwise only runs on keyboard show (onInputStart) and after a commit
+  // (resetComposition), so a copy made in the host app while the keyboard was
+  // already up wasn't picked up until the keyboard was closed and reopened
+  // (an AppGallery reviewer flagged exactly this staleness). Reading the
+  // pasteboard on this deliberate user action is expected and privacy-safe.
+  refreshClipboard(): void {
+    this.refreshClipboardPreview();
+  }
+
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
       if (!data || data.getRecordCount() === 0) {
