@@ -22,6 +22,19 @@ interface InputMethodSubtype {
   mode?: string;
 }
 
+// Segmentation of the current composing text plus each non-final segment's
+// auto-converted surface, captured while updateCandidates runs (where the
+// segmentation and prefix conversions are already computed). A later
+// whole-sentence commit uses this to learn each 文節 individually: it peels
+// the known prefix off the committed text to recover the final segment's
+// accepted surface, so homophone corrections generalize word-by-word --
+// see learnCommit / KanaKanjiConverter.recordSegmentedChoice.
+interface ComposeAlignment {
+  segs: string[];            // per-segment readings
+  prefixSurfaces: string[];  // auto-converted surface of segs[0..n-2]
+  prefixText: string;        // prefixSurfaces joined
+}
+
 // Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
 const MAX_KB_VP = 620;
 
@@ -162,13 +175,18 @@ export class InputHandler {
   private bSegs: string[] = [];
   private bChosen: string[] = [];
   private bCur: number = 0;
+  // Segmentation + prefix surfaces of the most recent updateCandidates()
+  // composing text, or undefined when it was a single segment / had a symbol
+  // prefix. Lets a whole-sentence commit learn each 文節 individually (see
+  // learnCommit / KanaKanjiConverter.recordSegmentedChoice).
+  private lastAlignment: ComposeAlignment | undefined = undefined;
   private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
   // Cap for the persistent deleted-character log (recordDeletedChar) --
   // unlike restoreStack above (a short-lived undo stack wiped by the next
   // keystroke, see insertText), this survives typing and is only capped by
-  // size. Powers the 取消 panel (DeleteHistoryView.ets / restoreDeletedChar).
+  // size. Powers the 取消 key's sequential undo (undoLastDeletion).
   private static readonly MAX_DELETED_CHAR_HISTORY = 100;
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
@@ -223,7 +241,12 @@ export class InputHandler {
   // guess at common punctuation.
   recordSymbolUse(sym: string): void {
     InputHandler.symbolFreq[sym] = (InputHandler.symbolFreq[sym] ?? 0) + 1;
-    InputHandler.publishFrequentSymbols();
+    // Deliberately does NOT republish the "recent" ordering here: doing so on
+    // every tap re-sorted the 🕐 tab in real time, so a key slid out from
+    // under the user's finger as they used it. The visible order is snapshotted
+    // when the symbol panel opens instead (SymbolView.aboutToAppear →
+    // refreshFrequentSymbols), so positions stay put during a tapping session
+    // and only settle into their new frequency order the next time it opens.
     clearTimeout(this.symbolSaveTimer);
     this.symbolSaveTimer = setTimeout(() => {
       const prefs = this.symbolPrefs;
@@ -232,6 +255,13 @@ export class InputHandler {
         .then(() => prefs.flush())
         .catch((_e: Error) => {});
     }, 2000);
+  }
+
+  // Re-sort the "recent" symbol tab by current tap frequency. Called on
+  // symbol-panel open (not per tap) so the ordering the user sees is stable
+  // while they tap within it -- see recordSymbolUse.
+  refreshFrequentSymbols(): void {
+    InputHandler.publishFrequentSymbols();
   }
 
   private static publishFrequentSymbols(): void {
@@ -656,12 +686,33 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const text = index < candidates.length ? candidates[index] : '';
     if (text.length > 0) {
-      KanaKanjiConverter.recordChoice(composing, text);
+      this.learnCommit(composing, text);
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
       this.saveLearning();
     }
     this.resetComposition();
+  }
+
+  // Learn from a committed candidate. For a multi-segment sentence whose
+  // committed surface still begins with the auto-converted prefix captured in
+  // updateCandidates, peel that prefix off to recover the accepted final-
+  // segment surface, then learn every 文節 individually -- so correcting one
+  // homophone (しゃしんをとった→写真を撮った) teaches とった→撮った for the
+  // next sentence too, the way every mature IME's learning generalizes.
+  // Anything else (single segment, symbol prefix, a predictive/alt-segment
+  // pick whose surface no longer starts with the prefix) falls back to the
+  // plain whole reading→surface record.
+  private learnCommit(composing: string, text: string): void {
+    const a = this.lastAlignment;
+    if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
+      const lastSurface = text.slice(a.prefixText.length);
+      const surfaces = a.prefixSurfaces.slice();
+      surfaces.push(lastSurface);
+      KanaKanjiConverter.recordSegmentedChoice(a.segs, surfaces);
+    } else {
+      KanaKanjiConverter.recordChoice(composing, text);
+    }
   }
 
   commitTopCandidate(): void {
@@ -674,7 +725,7 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
-      KanaKanjiConverter.recordChoice(composing, candidates[idx]);
+      this.learnCommit(composing, candidates[idx]);
       this.insertText(candidates[idx]);
       KanaKanjiConverter.addContext(candidates[idx]);
       this.resetComposition();
@@ -861,7 +912,8 @@ export class InputHandler {
   // character just disappeared (IDLE's own-typed-char pop, COMPOSING's
   // pre-commit slice). Deliberately never cleared by subsequent typing
   // (unlike restoreStack, wiped on the next insertText) so it survives across
-  // a whole typing session -- see DeleteHistoryView.ets / the 取消 panel.
+  // a whole typing session -- consumed newest-first by the 取消 key's
+  // sequential undo (undoLastDeletion).
   private recordDeletedChar(ch: string): void {
     if (ch.length === 0) { return; }
     const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
@@ -869,24 +921,25 @@ export class InputHandler {
     AppStorage.setOrCreate('deletedCharHistory', next);
   }
 
-  // Restore an arbitrary entry from the deleted-character log by its
-  // (newest-first) index. Left in the log afterward -- same
-  // non-consuming choice as pasteFromHistory above -- so the same character
-  // can be restored more than once if needed.
-  restoreDeletedChar(index: number): void {
+  // Restore the most recently deleted character (or whole composing chunk),
+  // consuming it from the log. Pressing 取消 N times right after deleting too
+  // much brings back the last N deleted characters in order, as if they were
+  // never deleted -- a simple sequential undo of over-deletion, not a
+  // pick-any-past-character panel. handleBackspace pushes newest-first, so
+  // history[0] is always the last thing removed; restoring and popping it in
+  // turn replays the deletions in reverse, reconstructing the original text.
+  undoLastDeletion(): void {
     const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
-    const ch = history[index];
-    if (ch === undefined || ch.length === 0) { return; }
+    if (history.length === 0) { return; }
+    const ch = history[0];
+    AppStorage.setOrCreate('deletedCharHistory', history.slice(1));
+    if (ch.length === 0) { return; }
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.IDLE) {
       this.insertText(ch);
     } else {
       this.handleDirectKana(ch);
     }
-  }
-
-  clearDeletedCharHistory(): void {
-    AppStorage.setOrCreate('deletedCharHistory', [] as string[]);
   }
 
   // Launches the main app (settings / user dictionary screen) from the
@@ -941,18 +994,38 @@ export class InputHandler {
       'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next', 'GitHub');
   }
 
-  // Linked directly from the settings panel's 寄付 section (SettingsBar.ets)
-  // rather than only from the README as before -- a deliberate call after
-  // reviewing AppGallery's review guidelines (App Payment/Functions/Content/
-  // Ads sections): no rule found prohibiting a plain external donation link
-  // that doesn't gate any app feature, and HUAWEI IAP integration is stated
+  // Hands a URL to the main app to raise the system share sheet on (see
+  // EntryAbility's shareUrl param / Index.onPendingShareUrlChanged). Routed
+  // through EntryAbility exactly like openExternalUrl -- the share sheet needs
+  // a UIAbilityContext, which an input-method extension doesn't have.
+  shareUrl(url: string): boolean {
+    if (!this.imeContext) { return false; }
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+      parameters: { shareUrl: url },
+    };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME shareUrl error', JSON.stringify(err)));
+    return true;
+  }
+
+  // The donation links raise the system share sheet instead of opening an
+  // in-app browser: entering card details on a soft-keyboard IME is awkward
+  // and the current device may not have a payment method registered at all,
+  // so sharing the link (Huawei Share to another device, a messaging app, copy
+  // link, …) lets the user complete payment wherever it's convenient. Linked
+  // directly from the settings panel's 開発を応援 section (SettingsBar.ets) --
+  // a deliberate call after reviewing AppGallery's review guidelines (App
+  // Payment/Functions/Content/Ads): no rule found prohibiting a plain external
+  // donation link that doesn't gate any app feature, and HUAWEI IAP is stated
   // as recommended, not required.
   openBuyMeACoffeeLink(): boolean {
-    return this.openExternalUrl('https://buymeacoffee.com/shunti', 'Buy Me a Coffee');
+    return this.shareUrl('https://buymeacoffee.com/shunti');
   }
 
   openGithubSponsorsLink(): boolean {
-    return this.openExternalUrl('https://github.com/sponsors/shuntilettuce', 'GitHub Sponsors');
+    return this.shareUrl('https://github.com/sponsors/shuntilettuce');
   }
 
   private updateCandidates(): void {
@@ -965,10 +1038,30 @@ export class InputHandler {
     const fullKatakana = KanaKanjiConverter.toKatakana(composing);
     const segs = this.kanjiConverter.segment(composing);
     let candidates: string[];
+    // Recomputed below whenever the composing text is multi-segment. Reset
+    // here so a single-segment / symbol-prefix / stale commit falls back to
+    // the plain whole-string recordChoice instead of a stale alignment.
+    this.lastAlignment = undefined;
 
     if (segs.length <= 1) {
       candidates = this.kanjiConverter.lookup(composing);
     } else {
+      // Auto-converted prefix (all but the last segment). Computed once here
+      // so BOTH the whole-reading-hit branch and the decompose branch below
+      // can capture the same per-segment breakdown for learning -- most
+      // natural sentences take the hasRealHit branch (lookup already joins
+      // the segments), so an alignment built only inside the decompose branch
+      // would miss them.
+      const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1], segs[i - 1]));
+      const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
+      const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
+      // A prefix that resolves to a bare symbol (かっこ→"()") isn't a usable
+      // learning alignment either -- leave lastAlignment undefined so those
+      // commits fall back to whole-string learning.
+      if (!hasSymbolPrefix) {
+        this.lastAlignment = { segs: segs, prefixSurfaces: prefixParts, prefixText: prefixText };
+      }
+
       // Try full-text lookup first. If it returns a real dictionary hit
       // (not just the katakana/kana fallback), use it — this prevents
       // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
@@ -992,9 +1085,6 @@ export class InputHandler {
         // means Viterbi split a casual word across a symbol "word" — joining
         // it would produce nonsense like "()よ" for かっこよ. Fall back to the
         // plain kana/katakana candidates instead of using that prefix.
-        const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1], segs[i - 1]));
-        const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
-        const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
         const lastSeg = segs[segs.length - 1];
         const lastCands = this.kanjiConverter.lookup(lastSeg);
         const segCands = hasSymbolPrefix ? [] : lastCands.map((c: string) => prefixText + c);

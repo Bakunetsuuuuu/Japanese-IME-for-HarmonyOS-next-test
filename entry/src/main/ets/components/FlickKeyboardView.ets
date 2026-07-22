@@ -203,7 +203,8 @@ export struct FlickKeyboardView {
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
       // 数字パッドの入口は「あA」キー側のサイクルに一本化した(setNumericPadEnabled
-      // 参照)。この枠は常に取消(直近削除した文字の復元)を表示する。
+      // 参照)。この枠は常に取消を表示する。押すたびに直近削除した文字を1つずつ
+      // 戻す(消し過ぎた分を押した回数だけ復元する順次アンドゥ)。
       Text('取消')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
@@ -211,7 +212,7 @@ export struct FlickKeyboardView {
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
-          AppStorage.setOrCreate('keyboardSubMode', 'deleteHistory');
+          this.h().undoLastDeletion();
         })
     } else if (rowIdx === 1) {
       Text('◄')

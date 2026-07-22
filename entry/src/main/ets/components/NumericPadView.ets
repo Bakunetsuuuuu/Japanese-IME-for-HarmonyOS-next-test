@@ -236,8 +236,8 @@ export struct NumericPadView {
 
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
-      // フリックキーボードの左上枠と統一 -- 取消(直近削除した文字の復元)は
-      // どのパネルからでも同じ位置で開けるようにする。
+      // フリックキーボードの左上枠と統一 -- 取消は押すたびに直近削除した文字を
+      // 1つずつ戻す(消し過ぎた分を押した回数だけ復元する順次アンドゥ)。
       Text('取消')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
@@ -245,7 +245,7 @@ export struct NumericPadView {
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
-          AppStorage.setOrCreate('keyboardSubMode', 'deleteHistory');
+          this.h().undoLastDeletion();
         })
     } else if (rowIdx === 1) {
       Text('◄')

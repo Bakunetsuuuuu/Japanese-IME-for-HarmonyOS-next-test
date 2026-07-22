@@ -1,0 +1,9 @@
+# Build intermediates written by tools/mozc_data/build_mozc_engine.py and
+# the JMdict/SudachiDict augmentation scripts, consumed by
+# tools/mozc_data/convert_to_binary.py -- never shipped in the app (see
+# tools/mozc_data/README.md's "On-device format" section). Regenerating
+# track B locally recreates these next to the actual shipped mozc_*.bin/
+# mozc_readings.json/mozc_*_surfaces.json/mozc_*_index.bin files; don't
+# `git add` them.
+mozc_dict.json
+mozc_costs.json

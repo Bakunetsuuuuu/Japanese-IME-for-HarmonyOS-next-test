@@ -19229,7 +19229,10 @@ const DICTIONARY: Record<string, string[]> = {
   'おみず': ['お水'],
   'ひやしたか': ['冷やした'],
   'あまい': ['甘い'],
-  'しおからい': ['しょっぱい', '塩辛い'],
+  // しょっぱい is a different word/reading (its own correct entry exists
+  // separately) -- listing it here made typing しおからい silently swap to
+  // an entirely different word instead of 塩辛い.
+  'しおからい': ['塩辛い'],
   'すっぱい': ['酸っぱい'],
   'にがい': ['苦い'],
   'つまらない': ['つまらない', '詰まらない'],
@@ -24381,7 +24384,13 @@ const DICTIONARY: Record<string, string[]> = {
   'オレンジ': ['オレンジ色'],
   'もみじいろ': ['紅葉色'],
   'くれない': ['紅'],
-  'あけ': ['朱'],
+  // 朱 (vermilion, the color sense this entry was originally added for)
+  // used to be the *only* candidate here, silently shadowing dict.json's
+  // much more commonly needed 開け/明け/空け (開ける/明ける/空ける's stem --
+  // DICTIONARY is checked before dict.json in lookupCore, so having any
+  // entry here at all, even a narrow one, hides everything dict.json has)
+  // -- あけたら (window "opening") was landing on 朱たら as a result.
+  'あけ': ['開け', '明け', '空け', '朱', '紅'],
   'もものいろ': ['桃色'],
   'さくらいろ': ['桜色'],
   'そらいろ': ['空色'],
@@ -25361,6 +25370,19 @@ const DICTIONARY: Record<string, string[]> = {
   'こうにゅうれぽ': ['購入レポ'],
   'れびゅーき': ['レビュー機'],
   'じっそくち': ['実測値'],
+  // したくない (don't want to do [it], from する) wasn't reachable as a DP
+  // span at all -- unlike たべたくない/いきたくない/みたくない/etc, which
+  // all segment and convert fine on their own (their stems are 2+ chars and
+  // unambiguous), し alone is such a heavily overloaded single-mora reading
+  // that the segmenter split it off and independently resolved the
+  // remaining たくない to its own homophone 宅内, producing garbage like
+  // し宅内 for なにもしたくない.
+  'したくない': ['したくない'],
+  // めんどくさすぎ (too much of a hassle): めんどくさい itself has a direct
+  // dict.json/DICTIONARY entry, but the ~すぎ (too much) suffix wasn't
+  // itself a recognized span, so it lost the lattice contest and got
+  // fragmented into めん+どくさ+すぎ (nonsense, 麺+毒さ+過ぎ-shaped).
+  'めんどくさすぎ': ['めんどくさすぎ'],
 };
 
 // track A (engine='custom') POS/conjugation layer, Phase 1: whole-word
@@ -30705,6 +30727,17 @@ const COLLOCATION_HINTS: Record<string, string> = {
   'うけとり|いった': '行った',
   'しょうめいしゃしん|とった': '撮った',
   'やさい|かっている': '買っている',
+  // 風邪をひく (catch a cold): ひく-family conventionally stays kana even
+  // once かぜ itself is corrected to 風邪 by the idx+1 lookahead below (かぜ
+  // alone defaults to 風, and ひく alone defaults to 引く "to pull/draw" --
+  // neither is wrong on its own, but 風邪+を+引く isn't idiomatic Japanese).
+  'かぜ|ひい': 'ひい', 'かぜ|ひく': 'ひく', 'かぜ|ひき': 'ひき',
+  'かぜ|ひか': 'ひか', 'かぜ|ひこ': 'ひこ',
+  // いえをたてる (build a house): たてる alone defaults to 立てる (stand
+  // something up/erect) since that's the more common bare-reading sense,
+  // but a house/building as the object is always the construction sense.
+  'いえ|たてる': '建てる', 'いえ|たてた': '建てた', 'いえ|たてます': '建てます',
+  'びる|たてる': '建てる', 'いえ|たてない': '建てない',
 };
 
 // Adjacent-pair hint: unlike COLLOCATION_HINTS above, no を/object is
@@ -30806,6 +30839,9 @@ export class KanaKanjiConverter {
     // bonus keeps 昼寝/靴下/本棚/半袖/長袖/初詣 intact.
     'ひるね','くつした','ほんだな','はんそで','ながそで','はつもうで',
     'はなみず','あしあと','ひので','おりもの','ほんもの',
+    // なにとぞ (何卒, formal "please/kindly"): a dictionary word, but the
+    // segmenter split it なに+と+ぞ (何とぞ) since と/ぞ are cheap particles.
+    'なにとぞ',
     // おかず (side dish) ends in ず, which is now a forced-kana FUNCTION_WORD
     // (the classical negative auxiliary, …ず) — without this bonus the
     // segmenter split it as おか+ず instead of keeping the whole word.
@@ -31305,7 +31341,12 @@ export class KanaKanjiConverter {
     // to stop it from wrongly demoting genuine katakana loanwords that also
     // list their bare reading as a fallback candidate (バター, リスク…) — see
     // isReduplicated. わろた doesn't fit that shape, so it needs its own entry.
-    'わろた':'わろた'};
+    'わろた':'わろた',
+    // しんど(すぎ/い) -- casual adjective stem for "tough/exhausting",
+    // collided with 震度 (seismic intensity), which lookup() otherwise
+    // ranks first. しんどい itself already defaults to kana correctly; only
+    // the bare stem (used before すぎる/すぎて) needed the same override.
+    'しんど':'しんど'};
   private static supplementaryDict: Record<string, string[]> = {};
   private static learned: Record<string, Record<string, number>> = {};
   private static userDict: Record<string, string[]> = {};
@@ -31656,6 +31697,25 @@ export class KanaKanjiConverter {
     }
   }
 
+  // Per-segment ("文節") learning for the ordinary whole-sentence commit path.
+  // Committing a multi-segment candidate used to record only the entire
+  // reading→surface pair (recordChoice(wholeReading, wholeSurface)), a key
+  // that essentially never recurs verbatim -- so correcting しゃしんをとった
+  // to 写真を撮った taught the IME nothing about とった→撮った for the next
+  // sentence. Recording each (segmentReading, segmentSurface) the accepted
+  // candidate is actually built from makes homophone corrections generalize
+  // word-by-word the way every mature IME's learning does. Only the common
+  // commit path lacked this; the 文節 editing flow (commitBunsetsu) already
+  // recorded per segment. `readings` and `surfaces` are parallel arrays (one
+  // entry per segment); recordChoice's own kana===surface guard drops the
+  // particles/auxiliaries that stayed hiragana, so only content words learn.
+  static recordSegmentedChoice(readings: string[], surfaces: string[]): void {
+    const n = Math.min(readings.length, surfaces.length);
+    for (let i = 0; i < n; i++) {
+      KanaKanjiConverter.recordChoice(readings[i], surfaces[i]);
+    }
+  }
+
   private static applyLearning(kana: string, cands: string[]): string[] {
     const counts = KanaKanjiConverter.learned[kana];
     if (!counts || Object.keys(counts).length === 0) { return cands; }
@@ -31885,6 +31945,16 @@ export class KanaKanjiConverter {
         // FUNCTION_WORDS['は']=true short-circuit above, which otherwise
         // always keeps a bare は in kana regardless of context.
         if (seg === 'は' && next === 'を') { best = '歯'; }
+        // かぜ directly before を+ひく-family (風邪をひいた/ひく/ひきそう/
+        // ひかない/ひこう) is always the illness 風邪, never the literal 風
+        // (wind) that lookup('かぜ') ranks first alone -- 風をひく isn't
+        // idiomatic Japanese. The ひく-family verb itself is separately kept
+        // in kana by the かぜ|ひい.../COLLOCATION_HINTS entries below, since
+        // this idiom conventionally writes it that way even once かぜ itself
+        // is kanji.
+        if (seg === 'かぜ' && next === 'を' && idx + 2 < segs.length && /^ひ[いくきかこ]/.test(segs[idx + 2])) {
+          best = '風邪';
+        }
       }
       // Noun+particle→verb collocation (COLLOCATION_HINTS): 「〜を<noun>を
       // <verb>」within the same phrase picks the verb kanji that noun
@@ -32994,7 +33064,8 @@ export class KanaKanjiConverter {
         sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
         sub === 'とばなかった' || sub === 'くもが' || sub === 'はいきした' ||
         sub === 'みとおしを' || sub === 'かわを' || sub === 'そこを' ||
-        sub === 'たばねてとめた') {
+        sub === 'たばねてとめた' || sub === 'かわいて' || sub === 'ごにん' ||
+        sub === 'ごほん' || sub === 'したくない' || sub === 'めんどくさすぎ') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
@@ -33732,11 +33803,34 @@ export class KanaKanjiConverter {
     // e.g. ["い","っしょ"] → ["いっしょ"]
     // A merged segment no longer corresponds to any single sense the DP
     // picked, so its hint (if any) is dropped rather than carried along.
+    //
+    // Exception: a 2+-char segment starting with ん is never merged.
+    // Restricted to ん specifically (not the rest of isNoStarter's set,
+    // っ/ゃ/ゅ/ょ/ぁ/ぃ/ぅ/ぇ/ぉ/ゎ/ー) -- unlike ん, several of those double as
+    // genuine verb-conjugation glue (って directly after a bare verb stem
+    // with no particle is the て-form ending, e.g. くも+って=曇って, and
+    // belongs merged onto the stem -- exempting FUNCTION_WORDS members here
+    // once regressed exactly that, そら+が+くも+って+きた -> 空が雲ってきた
+    // instead of 曇ってきた, since って's own FUNCTION_WORDS entry covers its
+    // *other*, quotative/topic role "Xっていう"). ん, by contrast, can never
+    // start a native Japanese word or conjugation ending at all -- every
+    // 2+-char segment here already passed segment()'s own inDict() gate to
+    // exist at all (a len==1 span is the only kind that's DP-eligible
+    // without a dictionary hit), so a 2+-char ん-starting segment is always
+    // some recognized colloquial contraction (んだ/んです/んだろう/
+    // んじゃない/んだよね/..., whichever dictionary source recognizes it --
+    // not just the hand-picked FUNCTION_WORDS entries), never a stray
+    // Viterbi split the way a lone ん character can be. Merging it into the
+    // preceding content word instead swallowed the whole rest of the
+    // sentence into one "not really in any dict" span, defeating that
+    // word's own kanji conversion (わからないんだ, ねむれないんだよね, ...
+    // all echoed back in bare kana until this carve-out).
     const merged: string[] = [];
     const mergedHints: (string | undefined)[] = [];
     for (let k = 0; k < segs.length; k++) {
       const seg = segs[k];
-      if (merged.length > 0 && KanaKanjiConverter.isNoStarter(seg[0])) {
+      const isProtectedNContraction = seg[0] === 'ん' && seg.length > 1;
+      if (merged.length > 0 && KanaKanjiConverter.isNoStarter(seg[0]) && !isProtectedNContraction) {
         merged[merged.length - 1] += seg;
         mergedHints[mergedHints.length - 1] = undefined;
       } else {

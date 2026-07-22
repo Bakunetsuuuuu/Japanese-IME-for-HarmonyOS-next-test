@@ -78,6 +78,7 @@ function main() {
     ['TEST8', req('corpus_test8.js'), req('accept_test8.js')],
     ['TEST9', req('corpus_test9.js'), req('accept_test9.js')],
     ['TEST10', req('corpus_test10.js'), req('accept_test10.js')],
+    ['TEST11', req('corpus_test11.js'), req('accept_test11.js')],
     ['VOCAB1', req('vocab_test.js'), {}],
     ['VOCAB2', req('vocab_test2.js'), {}],
     ['VOCAB3', req('vocab_test3.js'), {}],
