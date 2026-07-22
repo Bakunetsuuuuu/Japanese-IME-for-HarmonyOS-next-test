@@ -29,9 +29,24 @@ export struct SettingsBar {
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @State showHistory: boolean = false;
 
+  // Re-read the system clipboard whenever the settings panel opens, so the
+  // クリップボード履歴 count/list is current -- a copy made in the host app
+  // while the keyboard stayed up otherwise wasn't reflected until the keyboard
+  // was closed and reopened (AppGallery reviewer feedback).
+  aboutToAppear(): void {
+    InputHandler.getInstance().refreshClipboard();
+  }
+
   private close(): void {
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
     this.showHistory = false;
+  }
+
+  // Opening the クリップボード履歴 view re-reads the clipboard first, so the
+  // most recent copy is always shown without closing/reopening the keyboard.
+  private openHistory(): void {
+    InputHandler.getInstance().refreshClipboard();
+    this.showHistory = true;
   }
 
   build() {
@@ -156,7 +171,7 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 14, bottom: 14 })
-      .onClick(() => { this.showHistory = true; })
+      .onClick(() => { this.openHistory(); })
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
