@@ -87,4 +87,11 @@ module.exports = [
   ['しずかにしてください', '静かにしてください'],
   ['むりしないでね', '無理しないでね'],
   ['またあしたあおうね', 'また明日会おうね'],
+  // --- reading/surface mismatch regressions (found via kanjidic2 cross-check,
+  // not corpus-derived): DICTIONARY['あたる'] used to be ['与える'] -- 与える's
+  // only real reading is あたえる (confirmed against dict.json, global_dict.json,
+  // and kanjidic2's kun readings for 与, none of which list あたる), so it was a
+  // straightforward key/surface mismatch bug, not an ordering preference. ---
+  ['たからくじにあたる', '宝籤に当たる'],
+  ['なぞなぞにあたる', 'なぞなぞに当たる'],
 ];
