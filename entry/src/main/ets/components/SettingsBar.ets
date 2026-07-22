@@ -133,6 +133,36 @@ export struct SettingsBar {
   // dependency is unambiguous.
 
   @Builder MenuView() {
+    // Clipboard history is one of the most-reached-for items, so it leads the
+    // settings panel rather than sitting near the bottom of その他.
+    this.SectionLabel('クリップボード')
+    Column() {
+      Row() {
+        Text('クリップボード履歴')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Row({ space: 6 }) {
+          Text(String(this.clipboardHistory.length))
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+          Text('›')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(15)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => { this.showHistory = true; })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
     this.SectionLabel('入力')
     Column() {
       // Switches immediately (same process as the keyboard itself) — more
@@ -358,29 +388,6 @@ export struct SettingsBar {
       Divider().color(kbTheme(this.isDark).divider)
 
       Row() {
-        Text('クリップボード履歴')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .layoutWeight(1)
-        Row({ space: 6 }) {
-          Text(String(this.clipboardHistory.length))
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-          Text('›')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(15)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-      }
-      .width('100%')
-      .padding({ top: 14, bottom: 14 })
-      .onClick(() => { this.showHistory = true; })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      Row() {
         Text('レビューを書く')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
@@ -434,7 +441,7 @@ export struct SettingsBar {
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('カード決済対応・登録不要・缶コーヒー1杯から応援')
+          Text('リンクを共有 → 決済できる端末で開いて応援（缶コーヒー1杯から）')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
@@ -461,7 +468,7 @@ export struct SettingsBar {
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('GitHubアカウントが必要・月額/単発どちらも可')
+          Text('リンクを共有 → GitHubで月額/単発の支援（要アカウント）')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)

@@ -17,6 +17,13 @@ function applyOpenUrlWant(want: Want): void {
     const title = want.parameters?.openTitle;
     AppStorage.setOrCreate('pendingWebViewTitle', typeof title === 'string' ? title : '');
   }
+  // Same hand-off pattern as openUrl above, but for raising the system share
+  // sheet (KeyboardController.shareUrl → Index.onPendingShareUrlChanged) --
+  // the share sheet needs a UIAbilityContext the IME extension lacks.
+  const shareUrl = want.parameters?.shareUrl;
+  if (typeof shareUrl === 'string' && shareUrl.length > 0) {
+    AppStorage.setOrCreate('pendingShareUrl', shareUrl);
+  }
 }
 
 export default class EntryAbility extends UIAbility {
