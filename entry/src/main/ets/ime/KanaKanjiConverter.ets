@@ -15990,7 +15990,7 @@ const DICTIONARY: Record<string, string[]> = {
   'ねむれる': ['眠れる'],
   'ねむれない': ['眠れない'],
   'ねむれなかった': ['眠れなかった'],
-  'さます': ['覚ます', '醒ます', '冷ます'],
+  'さます': ['覚ます', '冷ます', '醒ます'],
   'たのしむ': ['楽しむ'],
   'かぶる': ['被る', '冠る'],
   'かぶらない': ['被らない'],
@@ -32098,6 +32098,31 @@ export class KanaKanjiConverter {
     return best === null ? null : bestResult;
   }
 
+  // True when `surface` is a plain (citation) verb/adjective form that is a
+  // sane kanji alternative for a reading the base parse kept as kana. Used to
+  // let でる→出る, かつ→勝つ, やむ→止む through while rejecting particle homographs
+  // (は→歯, なら→成ら, から→刈ら): the surface must contain a kanji, end in a
+  // dictionary-form terminal kana (る/つ/む/く/ぐ/ぶ/ぬ/す/う or adjective い), and
+  // that trailing kana run must also be a suffix of the reading (okurigana
+  // match). あ-row stems (刈ら, 成ら) and bare-kanji nouns (歯, 荷) both fail.
+  private static isCitationFormAlt(reading: string, surface: string): boolean {
+    if (surface.length < 2) { return false; }
+    let hasKanji = false;
+    for (let p = 0; p < surface.length; p++) {
+      const code = surface.charCodeAt(p);
+      if (code >= 0x4e00 && code <= 0x9fff) { hasKanji = true; break; }
+    }
+    if (!hasKanji) { return false; }
+    if ('るつむくぐぶぬすうい'.indexOf(surface[surface.length - 1]) < 0) { return false; }
+    let tail = '';
+    for (let p = surface.length - 1; p >= 0; p--) {
+      const ch = surface[p];
+      if (ch >= 'ぁ' && ch <= 'ん') { tail = ch + tail; } else { break; }
+    }
+    if (tail.length === 0) { return false; }
+    return reading.endsWith(tail);
+  }
+
   // Whole-sentence homophone alternatives for candidate positions 1+, track A.
   // The default engine used to offer only the LAST segment's variants
   // (updateCandidates' decompose branch) or the whole reading's katakana/kana,
@@ -32158,19 +32183,24 @@ export class KanaKanjiConverter {
     // word it is.
     const perSeg: string[][] = [];
     for (let i = 0; i < segs.length; i++) {
-      // Skip particles/auxiliaries kept as kana: their "homophones" are kanji
-      // homographs of a grammatical word (は→歯/葉, に→荷/似), wrong in the slot.
-      if (KanaKanjiConverter.FUNCTION_WORDS[segs[i]] || chosen[i] === segs[i]) {
-        perSeg.push([]);
-        continue;
-      }
+      // A segment the base parse kept as kana is either a particle/auxiliary
+      // (は, に, から) or a conjugatable content word autoConvert declined to
+      // kanji-ify (でる, かつ, うむ, やむ). Both used to be skipped outright, but
+      // that dropped the very homophone the user reaches for -- 試合に出る,
+      // 相手に勝つ, 雨が止む never appeared at any position. For these we still
+      // emit alternatives, but ONLY plain-form verb/adjective kanji whose
+      // okurigana matches the reading (isCitationFormAlt): that surfaces
+      // 出る/勝つ/止む while still blocking particle homographs (は→歯, なら→成ら).
+      const isKanaKept = KanaKanjiConverter.FUNCTION_WORDS[segs[i]] || chosen[i] === segs[i];
       const pool = this.lookup(segs[i]);
       const prefix = chosen.slice(0, i).join('');
       const suffix = chosen.slice(i + 1).join('');
+      const cap = isKanaKept ? 2 : MAX_ALTS_PER_SEG;
       const list: string[] = [];
-      for (let j = 0; j < pool.length && list.length < MAX_ALTS_PER_SEG; j++) {
+      for (let j = 0; j < pool.length && list.length < cap; j++) {
         const alt = pool[j];
         if (alt === chosen[i] || alt === segs[i] || KanaKanjiConverter.isSymbolOnly(alt)) { continue; }
+        if (isKanaKept && !KanaKanjiConverter.isCitationFormAlt(segs[i], alt)) { continue; }
         list.push(prefix + alt + suffix);
       }
       perSeg.push(list);
@@ -32634,20 +32664,43 @@ export class KanaKanjiConverter {
     const out: string[] = [base];
     const MAX_ALTS_PER_SEG = 4;
     const MAX_TOTAL = 24;
-    for (let i = 0; i < segs.length && out.length < MAX_TOTAL; i++) {
-      const e = KanaKanjiConverter.getMozcDictSurfaces(segs[i]);
-      if (!e || e.length < 2) { continue; }
+    // Build each segment's alternative-sentence list, then interleave them
+    // ROUND-ROBIN (every segment's #1 alternative, then every segment's #2, ...)
+    // rather than exhausting one segment before the next. Earliest-segment-first
+    // buried the word the user actually wanted behind noise: あめをたべる spent
+    // positions 1-4 on あめ's homophones (雨/編め/天/アメ -- all wrong, たべる is
+    // the ambiguous word) so 飴を食べる didn't appear until position 4+. This is
+    // the same fix (and reasoning) as track A's sentenceAlternatives. Positions
+    // 1+ only -- base stays candidate[0].
+    const perSeg: string[][] = [];
+    for (let i = 0; i < segs.length; i++) {
+      const alts = this.segmentAltSurfaces(segs[i], chosen[i]);
       const prefix = chosen.slice(0, i).join('');
       const suffix = chosen.slice(i + 1).join('');
-      let added = 0;
-      for (let j = 0; j < e.length && added < MAX_ALTS_PER_SEG && out.length < MAX_TOTAL; j++) {
-        if (e[j] === chosen[i]) { continue; }
-        const cand = prefix + e[j] + suffix;
-        if (out.indexOf(cand) < 0) {
-          out.push(cand);
-          added++;
-        }
+      const list: string[] = [];
+      for (let j = 0; j < alts.length && list.length < MAX_ALTS_PER_SEG; j++) {
+        list.push(prefix + alts[j] + suffix);
       }
+      perSeg.push(list);
+    }
+    const mozcAlts: string[] = [];
+    for (let round = 0; round < MAX_ALTS_PER_SEG && mozcAlts.length < MAX_TOTAL; round++) {
+      for (let i = 0; i < perSeg.length && mozcAlts.length < MAX_TOTAL; i++) {
+        const cand = perSeg[i][round];
+        if (cand !== undefined && cand !== base && mozcAlts.indexOf(cand) < 0) { mozcAlts.push(cand); }
+      }
+    }
+    // Hybrid: interleave track A's curated homophone alternatives with mozc's
+    // own (track A first each step, so a homophone mozc buried/lacked is reached
+    // early) instead of appending mozc's alone. Pure mozc uses mozcAlts as-is.
+    const merged = KanaKanjiConverter.engine === 'hybrid'
+      ? KanaKanjiConverter.interleaveAlternatives(
+          this.hybridTrackAAlternatives(this.mozcLastInput).filter((c: string) => c !== base),
+          mozcAlts)
+      : mozcAlts;
+    for (const c of merged) {
+      if (out.length >= MAX_TOTAL) { break; }
+      if (out.indexOf(c) < 0) { out.push(c); }
     }
     // Full-katakana and as-typed forms as final fallbacks, same contract as
     // every other candidate list in this app.
@@ -32655,6 +32708,87 @@ export class KanaKanjiConverter {
     if (out.indexOf(kata) < 0) { out.push(kata); }
     if (out.indexOf(this.mozcLastInput) < 0) { out.push(this.mozcLastInput); }
     return out;
+  }
+
+  // Interleave two candidate lists, one from each, `a` first each step,
+  // dropping duplicates. Used to fold hybrid's track-A alternatives into mozc's.
+  private static interleaveAlternatives(a: string[], b: string[]): string[] {
+    const out: string[] = [];
+    const n = Math.max(a.length, b.length);
+    for (let i = 0; i < n; i++) {
+      if (i < a.length && out.indexOf(a[i]) < 0) { out.push(a[i]); }
+      if (i < b.length && out.indexOf(b[i]) < 0) { out.push(b[i]); }
+    }
+    return out;
+  }
+
+  // Alternative surfaces for one segment inside composeMozcCandidates' round
+  // robin (the already-chosen surface, the bare reading, and symbols excluded):
+  // the reading's other mozc-dictionary surfaces in mozc cost order. Track A's
+  // homophone recall is folded in at the WHOLE-SENTENCE level for the hybrid
+  // engine instead (see hybridTrackAAlternatives) -- per-segment raw dictionary
+  // surfaces (dict.json lists single kanji and rare forms: を→居, あせ→焦慮)
+  // flooded the pool with noise, whereas track A's own lookup pipeline
+  // (filterCandidates/boostCommonWords/FUNCTION_WORDS gating) yields clean ones.
+  private segmentAltSurfaces(seg: string, chosen: string): string[] {
+    const mozc = KanaKanjiConverter.getMozcDictSurfaces(seg);
+    const alts: string[] = [];
+    if (mozc !== undefined) {
+      for (const s of mozc) {
+        if (s !== chosen && s !== seg && !KanaKanjiConverter.isSymbolOnly(s) && alts.indexOf(s) < 0) {
+          alts.push(s);
+        }
+      }
+    }
+    return alts;
+  }
+
+  // Hybrid engine (the third track): track A's own whole-input candidate[0] and
+  // homophone alternatives, computed by briefly running the custom pipeline.
+  // This is where hybrid diverges from pure mozc -- mozc keeps candidate[0]
+  // (its statistically strong DP pick, untouched), and track A lends its far
+  // higher homophone recall to positions 1+ (家に帰る for いえにかえる, 音楽を聴く
+  // for おんがくをきく, 体重を計る for たいじゅうをはかる) which mozc's per-reading
+  // lists either lack or bury. Track A's base is included because it is itself
+  // frequently the homophone mozc missed. Runs track A's real lookup, so its
+  // filterCandidates/boostCommonWords/FUNCTION_WORDS curation applies -- no raw
+  // scraped surfaces leak in. segment() only writes mozc instance state inside
+  // its isMozc block, so the temporary engine flip cannot corrupt the mozc
+  // locals composeMozcCandidates already captured.
+  private hybridTrackAAlternatives(input: string): string[] {
+    const saved = KanaKanjiConverter.engine;
+    KanaKanjiConverter.engine = 'custom';
+    let result: string[] = [];
+    try {
+      const segs = this.segment(input);
+      const fullKata = KanaKanjiConverter.toKatakana(input);
+      let base: string;
+      if (segs.length <= 1) {
+        base = this.lookup(input)[0];
+      } else {
+        const full = this.lookup(input);
+        const hasRealHit = (full[0] !== fullKata && full[0] !== input)
+          || KanaKanjiConverter.isDictionaryWord(input);
+        if (hasRealHit) {
+          base = full[0];
+        } else {
+          const prefixParts = segs.slice(0, -1).map((s: string, i: number) =>
+            this.autoConvert(s, segs[i + 1], segs[i - 1]));
+          base = KanaKanjiConverter.isSymbolOnly(prefixParts.join('')) ? input
+            : prefixParts.join('') + this.lookup(segs[segs.length - 1])[0];
+        }
+      }
+      const alts = this.sentenceAlternatives(input);
+      const out: string[] = [];
+      if (base !== undefined && base.length > 0) { out.push(base); }
+      for (const a of alts) { if (out.indexOf(a) < 0) { out.push(a); } }
+      result = out;
+    } catch (_e) {
+      result = [];
+    } finally {
+      KanaKanjiConverter.engine = saved;
+    }
+    return result;
   }
 
   // Closed set of compound-verb second elements (as they appear at the end of

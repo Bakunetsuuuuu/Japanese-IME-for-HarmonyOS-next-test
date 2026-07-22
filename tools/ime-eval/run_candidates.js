@@ -91,6 +91,15 @@ function main() {
     { reading: 'じかんをとる', want: '時間を取る' },
     { reading: 'はなをみる', want: '花を見る' },
     { reading: 'はやくなおす', want: '早く治す' },
+    // Content verbs the base parse keeps as kana (でる/かつ/くる/うむ) must still
+    // surface their kanji as an alternative -- these were ABSENT entirely before
+    // the isCitationFormAlt path let a kana-kept segment contribute its
+    // plain-form verb kanji (出る/勝つ/来る/産む) without leaking particle
+    // homographs (は→歯, なら→成ら).
+    { reading: 'しあいにでる', want: '試合に出る' },
+    { reading: 'あいてにかつ', want: '相手に勝つ' },
+    { reading: 'よあけがくる', want: '夜明けが来る' },
+    { reading: 'たまごをうむ', want: '卵を産む' },
   ];
 
   let pass = 0;
