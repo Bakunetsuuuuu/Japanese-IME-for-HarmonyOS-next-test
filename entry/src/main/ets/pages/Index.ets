@@ -210,6 +210,43 @@ struct Index {
     });
   }
 
+  // Delete a single reading→word entry straight from the list (swipe-left
+  // reveal). The same delete existed before only buried at the bottom of the
+  // edit screen (DictionaryEditPage's "この単語を削除"), which users couldn't
+  // find; deleting inline here is the standard mobile pattern. Persists to
+  // disk (same save path as edit/add) so the keyboard extension picks it up
+  // on its next reloadUserDict.
+  private deleteRow(row: DictRow): void {
+    const ctx = getContext(this);
+    Promise.all([
+      UserDictStore.load(ctx, true),
+      UserPosStore.load(ctx, true),
+    ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
+      const dict = UserDictStore.remove(results[0], row.yomi, row.word);
+      const posMap = UserPosStore.remove(results[1], row.yomi, row.word);
+      return Promise.all([
+        UserDictStore.save(ctx, dict),
+        UserPosStore.save(ctx, posMap),
+      ]);
+    }).then(() => {
+      promptAction.showToast({ message: `「${row.word}」を削除しました` });
+      this.reload();
+    }).catch((err: Error) => console.error('shuntiIME deleteRow failed', JSON.stringify(err)));
+  }
+
+  @Builder DeleteButton(row: DictRow) {
+    Text('削除')
+      .fontFamily(JP_FONT_FAMILY)
+      .fontSize(14)
+      .fontWeight(FontWeight.Medium)
+      .fontColor('#FFFFFF')
+      .textAlign(TextAlign.Center)
+      .width(76)
+      .height('100%')
+      .backgroundColor(DELETE_RED)
+      .onClick(() => { this.deleteRow(row); })
+  }
+
   build() {
     Stack() {
       Column() {
@@ -269,49 +306,46 @@ struct Index {
           .width('100%')
           .padding({ top: 64 })
         } else {
-          Scroll() {
-            Column() {
-              ForEach(this.visibleRows(), (row: DictRow, index: number) => {
-                Column() {
-                  Row() {
-                    Column({ space: 2 }) {
-                      Text(row.word)
-                        .fontFamily(JP_FONT_FAMILY)
-                        .fontSize(15)
-                        .fontWeight(FontWeight.Medium)
-                        .fontColor(kbTheme(this.isDark).textPrimary)
-                      Text(row.posLabel.length > 0 ? `${row.yomi} ・ ${row.posLabel}` : row.yomi)
-                        .fontFamily(JP_FONT_FAMILY)
-                        .fontSize(12)
-                        .fontColor(kbTheme(this.isDark).textSecondary)
-                    }
-                    .alignItems(HorizontalAlign.Start)
-                    .layoutWeight(1)
-
-                    Text('›')
+          // Swipe a row left to reveal 削除 (see DeleteButton/deleteRow) --
+          // a List (not the old Scroll+Column) is what enables swipeAction.
+          List() {
+            ForEach(this.visibleRows(), (row: DictRow) => {
+              ListItem() {
+                Row() {
+                  Column({ space: 2 }) {
+                    Text(row.word)
                       .fontFamily(JP_FONT_FAMILY)
                       .fontSize(15)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(kbTheme(this.isDark).textPrimary)
+                    Text(row.posLabel.length > 0 ? `${row.yomi} ・ ${row.posLabel}` : row.yomi)
+                      .fontFamily(JP_FONT_FAMILY)
+                      .fontSize(12)
                       .fontColor(kbTheme(this.isDark).textSecondary)
                   }
-                  .width('100%')
-                  .padding({ top: 13, bottom: 13 })
-                  .onClick(() => { this.openEditor(row); })
+                  .alignItems(HorizontalAlign.Start)
+                  .layoutWeight(1)
 
-                  if (index < this.visibleRows().length - 1) {
-                    Divider().color(kbTheme(this.isDark).divider)
-                  }
+                  Text('›')
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(15)
+                    .fontColor(kbTheme(this.isDark).textSecondary)
                 }
-              }, (row: DictRow) => row.yomi + '' + row.word)
-            }
-            .width('100%')
-            .backgroundColor(kbTheme(this.isDark).cardBg)
-            .borderRadius(CARD_RADIUS)
-            .padding({ left: 14, right: 14 })
+                .width('100%')
+                .padding({ left: 14, right: 14, top: 13, bottom: 13 })
+                .backgroundColor(kbTheme(this.isDark).cardBg)
+                .onClick(() => { this.openEditor(row); })
+              }
+              .swipeAction({ end: this.DeleteButton(row) })
+            }, (row: DictRow) => row.yomi + '' + row.word)
           }
           .width('100%')
           .layoutWeight(1)
-          .padding({ left: 16, right: 16 })
-          .align(Alignment.Top)
+          .backgroundColor(kbTheme(this.isDark).cardBg)
+          .borderRadius(CARD_RADIUS)
+          .clip(true)
+          .margin({ left: 16, right: 16 })
+          .divider({ strokeWidth: 1, color: kbTheme(this.isDark).divider })
         }
 
         // Footer

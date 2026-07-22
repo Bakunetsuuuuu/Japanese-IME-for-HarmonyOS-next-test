@@ -174,7 +174,7 @@ struct DictionaryEditPage {
             .fontColor(kbTheme(this.isDark).accent)
             .onClick(() => { router.back(); })
         }
-        .width(56)
+        .width(84)
         .justifyContent(FlexAlign.Start)
 
         Text(this.isExisting ? '単語を編集' : '単語を追加')
@@ -185,7 +185,18 @@ struct DictionaryEditPage {
           .layoutWeight(1)
           .textAlign(TextAlign.Center)
 
-        Row() {
+        // Delete lives in the header (existing entries only), well apart from
+        // 保存, so it's always visible without scrolling -- the old
+        // bottom-of-scroll "この単語を削除" was below the 品詞 picker and
+        // users couldn't find it. 🗑 icon (not text) so it never looks like
+        // another save-style action next to 保存.
+        Row({ space: 18 }) {
+          if (this.isExisting) {
+            Text('🗑')
+              .fontSize(17)
+              .fontColor(DELETE_RED)
+              .onClick(() => { this.deleteEntry(); })
+          }
           Text('保存')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
@@ -202,7 +213,7 @@ struct DictionaryEditPage {
             // a misleading "disabled" appearance without adding real safety.
             .onClick(() => { this.saveEntry(); })
         }
-        .width(56)
+        .width(84)
         .justifyContent(FlexAlign.End)
       }
       .width('100%')
@@ -329,18 +340,6 @@ struct DictionaryEditPage {
           }
           .width('100%')
           .margin({ bottom: 22 })
-
-          if (this.isExisting) {
-            Text('この単語を削除')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(DELETE_RED)
-              .width('100%')
-              .textAlign(TextAlign.Center)
-              .padding({ top: 14, bottom: 14 })
-              .onClick(() => { this.deleteEntry(); })
-          }
         }
         .width('100%')
         .padding(16)
