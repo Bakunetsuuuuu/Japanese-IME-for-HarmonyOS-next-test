@@ -9,7 +9,6 @@ import { FlickKeyboardView } from '../components/FlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
 import { EmojiView } from '../components/EmojiView';
 import { NumericPadView } from '../components/NumericPadView';
-import { DeleteHistoryView } from '../components/DeleteHistoryView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
 import { SettingsBar } from '../components/SettingsBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
@@ -106,18 +105,15 @@ struct KeyboardPage {
 
   build() {
     Column() {
-      // Symbol/Emoji/Settings/DeleteHistory views take the full panel (no
-      // preview bar). Numeric keeps the preview bar — without it the pad's
-      // rows stretch to fill the whole panel height and end up uncomfortably
-      // tall.
+      // Symbol/Emoji/Settings views take the full panel (no preview bar).
+      // Numeric keeps the preview bar — without it the pad's rows stretch to
+      // fill the whole panel height and end up uncomfortably tall.
       if (this.keyboardSubMode === 'symbol') {
         SymbolView()
       } else if (this.keyboardSubMode === 'emoji') {
         EmojiView()
       } else if (this.keyboardSubMode === 'settings') {
         SettingsBar()
-      } else if (this.keyboardSubMode === 'deleteHistory') {
-        DeleteHistoryView()
       } else {
         // Preview bar
         if (this.inputState === InputState.BUNSETSU) {
