@@ -108,6 +108,12 @@ function main() {
     { reading: 'こどもをかえす', want: '子供を帰す' },
     { reading: 'こうほをおす', want: '候補を推す' },
     { reading: 'やさいがいたむ', want: '野菜が傷む' },
+    // はる's DICTIONARY entry was just ['春'] -- 張る/貼る (extremely common verbs,
+    // "貼り紙を貼る"/"ポスターを貼る") were unreachable at any position. Added as
+    // alternatives (candidate[0]='春' kept: はる alone, out of context, is a
+    // genuine toss-up between the season and the verb, unlike あたる/与える which
+    // was an outright reading bug -- see corpus.js's TRAIN addition for that one).
+    { reading: 'ポスターをはる', want: 'ポスターを貼る' },
     // 務める itself was added too (see DICTIONARY['つとめる']) and is a real
     // improvement (ぎむをつとめる went from fully ABSENT to reachable), but not
     // locked here: the OTHER segment (ぎむ) has its own rare-homophone
