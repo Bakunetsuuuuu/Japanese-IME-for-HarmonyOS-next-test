@@ -32098,6 +32098,73 @@ export class KanaKanjiConverter {
     return best === null ? null : bestResult;
   }
 
+  // Whole-sentence homophone alternatives for candidate positions 1+, track A.
+  // The default engine used to offer only the LAST segment's variants
+  // (updateCandidates' decompose branch) or the whole reading's katakana/kana,
+  // so a homophone in any non-final word never appeared anywhere in the list:
+  // はしをわたる led with 箸を渡る and never offered 橋を渡る; しゃしんをとった
+  // could not reach 写真を取った. This mirrors track B's composeMozcCandidates:
+  // swap ONE segment at a time to its other lookup candidates, keeping the rest
+  // at their base auto-conversion, earliest segment first. Returns alternatives
+  // only -- never the base candidate[0], which updateCandidates computes and
+  // keeps unchanged (the corpus only regression-gates position 0). Empty for
+  // track B, whose lookup() already routes through composeMozcCandidates.
+  sentenceAlternatives(kana: string): string[] {
+    if (KanaKanjiConverter.isMozcEngine()) { return []; }
+    if (kana.length === 0) { return []; }
+    let segs = this.segment(kana);
+    // A whole-phrase single-span dict entry (しゃしんをとった) blocks per-word
+    // alternatives; force a split (forbid the whole-string span, same detour
+    // mechanism findBoundaryDetourAlternate uses) so its component words can
+    // still contribute homophones. Only for readings long enough to be a
+    // phrase, and only if the forced split actually produces multiple pieces.
+    let forcedSplit = false;
+    if (segs.length === 1 && kana.length >= 4) {
+      const forced = this.segment(kana, [0, kana.length]);
+      if (forced.length > 1) { segs = forced; forcedSplit = true; }
+    }
+    if (segs.length <= 1) {
+      const out: string[] = [];
+      const cands = this.lookup(kana);
+      for (let i = 1; i < cands.length; i++) {
+        const c = cands[i];
+        if (c === kana || KanaKanjiConverter.isSymbolOnly(c)) { continue; }
+        out.push(c);
+      }
+      return out;
+    }
+    const chosen: string[] = segs.map((s: string, i: number) => this.autoConvert(s, segs[i + 1], segs[i - 1]));
+    const out: string[] = [];
+    // When we forced a split of a whole-phrase entry, the forced parse's own
+    // base rendering (写真を取った for しゃしんをとった, distinct from the entry's
+    // canonical 写真を撮った at position 0) is itself a useful alternative --
+    // emit it before the per-segment swaps. Deduped against position 0 in
+    // updateCandidates. Not needed for a naturally multi-segment reading,
+    // whose base parse already IS position 0.
+    if (forcedSplit) {
+      const base = chosen.join('');
+      if (!KanaKanjiConverter.isSymbolOnly(base)) { out.push(base); }
+    }
+    const MAX_ALTS_PER_SEG = 3;
+    const MAX_TOTAL = 12;
+    for (let i = 0; i < segs.length && out.length < MAX_TOTAL; i++) {
+      // Skip particles/auxiliaries kept as kana: their "homophones" are kanji
+      // homographs of a grammatical word (は→歯/葉, に→荷/似), wrong in the slot.
+      if (KanaKanjiConverter.FUNCTION_WORDS[segs[i]] || chosen[i] === segs[i]) { continue; }
+      const pool = this.lookup(segs[i]);
+      const prefix = chosen.slice(0, i).join('');
+      const suffix = chosen.slice(i + 1).join('');
+      let added = 0;
+      for (let j = 0; j < pool.length && added < MAX_ALTS_PER_SEG && out.length < MAX_TOTAL; j++) {
+        const alt = pool[j];
+        if (alt === chosen[i] || alt === segs[i] || KanaKanjiConverter.isSymbolOnly(alt)) { continue; }
+        const cand = prefix + alt + suffix;
+        if (out.indexOf(cand) < 0) { out.push(cand); added++; }
+      }
+    }
+    return out;
+  }
+
   private static contextRerank(reading: string, cands: string[]): string[] {
     const buffer = KanaKanjiConverter.contextBuffer;
     if (buffer.length === 0) { return cands; }

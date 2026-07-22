@@ -1109,13 +1109,31 @@ export class InputHandler {
       }
     }
 
-    // 自動区切り変更: a second candidate from a differently-segmented parse
-    // of the same reading (へんかんせいど's single whole-compound entry
-    // 変換精度 vs the へんかん+せいど split's 返還制度) — inserted right after
-    // the primary pick, not replacing it.
+    // Per-segment homophone alternatives for the whole sentence, inserted
+    // right after the primary pick and ahead of the katakana/kana fallbacks
+    // the branches above appended. Track A used to offer only the last
+    // segment's variants (or nothing useful for a whole-phrase entry), so a
+    // homophone in any earlier word — 橋/箸 in はしをわたる, 撮る/取る in
+    // 写真をとった — never appeared anywhere in the list. (Empty for track B,
+    // whose lookup already routed through composeMozcCandidates above.)
+    const alts = this.kanjiConverter.sentenceAlternatives(composing);
+    let insertAt = 1;
+    for (const a of alts) {
+      if (!candidates.includes(a)) {
+        candidates.splice(insertAt, 0, a);
+        insertAt++;
+      }
+    }
+
+    // 自動区切り変更: a candidate from a differently-segmented parse of the
+    // same reading (へんかんせいど's single whole-compound entry 変換精度 vs the
+    // へんかん+せいど split's 返還制度). Demoted below the per-segment
+    // alternatives above: its boundary-detour search occasionally yields a
+    // linguistically odd reparse (先生似合う for せんせいにあう), so it's a
+    // lower-priority alternative, not the second candidate.
     const altSeg = this.kanjiConverter.findAlternateSegmentation(composing);
     if (altSeg !== null && !candidates.includes(altSeg)) {
-      candidates.splice(1, 0, altSeg);
+      candidates.splice(insertAt, 0, altSeg);
     }
 
     // Predictive completion: once enough of a known common phrase's reading
