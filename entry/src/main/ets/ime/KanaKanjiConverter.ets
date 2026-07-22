@@ -15990,7 +15990,7 @@ const DICTIONARY: Record<string, string[]> = {
   'ねむれる': ['眠れる'],
   'ねむれない': ['眠れない'],
   'ねむれなかった': ['眠れなかった'],
-  'さます': ['覚ます', '醒ます', '冷ます'],
+  'さます': ['覚ます', '冷ます', '醒ます'],
   'たのしむ': ['楽しむ'],
   'かぶる': ['被る', '冠る'],
   'かぶらない': ['被らない'],
@@ -32098,6 +32098,31 @@ export class KanaKanjiConverter {
     return best === null ? null : bestResult;
   }
 
+  // True when `surface` is a plain (citation) verb/adjective form that is a
+  // sane kanji alternative for a reading the base parse kept as kana. Used to
+  // let でる→出る, かつ→勝つ, やむ→止む through while rejecting particle homographs
+  // (は→歯, なら→成ら, から→刈ら): the surface must contain a kanji, end in a
+  // dictionary-form terminal kana (る/つ/む/く/ぐ/ぶ/ぬ/す/う or adjective い), and
+  // that trailing kana run must also be a suffix of the reading (okurigana
+  // match). あ-row stems (刈ら, 成ら) and bare-kanji nouns (歯, 荷) both fail.
+  private static isCitationFormAlt(reading: string, surface: string): boolean {
+    if (surface.length < 2) { return false; }
+    let hasKanji = false;
+    for (let p = 0; p < surface.length; p++) {
+      const code = surface.charCodeAt(p);
+      if (code >= 0x4e00 && code <= 0x9fff) { hasKanji = true; break; }
+    }
+    if (!hasKanji) { return false; }
+    if ('るつむくぐぶぬすうい'.indexOf(surface[surface.length - 1]) < 0) { return false; }
+    let tail = '';
+    for (let p = surface.length - 1; p >= 0; p--) {
+      const ch = surface[p];
+      if (ch >= 'ぁ' && ch <= 'ん') { tail = ch + tail; } else { break; }
+    }
+    if (tail.length === 0) { return false; }
+    return reading.endsWith(tail);
+  }
+
   // Whole-sentence homophone alternatives for candidate positions 1+, track A.
   // The default engine used to offer only the LAST segment's variants
   // (updateCandidates' decompose branch) or the whole reading's katakana/kana,
@@ -32158,19 +32183,24 @@ export class KanaKanjiConverter {
     // word it is.
     const perSeg: string[][] = [];
     for (let i = 0; i < segs.length; i++) {
-      // Skip particles/auxiliaries kept as kana: their "homophones" are kanji
-      // homographs of a grammatical word (は→歯/葉, に→荷/似), wrong in the slot.
-      if (KanaKanjiConverter.FUNCTION_WORDS[segs[i]] || chosen[i] === segs[i]) {
-        perSeg.push([]);
-        continue;
-      }
+      // A segment the base parse kept as kana is either a particle/auxiliary
+      // (は, に, から) or a conjugatable content word autoConvert declined to
+      // kanji-ify (でる, かつ, うむ, やむ). Both used to be skipped outright, but
+      // that dropped the very homophone the user reaches for -- 試合に出る,
+      // 相手に勝つ, 雨が止む never appeared at any position. For these we still
+      // emit alternatives, but ONLY plain-form verb/adjective kanji whose
+      // okurigana matches the reading (isCitationFormAlt): that surfaces
+      // 出る/勝つ/止む while still blocking particle homographs (は→歯, なら→成ら).
+      const isKanaKept = KanaKanjiConverter.FUNCTION_WORDS[segs[i]] || chosen[i] === segs[i];
       const pool = this.lookup(segs[i]);
       const prefix = chosen.slice(0, i).join('');
       const suffix = chosen.slice(i + 1).join('');
+      const cap = isKanaKept ? 2 : MAX_ALTS_PER_SEG;
       const list: string[] = [];
-      for (let j = 0; j < pool.length && list.length < MAX_ALTS_PER_SEG; j++) {
+      for (let j = 0; j < pool.length && list.length < cap; j++) {
         const alt = pool[j];
         if (alt === chosen[i] || alt === segs[i] || KanaKanjiConverter.isSymbolOnly(alt)) { continue; }
+        if (isKanaKept && !KanaKanjiConverter.isCitationFormAlt(segs[i], alt)) { continue; }
         list.push(prefix + alt + suffix);
       }
       perSeg.push(list);
