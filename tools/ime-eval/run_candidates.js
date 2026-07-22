@@ -63,23 +63,34 @@ function main() {
       }
     }
     const alts = conv.sentenceAlternatives(composing);
-    let insertAt = 1;
+    const kIdx = candidates.indexOf(fullKatakana), cIdx = candidates.indexOf(composing);
+    let insertAt;
+    if (kIdx < 0 && cIdx < 0) insertAt = candidates.length;
+    else if (kIdx < 0) insertAt = cIdx; else if (cIdx < 0) insertAt = kIdx; else insertAt = Math.min(kIdx, cIdx);
     for (const a of alts) { if (!candidates.includes(a)) { candidates.splice(insertAt, 0, a); insertAt++; } }
     const altSeg = conv.findAlternateSegmentation(composing);
     if (altSeg !== null && !candidates.includes(altSeg)) candidates.splice(insertAt, 0, altSeg);
     return candidates;
   };
 
-  // Each case: `want` must appear somewhere in positions 1..topN (NOT at 0 --
-  // it's the *alternative*, position 0 is something else). topN=5 = the row of
-  // candidates a user sees before scrolling.
-  const TOP_N = 6;
+  // Each case: `want` (the intended reading when candidate[0] is something
+  // else) must appear within the TOP_N candidates a user sees before
+  // scrolling, at position >= 1 (it's the *alternative*). TOP_N=4 = positions
+  // 0-3, i.e. the desired word must be reachable in the first two or three
+  // taps -- the practical bar: "if the first guess is wrong, the word I want
+  // is right there." Round-robin per-segment alternatives make this hold
+  // whichever single word is ambiguous.
+  const TOP_N = 4;
   const cases = [
     { reading: 'はしをわたる', want: '橋を渡る' },
     { reading: 'しゃしんをとった', want: '写真を取った' },
     { reading: 'あめがふってきた', want: '飴が降ってきた' },
     { reading: 'せんせいにあう', want: '先生に合う' },
     { reading: 'かれとはなす', want: '彼と離す' },
+    { reading: 'きをつかう', want: '気を遣う' },
+    { reading: 'じかんをとる', want: '時間を取る' },
+    { reading: 'はなをみる', want: '花を見る' },
+    { reading: 'はやくなおす', want: '早く治す' },
   ];
 
   let pass = 0;
