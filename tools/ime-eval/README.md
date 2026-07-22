@@ -24,6 +24,7 @@ node tools/ime-eval/sweep.js          # 4000-key dict-sampling old(HEAD)-vs-new(
 node tools/ime-eval/sweep_join.js     # same, but sampling concatenated dict-key PAIRS -- see "Regression tooling" below
 node tools/ime-eval/regress.js        # classifies every corpus row that changed into FIXED/REGRESSED/CHANGED_STILL_WRONG
 node tools/ime-eval/run_learning.js   # 文節-level learning: teaching a word via one sentence generalizes to others
+node tools/ime-eval/run_candidates.js # positions 1+ offer useful homophone/parse alternatives, not katakana/kana junk
 ```
 
 Note: the corpus scripts above never call `recordChoice`/`recordSegmentedChoice`,
