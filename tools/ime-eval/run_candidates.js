@@ -100,6 +100,20 @@ function main() {
     { reading: 'あいてにかつ', want: '相手に勝つ' },
     { reading: 'よあけがくる', want: '夜明けが来る' },
     { reading: 'たまごをうむ', want: '卵を産む' },
+    // Real dictionary-coverage gaps: dict.json had these surfaces buried past a
+    // wall of obscure single-kanji entries (帰す/推す/傷む/務める were present
+    // but at position 10+), so they never reached the in-code DICTIONARY's
+    // curated list at all -- adding them there (candidate[0] unchanged, they
+    // were appended after the existing head) makes them reachable.
+    { reading: 'こどもをかえす', want: '子供を帰す' },
+    { reading: 'こうほをおす', want: '候補を推す' },
+    { reading: 'やさいがいたむ', want: '野菜が傷む' },
+    // 務める itself was added too (see DICTIONARY['つとめる']) and is a real
+    // improvement (ぎむをつとめる went from fully ABSENT to reachable), but not
+    // locked here: the OTHER segment (ぎむ) has its own rare-homophone
+    // alternative (蟻夢) that consumes a round-robin slot ahead of it, landing
+    // 義務を務める at position 4 rather than within this file's strict top-4 --
+    // a separate round-robin-dilution issue, not a dictionary gap.
   ];
 
   let pass = 0;
