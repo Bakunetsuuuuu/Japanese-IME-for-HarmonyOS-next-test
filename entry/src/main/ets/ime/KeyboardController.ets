@@ -1128,7 +1128,20 @@ export class InputHandler {
     // 写真をとった — never appeared anywhere in the list. (Empty for track B,
     // whose lookup already routed through composeMozcCandidates above.)
     const alts = this.kanjiConverter.sentenceAlternatives(composing);
-    let insertAt = 1;
+    // Insert the alternatives just ABOVE the katakana/kana fallbacks, not at a
+    // fixed position 1: a whole-phrase dict entry can already carry a genuine
+    // kanji alternative at candidate[1] (はなをみる → 花を観る, 花を見る), and
+    // blindly prepending would bury that real alternative below the injected
+    // ones. Find where the junk (full katakana / as-typed kana) starts and
+    // slot the alternatives right before it, so both the entry's own
+    // alternatives and the per-segment swaps stay above the fallbacks.
+    const kIdx = candidates.indexOf(fullKatakana);
+    const cIdx = candidates.indexOf(composing);
+    let insertAt: number;
+    if (kIdx < 0 && cIdx < 0) { insertAt = candidates.length; }
+    else if (kIdx < 0) { insertAt = cIdx; }
+    else if (cIdx < 0) { insertAt = kIdx; }
+    else { insertAt = kIdx < cIdx ? kIdx : cIdx; }
     for (const a of alts) {
       if (!candidates.includes(a)) {
         candidates.splice(insertAt, 0, a);

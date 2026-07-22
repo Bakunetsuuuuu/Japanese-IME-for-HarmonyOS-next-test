@@ -32147,19 +32147,38 @@ export class KanaKanjiConverter {
     }
     const MAX_ALTS_PER_SEG = 3;
     const MAX_TOTAL = 12;
-    for (let i = 0; i < segs.length && out.length < MAX_TOTAL; i++) {
+    // Build each content segment's ranked alternative-sentence list first,
+    // then interleave them ROUND-ROBIN (every segment's #1 alternative, then
+    // every segment's #2, ...). Exhausting one segment before the next buried
+    // the word the user actually wanted: せんせいにあう spent positions 1-3 on
+    // せんせい's homophones (先制/占星/宣誓 — all noise, 先生 is unambiguous)
+    // so あう→合う didn't appear until position 4. Round-robin puts each
+    // segment's top correction within the first (content-segment-count)
+    // positions, so a single wrong word is reachable in the top 2-3 whichever
+    // word it is.
+    const perSeg: string[][] = [];
+    for (let i = 0; i < segs.length; i++) {
       // Skip particles/auxiliaries kept as kana: their "homophones" are kanji
       // homographs of a grammatical word (は→歯/葉, に→荷/似), wrong in the slot.
-      if (KanaKanjiConverter.FUNCTION_WORDS[segs[i]] || chosen[i] === segs[i]) { continue; }
+      if (KanaKanjiConverter.FUNCTION_WORDS[segs[i]] || chosen[i] === segs[i]) {
+        perSeg.push([]);
+        continue;
+      }
       const pool = this.lookup(segs[i]);
       const prefix = chosen.slice(0, i).join('');
       const suffix = chosen.slice(i + 1).join('');
-      let added = 0;
-      for (let j = 0; j < pool.length && added < MAX_ALTS_PER_SEG && out.length < MAX_TOTAL; j++) {
+      const list: string[] = [];
+      for (let j = 0; j < pool.length && list.length < MAX_ALTS_PER_SEG; j++) {
         const alt = pool[j];
         if (alt === chosen[i] || alt === segs[i] || KanaKanjiConverter.isSymbolOnly(alt)) { continue; }
-        const cand = prefix + alt + suffix;
-        if (out.indexOf(cand) < 0) { out.push(cand); added++; }
+        list.push(prefix + alt + suffix);
+      }
+      perSeg.push(list);
+    }
+    for (let round = 0; round < MAX_ALTS_PER_SEG && out.length < MAX_TOTAL; round++) {
+      for (let i = 0; i < perSeg.length && out.length < MAX_TOTAL; i++) {
+        const cand = perSeg[i][round];
+        if (cand !== undefined && out.indexOf(cand) < 0) { out.push(cand); }
       }
     }
     return out;
