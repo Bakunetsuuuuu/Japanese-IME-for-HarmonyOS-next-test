@@ -14,6 +14,7 @@ import { buildUserExpansion } from './ConjugationEngine';
 import { SettingsStore, KeyboardSettings } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
+import { PredictiveConversion } from './PredictiveConversion';
 import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
@@ -763,16 +764,30 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const text = index < candidates.length ? candidates[index] : '';
     if (text.length > 0) {
-      this.learnCommit(composing, text);
+      // A predictive completion (会社 committed from the prefix かいし) must NOT
+      // feed conversion learning: its reading is longer than what was typed, so
+      // recordChoice(かいし→会社) would teach a wrong reading. Skip the learn;
+      // completion personalisation instead flows from full-word commits (typing
+      // かいしゃ→会社 correctly teaches かいしゃ, which then completes かいし).
+      if (!this.isPredictiveCompletion(composing, text)) {
+        this.learnCommit(composing, text);
+        this.saveLearning();
+      }
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
       const tail = this.predictionTailWord(text);
-      this.saveLearning();
       this.resetComposition();
       this.pushPredictions(text, tail);
       return;
     }
     this.resetComposition();
+  }
+
+  // True when `text` is one of the predictive-conversion completions offered for
+  // the currently-composing prefix (its reading is longer than what was typed),
+  // so it should bypass reading→surface conversion learning.
+  private isPredictiveCompletion(composing: string, text: string): boolean {
+    return PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned()).indexOf(text) >= 0;
   }
 
   // Learn from a committed candidate. For a multi-segment sentence whose
@@ -807,12 +822,14 @@ export class InputHandler {
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
       const chosen = candidates[idx];
-      this.learnCommit(composing, chosen);
+      if (!this.isPredictiveCompletion(composing, chosen)) {
+        this.learnCommit(composing, chosen);
+        this.saveLearning();
+      }
       this.insertText(chosen);
       KanaKanjiConverter.addContext(chosen);
       const tail = this.predictionTailWord(chosen);
       this.resetComposition();
-      this.saveLearning();
       this.pushPredictions(chosen, tail);
       return;
     }
@@ -1253,6 +1270,20 @@ export class InputHandler {
     const predictive = findPredictiveCompletion(composing);
     if (predictive !== null && !candidates.includes(predictive)) {
       candidates = [predictive, ...candidates];
+    }
+
+    // Predictive conversion (予測変換): common words whose reading EXTENDS what's
+    // been typed so far (かいし→会社, にほん→日本語), inserted right after the exact
+    // conversion so they're one tap away without finishing the reading. Only
+    // fires for words that are strictly longer than the prefix, so a fully-typed
+    // reading (which the exact conversion already handles) adds nothing here --
+    // this is why it never disturbs the whole-sentence conversion candidates.
+    const completions = PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned());
+    if (completions.length > 0) {
+      let cAt = candidates.length > 0 ? 1 : 0;
+      for (const c of completions) {
+        if (!candidates.includes(c)) { candidates.splice(cAt, 0, c); cAt++; }
+      }
     }
 
     AppStorage.setOrCreate('candidates', candidates);
