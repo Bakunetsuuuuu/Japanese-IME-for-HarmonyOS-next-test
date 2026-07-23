@@ -198,9 +198,10 @@ export class InputHandler {
   private learningSaveTimer: number = -1;
   private nextWordPrefs: dataPreferences.Preferences | undefined = undefined;
   private nextWordSaveTimer: number = -1;
-  // Surface of the immediately-preceding commit, used as the bigram key for
-  // next-word learning (see NextWordPredictor / pushPredictions).
-  private lastCommittedSurface: string = '';
+  // The last (up to) two committed words, at word granularity, used as the
+  // 1- and 2-word context for next-word prediction/learning (see
+  // NextWordPredictor / pushPredictions). Newest last.
+  private recentWords: string[] = [];
   private symbolPrefs: dataPreferences.Preferences | undefined = undefined;
   private symbolSaveTimer: number = -1;
   // Per-symbol tap counts, used to rank the symbol panel's "recent" tab by
@@ -237,6 +238,9 @@ export class InputHandler {
       })
       .then((val: dataPreferences.ValueType) => {
         try {
+          // Either the v2 {v,uni,bi} store or a legacy flat unigram map; the
+          // cast satisfies setLearned's union parameter and setLearned itself
+          // decides which shape it is (by checking `.v`) and migrates the old one.
           const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
           NextWordPredictor.setLearned(data);
         } catch (_e) {}
@@ -520,39 +524,48 @@ export class InputHandler {
     }, 2000);
   }
 
-  // The word next-word prediction should key on after committing `text`: the
-  // final 文節's surface when a multi-segment sentence was committed (recovered
-  // from the same alignment learnCommit uses), otherwise the whole text. Keying
-  // on the tail word means 「今日は」→ predicts after は，「駅で待つ」→ after 待つ,
-  // instead of on the useless whole-sentence string.
-  private predictionTailWord(text: string): string {
+  // The individual words a commit consists of, newest-relevant last: every 文節
+  // surface when a multi-segment sentence was committed (recovered from the same
+  // alignment learnCommit uses), otherwise the whole text as one word. Splitting
+  // a committed sentence into its words is what lets next-word learning pick up
+  // the sentence-internal flow (映画→を→見る), not just the final word.
+  private committedWords(text: string): string[] {
     const a = this.lastAlignment;
     if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
-      return text.slice(a.prefixText.length);
+      const words = a.prefixSurfaces.slice();
+      words.push(text.slice(a.prefixText.length));
+      return words.filter((w: string) => w.length > 0);
     }
-    return text;
+    return text.length > 0 ? [text] : [];
   }
 
-  // Record the previous→current word transition for learning, then publish the
-  // predicted next words for the just-committed word into the candidate strip.
-  // Called on every commit (conversion or tapped prediction); the strip stays
-  // visible in the IDLE state until the user starts a new composition (which
-  // clears it -- see updateCandidates).
-  private pushPredictions(committed: string, tailWord: string): void {
-    if (this.lastCommittedSurface.length > 0) {
-      NextWordPredictor.record(this.lastCommittedSurface, committed);
-      this.saveNextWord();
+  // Learn this commit's word transitions with a rolling 2-word context, then
+  // publish the next-word strip. `newWords` are the words just committed (a
+  // whole sentence contributes each of its 文節). Called on every commit
+  // (conversion or tapped prediction); the strip stays visible in IDLE until a
+  // new composition starts (which clears it -- see updateCandidates).
+  private pushPredictions(newWords: string[]): void {
+    let w1 = this.recentWords.length >= 2 ? this.recentWords[this.recentWords.length - 2] : '';
+    let w2 = this.recentWords.length >= 1 ? this.recentWords[this.recentWords.length - 1] : '';
+    for (const w of newWords) {
+      if (w.length === 0) { continue; }
+      NextWordPredictor.record(w1, w2, w); // (prev2, prev1) -> w
+      w1 = w2;
+      w2 = w;
     }
-    this.lastCommittedSurface = committed;
-    // Emoji for the just-committed word lead the strip (😊 right after 嬉しい,
-    // 🐱 after 猫) -- a conventional emoji is a likelier next tap than a particle
-    // for the handful of words that have one -- followed by the next-word
-    // predictions. Most words have no emoji, so the strip is just next-words.
+    this.saveNextWord();
+    this.recentWords = [];
+    if (w1.length > 0) { this.recentWords.push(w1); }
+    if (w2.length > 0) { this.recentWords.push(w2); }
+    // Strip: emoji for the last word (😊 after 嬉しい, 🐱 after 猫) lead, then the
+    // 2-word-context next-word predictions. Most words have no emoji, so the
+    // strip is usually just predictions.
     const strip: string[] = [];
-    const emoji = EmojiSuggest.forSurface(tailWord);
-    for (const e of emoji) { if (strip.indexOf(e) < 0) { strip.push(e); } }
-    for (const w of NextWordPredictor.predict(tailWord)) {
-      if (strip.indexOf(w) < 0 && strip.length < 6) { strip.push(w); }
+    if (w2.length > 0) {
+      for (const e of EmojiSuggest.forSurface(w2)) { if (strip.indexOf(e) < 0) { strip.push(e); } }
+      for (const w of NextWordPredictor.predict(w2, w1)) {
+        if (strip.indexOf(w) < 0 && strip.length < 6) { strip.push(w); }
+      }
     }
     AppStorage.setOrCreate('predictions', strip);
   }
@@ -567,7 +580,7 @@ export class InputHandler {
     if (text.length === 0) { return; }
     this.insertText(text);
     KanaKanjiConverter.addContext(text);
-    this.pushPredictions(text, text);
+    this.pushPredictions([text]);
   }
 
   onInputStart(
@@ -605,7 +618,7 @@ export class InputHandler {
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
     AppStorage.setOrCreate('predictions', [] as string[]);
-    this.lastCommittedSurface = '';
+    this.recentWords = [];
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
@@ -690,8 +703,8 @@ export class InputHandler {
       this.inputClient?.deleteForward(1);
       // The committed word the next-word strip was keyed on is being edited
       // away -- retire the strip so a now-stale prediction can't be tapped.
-      if (this.lastCommittedSurface.length > 0) {
-        this.lastCommittedSurface = '';
+      if (this.recentWords.length > 0) {
+        this.recentWords = [];
         AppStorage.setOrCreate('predictions', [] as string[]);
       }
       return;
@@ -788,9 +801,9 @@ export class InputHandler {
       }
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
-      const tail = this.predictionTailWord(text);
+      const words = this.committedWords(text);
       this.resetComposition();
-      this.pushPredictions(text, tail);
+      this.pushPredictions(words);
       return;
     }
     this.resetComposition();
@@ -848,9 +861,9 @@ export class InputHandler {
       }
       this.insertText(chosen);
       KanaKanjiConverter.addContext(chosen);
-      const tail = this.predictionTailWord(chosen);
+      const words = this.committedWords(chosen);
       this.resetComposition();
-      this.pushPredictions(chosen, tail);
+      this.pushPredictions(words);
       return;
     }
     this.commitPending();

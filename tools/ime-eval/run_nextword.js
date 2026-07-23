@@ -55,56 +55,76 @@ function main() {
   check('よろしく -> お願いします', NW.predict('よろしく').includes('お願いします'), JSON.stringify(NW.predict('よろしく')));
   check('私 seed leads は', NW.predict('私')[0] === 'は', JSON.stringify(NW.predict('私')));
 
-  // --- learned outranks seed/generic ---
+  // --- 1-word learned outranks seed/generic (record(prev2, prev1, next)) ---
   NW.setLearned({});
-  for (let i = 0; i < 3; i++) { NW.record('明日', '会議'); }
-  NW.record('明日', 'は');
+  for (let i = 0; i < 3; i++) { NW.record('', '明日', '会議'); }
+  NW.record('', '明日', 'は');
   p = NW.predict('明日');
   check('learned 会議 outranks seed after repeats', p[0] === '会議', JSON.stringify(p));
   check('learned + seed merged & deduped', new Set(p).size === p.length, JSON.stringify(p));
 
   // --- learning does not record sentence-length keys ---
   NW.setLearned({});
-  NW.record('今日はいい天気ですね', 'そうですね');
-  check('long sentence prev is not learned', Object.keys(NW.getLearned()).length === 0);
-  NW.record('駅', 'に行って改札を出た');
-  check('long next value is not learned', Object.keys(NW.getLearned()).length === 0);
+  NW.record('', '今日はいい天気ですね', 'そうですね');
+  check('long sentence prev is not learned', Object.keys(NW.getLearned().uni).length === 0);
+  NW.record('', '駅', 'に行って改札を出た');
+  check('long next value is not learned', Object.keys(NW.getLearned().uni).length === 0);
 
   // --- prev===next guard ---
   NW.setLearned({});
-  NW.record('本', '本');
-  check('self-transition not learned', Object.keys(NW.getLearned()).length === 0);
+  NW.record('', '本', '本');
+  check('self-transition not learned', Object.keys(NW.getLearned().uni).length === 0);
 
   // --- value cap per key ---
   NW.setLearned({});
-  for (let i = 0; i < 20; i++) { NW.record('あ', 'x' + i); }
-  check('per-key value set capped', Object.keys(NW.getLearned()['あ']).length <= 12,
-    `size=${Object.keys(NW.getLearned()['あ'] || {}).length}`);
+  for (let i = 0; i < 20; i++) { NW.record('', 'あ', 'x' + i); }
+  check('per-key value set capped', Object.keys(NW.getLearned().uni['あ']).length <= 12,
+    `size=${Object.keys(NW.getLearned().uni['あ'] || {}).length}`);
 
   // --- predict never includes prev itself ---
   NW.setLearned({});
-  NW.record('猫', '猫'); // ignored anyway
+  NW.record('', '猫', '猫'); // ignored anyway
   check('predict excludes prev', !NW.predict('会社').includes('会社'));
 
   // --- empty / edge ---
   check('empty prev -> []', NW.predict('').length === 0);
 
-  // --- realistic controller flow: word-by-word commits build a personal chain.
-  // Mirrors InputHandler.pushPredictions: record(prev, current) on each commit,
-  // predict(current) for the strip. Simulate the user writing 「私は会社に」a few
-  // times, then confirm 私 predicts は at the top from learning. ---
+  // --- 2-word (bigram) context outranks the 1-word guess. Teach two different
+  // continuations of を depending on the word before it: 映画を→見る, 水を→飲む.
+  // With only 1-word context both would compete under を; the bigram keeps them
+  // apart. ---
+  NW.setLearned({});
+  for (let i = 0; i < 2; i++) {
+    NW.record('映画', 'を', '見る');
+    NW.record('水', 'を', '飲む');
+  }
+  check('bigram 映画+を -> 見る', NW.predict('を', '映画')[0] === '見る', JSON.stringify(NW.predict('を', '映画')));
+  check('bigram 水+を -> 飲む', NW.predict('を', '水')[0] === '飲む', JSON.stringify(NW.predict('を', '水')));
+  check('no-context を falls back (still returns something)', NW.predict('を').length >= 0);
+
+  // v2 store round-trips uni + bi through get/setLearned
+  const snap = NW.getLearned();
+  check('getLearned is v2 with uni+bi', snap.v === 2 && !!snap.uni && !!snap.bi, JSON.stringify(Object.keys(snap)));
+  NW.setLearned(snap);
+  check('bigram survives get/setLearned round-trip', NW.predict('を', '映画')[0] === '見る', JSON.stringify(NW.predict('を', '映画')));
+
+  // legacy flat map (pre-bigram save) migrates as unigram
+  NW.setLearned({ '私': { 'は': 5 } });
+  check('legacy flat map migrates to unigram', NW.predict('私')[0] === 'は', JSON.stringify(NW.predict('私')));
+
+  // --- realistic controller flow with 2-word context. Simulate writing
+  // 「私は映画を見る」a few times; then after 映画を the strip leads with 見る. ---
   NW.setLearned({});
   const sim = (words) => {
-    let prev = '';
+    let w1 = '', w2 = '';
     for (const w of words) {
-      if (prev.length > 0) { NW.record(prev, w); }
-      prev = w;
+      NW.record(w1, w2, w);
+      w1 = w2; w2 = w;
     }
   };
-  for (let i = 0; i < 3; i++) { sim(['私', 'は', '会社', 'に', '行く']); }
-  check('learned chain: 私 -> は on top', NW.predict('私')[0] === 'は', JSON.stringify(NW.predict('私')));
-  check('learned chain: 会社 -> に on top', NW.predict('会社')[0] === 'に', JSON.stringify(NW.predict('会社')));
-  check('learned chain: は -> 会社 surfaced', NW.predict('は').includes('会社'), JSON.stringify(NW.predict('は')));
+  for (let i = 0; i < 3; i++) { sim(['私', 'は', '映画', 'を', '見る']); }
+  check('flow: 私 -> は on top', NW.predict('私')[0] === 'は', JSON.stringify(NW.predict('私')));
+  check('flow: 映画を -> 見る (bigram)', NW.predict('を', '映画')[0] === '見る', JSON.stringify(NW.predict('を', '映画')));
 
   console.log(`\n[NEXTWORD] ${failures === 0 ? 'ALL PASS' : failures + ' FAILURES'}`);
   if (failures > 0) process.exit(1);

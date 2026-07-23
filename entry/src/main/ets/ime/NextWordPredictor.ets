@@ -104,16 +104,45 @@ interface Scored {
   count: number;
 }
 
-export class NextWordPredictor {
-  // prev-surface -> (next-surface -> count). Persisted via get/setLearned.
-  private static learned: Record<string, Record<string, number>> = {};
+// Persisted shape. v:2 carries both the 1-word (uni) and 2-word (bi) contexts;
+// a bare Record (no `v`) is a pre-bigram save and loads as `uni` only.
+interface LearnedStore {
+  v: number;
+  uni: Record<string, Record<string, number>>;
+  bi: Record<string, Record<string, number>>;
+}
 
-  static setLearned(data: Record<string, Record<string, number>>): void {
-    NextWordPredictor.learned = data ?? {};
+// Unit-separator (U+001F) between the two context words in a bigram key;
+// never occurs in committed text, so 映画+SEP+を can't collide with any
+// other way of splitting the concatenation.
+const BI_SEP = '';
+
+export class NextWordPredictor {
+  // 1-word context: prev-surface -> (next -> count).
+  private static learned: Record<string, Record<string, number>> = {};
+  // 2-word context: "prev2\x1fprev1" -> (next -> count). Sentence-level flow
+  // (映画を→見る, not just を→…) lives here and outranks the 1-word guess.
+  private static learnedBi: Record<string, Record<string, number>> = {};
+
+  static setLearned(data: LearnedStore | Record<string, Record<string, number>>): void {
+    if (data === undefined || data === null) {
+      NextWordPredictor.learned = {};
+      NextWordPredictor.learnedBi = {};
+      return;
+    }
+    const store = data as LearnedStore;
+    if (store.v === 2 && store.uni !== undefined) {
+      NextWordPredictor.learned = store.uni ?? {};
+      NextWordPredictor.learnedBi = store.bi ?? {};
+    } else {
+      // pre-bigram flat map (unigram only) -> migrate in place
+      NextWordPredictor.learned = data as Record<string, Record<string, number>>;
+      NextWordPredictor.learnedBi = {};
+    }
   }
 
-  static getLearned(): Record<string, Record<string, number>> {
-    return NextWordPredictor.learned;
+  static getLearned(): LearnedStore {
+    return { v: 2, uni: NextWordPredictor.learned, bi: NextWordPredictor.learnedBi };
   }
 
   private static isContentTail(surface: string): boolean {
@@ -126,22 +155,14 @@ export class NextWordPredictor {
     return false;
   }
 
-  // Record that `next` was committed immediately after `prev`. Only short,
-  // word-sized surfaces are kept as keys/values so a whole committed sentence
-  // never becomes a junk transition that can't recur.
-  static record(prev: string, next: string): void {
-    if (prev.length === 0 || next.length === 0) { return; }
-    if (prev.length > MAX_KEY_LEN || next.length > MAX_KEY_LEN) { return; }
-    if (prev === next) { return; }
-    let entry = NextWordPredictor.learned[prev];
+  private static bump(store: Record<string, Record<string, number>>, key: string, next: string): void {
+    let entry = store[key];
     if (entry === undefined) {
-      if (Object.keys(NextWordPredictor.learned).length >= MAX_LEARNED_KEYS) { return; }
+      if (Object.keys(store).length >= MAX_LEARNED_KEYS) { return; }
       entry = {};
-      NextWordPredictor.learned[prev] = entry;
+      store[key] = entry;
     }
     entry[next] = (entry[next] ?? 0) + 1;
-    // Cap a key's value set: when it overflows, drop the least-used entry so
-    // the store can't grow without bound for a very active prev word.
     const keys = Object.keys(entry);
     if (keys.length > MAX_LEARNED_VALS_PER_KEY) {
       let minWord = keys[0];
@@ -150,28 +171,51 @@ export class NextWordPredictor {
     }
   }
 
-  // Predicted next words after committing `prev`, best first, deduped, capped.
-  static predict(prev: string): string[] {
-    if (prev.length === 0) { return []; }
+  // Record that `next` was committed after the context (prev2, prev1). prev2 may
+  // be '' (sentence start / unknown): then only the 1-word transition is stored.
+  // Only short word-sized surfaces are kept, so a whole sentence never becomes a
+  // junk key.
+  static record(prev2: string, prev1: string, next: string): void {
+    if (prev1.length === 0 || next.length === 0) { return; }
+    if (prev1.length > MAX_KEY_LEN || next.length > MAX_KEY_LEN) { return; }
+    if (prev1 !== next) {
+      NextWordPredictor.bump(NextWordPredictor.learned, prev1, next);
+    }
+    if (prev2.length > 0 && prev2.length <= MAX_KEY_LEN) {
+      NextWordPredictor.bump(NextWordPredictor.learnedBi, prev2 + BI_SEP + prev1, next);
+    }
+  }
+
+  private static rankedInto(entry: Record<string, number> | undefined, push: (w: string) => void): void {
+    if (entry === undefined) { return; }
+    const scored: Scored[] = [];
+    for (const w of Object.keys(entry)) { scored.push({ word: w, count: entry[w] }); }
+    scored.sort((a: Scored, b: Scored) => b.count - a.count);
+    for (const s of scored) { push(s.word); }
+  }
+
+  // Predicted next words given the last one or two committed words, best first.
+  // 2-word learned context leads (映画を→見る), then 1-word learned, then the
+  // curated seed, then the universal particle fallback. prev2 optional.
+  static predict(prev1: string, prev2?: string): string[] {
+    if (prev1.length === 0) { return []; }
     const out: string[] = [];
     const push = (w: string): void => {
-      if (w.length > 0 && w !== prev && out.indexOf(w) < 0 && out.length < MAX_PREDICTIONS) {
+      if (w.length > 0 && w !== prev1 && out.indexOf(w) < 0 && out.length < MAX_PREDICTIONS) {
         out.push(w);
       }
     };
-    // 1. learned, by descending count
-    const entry = NextWordPredictor.learned[prev];
-    if (entry !== undefined) {
-      const scored: Scored[] = [];
-      for (const w of Object.keys(entry)) { scored.push({ word: w, count: entry[w] }); }
-      scored.sort((a: Scored, b: Scored) => b.count - a.count);
-      for (const s of scored) { push(s.word); }
+    // 1. 2-word learned context (highest signal)
+    if (prev2 !== undefined && prev2.length > 0) {
+      NextWordPredictor.rankedInto(NextWordPredictor.learnedBi[prev2 + BI_SEP + prev1], push);
     }
-    // 2. curated seed
-    const seed = SEED_NEXT[prev];
+    // 2. 1-word learned context
+    NextWordPredictor.rankedInto(NextWordPredictor.learned[prev1], push);
+    // 3. curated seed
+    const seed = SEED_NEXT[prev1];
     if (seed !== undefined) { for (const w of seed) { push(w); } }
-    // 3. universal particle fallback after a content word
-    if (NextWordPredictor.isContentTail(prev)) {
+    // 4. universal particle fallback after a content word
+    if (NextWordPredictor.isContentTail(prev1)) {
       for (const p of GENERIC_PARTICLES) { push(p); }
     }
     return out;
