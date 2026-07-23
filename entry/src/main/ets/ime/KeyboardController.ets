@@ -875,6 +875,22 @@ export class InputHandler {
   // keyboard extension process restarts.
   private static readonly MAX_CLIPBOARD_HISTORY = 8;
 
+  // Signature of the clipboard entry the user has already pasted from the
+  // suggestion strip. Once pasted, the paste chip stays hidden for that exact
+  // content (no more flicker on every refresh) until the system clipboard
+  // actually changes to something else. Empty = nothing dismissed.
+  private static dismissedClipSig: string = '';
+
+  // Stable signature for a clipboard entry so a re-read can tell "same content
+  // I already pasted" from "a new copy". Text/URI/raw-image are namespaced so
+  // they can never collide.
+  private static clipSig(text: string, uri: string, isImage: boolean): string {
+    if (text.length > 0) { return 'T:' + text; }
+    if (uri.length > 0) { return 'U:' + uri; }
+    if (isImage) { return 'I:'; }
+    return '';
+  }
+
   private static setClipboardPreviewState(preview: string, isImage: boolean, isFile: boolean, uri: string): void {
     AppStorage.setOrCreate('clipboardPreview', preview);
     AppStorage.setOrCreate('clipboardIsImage', isImage);
@@ -902,6 +918,13 @@ export class InputHandler {
       const isImage = data.hasType(pasteboard.MIMETYPE_PIXELMAP);
       const text = data.getPrimaryText();
       if (text && text.length > 0) {
+        // Already pasted this exact content once -> keep the chip hidden.
+        if (InputHandler.clipSig(text, '', false) === InputHandler.dismissedClipSig) {
+          InputHandler.setClipboardPreviewState('', false, false, '');
+          return;
+        }
+        // Different content than what was last pasted -> the dismissal is spent.
+        InputHandler.dismissedClipSig = '';
         InputHandler.setClipboardPreviewState(text, false, false, '');
         this.recordClipboardHistory(text);
         return;
@@ -912,6 +935,11 @@ export class InputHandler {
       // of isImage. Preview it as a filename rather than the raw URI.
       const uri = data.getPrimaryUri();
       if (uri && uri.length > 0) {
+        if (InputHandler.clipSig('', uri, isImage) === InputHandler.dismissedClipSig) {
+          InputHandler.setClipboardPreviewState('', false, false, '');
+          return;
+        }
+        InputHandler.dismissedClipSig = '';
         const preview = isImage ? '画像' : InputHandler.formatFileClipPreview(uri);
         InputHandler.setClipboardPreviewState(preview, isImage, true, uri);
         return;
@@ -921,6 +949,11 @@ export class InputHandler {
         // "コピー" on an image) -- pasteClipboard() still works fine here
         // since sendPasteExtendAction doesn't need the URI, just the
         // isImage/isFile flag; only the filename preview text is degraded.
+        if (InputHandler.clipSig('', '', true) === InputHandler.dismissedClipSig) {
+          InputHandler.setClipboardPreviewState('', false, false, '');
+          return;
+        }
+        InputHandler.dismissedClipSig = '';
         InputHandler.setClipboardPreviewState('画像', true, false, '');
         return;
       }
@@ -980,14 +1013,24 @@ export class InputHandler {
     const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
     const isFile = AppStorage.get<boolean>('clipboardIsFile') ?? false;
     if (isImage || isFile) {
-      return this.sendPasteExtendAction() ? 'extendAction' : 'none';
+      const uri = AppStorage.get<string>('clipboardUri') ?? '';
+      if (this.sendPasteExtendAction()) {
+        // Dismiss the chip for this file/image until the clipboard changes.
+        InputHandler.dismissedClipSig = InputHandler.clipSig('', uri, isImage);
+        InputHandler.setClipboardPreviewState('', false, false, '');
+        return 'extendAction';
+      }
+      return 'none';
     }
     const text = AppStorage.get<string>('clipboardPreview') ?? '';
     if (text.length === 0) {
       return 'none';
     }
     this.insertText(text);
-    this.refreshClipboardPreview();
+    // Hide the paste chip now that it's been used, and remember this content so
+    // subsequent refreshes keep it hidden until the user copies something new.
+    InputHandler.dismissedClipSig = InputHandler.clipSig(text, '', false);
+    InputHandler.setClipboardPreviewState('', false, false, '');
     return 'text';
   }
 
@@ -1510,30 +1553,21 @@ export class InputHandler {
   private static readonly BRACKET_PAIRS: Set<string> =
     new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
 
-  // Move the caret one position left after inserting a bracket pair so it lands
-  // between them. Read the caret's absolute index (getTextIndexAtCursor resolves
-  // after the editor has applied the just-inserted pair, since requests to the
-  // editor are processed in order) and collapse the selection one code unit
-  // earlier via selectByRange — timing-independent and exact. Fall back to a
-  // relative moveCursor for editors that reject range selection.
+  // Move the caret between a just-inserted bracket pair. Every BRACKET_PAIRS
+  // entry is exactly two BMP code units (() （） 「」 【】 …), so after the pair
+  // is inserted the caret sits two units past where it should, and a single
+  // relative left-move lands it precisely between the brackets.
+  //
+  // This deliberately uses the RELATIVE moveCursor rather than reading the
+  // absolute caret index and collapsing a selection there: getTextIndexAtCursor
+  // could resolve before the insert was applied or return an index relative to
+  // the whole field, and selectByRange(idx-1) then dropped the caret several
+  // characters PAST the bracket (or nowhere) -- exactly the "cursor jumps ahead
+  // / doesn't move" bug. A one-unit left move can neither overshoot nor land
+  // ahead. Called from insertText's .then(), i.e. after the insert resolved.
   private placeCaretBetweenBrackets(client: inputMethodEngine.InputClient): void {
-    const moveBack = (delayed: boolean): void => {
-      const step = (): void => {
-        client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
-          .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
-      };
-      if (delayed) { setTimeout(step, 16); } else { step(); }
-    };
-    client.getTextIndexAtCursor().then((idx: number) => {
-      const target: number = idx > 0 ? idx - 1 : 0;
-      client.selectByRange({ start: target, end: target }).catch((e: Error) => {
-        console.error('shuntiIME selectByRange(bracket) failed', JSON.stringify(e));
-        moveBack(false);
-      });
-    }).catch((e: Error) => {
-      console.error('shuntiIME getTextIndexAtCursor(bracket) failed', JSON.stringify(e));
-      moveBack(true);
-    });
+    client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+      .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
   }
 
   insertText(text: string): void {
