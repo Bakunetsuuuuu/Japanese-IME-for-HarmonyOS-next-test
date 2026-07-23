@@ -126,37 +126,59 @@ export struct KeyboardView {
       .padding({ bottom: 8, top: 4, left: 2, right: 2 })
 
       if (this.showSpaceMenu) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .onClick(() => { this.showSpaceMenu = false; this.hoveredSpaceOption = ''; })
-        Column() {
-          Row() {
-            Text('設定')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(15).textAlign(TextAlign.Center)
-              .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
-              .backgroundColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
-              .fontColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
-              .width('100%')
+        Stack() {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('#00000000')
+            .onClick(() => { this.showSpaceMenu = false; this.hoveredSpaceOption = ''; })
+
+          Column() {
+            Row() {
+              Text('設定')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15).textAlign(TextAlign.Center)
+                .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+                .backgroundColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+                .fontColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+                .width('100%')
+                .onHover((isHover: boolean) => {
+                  this.hoveredSpaceOption = isHover ? 'settings' : '';
+                })
+                .onClick(() => {
+                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                  this.showSpaceMenu = false;
+                  this.hoveredSpaceOption = '';
+                })
+            }
+            Row() {
+              Text('片手キーボード')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15).textAlign(TextAlign.Center)
+                .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+                .backgroundColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+                .fontColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+                .width('100%')
+                .onHover((isHover: boolean) => {
+                  this.hoveredSpaceOption = isHover ? 'onehand' : '';
+                })
+                .onClick(() => {
+                  const cur = AppStorage.get<boolean>('oneHandedMode') ?? false;
+                  AppStorage.setOrCreate('oneHandedMode', !cur);
+                  this.showSpaceMenu = false;
+                  this.hoveredSpaceOption = '';
+                })
+            }
           }
-          Row() {
-            Text('片手キーボード')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(15).textAlign(TextAlign.Center)
-              .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
-              .backgroundColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
-              .fontColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
-              .width('100%')
-          }
+          .padding(6).width(180)
+          .backgroundColor(kbTheme(this.isDark).panelBg)
+          .borderRadius(22)
+          .shadow({ radius: 6, color: kbTheme(this.isDark).shadowColor, offsetY: 4 })
+          .alignSelf(ItemAlign.End)
+          .margin({ right: 8, bottom: '22%' })
         }
-        .padding(6).width(180)
-        .backgroundColor(kbTheme(this.isDark).panelBg)
-        .borderRadius(22)
-        .shadow({ radius: 6, color: kbTheme(this.isDark).shadowColor, offsetY: 4 })
-        .alignItems(HorizontalAlign.End)
-        .padding({ right: 8, bottom: '22%' })
-        .justifyContent(FlexAlign.End)
+        .width('100%')
+        .height('100%')
       }
     }
     .width('100%')
@@ -256,37 +278,14 @@ export struct KeyboardView {
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-      .onTouch((e: TouchEvent) => {
-        if (e.type === TouchType.Down) {
-          this.spaceTouchDownX = e.touches[0].x;
-          this.spaceTouchDownY = e.touches[0].y;
-          this.spaceMenuTimer = setTimeout(() => {
+      .gesture(
+        LongPressGesture({ duration: 400 })
+          .onAction(() => {
             this.showSpaceMenu = true;
-            this.spaceMenuTimer = -1;
-          }, 400);
-        } else if (e.type === TouchType.Move) {
-          const dx = Math.abs(e.touches[0].x - this.spaceTouchDownX);
-          if (dx > 15) { clearTimeout(this.spaceMenuTimer); this.spaceMenuTimer = -1; }
-          if (this.showSpaceMenu) {
-            const hdy = e.touches[0].y - this.spaceTouchDownY;
-            if (hdy < -120) { this.hoveredSpaceOption = 'settings'; }
-            else if (hdy < -60) { this.hoveredSpaceOption = 'onehand'; }
-            else { this.hoveredSpaceOption = ''; }
-          }
-        } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
-          clearTimeout(this.spaceMenuTimer); this.spaceMenuTimer = -1;
-          if (this.showSpaceMenu) {
-            if (this.hoveredSpaceOption === 'settings') {
-              AppStorage.setOrCreate('keyboardSubMode', 'settings');
-            } else if (this.hoveredSpaceOption === 'onehand') {
-              const cur = AppStorage.get<boolean>('oneHandedMode') ?? false;
-              AppStorage.setOrCreate('oneHandedMode', !cur);
-            }
-            this.showSpaceMenu = false; this.hoveredSpaceOption = '';
-            return;
-          }
-          this.getHandler().handleSpaceKey();
-        }
+          })
+      )
+      .onClick(() => {
+        this.getHandler().handleSpaceKey();
       })
   }
 
