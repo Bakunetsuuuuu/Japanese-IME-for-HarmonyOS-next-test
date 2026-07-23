@@ -233,32 +233,15 @@ struct KeyboardPage {
                     })
                 }
               }
-              .width('82%')
+              .width('100%')
               .height(this.isLandscape ? 22 : 48)
               .justifyContent(FlexAlign.Center)
               .alignItems(VerticalAlign.Center)
-
-              // Settings bar: clipboard history, app shortcut, one-handed mode,
-              // AppGallery review. The flick/QWERTY toggle that used to live here
-              // moved into the main app's settings screen (SettingsStore-backed).
-              Text('⚙')
-                .fontFamily(JP_FONT_FAMILY)
-                .fontSize(this.isLandscape ? 12 : 16)
-                .fontColor(kbTheme(this.isDark).textSecondary)
-                .textAlign(TextAlign.Center)
-                .width(this.isLandscape ? 32 : 50)
-                .height(this.isLandscape ? 20 : 40)
-                .backgroundColor(kbTheme(this.isDark).funcBg)
-                .borderRadius(this.isLandscape ? 10 : 16)
-                .onClick(() => {
-                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
-                })
             }
             .width('100%')
             .height(this.isLandscape ? 22 : 48)
             .backgroundColor(kbTheme(this.isDark).panelBg)
             .alignItems(VerticalAlign.Center)
-            .padding({ right: 4 })
           }
           .width('100%')
         }

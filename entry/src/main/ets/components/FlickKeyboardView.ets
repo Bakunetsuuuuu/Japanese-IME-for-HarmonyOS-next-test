@@ -62,11 +62,16 @@ export struct FlickKeyboardView {
   @State touchStartX: number = 0;
   @State touchStartY: number = 0;
   @State flickDir: FlickDir = 'center';
+  @State showSpaceMenu: boolean = false;
+  @State hoveredSpaceOption: string = '';
 
   private readonly THRESHOLD: number = 20;
 
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
+  private spaceMenuTimer: number = -1;
+  private spaceTouchDownX: number = 0;
+  private spaceTouchDownY: number = 0;
 
   private h(): InputHandler { return InputHandler.getInstance(); }
 
@@ -179,24 +184,61 @@ export struct FlickKeyboardView {
   }
 
   build() {
-    Column({ space: 4 }) {
-      // 4 rows × 5 columns (Gboard layout)
-      ForEach([0, 1, 2, 3], (rowIdx: number) => {
-        Row({ space: 4 }) {
-          this.LeftKey(rowIdx)
-          ForEach([0, 1, 2], (colIdx: number) => {
-            this.KeyCell(rowIdx, colIdx, FLICK_GRID[rowIdx][colIdx])
-          }, (colIdx: number) => String(colIdx))
-          this.RightKey(rowIdx)
+    Stack() {
+      Column({ space: 4 }) {
+        ForEach([0, 1, 2, 3], (rowIdx: number) => {
+          Row({ space: 4 }) {
+            this.LeftKey(rowIdx)
+            ForEach([0, 1, 2], (colIdx: number) => {
+              this.KeyCell(rowIdx, colIdx, FLICK_GRID[rowIdx][colIdx])
+            }, (colIdx: number) => String(colIdx))
+            this.RightKey(rowIdx)
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .layoutWeight(1)
+        }, (rowIdx: number) => String(rowIdx))
+      }
+      .width('100%')
+      .height('100%')
+      .padding({ bottom: 8, top: 4 })
+
+      if (this.showSpaceMenu) {
+        Column()
+          .width('100%')
+          .height('100%')
+          .onClick(() => { this.showSpaceMenu = false; this.hoveredSpaceOption = ''; })
+        Column() {
+          Row() {
+            Text('設定')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(15).textAlign(TextAlign.Center)
+              .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+              .backgroundColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+              .fontColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+              .width('100%')
+          }
+          Row() {
+            Text('片手キーボード')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(15).textAlign(TextAlign.Center)
+              .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+              .backgroundColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+              .fontColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+              .width('100%')
+          }
         }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .layoutWeight(1)
-      }, (rowIdx: number) => String(rowIdx))
+        .padding(6).width(180)
+        .backgroundColor(kbTheme(this.isDark).panelBg)
+        .borderRadius(22)
+        .shadow({ radius: 6, color: kbTheme(this.isDark).shadowColor, offsetY: 4 })
+        .alignItems(HorizontalAlign.End)
+        .padding({ right: 8, bottom: '22%' })
+        .justifyContent(FlexAlign.End)
+      }
     }
     .width('100%')
     .height('100%')
-    .padding({ bottom: 8, top: 4 })
   }
 
   // Left column keys per row
@@ -278,12 +320,41 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => {
-          const st = AppStorage.get<string>('inputState') ?? 'IDLE';
-          if (st === 'COMPOSING') {
-            this.h().handleBunsetsu();
-          } else {
-            this.h().handleSpaceKey();
+        .onTouch((e: TouchEvent) => {
+          if (e.type === TouchType.Down) {
+            this.spaceTouchDownX = e.touches[0].x;
+            this.spaceTouchDownY = e.touches[0].y;
+            this.spaceMenuTimer = setTimeout(() => {
+              this.showSpaceMenu = true;
+              this.spaceMenuTimer = -1;
+            }, 400);
+          } else if (e.type === TouchType.Move) {
+            const dx = Math.abs(e.touches[0].x - this.spaceTouchDownX);
+            if (dx > 15) { clearTimeout(this.spaceMenuTimer); this.spaceMenuTimer = -1; }
+            if (this.showSpaceMenu) {
+              const hdy = e.touches[0].y - this.spaceTouchDownY;
+              if (hdy < -120) { this.hoveredSpaceOption = 'settings'; }
+              else if (hdy < -60) { this.hoveredSpaceOption = 'onehand'; }
+              else { this.hoveredSpaceOption = ''; }
+            }
+          } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
+            clearTimeout(this.spaceMenuTimer); this.spaceMenuTimer = -1;
+            if (this.showSpaceMenu) {
+              if (this.hoveredSpaceOption === 'settings') {
+                AppStorage.setOrCreate('keyboardSubMode', 'settings');
+              } else if (this.hoveredSpaceOption === 'onehand') {
+                const cur = AppStorage.get<boolean>('oneHandedMode') ?? false;
+                AppStorage.setOrCreate('oneHandedMode', !cur);
+              }
+              this.showSpaceMenu = false; this.hoveredSpaceOption = '';
+              return;
+            }
+            const st = AppStorage.get<string>('inputState') ?? 'IDLE';
+            if (st === 'COMPOSING') {
+              this.h().handleBunsetsu();
+            } else {
+              this.h().handleSpaceKey();
+            }
           }
         })
     } else {
