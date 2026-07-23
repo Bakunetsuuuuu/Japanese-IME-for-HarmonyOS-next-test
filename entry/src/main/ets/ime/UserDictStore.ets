@@ -25,8 +25,16 @@ export class UserDictStore {
       const raw = await prefs.get(UserDictStore.KEY, '{}');
       const parsed = JSON.parse(String(raw)) as Record<string, string[]>;
       const clean: Record<string, string[]> = {};
+      if (parsed === null || typeof parsed !== 'object') { return clean; }
       for (const k of Object.keys(parsed)) {
-        if (parsed[k].length > 0) { clean[k] = parsed[k]; }
+        // Only keep well-shaped entries (a non-empty array of strings) so a
+        // corrupt on-disk value can never reach the converter as a surprise
+        // type -- see ConjugationEngine.buildUserExpansion's guards.
+        const v = parsed[k];
+        if (Array.isArray(v) && v.length > 0) {
+          const words = v.filter((w: string) => typeof w === 'string' && w.length > 0);
+          if (words.length > 0) { clean[k] = words; }
+        }
       }
       return clean;
     } catch (_e) {

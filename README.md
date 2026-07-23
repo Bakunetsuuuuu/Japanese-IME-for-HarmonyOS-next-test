@@ -4,6 +4,20 @@ HarmonyOS NEXT (API 12+) 向けの日本語 IME です。フリック入力・QW
 
 > **開発者**: shuntilettuce
 
+## 開発支援のご案内
+
+shunti IMEは広告なし・完全無料で個人が開発しているオープンソースプロジェクトです。
+現在、日々の変換精度向上のために発生するAI利用コスト（API料金など）を個人で全て負担しており、開発継続のための資金が不足している状態です。
+
+もし shunti を気に入っていただけましたら、開発継続のために缶コーヒー1杯分だけでもご支援（寄付）をいただけますと大変励みになります。
+
+- **Buy Me a Coffee**: **[buymeacoffee.com/shunti](https://buymeacoffee.com/shunti)**
+  クレジットカードなどに対応した支援サービスです。GitHubアカウントは不要で、缶コーヒー1杯分から気軽に、応援メッセージを添えて支援ができます。
+- **GitHub Sponsors**: **[github.com/sponsors/shuntilettuce](https://github.com/sponsors/shuntilettuce)**
+  GitHubアカウントがあればカード情報の入力だけで、月額の継続支援または一度きりの支援ができます。
+
+いただいたご支援は変換精度向上のためのAI利用料等に充てさせていただきます。
+
 ---
 
 ## インストール
@@ -13,8 +27,10 @@ HarmonyOS NEXT (API 12+) 向けの日本語 IME です。フリック入力・QW
 AppGallery で「shunti Japanese IME」を検索してインストール後、以下の手順で有効化してください。
 
 **有効化手順：**
-1. 設定 → 通用 → 输入法（言語と入力）→ デフォルト入力メソッド
-2. 一覧に表示された **shunti Japanese IME** を選択
+1. 設定 → システム → 入力方法 
+2. 一覧に表示される **shunti Japanese IME** を選択
+
+（メニュー名は端末の HarmonyOS バージョンにより多少異なる場合があります）
 
 ---
 
@@ -36,26 +52,34 @@ AppGallery で「shunti Japanese IME」を検索してインストール後、�
 | **文節変換モード** | 文全体を文節に分割して個別に変換先を選択 |
 | **カタカナ変換** | 全文をカタカナに変換する候補を常に提供 |
 | **独自辞書** | 常用漢字・Unicode Unihan・独自収集データによる変換辞書 |
+| **変換エンジン切替** | 独自辞書（デフォルト）と、mozc 由来の統計データエンジンを設定で切替可能 |
 | **変換学習** | 選んだ変換先の優先度を自動で上げ、次回から上位表示 |
-| **ユーザー辞書** | アプリ本体から「よみ→単語」を登録、変換候補の先頭に表示 |
+| **ユーザー辞書** | アプリ本体から「よみ→単語」＋品詞（名詞/動詞/形容詞/人名/地名）を登録。動詞・形容詞は活用形も自動で変換候補に |
 | **括弧変換** | 「かっこ」で `()` `「」` `【】` 等を入力。確定後カーソルが内側へ移動 |
 
 ### キーボード操作
 | 機能 | 説明 |
 |---|---|
 | **長押し削除** | ⌫ 長押し 0.5秒後に 10文字/秒で連続削除 |
-| **取り消し (↩)** | 直前に確定したテキストを削除して復元 |
 | **カーソル移動** | ◄ ► キーでカーソル左右移動 |
 | **記号パネル** | 約 300 種の記号・矢印・数学記号・全角文字 |
 | **絵文字パネル** | 8 カテゴリ 512 種の絵文字 |
+| **クリップボード** | コピーしたテキストを候補バーに表示してワンタップ貼り付け。画像・ファイルは対応アプリの貼り付け機能を呼び出し |
+| **片手モード** | キーボード全体を左右どちらかに寄せて縮小表示 |
+| **ダークモード** | 端末の設定に自動追従（手動切替なし） |
+
+### 設定
+キーボードパネルの ⚙ から開く設定画面で、キーボードレイアウト（QWERTY / フリック）・片手モード・変換エンジン・クリップボード履歴・アプリ内ブラウザでの GitHub 表示・寄付リンクなどを変更できます。
 
 ---
 
 ## プライバシーポリシー
 
-- [日本語](https://shuntilettuce.github.io/japanese-ime-for-harmonyos-next/privacy-policy)
-- [English](https://shuntilettuce.github.io/japanese-ime-for-harmonyos-next/privacy-policy-en)
-- [中文](https://shuntilettuce.github.io/japanese-ime-for-harmonyos-next/privacy-policy-zh)
+- [日本語](https://shuntilettuce.github.io/Japanese-IME-for-HarmonyOS-next/privacy-policy)
+- [English](https://shuntilettuce.github.io/Japanese-IME-for-HarmonyOS-next/privacy-policy-en)
+- [中文](https://shuntilettuce.github.io/Japanese-IME-for-HarmonyOS-next/privacy-policy-zh)
+
+本体アプリ（ユーザー辞書画面）のフッターからも同じ内容を確認できます。
 
 本アプリは入力内容・変換履歴を外部サーバーへ一切送信しません。すべての処理はデバイス内で完結します。
 
@@ -67,19 +91,28 @@ AppGallery で「shunti Japanese IME」を検索してインストール後、�
 
 `.ets` ファイル等のアプリ独自コードは **MIT License** で提供します。
 
-### 変換辞書 (dict.json, global_dict.json)
+### 変換辞書 (dict.json, global_dict.json) — track A（デフォルトの独自辞書）
 
-`entry/src/main/resources/rawfile/dict.json` / `global_dict.json` は以下のパブリックドメイン／独自データから構築した自作辞書です。詳細な出典は `DATA_SOURCES.md` を参照してください。
+`entry/src/main/resources/rawfile/dict.json` / `global_dict.json` は以下のデータから構築した自作辞書です。詳細な出典は [`DATA_SOURCES.md`](./DATA_SOURCES.md) を参照してください。
 
 - 常用漢字（文部科学省告示）— パブリックドメイン
 - Unicode Unihan データベース — パブリックドメイン
 - Wikipedia日本語版から収集した読み情報 — CC BY-SA 4.0
+- Wiktionary日本語版から収集した読み情報 — CC BY-SA 4.0 / GFDL
+- JMdict/EDICT（電子化辞書研究開発グループ）— CC BY-SA 4.0
+- 日本郵便 郵便番号データ — 自由利用可
 - 独自収録語彙（global_dict）
 
 ### 文節分割
 
-外部データファイルには依存せず、文法ルールをアプリ内に実装した独自のViterbiアルゴリズムで分割しています。
+外部データファイルには依存せず、文法ルールをアプリ内に実装した独自のViterbiアルゴリズムで分割しています（track A）。
 
-> Copyright 2000–2003 Nara Institute of Science and Technology (NAIST). All Rights Reserved.
+### 統計データ変換エンジン (mozc_dict.json 等) — track B（設定でオプション有効化）
 
-詳細は [NOTICE](./NOTICE) および [LICENSES/mecab-ipadic-COPYING.txt](./LICENSES/mecab-ipadic-COPYING.txt) を参照してください。
+上記の独自辞書とは完全に別データの、切り替え式の第二変換エンジンです。
+
+- mozc（Google）— BSD-3-Clause
+- JMdict/EDICT（読みへの追加候補表記としてのみ利用）— CC BY-SA 4.0
+- SudachiDict（Works Applications）— Apache License 2.0
+
+ライセンス全文は [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) を参照してください。

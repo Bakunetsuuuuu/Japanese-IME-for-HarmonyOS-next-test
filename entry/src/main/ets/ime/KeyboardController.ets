@@ -1,18 +1,89 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
+import type { Want } from '@kit.AbilityKit';
 import display from '@ohos.display';
 import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
-import { KanaKanjiConverter } from './KanaKanjiConverter';
+import { KanaKanjiConverter, MozcMatrixData } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
+import { UserPosStore } from './UserPosStore';
+import type { UserPosEntry } from './ConjugationEngine';
+import { buildUserExpansion } from './ConjugationEngine';
+import { SettingsStore, KeyboardSettings } from './SettingsStore';
+import { findPredictiveCompletion } from './PredictivePhrases';
+import { NextWordPredictor } from './NextWordPredictor';
+import { PredictiveConversion } from './PredictiveConversion';
+import { DateTimePredictor } from './DateTimePredictor';
+import { NumberFormatter } from './NumberFormatter';
+import { EmojiSuggest } from './EmojiSuggest';
+import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
   id: string;
   label?: string;
   locale?: string;
   mode?: string;
+}
+
+// Segmentation of the current composing text plus each non-final segment's
+// auto-converted surface, captured while updateCandidates runs (where the
+// segmentation and prefix conversions are already computed). A later
+// whole-sentence commit uses this to learn each 文節 individually: it peels
+// the known prefix off the committed text to recover the final segment's
+// accepted surface, so homophone corrections generalize word-by-word --
+// see learnCommit / KanaKanjiConverter.recordSegmentedChoice.
+interface ComposeAlignment {
+  segs: string[];            // per-segment readings
+  prefixSurfaces: string[];  // auto-converted surface of segs[0..n-2]
+  prefixText: string;        // prefixSurfaces joined
+}
+
+// Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
+const MAX_KB_VP = 620;
+
+// Pure width math shared by the display-metrics-based initial guess (computeKeyWidths)
+// and the live layout correction (KeyboardPage.onAreaChange). display.getDefaultDisplaySync()
+// can under- or over-report the actually drawable panel width on some devices (e.g. a
+// landscape cutout/nav-bar inset it doesn't account for), which made keys sized from the
+// raw display metrics alone overflow past the real edge on one side while leaving a dead
+// band on the other. Recomputing from the *measured* on-screen width — whatever the true
+// source of the discrepancy — self-corrects regardless of cause.
+export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boolean): void {
+  const screenVp = isTabletClass ? Math.min(rawScreenVp, MAX_KB_VP) : rawScreenVp;
+  AppStorage.setOrCreate('keyboardContentVp', screenVp);
+  // 10-key rows (KeyboardView's number row / qwerty row / romaji asdfghjklー
+  // row): 4vp total H-padding + 9 gaps × 5vp (KeyboardView's Row({space:5}),
+  // not the 2vp this used to assume before the design-token pass bumped row
+  // spacing -- that mismatch was the actual bug: keys came out ~2.7vp too
+  // wide each, ~27vp of overflow past the right edge on any 10-key row) =
+  // 49vp overhead. The middle letter row (asdfghjkl + ー) and bottom row
+  // (shift + zxcvbnm + backspace) also reuse this width; they aren't a
+  // fixed-width fit like this row, just centered, so a different key count
+  // is harmless.
+  const kwVp = Math.max(Math.floor((screenVp - 49) / 10), 24);
+  const skwVp = Math.round(kwVp * 1.2);
+  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps × 5vp
+  // (文節 sits right after space, at the same special-key width as
+  // mode/enter — the row would overflow if it were sized on top of them
+  // instead of space giving up the room). Same space:5 vs assumed-2vp
+  // mismatch as kwVp above.
+  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 25), 60);
+  // Flick keys: 5 columns + 4 gaps × 4vp (FlickKeyboardView's Row({space:4}))
+  // + 0vp H-padding (its Column has no left/right padding) = 16vp overhead --
+  // same total as the old "4 gaps × 3vp + 4vp H-padding" comment assumed, by
+  // coincidence, so this one was never actually broken.
+  const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
+  AppStorage.setOrCreate('keyWidthVp', kwVp);
+  AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
+  AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
+  AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
+  // Symbol panel: 8 columns + 7 gaps × 4vp (SymbolView's Row({space:4})) +
+  // 8vp H-padding (left:4 + right:4) = 36vp overhead -- was assuming 2vp
+  // gaps + 6vp padding (20vp) here too, same class of bug as kwVp above.
+  const symKwVp = Math.max(Math.floor((screenVp - 36) / 8), 36);
+  AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
 }
 
 export const enum InputState {
@@ -109,14 +180,33 @@ export class InputHandler {
   private bSegs: string[] = [];
   private bChosen: string[] = [];
   private bCur: number = 0;
-  private conversionEnd: number = 0;
-  private conversionSuffix: string = '';
+  // Segmentation + prefix surfaces of the most recent updateCandidates()
+  // composing text, or undefined when it was a single segment / had a symbol
+  // prefix. Lets a whole-sentence commit learn each 文節 individually (see
+  // learnCommit / KanaKanjiConverter.recordSegmentedChoice).
+  private lastAlignment: ComposeAlignment | undefined = undefined;
   private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
+  // Cap for the persistent deleted-character log (recordDeletedChar) --
+  // unlike restoreStack above (a short-lived undo stack wiped by the next
+  // keystroke, see insertText), this survives typing and is only capped by
+  // size. Powers the 取消 key's sequential undo (undoLastDeletion).
+  private static readonly MAX_DELETED_CHAR_HISTORY = 100;
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
+  private nextWordPrefs: dataPreferences.Preferences | undefined = undefined;
+  private nextWordSaveTimer: number = -1;
+  // Surface of the immediately-preceding commit, used as the bigram key for
+  // next-word learning (see NextWordPredictor / pushPredictions).
+  private lastCommittedSurface: string = '';
+  private symbolPrefs: dataPreferences.Preferences | undefined = undefined;
+  private symbolSaveTimer: number = -1;
+  // Per-symbol tap counts, used to rank the symbol panel's "recent" tab by
+  // actual usage instead of a fixed guess. Static so SymbolView's AppStorage
+  // read and InputHandler's own updates always see the same data.
+  private static symbolFreq: Record<string, number> = {};
 
   static getInstance(): InputHandler {
     if (!InputHandler._instance) {
@@ -140,16 +230,272 @@ export class InputHandler {
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, 'shunti_nextword')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.nextWordPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
+          NextWordPredictor.setLearned(data);
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, 'shunti_symbol_freq')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.symbolPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          InputHandler.symbolFreq = JSON.parse(String(val)) as Record<string, number>;
+          InputHandler.publishFrequentSymbols();
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
     this.reloadUserDict();
+    this.reloadSettings();
   }
 
-  // Reload the user dictionary from disk (picks up words added in the main app).
+  // Called whenever the user taps a symbol in SymbolView, so its "recent" tab
+  // can be ranked by what this user actually reaches for instead of a fixed
+  // guess at common punctuation.
+  recordSymbolUse(sym: string): void {
+    InputHandler.symbolFreq[sym] = (InputHandler.symbolFreq[sym] ?? 0) + 1;
+    // Deliberately does NOT republish the "recent" ordering here: doing so on
+    // every tap re-sorted the 🕐 tab in real time, so a key slid out from
+    // under the user's finger as they used it. The visible order is snapshotted
+    // when the symbol panel opens instead (SymbolView.aboutToAppear →
+    // refreshFrequentSymbols), so positions stay put during a tapping session
+    // and only settle into their new frequency order the next time it opens.
+    clearTimeout(this.symbolSaveTimer);
+    this.symbolSaveTimer = setTimeout(() => {
+      const prefs = this.symbolPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(InputHandler.symbolFreq))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 2000);
+  }
+
+  // Re-sort the "recent" symbol tab by current tap frequency. Called on
+  // symbol-panel open (not per tap) so the ordering the user sees is stable
+  // while they tap within it -- see recordSymbolUse.
+  refreshFrequentSymbols(): void {
+    InputHandler.publishFrequentSymbols();
+  }
+
+  private static publishFrequentSymbols(): void {
+    const syms = Object.keys(InputHandler.symbolFreq);
+    syms.sort((a: string, b: string) =>
+      (InputHandler.symbolFreq[b] ?? 0) - (InputHandler.symbolFreq[a] ?? 0));
+    AppStorage.setOrCreate('frequentSymbols', syms.slice(0, 24));
+  }
+
+  // Reload the user dictionary from disk (picks up words added in the main
+  // app), plus its 品詞 metadata (DictionaryEditPage's POS picker) --
+  // expanded into conjugated forms + connection-matrix class overrides via
+  // ConjugationEngine before handing off to KanaKanjiConverter, so a verb/
+  // adjective/person/place entry gets real segmentation behaviour instead of
+  // the flat noun default (see UserPosStore/ConjugationEngine.ets).
   private reloadUserDict(): void {
     if (!this.imeContext) { return; }
-    UserDictStore.load(this.imeContext, true)
-      .then((dict: Record<string, string[]>) => {
-        KanaKanjiConverter.setUserDict(dict);
+    const ctx = this.imeContext;
+    Promise.all([
+      UserDictStore.load(ctx, true),
+      UserPosStore.load(ctx, true),
+    ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
+      // Guarded: corrupt/unexpected persisted user data must NEVER take the
+      // whole keyboard extension down. buildUserExpansion runs the
+      // conjugation engine over on-disk data every launch, so a single bad
+      // entry throwing here used to become an unhandled rejection that
+      // recurred on every restart until the store was wiped (a
+      // "reinstall-only" crash). On any failure, fall back to no user
+      // dictionary rather than crashing — the keyboard still works.
+      try {
+        const expansion = buildUserExpansion(results[0], results[1]);
+        KanaKanjiConverter.setUserDict(expansion.dict);
+        KanaKanjiConverter.setUserClassMap(expansion.classMap);
+      } catch (e) {
+        console.error('shuntiIME reloadUserDict expansion failed', JSON.stringify(e));
+        KanaKanjiConverter.setUserDict({});
+        KanaKanjiConverter.setUserClassMap({});
+      }
+    }).catch((err: Error) => {
+      console.error('shuntiIME reloadUserDict load failed', JSON.stringify(err));
+      KanaKanjiConverter.setUserDict({});
+      KanaKanjiConverter.setUserClassMap({});
+    });
+  }
+
+  // Reload keyboard-wide settings from disk (picks up the layout choice made
+  // in the main app's settings screen, since that's a separate process).
+  private reloadSettings(): void {
+    if (!this.imeContext) {
+      console.error('shuntiIME reloadSettings: no imeContext');
+      return;
+    }
+    SettingsStore.load(this.imeContext, true)
+      .then((s: KeyboardSettings) => {
+        console.info('shuntiIME reloadSettings applied', JSON.stringify(s));
+        AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
+        AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
+        AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
+        AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
+        AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
+        this.applyConversionEngine(s.conversionEngine);
       });
+  }
+
+  // Track B (mozc-derived) is loaded lazily -- only the first time the
+  // conversionEngine setting is actually 'mozc' -- so users who never touch
+  // the toggle pay zero extra startup cost/memory for it. Safe to call
+  // repeatedly: loadMozcEngine() is a no-op cost-wise once already loaded
+  // (isMozcLoaded() short-circuits), and setEngine('custom') is always cheap.
+  private applyConversionEngine(engine: string): void {
+    if (engine !== 'mozc' && engine !== 'hybrid') {
+      KanaKanjiConverter.setEngine('custom');
+      return;
+    }
+    const target: 'mozc' | 'hybrid' = engine === 'hybrid' ? 'hybrid' : 'mozc';
+    if (KanaKanjiConverter.isMozcLoaded()) {
+      KanaKanjiConverter.setEngine(target);
+      return;
+    }
+    if (!this.imeContext) { return; }
+    this.loadMozcRawfiles(this.imeContext, target);
+  }
+
+  // Fetch + parse the mozc rawfiles and hand them to the converter. Every
+  // per-reading structure (dict surfaces, cost/class/surface per sense) is
+  // pre-flattened at build time by tools/mozc_data/convert_to_binary.py --
+  // the device only JSON.parses three plain string[] arrays (no per-key
+  // object/hash overhead, unlike the old Record<string, ...> shape) and
+  // reads the rest as typed-array binaries with zero parse cost. This is
+  // what fixed the OOM crash: the old code's JSON.parse of mozc_dict.json/
+  // mozc_costs.json built a transient object tree (~183MB + ~286MB
+  // resident) that coexisted with its own flattened output at the peak,
+  // well over the extension's ~464MB heap budget. A catchable failure just
+  // falls back to custom.
+  private loadMozcRawfiles(ctx: InputMethodExtensionContext, target: 'mozc' | 'hybrid' = 'mozc'): void {
+    const rm = ctx.resourceManager;
+    const decoder = new util.TextDecoder('utf-8');
+    // toU16Array: getRawFileContent's Uint8Array may sit at a non-even
+    // byteOffset, which Uint16Array/Int32Array can't wrap directly -- copy
+    // into a fresh aligned buffer first. Device is little-endian, matching
+    // the files written by convert_to_binary.py.
+    const toBuf = (data: Uint8Array, byteOffset: number, byteLength: number): ArrayBuffer =>
+      data.buffer.slice(data.byteOffset + byteOffset, data.byteOffset + byteOffset + byteLength);
+    // Chained (not Promise.all + destructuring) to match this file's existing
+    // getRawFileContent().then() style (see loadDictionary/loadGlobalDictionary
+    // above) rather than introduce a new pattern.
+    rm.getRawFileContent('mozc_readings.json')
+      .then((readingsData: Uint8Array) => {
+        const readings = JSON.parse(decoder.decode(readingsData)) as string[];
+        return rm.getRawFileContent('mozc_dict_surfaces.json').then((dictSurfacesData: Uint8Array) => {
+          const dictSurfaces = JSON.parse(decoder.decode(dictSurfacesData)) as string[];
+          return rm.getRawFileContent('mozc_dict_index.bin').then((dictIndexData: Uint8Array) => {
+            const dictIndex = new Uint32Array(toBuf(dictIndexData, 0, dictIndexData.byteLength));
+            return rm.getRawFileContent('mozc_costs_surfaces.json').then((costsSurfacesData: Uint8Array) => {
+              const costsSurfaces = JSON.parse(decoder.decode(costsSurfacesData)) as string[];
+              return rm.getRawFileContent('mozc_costs_index.bin').then((costsIndexData: Uint8Array) => {
+                const costsIndex = new Uint32Array(toBuf(costsIndexData, 0, costsIndexData.byteLength));
+                return rm.getRawFileContent('mozc_costs.bin').then((costsBinData: Uint8Array) => {
+                  // mozc_costs.bin layout: int32 cost[n] + uint16 left[n] + uint16 right[n]
+                  // (see convert_to_binary.py write_outputs). n_senses = last cumulative index.
+                  const nSenses = costsIndex[costsIndex.length - 1];
+                  const costsCost = new Int32Array(toBuf(costsBinData, 0, nSenses * 4));
+                  const costsLeft = new Uint16Array(toBuf(costsBinData, nSenses * 4, nSenses * 2));
+                  const costsRight = new Uint16Array(toBuf(costsBinData, nSenses * 4 + nSenses * 2, nSenses * 2));
+                  return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
+                    const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
+                    // The connection matrix cells ship as a separate flat uint16 binary
+                    // (mozc_matrix.bin) rather than inside the JSON, so it can be read
+                    // straight into a Uint16Array without a multi-megabyte JSON parse or
+                    // a boxed number[][] -- the change that keeps mozc inside the heap.
+                    return rm.getRawFileContent('mozc_matrix.bin').then((binData: Uint8Array) => {
+                      const cells = new Uint16Array(toBuf(binData, 0, binData.byteLength));
+                      KanaKanjiConverter.loadMozcEngine(readings, dictSurfaces, dictIndex,
+                        costsSurfaces, costsIndex, costsCost, costsLeft, costsRight, matrix, cells);
+                      KanaKanjiConverter.setEngine(target);
+                      console.info('shuntiIME mozc engine loaded, engine =', target);
+                    });
+                  });
+                });
+              });
+            });
+          });
+        });
+      })
+      .catch((e: Error) => {
+        console.error('shuntiIME mozc engine load failed, staying on custom', JSON.stringify(e));
+        KanaKanjiConverter.setEngine('custom');
+      });
+  }
+
+  // One-handed mode is toggled from the keyboard's own settings panel, so it
+  // can persist AppStorage's current value directly rather than re-reading it.
+  setOneHandedMode(enabled: boolean, side: string): void {
+    AppStorage.setOrCreate('oneHandedMode', enabled);
+    AppStorage.setOrCreate('oneHandedSide', side);
+    if (this.imeContext) {
+      SettingsStore.saveOneHanded(this.imeContext, enabled, side);
+    }
+  }
+
+  // Switching the keyboard layout from the keyboard's own settings panel
+  // takes effect immediately (same process, no reload round-trip needed) —
+  // more reliable than the main-app toggle, which depends on the extension
+  // picking the change back up on its own next reload.
+  setKeyboardLayout(layout: string): void {
+    AppStorage.setOrCreate('keyboardLayout', layout);
+    if (this.imeContext) {
+      SettingsStore.saveKeyboardLayout(this.imeContext, layout);
+    }
+  }
+
+  // Same immediate-switch pattern as setOneHandedMode/setKeyboardLayout
+  // above. Toggling this off while the 数字パッド (numeric subMode) happens
+  // to be open would strand the user on a panel cycleInputMode's あA key can
+  // no longer reach -- fall back to kana so the setting and the panel
+  // actually on screen never disagree.
+  setNumericPadEnabled(enabled: boolean): void {
+    AppStorage.setOrCreate('numericPadEnabled', enabled);
+    if (!enabled && AppStorage.get<string>('keyboardSubMode') === 'numeric') {
+      AppStorage.setOrCreate('keyboardSubMode', 'kana');
+    }
+    if (this.imeContext) {
+      SettingsStore.saveNumericPadEnabled(this.imeContext, enabled);
+    }
+  }
+
+  // Shared "あA"/"Aあ" mode-switch key handler for both FlickKeyboardView and
+  // KeyboardView. With 数字パッド enabled this cycles 日本語→アルファベット→数字→
+  // (back to 日本語 via NumericPadView's exit key); with it disabled the key
+  // only toggles 日本語⇔アルファベット, matching the pre-numeric-pad behavior.
+  cycleInputMode(): void {
+    const inputMode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
+    const numericPadEnabled = AppStorage.get<boolean>('numericPadEnabled') ?? false;
+    if (inputMode === InputMode.ALPHANUMERIC) {
+      if (numericPadEnabled) {
+        AppStorage.setOrCreate('keyboardSubMode', 'numeric');
+      } else {
+        AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
+      }
+      return;
+    }
+    AppStorage.setOrCreate('inputMode', InputMode.ALPHANUMERIC);
+  }
+
+  // Same immediate-switch pattern as setKeyboardLayout above. applyConversionEngine
+  // lazily fetches the mozc rawfiles the first time 'mozc' is actually selected.
+  setConversionEngine(engine: string): void {
+    AppStorage.setOrCreate('conversionEngine', engine);
+    this.applyConversionEngine(engine);
+    if (this.imeContext) {
+      SettingsStore.saveConversionEngine(this.imeContext, engine);
+    }
   }
 
   private saveLearning(): void {
@@ -163,6 +509,67 @@ export class InputHandler {
     }, 2000);
   }
 
+  private saveNextWord(): void {
+    clearTimeout(this.nextWordSaveTimer);
+    this.nextWordSaveTimer = setTimeout(() => {
+      const prefs = this.nextWordPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(NextWordPredictor.getLearned()))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 2000);
+  }
+
+  // The word next-word prediction should key on after committing `text`: the
+  // final 文節's surface when a multi-segment sentence was committed (recovered
+  // from the same alignment learnCommit uses), otherwise the whole text. Keying
+  // on the tail word means 「今日は」→ predicts after は，「駅で待つ」→ after 待つ,
+  // instead of on the useless whole-sentence string.
+  private predictionTailWord(text: string): string {
+    const a = this.lastAlignment;
+    if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
+      return text.slice(a.prefixText.length);
+    }
+    return text;
+  }
+
+  // Record the previous→current word transition for learning, then publish the
+  // predicted next words for the just-committed word into the candidate strip.
+  // Called on every commit (conversion or tapped prediction); the strip stays
+  // visible in the IDLE state until the user starts a new composition (which
+  // clears it -- see updateCandidates).
+  private pushPredictions(committed: string, tailWord: string): void {
+    if (this.lastCommittedSurface.length > 0) {
+      NextWordPredictor.record(this.lastCommittedSurface, committed);
+      this.saveNextWord();
+    }
+    this.lastCommittedSurface = committed;
+    // Emoji for the just-committed word lead the strip (😊 right after 嬉しい,
+    // 🐱 after 猫) -- a conventional emoji is a likelier next tap than a particle
+    // for the handful of words that have one -- followed by the next-word
+    // predictions. Most words have no emoji, so the strip is just next-words.
+    const strip: string[] = [];
+    const emoji = EmojiSuggest.forSurface(tailWord);
+    for (const e of emoji) { if (strip.indexOf(e) < 0) { strip.push(e); } }
+    for (const w of NextWordPredictor.predict(tailWord)) {
+      if (strip.indexOf(w) < 0 && strip.length < 6) { strip.push(w); }
+    }
+    AppStorage.setOrCreate('predictions', strip);
+  }
+
+  // Commit a tapped next-word prediction. Nothing is composing, so this inserts
+  // the word directly, records the transition, and re-predicts from the tapped
+  // word so predictions chain (私 → tap は → tap …).
+  commitPrediction(index: number): void {
+    const preds = AppStorage.get<string[]>('predictions') ?? [];
+    if (index < 0 || index >= preds.length) { return; }
+    const text = preds[index];
+    if (text.length === 0) { return; }
+    this.insertText(text);
+    KanaKanjiConverter.addContext(text);
+    this.pushPredictions(text, text);
+  }
+
   onInputStart(
     kbCtrl: inputMethodEngine.KeyboardController,
     client: inputMethodEngine.InputClient
@@ -171,6 +578,7 @@ export class InputHandler {
     this.inputClient = client;
     this.converter.reset();
     this.reloadUserDict();
+    this.reloadSettings();
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -196,6 +604,8 @@ export class InputHandler {
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
+    AppStorage.setOrCreate('predictions', [] as string[]);
+    this.lastCommittedSurface = '';
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
@@ -222,8 +632,6 @@ export class InputHandler {
         : result.committed;
       const current = AppStorage.get<string>('composingText') ?? '';
       AppStorage.setOrCreate('composingText', current + kana);
-      this.conversionEnd = (current + kana).length;
-      AppStorage.setOrCreate('convEnd', this.conversionEnd);
       this.updateCandidates();
     }
 
@@ -258,7 +666,9 @@ export class InputHandler {
         AppStorage.setOrCreate('composingText', composing);
         AppStorage.setOrCreate('pendingRomaji', '');
       }
-      this.updateCandidates();
+      const candidates = this.kanjiConverter.lookup(composing);
+      AppStorage.setOrCreate('candidates', candidates);
+      AppStorage.setOrCreate('selectedCandidateIndex', 0);
       AppStorage.setOrCreate('inputState', InputState.SELECTING);
       return;
     }
@@ -276,8 +686,14 @@ export class InputHandler {
 
     if (state === InputState.IDLE) {
       const deleted = this.insertedBuffer.pop() ?? '';
-      if (deleted.length > 0) { this.restoreStack.push(deleted); }
+      if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
       this.inputClient?.deleteForward(1);
+      // The committed word the next-word strip was keyed on is being edited
+      // away -- retire the strip so a now-stale prediction can't be tapped.
+      if (this.lastCommittedSurface.length > 0) {
+        this.lastCommittedSurface = '';
+        AppStorage.setOrCreate('predictions', [] as string[]);
+      }
       return;
     }
 
@@ -312,11 +728,8 @@ export class InputHandler {
         const composing = AppStorage.get<string>('composingText') ?? '';
         if (composing.length > 0) {
           this.lastDeletedChar = composing.slice(-1);
+          this.recordDeletedChar(this.lastDeletedChar);
           AppStorage.setOrCreate('composingText', composing.slice(0, -1));
-          if (this.conversionEnd > composing.length - 1) {
-            this.conversionEnd = composing.length - 1;
-            AppStorage.setOrCreate('convEnd', this.conversionEnd);
-          }
         }
       }
 
@@ -362,23 +775,60 @@ export class InputHandler {
     }
     const composing = AppStorage.get<string>('composingText') ?? '';
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
-    let text = index < candidates.length ? candidates[index] : '';
+    const text = index < candidates.length ? candidates[index] : '';
     if (text.length > 0) {
-      KanaKanjiConverter.recordChoice(composing, text + this.conversionSuffix);
+      // A predictive completion (会社 committed from the prefix かいし) must NOT
+      // feed conversion learning: its reading is longer than what was typed, so
+      // recordChoice(かいし→会社) would teach a wrong reading. Skip the learn;
+      // completion personalisation instead flows from full-word commits (typing
+      // かいしゃ→会社 correctly teaches かいしゃ, which then completes かいし).
+      if (!this.isNonLearningCandidate(composing, text)) {
+        this.learnCommit(composing, text);
+        this.saveLearning();
+      }
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
-      this.saveLearning();
-      if (this.conversionSuffix.length > 0) {
-        AppStorage.setOrCreate('composingText', this.conversionSuffix);
-        this.conversionEnd = this.conversionSuffix.length;
-        this.conversionSuffix = '';
-        AppStorage.setOrCreate('convEnd', this.conversionEnd);
-        AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-        this.updateCandidates();
-        return;
-      }
+      const tail = this.predictionTailWord(text);
+      this.resetComposition();
+      this.pushPredictions(text, tail);
+      return;
     }
     this.resetComposition();
+  }
+
+  // True when `text` is an ephemeral suggestion offered for the composing
+  // prefix -- a predictive completion (reading longer than typed) or a live
+  // date/time value -- and so must bypass reading→surface conversion learning
+  // (かいし→会社 or きょう→"2026年7月23日" would both be wrong to learn).
+  private isNonLearningCandidate(composing: string, text: string): boolean {
+    if (PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned()).indexOf(text) >= 0) {
+      return true;
+    }
+    if (DateTimePredictor.predict(composing, new Date()).indexOf(text) >= 0) {
+      return true;
+    }
+    return NumberFormatter.predict(composing).indexOf(text) >= 0;
+  }
+
+  // Learn from a committed candidate. For a multi-segment sentence whose
+  // committed surface still begins with the auto-converted prefix captured in
+  // updateCandidates, peel that prefix off to recover the accepted final-
+  // segment surface, then learn every 文節 individually -- so correcting one
+  // homophone (しゃしんをとった→写真を撮った) teaches とった→撮った for the
+  // next sentence too, the way every mature IME's learning generalizes.
+  // Anything else (single segment, symbol prefix, a predictive/alt-segment
+  // pick whose surface no longer starts with the prefix) falls back to the
+  // plain whole reading→surface record.
+  private learnCommit(composing: string, text: string): void {
+    const a = this.lastAlignment;
+    if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
+      const lastSurface = text.slice(a.prefixText.length);
+      const surfaces = a.prefixSurfaces.slice();
+      surfaces.push(lastSurface);
+      KanaKanjiConverter.recordSegmentedChoice(a.segs, surfaces);
+    } else {
+      KanaKanjiConverter.recordChoice(composing, text);
+    }
   }
 
   commitTopCandidate(): void {
@@ -391,22 +841,16 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
-      const text = candidates[idx] + this.conversionSuffix;
-      KanaKanjiConverter.recordChoice(composing, text);
-      this.insertText(candidates[idx]);
-      KanaKanjiConverter.addContext(candidates[idx]);
-      if (this.conversionSuffix.length > 0) {
-        AppStorage.setOrCreate('composingText', this.conversionSuffix);
-        this.conversionEnd = this.conversionSuffix.length;
-        this.conversionSuffix = '';
-        AppStorage.setOrCreate('convEnd', this.conversionEnd);
-        AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-        this.updateCandidates();
+      const chosen = candidates[idx];
+      if (!this.isNonLearningCandidate(composing, chosen)) {
+        this.learnCommit(composing, chosen);
         this.saveLearning();
-        return;
       }
+      this.insertText(chosen);
+      KanaKanjiConverter.addContext(chosen);
+      const tail = this.predictionTailWord(chosen);
       this.resetComposition();
-      this.saveLearning();
+      this.pushPredictions(chosen, tail);
       return;
     }
     this.commitPending();
@@ -425,8 +869,6 @@ export class InputHandler {
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
-    this.conversionEnd = 0;
-    this.conversionSuffix = '';
     this.lastDeletedChar = '';
     this.insertedBuffer = [];
     this.restoreStack = [];
@@ -438,44 +880,327 @@ export class InputHandler {
     AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
     AppStorage.setOrCreate('bunsetsuDisplay', '');
     AppStorage.setOrCreate('bunsetsuCurrent', 0);
-    AppStorage.setOrCreate('convEnd', 0);
-    AppStorage.setOrCreate('candidateExpanded', false);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
+    this.refreshClipboardPreview();
+  }
+
+  // Kept in-memory only (AppStorage), not persisted to disk — clipboard
+  // contents can be sensitive, and this app's privacy stance is to keep data
+  // on-device only for as long as actually needed. History resets when the
+  // keyboard extension process restarts.
+  private static readonly MAX_CLIPBOARD_HISTORY = 8;
+
+  // Signature of the clipboard entry the user has already pasted from the
+  // suggestion strip. Once pasted, the paste chip stays hidden for that exact
+  // content (no more flicker on every refresh) until the system clipboard
+  // actually changes to something else. Empty = nothing dismissed.
+  private static dismissedClipSig: string = '';
+
+  // Stable signature for a clipboard entry so a re-read can tell "same content
+  // I already pasted" from "a new copy". Text/URI/raw-image are namespaced so
+  // they can never collide.
+  private static clipSig(text: string, uri: string, isImage: boolean): string {
+    if (text.length > 0) { return 'T:' + text; }
+    if (uri.length > 0) { return 'U:' + uri; }
+    if (isImage) { return 'I:'; }
+    return '';
+  }
+
+  private static setClipboardPreviewState(preview: string, isImage: boolean, isFile: boolean, uri: string): void {
+    AppStorage.setOrCreate('clipboardPreview', preview);
+    AppStorage.setOrCreate('clipboardIsImage', isImage);
+    AppStorage.setOrCreate('clipboardIsFile', isFile);
+    AppStorage.setOrCreate('clipboardUri', uri);
+  }
+
+  // Public re-read of the system clipboard, for the settings panel to call
+  // when it (or its クリップボード履歴 view) opens -- refreshClipboardPreview
+  // otherwise only runs on keyboard show (onInputStart) and after a commit
+  // (resetComposition), so a copy made in the host app while the keyboard was
+  // already up wasn't picked up until the keyboard was closed and reopened
+  // (an AppGallery reviewer flagged exactly this staleness). Reading the
+  // pasteboard on this deliberate user action is expected and privacy-safe.
+  refreshClipboard(): void {
     this.refreshClipboardPreview();
   }
 
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
       if (!data || data.getRecordCount() === 0) {
-        AppStorage.setOrCreate('clipboardPreview', '');
-        AppStorage.setOrCreate('clipboardIsImage', false);
+        InputHandler.setClipboardPreviewState('', false, false, '');
         return;
       }
-      if (data.hasType(pasteboard.MIMETYPE_PIXELMAP)) {
-        AppStorage.setOrCreate('clipboardPreview', '画像');
-        AppStorage.setOrCreate('clipboardIsImage', true);
-      } else {
-        const text = data.getPrimaryText();
-        AppStorage.setOrCreate('clipboardPreview', text ?? '');
-        AppStorage.setOrCreate('clipboardIsImage', false);
+      const isImage = data.hasType(pasteboard.MIMETYPE_PIXELMAP);
+      const text = data.getPrimaryText();
+      if (text && text.length > 0) {
+        // Already pasted this exact content once -> keep the chip hidden.
+        if (InputHandler.clipSig(text, '', false) === InputHandler.dismissedClipSig) {
+          InputHandler.setClipboardPreviewState('', false, false, '');
+          return;
+        }
+        // Different content than what was last pasted -> the dismissal is spent.
+        InputHandler.dismissedClipSig = '';
+        InputHandler.setClipboardPreviewState(text, false, false, '');
+        this.recordClipboardHistory(text);
+        return;
       }
-    }).catch((_e: Error) => {
-      AppStorage.setOrCreate('clipboardPreview', '');
-      AppStorage.setOrCreate('clipboardIsImage', false);
+      // A file (from Files/a Gallery share sheet) shows up as a URI record.
+      // A directly-copied image often carries BOTH a pixelmap record and a
+      // URI record (many apps populate both), so check for a URI regardless
+      // of isImage. Preview it as a filename rather than the raw URI.
+      const uri = data.getPrimaryUri();
+      if (uri && uri.length > 0) {
+        if (InputHandler.clipSig('', uri, isImage) === InputHandler.dismissedClipSig) {
+          InputHandler.setClipboardPreviewState('', false, false, '');
+          return;
+        }
+        InputHandler.dismissedClipSig = '';
+        const preview = isImage ? '画像' : InputHandler.formatFileClipPreview(uri);
+        InputHandler.setClipboardPreviewState(preview, isImage, true, uri);
+        return;
+      }
+      if (isImage) {
+        // Raw pixels only, no URI to point at (e.g. some apps' plain
+        // "コピー" on an image) -- pasteClipboard() still works fine here
+        // since sendPasteExtendAction doesn't need the URI, just the
+        // isImage/isFile flag; only the filename preview text is degraded.
+        if (InputHandler.clipSig('', '', true) === InputHandler.dismissedClipSig) {
+          InputHandler.setClipboardPreviewState('', false, false, '');
+          return;
+        }
+        InputHandler.dismissedClipSig = '';
+        InputHandler.setClipboardPreviewState('画像', true, false, '');
+        return;
+      }
+      InputHandler.setClipboardPreviewState('', false, false, '');
+    }).catch((err: Error) => {
+      console.error('shuntiIME refreshClipboardPreview error', JSON.stringify(err));
+      InputHandler.setClipboardPreviewState('', false, false, '');
     });
   }
 
-  pasteClipboard(): void {
+  // "国税庁_請求書テンプレート2026.pdf" -> "国税庁_請求書.pdf": first few
+  // characters of the filename plus its extension, so the chip stays short
+  // without losing the cue of what kind of file it is.
+  private static formatFileClipPreview(uri: string): string {
+    const clean = uri.split('?')[0].split('#')[0];
+    const segments = clean.split('/');
+    let rawName = segments[segments.length - 1] ?? '';
+    try {
+      rawName = decodeURIComponent(rawName);
+    } catch {
+      // Malformed percent-encoding -- fall back to the raw segment.
+    }
+    if (rawName.length === 0) { return 'ファイル'; }
+    const dotIdx = rawName.lastIndexOf('.');
+    const hasExt = dotIdx > 0 && dotIdx < rawName.length - 1;
+    const base = hasExt ? rawName.slice(0, dotIdx) : rawName;
+    const ext = hasExt ? rawName.slice(dotIdx + 1) : '';
+    const truncatedBase = base.length > 8 ? base.slice(0, 8) : base;
+    return hasExt ? `${truncatedBase}.${ext}` : truncatedBase;
+  }
+
+  private recordClipboardHistory(text: string): void {
+    if (text.length === 0) { return; }
+    const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
+    if (history[0] === text) { return; }
+    const next = [text, ...history.filter((t: string) => t !== text)]
+      .slice(0, InputHandler.MAX_CLIPBOARD_HISTORY);
+    AppStorage.setOrCreate('clipboardHistory', next);
+  }
+
+  // No input method on any platform can inject non-text content into an
+  // arbitrary third-party app's text field through the standard IME
+  // text-commit API (insertText here) -- that's not a bug to fix in this
+  // app, it's what every keyboard app is limited to.
+  //
+  // For image/file clipboard contents this instead asks the host app's OWN
+  // focused field to run ITS native paste (sendPasteExtendAction below) --
+  // that reads the same system pasteboard the field's own long-press
+  // 貼り付け already uses, so any editor that supports pasting an image at
+  // all picks it up through its own existing handling. An earlier attempt
+  // used ArkUI drag-and-drop instead (dragging the clipboard chip onto the
+  // focused field), but that turned out not to work in nearly any real app
+  // -- most fields' drop targets don't accept a dragged UnifiedData record
+  // the way they accept their own paste action, so this replaces it as the
+  // primary mechanism rather than sitting alongside it as a "maybe" path.
+  pasteClipboard(): 'text' | 'extendAction' | 'none' {
     const isImage = AppStorage.get<boolean>('clipboardIsImage') ?? false;
-    if (isImage) {
-      return;
+    const isFile = AppStorage.get<boolean>('clipboardIsFile') ?? false;
+    if (isImage || isFile) {
+      const uri = AppStorage.get<string>('clipboardUri') ?? '';
+      if (this.sendPasteExtendAction()) {
+        // Dismiss the chip for this file/image until the clipboard changes.
+        InputHandler.dismissedClipSig = InputHandler.clipSig('', uri, isImage);
+        InputHandler.setClipboardPreviewState('', false, false, '');
+        return 'extendAction';
+      }
+      return 'none';
     }
     const text = AppStorage.get<string>('clipboardPreview') ?? '';
     if (text.length === 0) {
-      return;
+      return 'none';
     }
     this.insertText(text);
-    this.refreshClipboardPreview();
+    // Hide the paste chip now that it's been used, and remember this content so
+    // subsequent refreshes keep it hidden until the user copies something new.
+    InputHandler.dismissedClipSig = InputHandler.clipSig(text, '', false);
+    InputHandler.setClipboardPreviewState('', false, false, '');
+    return 'text';
+  }
+
+  // Tells the currently-focused edit box to run its own native paste
+  // operation (inputMethodEngine.ExtendAction.PASTE) instead of the IME
+  // trying to supply the content itself. Fire-and-forget: sendExtendAction
+  // resolves/rejects on whether the *request* was delivered, not on whether
+  // the field actually had a paste handler for image/file content -- both
+  // "field doesn't support pasting images" and "there's nothing to paste"
+  // look the same from here, so the caller can only report that the request
+  // was sent, not that it definitely worked.
+  private sendPasteExtendAction(): boolean {
+    if (!this.inputClient) { return false; }
+    try {
+      this.inputClient.sendExtendAction(inputMethodEngine.ExtendAction.PASTE)
+        .catch((err: Error) => console.error('shuntiIME sendExtendAction(PASTE) error', JSON.stringify(err)));
+      return true;
+    } catch (e) {
+      console.error('shuntiIME sendExtendAction(PASTE) threw', JSON.stringify(e));
+      return false;
+    }
+  }
+
+  // Paste an arbitrary entry from clipboard history (not necessarily the
+  // current system clipboard contents).
+  pasteFromHistory(index: number): void {
+    const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
+    const text = history[index];
+    if (text === undefined || text.length === 0) { return; }
+    this.insertText(text);
+  }
+
+  clearClipboardHistory(): void {
+    AppStorage.setOrCreate('clipboardHistory', [] as string[]);
+  }
+
+  // Newest-first, capped-size log of individually deleted characters --
+  // called from both handleBackspace branches that know exactly which
+  // character just disappeared (IDLE's own-typed-char pop, COMPOSING's
+  // pre-commit slice). Deliberately never cleared by subsequent typing
+  // (unlike restoreStack, wiped on the next insertText) so it survives across
+  // a whole typing session -- consumed newest-first by the 取消 key's
+  // sequential undo (undoLastDeletion).
+  private recordDeletedChar(ch: string): void {
+    if (ch.length === 0) { return; }
+    const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
+    const next = [ch, ...history].slice(0, InputHandler.MAX_DELETED_CHAR_HISTORY);
+    AppStorage.setOrCreate('deletedCharHistory', next);
+  }
+
+  // Restore the most recently deleted character (or whole composing chunk),
+  // consuming it from the log. Pressing 取消 N times right after deleting too
+  // much brings back the last N deleted characters in order, as if they were
+  // never deleted -- a simple sequential undo of over-deletion, not a
+  // pick-any-past-character panel. handleBackspace pushes newest-first, so
+  // history[0] is always the last thing removed; restoring and popping it in
+  // turn replays the deletions in reverse, reconstructing the original text.
+  undoLastDeletion(): void {
+    const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
+    if (history.length === 0) { return; }
+    const ch = history[0];
+    AppStorage.setOrCreate('deletedCharHistory', history.slice(1));
+    if (ch.length === 0) { return; }
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.IDLE) {
+      this.insertText(ch);
+    } else {
+      this.handleDirectKana(ch);
+    }
+  }
+
+  // Launches the main app (settings / user dictionary screen) from the
+  // keyboard's own settings panel. InputMethodExtensionContext extends
+  // ExtensionContext, which supports startAbility for abilities in the same
+  // bundle.
+  openMainApp(): void {
+    if (!this.imeContext) { return; }
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+    };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openMainApp error', JSON.stringify(err)));
+  }
+
+  // AppGallery's review deep link needs this app's AppGallery Connect app ID,
+  // which only exists once it has been published there — until then this
+  // stays empty and the caller should show a "not published yet" message
+  // instead of firing a broken want.
+  private static readonly APP_GALLERY_APP_ID = '';
+
+  openAppGalleryReview(): boolean {
+    const id = InputHandler.APP_GALLERY_APP_ID;
+    if (id.length === 0 || !this.imeContext) { return false; }
+    const want: Want = { uri: `store://appgallery.huawei.com/app/detail?id=${id}` };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openAppGalleryReview error', JSON.stringify(err)));
+    return true;
+  }
+
+  // Opens an arbitrary URL in the main app's own in-app browser
+  // (pages/WebViewPage, an ArkWeb view) rather than handing off to the
+  // system's "choose a browser" chooser -- routed through EntryAbility's
+  // want parameters (see EntryAbility.ets/Index.ets) since a URL want here
+  // would open the system browser chooser instead.
+  openExternalUrl(url: string, title: string): boolean {
+    if (!this.imeContext) { return false; }
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+      parameters: { openUrl: url, openTitle: title },
+    };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME openExternalUrl error', JSON.stringify(err)));
+    return true;
+  }
+
+  // Opens this project's GitHub repository (README, source code, etc).
+  openGithubRepo(): boolean {
+    return this.openExternalUrl(
+      'https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next', 'GitHub');
+  }
+
+  // Hands a URL to the main app to raise the system share sheet on (see
+  // EntryAbility's shareUrl param / Index.onPendingShareUrlChanged). Routed
+  // through EntryAbility exactly like openExternalUrl -- the share sheet needs
+  // a UIAbilityContext, which an input-method extension doesn't have.
+  shareUrl(url: string): boolean {
+    if (!this.imeContext) { return false; }
+    const want: Want = {
+      bundleName: 'com.shunti.japaneseime',
+      abilityName: 'EntryAbility',
+      parameters: { shareUrl: url },
+    };
+    this.imeContext.startAbility(want)
+      .catch((err: Error) => console.error('shuntiIME shareUrl error', JSON.stringify(err)));
+    return true;
+  }
+
+  // The donation links raise the system share sheet instead of opening an
+  // in-app browser: entering card details on a soft-keyboard IME is awkward
+  // and the current device may not have a payment method registered at all,
+  // so sharing the link (Huawei Share to another device, a messaging app, copy
+  // link, …) lets the user complete payment wherever it's convenient. Linked
+  // directly from the settings panel's 開発を応援 section (SettingsBar.ets) --
+  // a deliberate call after reviewing AppGallery's review guidelines (App
+  // Payment/Functions/Content/Ads): no rule found prohibiting a plain external
+  // donation link that doesn't gate any app feature, and HUAWEI IAP is stated
+  // as recommended, not required.
+  openBuyMeACoffeeLink(): boolean {
+    return this.shareUrl('https://buymeacoffee.com/shunti');
+  }
+
+  openGithubSponsorsLink(): boolean {
+    return this.shareUrl('https://github.com/sponsors/shuntilettuce');
   }
 
   private updateCandidates(): void {
@@ -484,29 +1209,160 @@ export class InputHandler {
       AppStorage.setOrCreate('candidates', [] as string[]);
       return;
     }
+    // A new composition has started -- retire the post-commit next-word strip
+    // so it doesn't linger next to live conversion candidates.
+    AppStorage.setOrCreate('predictions', [] as string[]);
 
-    const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
-    const target = composing.slice(0, rangeEnd);
-    const suffix = composing.slice(rangeEnd);
-    this.conversionSuffix = suffix;
-
-    const fullKatakana = KanaKanjiConverter.toKatakana(target);
-    const segs = this.kanjiConverter.segment(target);
+    const fullKatakana = KanaKanjiConverter.toKatakana(composing);
+    const segs = this.kanjiConverter.segment(composing);
     let candidates: string[];
+    // Recomputed below whenever the composing text is multi-segment. Reset
+    // here so a single-segment / symbol-prefix / stale commit falls back to
+    // the plain whole-string recordChoice instead of a stale alignment.
+    this.lastAlignment = undefined;
 
     if (segs.length <= 1) {
-      candidates = this.kanjiConverter.lookup(target);
+      candidates = this.kanjiConverter.lookup(composing);
     } else {
-      const fullCands = this.kanjiConverter.lookup(target);
+      // Auto-converted prefix (all but the last segment). Computed once here
+      // so BOTH the whole-reading-hit branch and the decompose branch below
+      // can capture the same per-segment breakdown for learning -- most
+      // natural sentences take the hasRealHit branch (lookup already joins
+      // the segments), so an alignment built only inside the decompose branch
+      // would miss them.
+      const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1], segs[i - 1]));
+      const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
+      const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
+      // A prefix that resolves to a bare symbol (かっこ→"()") isn't a usable
+      // learning alignment either -- leave lastAlignment undefined so those
+      // commits fall back to whole-string learning.
+      if (!hasSymbolPrefix) {
+        this.lastAlignment = { segs: segs, prefixSurfaces: prefixParts, prefixText: prefixText };
+      }
+
+      // Try full-text lookup first. If it returns a real dictionary hit
+      // (not just the katakana/kana fallback), use it — this prevents
+      // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
+      const fullCands = this.kanjiConverter.lookup(composing);
       const fullFirst = fullCands[0];
-      const hasRealHit = fullFirst !== fullKatakana && fullFirst !== target;
+      // A dict-authored loanword (こんびに→コンビニ) has fullFirst === the
+      // auto-katakana, so the plain fullFirst!==fullKatakana test would reject
+      // it and fall to segmentation (こんび+に → garbage). Treat a whole
+      // reading that IS a dictionary word as a real hit regardless.
+      const hasRealHit = (fullFirst !== fullKatakana && fullFirst !== composing) ||
+        KanaKanjiConverter.isDictionaryWord(composing);
 
       if (hasRealHit) {
         candidates = fullCands;
       } else {
-        candidates = [target, ...fullCands.filter((c: string) => c !== fullKatakana && c !== target), fullKatakana];
-        if (!candidates.includes(target)) { candidates.push(target); }
+        // Multi-segment: auto-convert prefix, show variants for last segment.
+        // Viterbi result goes to position 0; katakana is position 1.
+        // Putting katakana at 0 unconditionally causes long natural Japanese
+        // (e.g. きょうはいいてんきですね) to always show all-katakana first.
+        // A prefix segment that resolves to a bare symbol (e.g. かっこ→"()")
+        // means Viterbi split a casual word across a symbol "word" — joining
+        // it would produce nonsense like "()よ" for かっこよ. Fall back to the
+        // plain kana/katakana candidates instead of using that prefix.
+        const lastSeg = segs[segs.length - 1];
+        const lastCands = this.kanjiConverter.lookup(lastSeg);
+        const segCands = hasSymbolPrefix ? [] : lastCands.map((c: string) => prefixText + c);
+        candidates = [];
+        if (hasSymbolPrefix) {
+          // No usable kanji join — plain kana leads, same as the
+          // segmentJoinFallback bail-out for single-lookup composing text.
+          candidates.push(composing);
+        } else if (segCands.length > 0) {
+          // Position 0: best Viterbi candidate
+          candidates.push(segCands[0]);
+        }
+        // Position 1: katakana (loanwords reachable with one Space tap)
+        if (!candidates.includes(fullKatakana)) {
+          candidates.push(fullKatakana);
+        }
+        // Remaining Viterbi variants
+        for (let i = 1; i < segCands.length; i++) {
+          if (!candidates.includes(segCands[i])) { candidates.push(segCands[i]); }
+        }
+        if (!candidates.includes(composing)) { candidates.push(composing); }
       }
+    }
+
+    // Per-segment homophone alternatives for the whole sentence, inserted
+    // right after the primary pick and ahead of the katakana/kana fallbacks
+    // the branches above appended. Track A used to offer only the last
+    // segment's variants (or nothing useful for a whole-phrase entry), so a
+    // homophone in any earlier word — 橋/箸 in はしをわたる, 撮る/取る in
+    // 写真をとった — never appeared anywhere in the list. (Empty for track B,
+    // whose lookup already routed through composeMozcCandidates above.)
+    const alts = this.kanjiConverter.sentenceAlternatives(composing);
+    // Insert the alternatives just ABOVE the katakana/kana fallbacks, not at a
+    // fixed position 1: a whole-phrase dict entry can already carry a genuine
+    // kanji alternative at candidate[1] (はなをみる → 花を観る, 花を見る), and
+    // blindly prepending would bury that real alternative below the injected
+    // ones. Find where the junk (full katakana / as-typed kana) starts and
+    // slot the alternatives right before it, so both the entry's own
+    // alternatives and the per-segment swaps stay above the fallbacks.
+    const kIdx = candidates.indexOf(fullKatakana);
+    const cIdx = candidates.indexOf(composing);
+    let insertAt: number;
+    if (kIdx < 0 && cIdx < 0) { insertAt = candidates.length; }
+    else if (kIdx < 0) { insertAt = cIdx; }
+    else if (cIdx < 0) { insertAt = kIdx; }
+    else { insertAt = kIdx < cIdx ? kIdx : cIdx; }
+    for (const a of alts) {
+      if (!candidates.includes(a)) {
+        candidates.splice(insertAt, 0, a);
+        insertAt++;
+      }
+    }
+
+    // 自動区切り変更: a candidate from a differently-segmented parse of the
+    // same reading (へんかんせいど's single whole-compound entry 変換精度 vs the
+    // へんかん+せいど split's 返還制度). Demoted below the per-segment
+    // alternatives above: its boundary-detour search occasionally yields a
+    // linguistically odd reparse (先生似合う for せんせいにあう), so it's a
+    // lower-priority alternative, not the second candidate.
+    const altSeg = this.kanjiConverter.findAlternateSegmentation(composing);
+    if (altSeg !== null && !candidates.includes(altSeg)) {
+      candidates.splice(insertAt, 0, altSeg);
+    }
+
+    // Predictive completion: once enough of a known common phrase's reading
+    // has been typed to be unambiguous, lead with the whole thing rather than
+    // making the user type out a full greeting/set phrase.
+    const predictive = findPredictiveCompletion(composing);
+    if (predictive !== null && !candidates.includes(predictive)) {
+      candidates = [predictive, ...candidates];
+    }
+
+    // Predictive conversion (予測変換): common words whose reading EXTENDS what's
+    // been typed so far (かいし→会社, にほん→日本語), inserted right after the exact
+    // conversion so they're one tap away without finishing the reading. Only
+    // fires for words that are strictly longer than the prefix, so a fully-typed
+    // reading (which the exact conversion already handles) adds nothing here --
+    // this is why it never disturbs the whole-sentence conversion candidates.
+    let insAt = candidates.length > 0 ? 1 : 0;
+    // Date/time expansion (きょう→2026年7月23日, いま→15:05, あした→翌日…) leads the
+    // alternatives for its trigger readings -- when someone types きょう the live
+    // date is a likelier intent than a prefix-completion (教育 for きょういく).
+    // Ephemeral live values -- excluded from conversion learning by
+    // isNonLearningCandidate.
+    const dateTimes = DateTimePredictor.predict(composing, new Date());
+    for (const d of dateTimes) {
+      if (!candidates.includes(d)) { candidates.splice(insAt, 0, d); insAt++; }
+    }
+
+    // Common-word prefix completions (かいし→会社), after any date/time values.
+    const completions = PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned());
+    for (const c of completions) {
+      if (!candidates.includes(c)) { candidates.splice(insAt, 0, c); insAt++; }
+    }
+
+    // Numeral formatting (1000000→1,000,000 / 100万 / 百万) for bare-digit input.
+    // Ephemeral like the above -- excluded from conversion learning.
+    const numForms = NumberFormatter.predict(composing);
+    for (const nf of numForms) {
+      if (!candidates.includes(nf)) { candidates.splice(insAt, 0, nf); insAt++; }
     }
 
     AppStorage.setOrCreate('candidates', candidates);
@@ -528,15 +1384,8 @@ export class InputHandler {
 
   handleCursorLeft(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    const composing = AppStorage.get<string>('composingText') ?? '';
     if (state === InputState.BUNSETSU) {
       this.selectBunsetsuSegment(this.bCur - 1);
-    } else if ((state === InputState.COMPOSING || state === InputState.SELECTING) && composing.length > 0) {
-      if (this.conversionEnd > 1) {
-        this.conversionEnd--;
-        AppStorage.setOrCreate('convEnd', this.conversionEnd);
-        this.updateCandidates();
-      }
     } else {
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
         .catch((_e: Error) => {});
@@ -545,15 +1394,8 @@ export class InputHandler {
 
   handleCursorRight(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    const composing = AppStorage.get<string>('composingText') ?? '';
     if (state === InputState.BUNSETSU) {
       this.selectBunsetsuSegment(this.bCur + 1);
-    } else if ((state === InputState.COMPOSING || state === InputState.SELECTING) && composing.length > 0) {
-      if (this.conversionEnd < composing.length) {
-        this.conversionEnd++;
-        AppStorage.setOrCreate('convEnd', this.conversionEnd);
-        this.updateCandidates();
-      }
     } else {
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
         .catch((_e: Error) => {});
@@ -578,8 +1420,6 @@ export class InputHandler {
     AppStorage.setOrCreate('composingText', current + kana);
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-    this.conversionEnd = (current + kana).length;
-    AppStorage.setOrCreate('convEnd', this.conversionEnd);
     this.lastDeletedChar = '';
     this.restoreStack = [];
     this.updateCandidates();
@@ -600,7 +1440,7 @@ export class InputHandler {
     }
     if (composing.length === 0) { return; }
     this.bSegs = this.kanjiConverter.segment(composing);
-    this.bChosen = this.bSegs.map((seg: string) => this.kanjiConverter.autoConvert(seg));
+    this.bChosen = this.bSegs.map((seg: string, i: number) => this.kanjiConverter.autoConvert(seg, this.bSegs[i + 1], this.bSegs[i - 1]));
     this.bCur = 0;
     this.updateBunsetsuStorage();
   }
@@ -732,18 +1572,13 @@ export class InputHandler {
     }
   }
 
-  private static readonly BRACKET_PAIRS: Set<string> =
-    new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
-
   insertText(text: string): void {
-    if (InputHandler.BRACKET_PAIRS.has(text) && this.inputClient) {
-      const client = this.inputClient;
-      client.insertText(text).then(() => {
-        client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT).catch((_e: Error) => {});
-      }).catch((_e: Error) => {});
-    } else {
-      this.inputClient?.insertText(text);
-    }
+    // Brackets used to auto-place the caret between the pair (「|」), but no
+    // caret-move primitive worked reliably across the editors this IME runs in
+    // -- moveCursor was a no-op on some, and the absolute-index selectByRange
+    // overshot on others -- so the pair is now inserted plainly and the caret
+    // stays after it, same as any other committed text.
+    this.inputClient?.insertText(text);
     if (text.length > 0) {
       for (let i = 0; i < text.length; i++) {
         this.insertedBuffer.push(text[i]);
@@ -777,9 +1612,9 @@ export class KeyboardController {
   }
 
   onCreate(): void {
+    registerJpFont();
     this.inputHandle.setContext(this.context);
     this.applyColorMode();
-    if (!AppStorage.has('themeVariant')) { AppStorage.setOrCreate('themeVariant', 'original'); }
     this.initPanel();
     this.registerListeners();
     this.loadDictionary();
@@ -798,7 +1633,6 @@ export class KeyboardController {
     }
   }
 
-  // Periodically poll for theme changes (user may switch in companion app)
   onDestroy(): void {
     this.unregisterListeners();
     if (this.panel) {
@@ -854,25 +1688,33 @@ export class KeyboardController {
     // centered keyboard with large empty margins on both sides (looked tiny,
     // unlike Gboard which fills the full landscape width).
     const shortVp = Math.min(dis.width, dis.height) / density;
-    const MAX_KB_VP = 620;
     const isTabletClass = shortVp > 600;
-    const screenVp = isTabletClass ? Math.min(fullVp, MAX_KB_VP) : fullVp;
+    AppStorage.setOrCreate('isTabletClass', isTabletClass);
     AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
-    AppStorage.setOrCreate('keyboardContentVp', screenVp);
-    // 10-key rows: 4vp total H-padding + 9 gaps × 2vp = 22vp overhead
-    const kwVp = Math.max(Math.floor((screenVp - 22) / 10), 24);
-    const skwVp = Math.round(kwVp * 1.2);
-    // Space bar = remaining after mode + 、 + 。 + enter + 4 gaps
-    const spaceVp = Math.max(Math.floor(screenVp - 4 - 2 * skwVp - 2 * kwVp - 8), 60);
-    // Flick keys: 5 columns + 4 gaps × 3vp + 4vp H-padding
-    const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
-    AppStorage.setOrCreate('keyWidthVp', kwVp);
-    AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
-    AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
-    AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
-    // Symbol panel: 8 columns + 7 gaps × 2vp + 6vp H-padding
-    const symKwVp = Math.max(Math.floor((screenVp - 20) / 8), 36);
-    AppStorage.setOrCreate('symKeyWidthVp', symKwVp);
+
+    // This is only a best-effort guess from raw display metrics — on-device
+    // diagnostics confirmed this device's IME panel framework silently shrinks
+    // the panel to a fraction of the width requested via panel.resize() (~76%
+    // observed, with no corresponding cutout reported — a software policy, not
+    // a hardware inset), so display metrics alone can't be trusted.
+    // KeyboardPage.onAreaChange measures the real width and both applies the
+    // correction AND records a scale factor (measured/guessed) here, per
+    // orientation. Apply that learned scale up front: after the very first
+    // launch, this panel is reused across show/hide (see the 'inputStop'
+    // handler), so initPanel() never runs again and a later resizePanel() call
+    // (e.g. from a display 'change' event that doesn't actually alter the
+    // panel's on-screen size) may not be followed by a fresh onAreaChange —
+    // without this, that would silently overwrite the corrected widths with
+    // the raw (wrong) guess again, with nothing left to re-correct them.
+    // Tablet-class devices are excluded: their narrower width there is our own
+    // deliberate MAX_KB_VP cap, not the shrink bug, so it shouldn't be learned
+    // as a scale factor.
+    const isLandscape = dis.width > dis.height;
+    const scaleKey = isLandscape ? 'widthScaleLandscape' : 'widthScalePortrait';
+    const learnedScale = isTabletClass ? 1 : (AppStorage.get<number>(scaleKey) ?? 1);
+    AppStorage.setOrCreate('lastRawFullVp', fullVp);
+    AppStorage.setOrCreate('lastRawFullVpIsLandscape', isLandscape);
+    applyKeyboardWidthsForVp(fullVp * learnedScale, isTabletClass);
   }
 
   // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
@@ -954,10 +1796,18 @@ export class KeyboardController {
       });
 
       IMEAbility.on('inputStop', () => {
+        // Only hide — don't tear down the context/panel here. initPanel()
+        // (which creates this.panel) only runs once, from onCreate(), so
+        // destroying the context on every inputStop left no panel to show()
+        // for the *next* inputStart unless the OS happened to fully restart
+        // the extension in between. That's what made the keyboard vanish
+        // after a couple of show/hide cycles until something (e.g. rotating
+        // back to portrait and switching IME) forced a fresh restart.
+        // The real teardown belongs in the ability's own onDestroy(), which
+        // already calls KeyboardController.onDestroy() when the IME service
+        // is actually shut down.
         this.inputHandle.onInputStop();
         this.panel?.hide();
-        this.onDestroy();
-        this.context.destroy();
       });
 
       IMEAbility.on('setSubtype', (subtype: InputMethodSubtype) => {

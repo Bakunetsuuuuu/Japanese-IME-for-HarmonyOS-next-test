@@ -1,6 +1,3 @@
-local.properties
-build/
-.hvigor/
-.idea/
-*.iml
-.DS_Store
+# Claude Code local tooling state (e.g. background-agent worktrees) --
+# never part of the project itself.
+.claude/
