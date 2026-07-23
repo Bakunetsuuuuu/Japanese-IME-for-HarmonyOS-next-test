@@ -126,6 +126,39 @@ function main() {
   check('flow: 私 -> は on top', NW.predict('私')[0] === 'は', JSON.stringify(NW.predict('私')));
   check('flow: 映画を -> 見る (bigram)', NW.predict('を', '映画')[0] === '見る', JSON.stringify(NW.predict('を', '映画')));
 
+  // --- phraseCompletion: personal habitual multi-word sequences (口癖/定型文),
+  // e.g. a signature sign-off "了解しました！", surfaced as one chip once the
+  // user has repeated it enough. ---
+  NW.setLearned({});
+  for (let i = 0; i < 4; i++) { sim(['了解', 'しました', '！']); }
+  check('phrase: 了解 -> しました！ (2-word chain)',
+    JSON.stringify(NW.phraseCompletion('了解', '')) === JSON.stringify(['しました', '！']),
+    JSON.stringify(NW.phraseCompletion('了解', '')));
+
+  // needs the minimum repeat count -- a single occurrence isn't a habit yet
+  NW.setLearned({});
+  sim(['マジで', '助かる']);
+  check('phrase: single occurrence is not yet a habit', NW.phraseCompletion('マジで', '').length === 0,
+    JSON.stringify(NW.phraseCompletion('マジで', '')));
+
+  // ambiguous continuation (two roughly-equally-common next words) never
+  // becomes "the" habit -- 割と and マジで both follow お疲れ equally often, so
+  // neither should be forced as a one-tap phrase.
+  NW.setLearned({});
+  for (let i = 0; i < 3; i++) { sim(['お疲れ', '割と', 'いい', '感じ']); }
+  for (let i = 0; i < 3; i++) { sim(['お疲れ', 'マジで', 'いい', '感じ']); }
+  check('phrase: ambiguous first step yields no chain', NW.phraseCompletion('お疲れ', '').length === 0,
+    JSON.stringify(NW.phraseCompletion('お疲れ', '')));
+
+  // one clearly-dominant habit (マジで said 4x, たしかに only 1x after お疲れ)
+  // DOES chain, and stops before the point where it would loop/repeat.
+  NW.setLearned({});
+  for (let i = 0; i < 4; i++) { sim(['お疲れ', 'マジで', '助かる', 'わ']); }
+  sim(['お疲れ', 'たしかに']);
+  const chain = NW.phraseCompletion('お疲れ', '');
+  check('phrase: dominant habit chains multiple words', chain[0] === 'マジで' && chain.length >= 2, JSON.stringify(chain));
+  check('phrase: capped by maxWords param', NW.phraseCompletion('お疲れ', '', 1).length <= 1, JSON.stringify(NW.phraseCompletion('お疲れ', '', 1)));
+
   console.log(`\n[NEXTWORD] ${failures === 0 ? 'ALL PASS' : failures + ' FAILURES'}`);
   if (failures > 0) process.exit(1);
 }

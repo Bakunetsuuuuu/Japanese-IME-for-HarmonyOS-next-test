@@ -213,6 +213,52 @@ export class NextWordPredictor {
     for (const s of scored) { push(s.word); }
   }
 
+  private static sortedScored(entry: Record<string, number> | undefined): Scored[] {
+    if (entry === undefined) { return []; }
+    const scored: Scored[] = [];
+    for (const w of Object.keys(entry)) { scored.push({ word: w, count: entry[w] }); }
+    scored.sort((a: Scored, b: Scored) => b.count - a.count);
+    return scored;
+  }
+
+  // The single next word after (prev2, prev1) if it's a clear personal habit:
+  // seen at least `minCount` times, AND at least twice as often as the next
+  // runner-up (so a coin-flip between two equally common continuations never
+  // gets treated as "the" habit). Bigram context preferred over unigram when
+  // both have entries. Returns null if neither source clears the bar.
+  private static dominantNext(prev1: string, prev2: string, minCount: number): string | null {
+    let scored: Scored[] = [];
+    if (prev2.length > 0) { scored = NextWordPredictor.sortedScored(NextWordPredictor.learnedBi[prev2 + BI_SEP + prev1]); }
+    if (scored.length === 0) { scored = NextWordPredictor.sortedScored(NextWordPredictor.learned[prev1]); }
+    if (scored.length === 0 || scored[0].count < minCount) { return null; }
+    if (scored.length > 1 && scored[1].count * 2 > scored[0].count) { return null; }
+    if (scored[0].word === prev1) { return null; }
+    return scored[0].word;
+  }
+
+  // Greedily extends (prev2, prev1) through the learned graph as long as each
+  // next step is a clear personal habit (dominantNext), up to maxWords long.
+  // This is how a recurring personal phrase or sign-off -- 了解しましたやります,
+  // マジで助かる, an habitual sentence-ending -- surfaces as ONE multi-word
+  // completion once the user has typed it enough times, rather than requiring
+  // a tap per word. Returns [] if even the first step isn't yet a habit (too
+  // new / too varied); the caller falls back to ordinary single-word
+  // predictions in that case. Loop-safe: stops if a word would repeat within
+  // the chain (a real personal phrase never repeats a word immediately).
+  static phraseCompletion(prev1: string, prev2: string, maxWords: number = 4, minCount: number = 2): string[] {
+    const chain: string[] = [];
+    let w1 = prev2;
+    let w2 = prev1;
+    for (let i = 0; i < maxWords; i++) {
+      const next = NextWordPredictor.dominantNext(w2, w1, minCount);
+      if (next === null || chain.indexOf(next) >= 0 || next === prev1 || next === prev2) { break; }
+      chain.push(next);
+      w1 = w2;
+      w2 = next;
+    }
+    return chain;
+  }
+
   // Predicted next words given the last one or two committed words, best first.
   // 2-word learned context leads (映画を→見る), then 1-word learned, then the
   // curated seed, then the universal particle fallback. prev2 optional.

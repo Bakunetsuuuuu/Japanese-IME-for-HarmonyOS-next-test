@@ -202,6 +202,10 @@ export class InputHandler {
   // 1- and 2-word context for next-word prediction/learning (see
   // NextWordPredictor / pushPredictions). Newest last.
   private recentWords: string[] = [];
+  // Parallel to the 'predictions' AppStorage strip: the individual word(s) each
+  // displayed chip represents (a phrase chip's own words, or [text] for a
+  // plain single-word/emoji chip) -- see pushPredictions/commitPrediction.
+  private predictionWordGroups: string[][] = [];
   private symbolPrefs: dataPreferences.Preferences | undefined = undefined;
   private symbolSaveTimer: number = -1;
   // Per-symbol tap counts, used to rank the symbol panel's "recent" tab by
@@ -557,17 +561,31 @@ export class InputHandler {
     this.recentWords = [];
     if (w1.length > 0) { this.recentWords.push(w1); }
     if (w2.length > 0) { this.recentWords.push(w2); }
-    // Strip: emoji for the last word (😊 after 嬉しい, 🐱 after 猫) lead, then the
-    // 2-word-context next-word predictions. Most words have no emoji, so the
-    // strip is usually just predictions.
+    // Strip, in priority order: a personal habitual phrase (口癖/定型文, e.g. a
+    // recurring sign-off 了解しました！ or a favorite filler like マジで) as ONE
+    // multi-word chip when the user has repeated it enough to be a clear habit
+    // (see NextWordPredictor.phraseCompletion) -- one tap instead of one per
+    // word; then emoji for the last word; then ordinary single-word next-word
+    // predictions. predictionWordGroups is kept parallel to the displayed strip
+    // so commitPrediction can replay a multi-word chip's OWN words through
+    // pushPredictions (correct learning bookkeeping) rather than treating the
+    // whole concatenated phrase as a single "word".
     const strip: string[] = [];
-    if (w2.length > 0) {
-      for (const e of EmojiSuggest.forSurface(w2)) { if (strip.indexOf(e) < 0) { strip.push(e); } }
-      for (const w of NextWordPredictor.predict(w2, w1)) {
-        if (strip.indexOf(w) < 0 && strip.length < 6) { strip.push(w); }
+    const wordGroups: string[][] = [];
+    const pushChip = (text: string, words: string[]): void => {
+      if (text.length > 0 && strip.indexOf(text) < 0 && strip.length < 6) {
+        strip.push(text);
+        wordGroups.push(words);
       }
+    };
+    if (w2.length > 0) {
+      const phrase = NextWordPredictor.phraseCompletion(w2, w1);
+      if (phrase.length >= 2) { pushChip(phrase.join(''), phrase); }
+      for (const e of EmojiSuggest.forSurface(w2)) { pushChip(e, [e]); }
+      for (const w of NextWordPredictor.predict(w2, w1)) { pushChip(w, [w]); }
     }
     AppStorage.setOrCreate('predictions', strip);
+    this.predictionWordGroups = wordGroups;
   }
 
   // Reorder conversion candidates so any the user has actually written after the
@@ -591,9 +609,12 @@ export class InputHandler {
     return [...boosted, ...rest];
   }
 
-  // Commit a tapped next-word prediction. Nothing is composing, so this inserts
-  // the word directly, records the transition, and re-predicts from the tapped
-  // word so predictions chain (私 → tap は → tap …).
+  // Commit a tapped next-word prediction (a plain word, an emoji, or a
+  // multi-word habitual-phrase chip). Nothing is composing, so this inserts
+  // the chip's text directly, then replays its OWN word(s) through
+  // pushPredictions -- for a phrase chip that both correctly learns each
+  // internal transition (reinforcing the habit further) and re-predicts from
+  // its true last word, so predictions keep chaining naturally.
   commitPrediction(index: number): void {
     const preds = AppStorage.get<string[]>('predictions') ?? [];
     if (index < 0 || index >= preds.length) { return; }
@@ -601,7 +622,10 @@ export class InputHandler {
     if (text.length === 0) { return; }
     this.insertText(text);
     KanaKanjiConverter.addContext(text);
-    this.pushPredictions([text]);
+    const words = index < this.predictionWordGroups.length && this.predictionWordGroups[index].length > 0
+      ? this.predictionWordGroups[index]
+      : [text];
+    this.pushPredictions(words);
   }
 
   onInputStart(
@@ -640,6 +664,7 @@ export class InputHandler {
     AppStorage.setOrCreate('candidates', [] as string[]);
     AppStorage.setOrCreate('predictions', [] as string[]);
     this.recentWords = [];
+    this.predictionWordGroups = [];
     // Leaving the field: drop the recent-context buffer so homophone ranking in
     // the next app/text box doesn't inherit this one's context.
     KanaKanjiConverter.clearContext();
@@ -729,6 +754,7 @@ export class InputHandler {
       // away -- retire the strip so a now-stale prediction can't be tapped.
       if (this.recentWords.length > 0) {
         this.recentWords = [];
+        this.predictionWordGroups = [];
         AppStorage.setOrCreate('predictions', [] as string[]);
       }
       return;
@@ -1249,6 +1275,7 @@ export class InputHandler {
     // A new composition has started -- retire the post-commit next-word strip
     // so it doesn't linger next to live conversion candidates.
     AppStorage.setOrCreate('predictions', [] as string[]);
+    this.predictionWordGroups = [];
 
     const fullKatakana = KanaKanjiConverter.toKatakana(composing);
     const segs = this.kanjiConverter.segment(composing);
