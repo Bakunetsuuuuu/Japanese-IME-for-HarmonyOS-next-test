@@ -1301,7 +1301,15 @@ export class InputHandler {
         // it would produce nonsense like "()よ" for かっこよ. Fall back to the
         // plain kana/katakana candidates instead of using that prefix.
         const lastSeg = segs[segs.length - 1];
-        const lastCands = this.kanjiConverter.lookup(lastSeg);
+        let lastCands = this.kanjiConverter.lookup(lastSeg);
+        // The last segment is converted here with no context (unlike prefix
+        // segments, which go through autoConvert). Let a context rule force its
+        // lead -- e.g. a trailing おく auxiliary after a て/で form stays kana
+        // (読んで + おいて → 読んでおいて, not 読んで置いて).
+        const forcedLead = KanaKanjiConverter.contextLead(lastSeg, prefixText);
+        if (forcedLead !== null && lastCands.length > 0 && lastCands[0] !== forcedLead) {
+          lastCands = [forcedLead, ...lastCands.filter((c: string) => c !== forcedLead)];
+        }
         const segCands = hasSymbolPrefix ? [] : lastCands.map((c: string) => prefixText + c);
         candidates = [];
         if (hasSymbolPrefix) {

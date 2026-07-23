@@ -31933,6 +31933,15 @@ export class KanaKanjiConverter {
           /[てで]$/.test(segs[idx - 1])) {
         best = '行った';
       }
+      // おく auxiliary ("…ておく" = do X in advance) directly after a て/で form
+      // (読んで+おいて, 買って+おけば) stays kana -- the te-form already carries
+      // the main verb, so 置いて/置けば ("put") would be a spurious second verb.
+      // A bare 置く after を/に ("本を置いて") isn't glued to a te-form, so it's
+      // untouched.
+      if (KanaKanjiConverter.isOkuAuxiliary(seg) && idx > 0 && segs[idx - 1].length > 1 &&
+          /[てで]$/.test(segs[idx - 1])) {
+        best = seg;
+      }
       // なくなった directly after a segment ending in れ (a potential-verb
       // stem: 眠れ/食べられ/見れ/来れ, ...) is the auxiliary negation
       // ("〜れなくなった" = became unable to ~"), conventionally kana, not
@@ -32858,6 +32867,31 @@ export class KanaKanjiConverter {
   // that a reading is an inflected word whose proper surface carries okurigana.
   private static readonly INFLECTION_ENDINGS: string = 'るすくつぬむぐうぶい';
 
+  // Auxiliary おく forms (…ておく "do in advance") that must stay kana after a
+  // て/で form. Closed set of its common conjugations.
+  private static readonly OKU_AUX_FORMS: Set<string> = new Set<string>([
+    'おく', 'おいて', 'おいた', 'おけば', 'おこう', 'おき', 'おかない',
+    'おかなきゃ', 'おかなければ', 'おいたら', 'おいたり', 'おいてる', 'おいてね',
+  ]);
+
+  private static isOkuAuxiliary(kana: string): boolean {
+    return KanaKanjiConverter.OKU_AUX_FORMS.has(kana);
+  }
+
+  // Public context-forced lead surface for a segment given the text committed
+  // before it, or null for "no override". The decompose branch converts the
+  // LAST segment with lookup()[0], which has no context, so a trailing おく
+  // auxiliary (…て + おいて/おけば) wrongly became 置いて/置けば -- this lets the
+  // caller force the kana lead there. Track A only (track B's DP already has
+  // context); returns null for mozc so its composition is untouched.
+  static contextLead(seg: string, prevText: string): string | null {
+    if (KanaKanjiConverter.isMozcEngine()) { return null; }
+    if (KanaKanjiConverter.isOkuAuxiliary(seg) && prevText.length > 1 && /[てで]$/.test(prevText)) {
+      return seg;
+    }
+    return null;
+  }
+
   private static endsWithCompoundVerbSuffix(kana: string): boolean {
     for (const suf of KanaKanjiConverter.COMPOUND_VERB_SUFFIXES) {
       if (kana.length > suf.length && kana.endsWith(suf)) { return true; }
@@ -32922,6 +32956,16 @@ export class KanaKanjiConverter {
     if (kana === 'いった' && prevSeg !== undefined && prevSeg.length > 1 &&
         /[てで]$/.test(prevSeg)) {
       return '行った';
+    }
+    // 〜ておく auxiliary (…て/でおく: 読んでおく, 買っておけば, 見ておいて) stays
+    // kana. Only the おく forms that mean "do X in advance" -- after a て/で form
+    // -- are locked; a bare 置く/置いて/置けば ("put", after を/に etc.) is
+    // untouched, so 本を置いて still converts. Some forms (たべておく) already join
+    // into one segment and never reach here; this catches the ones the segmenter
+    // splits off (おいて/おけば as their own trailing segment).
+    if (KanaKanjiConverter.isOkuAuxiliary(kana) && prevSeg !== undefined &&
+        prevSeg.length > 1 && /[てで]$/.test(prevSeg)) {
+      return kana;
     }
     // なくなった after れ: see joinSegs' matching special case for why.
     if (kana === 'なくなった' && prevSeg !== undefined && prevSeg.endsWith('れ')) {
