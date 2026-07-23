@@ -4,6 +4,7 @@ import { promptAction } from '@kit.ArkUI';
 import { InputHandler, InputState, InputMode, applyKeyboardWidthsForVp } from '../ime/KeyboardController';
 import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
+import { PredictionBar } from '../components/PredictionBar';
 import { KeyboardView } from '../components/KeyboardView';
 import { FlickKeyboardView } from '../components/FlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
@@ -27,6 +28,7 @@ struct KeyboardPage {
   @StorageLink('composingText') composingText: string = '';
   @StorageLink('pendingRomaji') pendingRomaji: string = '';
   @StorageLink('candidates') candidates: string[] = [];
+  @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
   @StorageLink('isLandscape') isLandscape: boolean = false;
   @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
@@ -164,6 +166,10 @@ struct KeyboardPage {
                     candidates: this.candidates,
                     selectedIndex: this.selectedIndex
                   })
+                } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
+                  this.predictions.length > 0) {
+                  // Idle right after a commit: offer the likely next words to tap.
+                  PredictionBar({ predictions: this.predictions })
                 } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
                   this.clipboardPreview.length > 0) {
                   // Gboard-style: centered paste suggestion when nothing is composing,

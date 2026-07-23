@@ -13,6 +13,9 @@ import type { UserPosEntry } from './ConjugationEngine';
 import { buildUserExpansion } from './ConjugationEngine';
 import { SettingsStore, KeyboardSettings } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
+import { NextWordPredictor } from './NextWordPredictor';
+import { PredictiveConversion } from './PredictiveConversion';
+import { DateTimePredictor } from './DateTimePredictor';
 import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
@@ -191,6 +194,11 @@ export class InputHandler {
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
+  private nextWordPrefs: dataPreferences.Preferences | undefined = undefined;
+  private nextWordSaveTimer: number = -1;
+  // Surface of the immediately-preceding commit, used as the bigram key for
+  // next-word learning (see NextWordPredictor / pushPredictions).
+  private lastCommittedSurface: string = '';
   private symbolPrefs: dataPreferences.Preferences | undefined = undefined;
   private symbolSaveTimer: number = -1;
   // Per-symbol tap counts, used to rank the symbol panel's "recent" tab by
@@ -217,6 +225,18 @@ export class InputHandler {
         try {
           const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
           KanaKanjiConverter.setLearned(data);
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, 'shunti_nextword')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.nextWordPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
+          NextWordPredictor.setLearned(data);
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
@@ -487,6 +507,57 @@ export class InputHandler {
     }, 2000);
   }
 
+  private saveNextWord(): void {
+    clearTimeout(this.nextWordSaveTimer);
+    this.nextWordSaveTimer = setTimeout(() => {
+      const prefs = this.nextWordPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(NextWordPredictor.getLearned()))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 2000);
+  }
+
+  // The word next-word prediction should key on after committing `text`: the
+  // final 文節's surface when a multi-segment sentence was committed (recovered
+  // from the same alignment learnCommit uses), otherwise the whole text. Keying
+  // on the tail word means 「今日は」→ predicts after は，「駅で待つ」→ after 待つ,
+  // instead of on the useless whole-sentence string.
+  private predictionTailWord(text: string): string {
+    const a = this.lastAlignment;
+    if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
+      return text.slice(a.prefixText.length);
+    }
+    return text;
+  }
+
+  // Record the previous→current word transition for learning, then publish the
+  // predicted next words for the just-committed word into the candidate strip.
+  // Called on every commit (conversion or tapped prediction); the strip stays
+  // visible in the IDLE state until the user starts a new composition (which
+  // clears it -- see updateCandidates).
+  private pushPredictions(committed: string, tailWord: string): void {
+    if (this.lastCommittedSurface.length > 0) {
+      NextWordPredictor.record(this.lastCommittedSurface, committed);
+      this.saveNextWord();
+    }
+    this.lastCommittedSurface = committed;
+    AppStorage.setOrCreate('predictions', NextWordPredictor.predict(tailWord));
+  }
+
+  // Commit a tapped next-word prediction. Nothing is composing, so this inserts
+  // the word directly, records the transition, and re-predicts from the tapped
+  // word so predictions chain (私 → tap は → tap …).
+  commitPrediction(index: number): void {
+    const preds = AppStorage.get<string[]>('predictions') ?? [];
+    if (index < 0 || index >= preds.length) { return; }
+    const text = preds[index];
+    if (text.length === 0) { return; }
+    this.insertText(text);
+    KanaKanjiConverter.addContext(text);
+    this.pushPredictions(text, text);
+  }
+
   onInputStart(
     kbCtrl: inputMethodEngine.KeyboardController,
     client: inputMethodEngine.InputClient
@@ -521,6 +592,8 @@ export class InputHandler {
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
+    AppStorage.setOrCreate('predictions', [] as string[]);
+    this.lastCommittedSurface = '';
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
@@ -603,6 +676,12 @@ export class InputHandler {
       const deleted = this.insertedBuffer.pop() ?? '';
       if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
       this.inputClient?.deleteForward(1);
+      // The committed word the next-word strip was keyed on is being edited
+      // away -- retire the strip so a now-stale prediction can't be tapped.
+      if (this.lastCommittedSurface.length > 0) {
+        this.lastCommittedSurface = '';
+        AppStorage.setOrCreate('predictions', [] as string[]);
+      }
       return;
     }
 
@@ -686,12 +765,34 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const text = index < candidates.length ? candidates[index] : '';
     if (text.length > 0) {
-      this.learnCommit(composing, text);
+      // A predictive completion (会社 committed from the prefix かいし) must NOT
+      // feed conversion learning: its reading is longer than what was typed, so
+      // recordChoice(かいし→会社) would teach a wrong reading. Skip the learn;
+      // completion personalisation instead flows from full-word commits (typing
+      // かいしゃ→会社 correctly teaches かいしゃ, which then completes かいし).
+      if (!this.isNonLearningCandidate(composing, text)) {
+        this.learnCommit(composing, text);
+        this.saveLearning();
+      }
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
-      this.saveLearning();
+      const tail = this.predictionTailWord(text);
+      this.resetComposition();
+      this.pushPredictions(text, tail);
+      return;
     }
     this.resetComposition();
+  }
+
+  // True when `text` is an ephemeral suggestion offered for the composing
+  // prefix -- a predictive completion (reading longer than typed) or a live
+  // date/time value -- and so must bypass reading→surface conversion learning
+  // (かいし→会社 or きょう→"2026年7月23日" would both be wrong to learn).
+  private isNonLearningCandidate(composing: string, text: string): boolean {
+    if (PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned()).indexOf(text) >= 0) {
+      return true;
+    }
+    return DateTimePredictor.predict(composing, new Date()).indexOf(text) >= 0;
   }
 
   // Learn from a committed candidate. For a multi-segment sentence whose
@@ -725,11 +826,16 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
-      this.learnCommit(composing, candidates[idx]);
-      this.insertText(candidates[idx]);
-      KanaKanjiConverter.addContext(candidates[idx]);
+      const chosen = candidates[idx];
+      if (!this.isNonLearningCandidate(composing, chosen)) {
+        this.learnCommit(composing, chosen);
+        this.saveLearning();
+      }
+      this.insertText(chosen);
+      KanaKanjiConverter.addContext(chosen);
+      const tail = this.predictionTailWord(chosen);
       this.resetComposition();
-      this.saveLearning();
+      this.pushPredictions(chosen, tail);
       return;
     }
     this.commitPending();
@@ -774,6 +880,17 @@ export class InputHandler {
     AppStorage.setOrCreate('clipboardIsImage', isImage);
     AppStorage.setOrCreate('clipboardIsFile', isFile);
     AppStorage.setOrCreate('clipboardUri', uri);
+  }
+
+  // Public re-read of the system clipboard, for the settings panel to call
+  // when it (or its クリップボード履歴 view) opens -- refreshClipboardPreview
+  // otherwise only runs on keyboard show (onInputStart) and after a commit
+  // (resetComposition), so a copy made in the host app while the keyboard was
+  // already up wasn't picked up until the keyboard was closed and reopened
+  // (an AppGallery reviewer flagged exactly this staleness). Reading the
+  // pasteboard on this deliberate user action is expected and privacy-safe.
+  refreshClipboard(): void {
+    this.refreshClipboardPreview();
   }
 
   private refreshClipboardPreview(): void {
@@ -1034,6 +1151,9 @@ export class InputHandler {
       AppStorage.setOrCreate('candidates', [] as string[]);
       return;
     }
+    // A new composition has started -- retire the post-commit next-word strip
+    // so it doesn't linger next to live conversion candidates.
+    AppStorage.setOrCreate('predictions', [] as string[]);
 
     const fullKatakana = KanaKanjiConverter.toKatakana(composing);
     const segs = this.kanjiConverter.segment(composing);
@@ -1109,13 +1229,44 @@ export class InputHandler {
       }
     }
 
-    // 自動区切り変更: a second candidate from a differently-segmented parse
-    // of the same reading (へんかんせいど's single whole-compound entry
-    // 変換精度 vs the へんかん+せいど split's 返還制度) — inserted right after
-    // the primary pick, not replacing it.
+    // Per-segment homophone alternatives for the whole sentence, inserted
+    // right after the primary pick and ahead of the katakana/kana fallbacks
+    // the branches above appended. Track A used to offer only the last
+    // segment's variants (or nothing useful for a whole-phrase entry), so a
+    // homophone in any earlier word — 橋/箸 in はしをわたる, 撮る/取る in
+    // 写真をとった — never appeared anywhere in the list. (Empty for track B,
+    // whose lookup already routed through composeMozcCandidates above.)
+    const alts = this.kanjiConverter.sentenceAlternatives(composing);
+    // Insert the alternatives just ABOVE the katakana/kana fallbacks, not at a
+    // fixed position 1: a whole-phrase dict entry can already carry a genuine
+    // kanji alternative at candidate[1] (はなをみる → 花を観る, 花を見る), and
+    // blindly prepending would bury that real alternative below the injected
+    // ones. Find where the junk (full katakana / as-typed kana) starts and
+    // slot the alternatives right before it, so both the entry's own
+    // alternatives and the per-segment swaps stay above the fallbacks.
+    const kIdx = candidates.indexOf(fullKatakana);
+    const cIdx = candidates.indexOf(composing);
+    let insertAt: number;
+    if (kIdx < 0 && cIdx < 0) { insertAt = candidates.length; }
+    else if (kIdx < 0) { insertAt = cIdx; }
+    else if (cIdx < 0) { insertAt = kIdx; }
+    else { insertAt = kIdx < cIdx ? kIdx : cIdx; }
+    for (const a of alts) {
+      if (!candidates.includes(a)) {
+        candidates.splice(insertAt, 0, a);
+        insertAt++;
+      }
+    }
+
+    // 自動区切り変更: a candidate from a differently-segmented parse of the
+    // same reading (へんかんせいど's single whole-compound entry 変換精度 vs the
+    // へんかん+せいど split's 返還制度). Demoted below the per-segment
+    // alternatives above: its boundary-detour search occasionally yields a
+    // linguistically odd reparse (先生似合う for せんせいにあう), so it's a
+    // lower-priority alternative, not the second candidate.
     const altSeg = this.kanjiConverter.findAlternateSegmentation(composing);
     if (altSeg !== null && !candidates.includes(altSeg)) {
-      candidates.splice(1, 0, altSeg);
+      candidates.splice(insertAt, 0, altSeg);
     }
 
     // Predictive completion: once enough of a known common phrase's reading
@@ -1124,6 +1275,29 @@ export class InputHandler {
     const predictive = findPredictiveCompletion(composing);
     if (predictive !== null && !candidates.includes(predictive)) {
       candidates = [predictive, ...candidates];
+    }
+
+    // Predictive conversion (予測変換): common words whose reading EXTENDS what's
+    // been typed so far (かいし→会社, にほん→日本語), inserted right after the exact
+    // conversion so they're one tap away without finishing the reading. Only
+    // fires for words that are strictly longer than the prefix, so a fully-typed
+    // reading (which the exact conversion already handles) adds nothing here --
+    // this is why it never disturbs the whole-sentence conversion candidates.
+    let insAt = candidates.length > 0 ? 1 : 0;
+    // Date/time expansion (きょう→2026年7月23日, いま→15:05, あした→翌日…) leads the
+    // alternatives for its trigger readings -- when someone types きょう the live
+    // date is a likelier intent than a prefix-completion (教育 for きょういく).
+    // Ephemeral live values -- excluded from conversion learning by
+    // isNonLearningCandidate.
+    const dateTimes = DateTimePredictor.predict(composing, new Date());
+    for (const d of dateTimes) {
+      if (!candidates.includes(d)) { candidates.splice(insAt, 0, d); insAt++; }
+    }
+
+    // Common-word prefix completions (かいし→会社), after any date/time values.
+    const completions = PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned());
+    for (const c of completions) {
+      if (!candidates.includes(c)) { candidates.splice(insAt, 0, c); insAt++; }
     }
 
     AppStorage.setOrCreate('candidates', candidates);
