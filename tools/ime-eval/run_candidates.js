@@ -120,6 +120,12 @@ function main() {
     // alternative (蟻夢) that consumes a round-robin slot ahead of it, landing
     // 義務を務める at position 4 rather than within this file's strict top-4 --
     // a separate round-robin-dilution issue, not a dictionary gap.
+    // Verb-sense entries whose common readings were buried under obscure single
+    // kanji (税金を乂/乱 was the alternative!) -- added the okurigana senses to
+    // DICTIONARY (candidate[0] kept: 修める/変わる stay the default), surfacing
+    // the intended sense as a reachable alternative.
+    { reading: 'ぜいきんをおさめる', want: '税金を納める' },
+    { reading: 'やくいんがかわる', want: '役員が代わる' },
   ];
 
   let pass = 0;
