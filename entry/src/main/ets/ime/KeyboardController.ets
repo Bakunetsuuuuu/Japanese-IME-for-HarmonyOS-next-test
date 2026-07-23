@@ -619,6 +619,9 @@ export class InputHandler {
     AppStorage.setOrCreate('candidates', [] as string[]);
     AppStorage.setOrCreate('predictions', [] as string[]);
     this.recentWords = [];
+    // Leaving the field: drop the recent-context buffer so homophone ranking in
+    // the next app/text box doesn't inherit this one's context.
+    KanaKanjiConverter.clearContext();
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
