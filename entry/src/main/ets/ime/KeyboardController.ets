@@ -15,6 +15,7 @@ import { SettingsStore, KeyboardSettings } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
+import { DateTimePredictor } from './DateTimePredictor';
 import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
@@ -769,7 +770,7 @@ export class InputHandler {
       // recordChoice(かいし→会社) would teach a wrong reading. Skip the learn;
       // completion personalisation instead flows from full-word commits (typing
       // かいしゃ→会社 correctly teaches かいしゃ, which then completes かいし).
-      if (!this.isPredictiveCompletion(composing, text)) {
+      if (!this.isNonLearningCandidate(composing, text)) {
         this.learnCommit(composing, text);
         this.saveLearning();
       }
@@ -783,11 +784,15 @@ export class InputHandler {
     this.resetComposition();
   }
 
-  // True when `text` is one of the predictive-conversion completions offered for
-  // the currently-composing prefix (its reading is longer than what was typed),
-  // so it should bypass reading→surface conversion learning.
-  private isPredictiveCompletion(composing: string, text: string): boolean {
-    return PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned()).indexOf(text) >= 0;
+  // True when `text` is an ephemeral suggestion offered for the composing
+  // prefix -- a predictive completion (reading longer than typed) or a live
+  // date/time value -- and so must bypass reading→surface conversion learning
+  // (かいし→会社 or きょう→"2026年7月23日" would both be wrong to learn).
+  private isNonLearningCandidate(composing: string, text: string): boolean {
+    if (PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned()).indexOf(text) >= 0) {
+      return true;
+    }
+    return DateTimePredictor.predict(composing, new Date()).indexOf(text) >= 0;
   }
 
   // Learn from a committed candidate. For a multi-segment sentence whose
@@ -822,7 +827,7 @@ export class InputHandler {
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
       const chosen = candidates[idx];
-      if (!this.isPredictiveCompletion(composing, chosen)) {
+      if (!this.isNonLearningCandidate(composing, chosen)) {
         this.learnCommit(composing, chosen);
         this.saveLearning();
       }
@@ -1278,12 +1283,21 @@ export class InputHandler {
     // fires for words that are strictly longer than the prefix, so a fully-typed
     // reading (which the exact conversion already handles) adds nothing here --
     // this is why it never disturbs the whole-sentence conversion candidates.
+    let insAt = candidates.length > 0 ? 1 : 0;
+    // Date/time expansion (きょう→2026年7月23日, いま→15:05, あした→翌日…) leads the
+    // alternatives for its trigger readings -- when someone types きょう the live
+    // date is a likelier intent than a prefix-completion (教育 for きょういく).
+    // Ephemeral live values -- excluded from conversion learning by
+    // isNonLearningCandidate.
+    const dateTimes = DateTimePredictor.predict(composing, new Date());
+    for (const d of dateTimes) {
+      if (!candidates.includes(d)) { candidates.splice(insAt, 0, d); insAt++; }
+    }
+
+    // Common-word prefix completions (かいし→会社), after any date/time values.
     const completions = PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned());
-    if (completions.length > 0) {
-      let cAt = candidates.length > 0 ? 1 : 0;
-      for (const c of completions) {
-        if (!candidates.includes(c)) { candidates.splice(cAt, 0, c); cAt++; }
-      }
+    for (const c of completions) {
+      if (!candidates.includes(c)) { candidates.splice(insAt, 0, c); insAt++; }
     }
 
     AppStorage.setOrCreate('candidates', candidates);
