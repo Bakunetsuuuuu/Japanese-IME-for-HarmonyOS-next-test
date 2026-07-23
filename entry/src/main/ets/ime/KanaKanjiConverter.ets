@@ -32951,6 +32951,12 @@ export class KanaKanjiConverter {
   // form is always available separately in the same candidate list, so they're
   // dropped rather than just deprioritized.
   private static isMarkupArtifact(c: string): boolean {
+    // Gloss/alternate-form annotations that leaked in as a single candidate:
+    // 写す・映す, 見る・視る, 書く・描く・画く (interpunct between kanji words), and
+    // 嘲笑う / 嘲う (spaced slash). Katakana loanword dots (サン・テグジュペリ) have
+    // no kanji next to the ・, so they're preserved.
+    if (/[一-鿿]・|・[一-鿿]/.test(c)) { return true; }
+    if (/\s[／/]\s/.test(c)) { return true; }
     if (/\[\[|\]\]/.test(c)) { return true; }       // [[wikilink]]
     if (/\{\{|\}\}/.test(c)) { return true; }        // {{template}}
     if (/'''/.test(c)) { return true; }              // '''bold'''
@@ -33078,6 +33084,15 @@ export class KanaKanjiConverter {
   // ALL-CAPS-only romaji filter below on a per-string basis rather than by
   // loosening the general rule (which exists to keep scraped garbage out of
   // the other ~190k dictionary entries).
+  // Common-kanji allowlist (jouyou + jinmeiyou + newspaper-frequency-ranked,
+  // ~3100 chars, from KANJIDIC2). A single-character kanji candidate NOT in
+  // this set is an obscure/historical reading the dictionary lists for
+  // completeness (傜/咨/挍/佫 for つかう/はかる/かく...) -- pure scroll-noise in a
+  // candidate list, dropped by filterCandidates. Multi-char words and any kanji
+  // that actually appears in real text (山/海/苺/柿) are unaffected.
+  private static readonly COMMON_KANJI: Set<string> = new Set(
+    '一丁七万丈三上下不与丑且世丘丙丞両並中串丸丹主丼乃久之乎乏乗乘乙九乞也乱乳乾亀了予争事二云互五井亘亙些亜亞亡交亥亦亨享京亭亮人仁仇今介仏仔仕他付仙代令以仮仰仲件任企伊伍伎伏伐休会伝伯伴伶伸伺似伽佃但位低住佐佑体何余佛作佳併使侃來例侍侑供依侠価侮侯侵侶便係促俄俊俐俗保俠信俣修俱俳俵俸俺倉個倍倒倖候借倣値倦倫倭倶倹偉偏偕停健偲側偵偶偽傍傑傘備催傭傲傳債傷傾僅働像僑僕僚僞僧價儀億儉儒償優儲允元兄充兆先光克免兎児兒党兜入全八公六共兵其具典兼内円冊再冒冗写冠冤冥冨冬冴冶冷凄准凉凌凍凛凜凝凡処凧凪凰凱凶凸凹出函刀刃分切刈刊刑列初判別利到制刷券刹刺刻剃則削前剖剛剝剣剤剥剩副剰割創劇劉劍力功加劣助努劫励労効劾勁勃勅勇勉動勘務勝募勢勤勧勲勳勺勾勿匁匂包化北匠匡匹区医匿十千升午半卑卒卓協南単博卜占卯印危即却卵卷卸卽卿厄厘厚原厦厨厩厳去参又叉及友双反収叔取受叙叡叢口古句叩只叫召可台叱史右叶号司各合吉吊同名后吏吐向君吞吟否含吸吹吻吾呂呆呈呉告呑周呪味呼命和咲咸咽哀品哉員哨哩哲哺唄唆唇唐唯唱唾啄商問啓善喉喋喘喚喜喝喧喩喪喫喬單喰営嗅嗜嗣嘆嘉嘗嘘嘩嘱嘲噂噌噛器噴噺嚇嚴囃囚四回因団困囲図固国圃圈國圏園圓團土圧在圭地坂均坊坐坑坦坪垂型垣埋城埜域埴執培基埼堀堂堅堆堕堤堪堯堰報場堵堺塀塁塊塑塔塗塙塚塞塡塩塾境墓増墜增墨墳墾壁壇壊壌壕壘壞士壬壮壯声壱売壷壽変夏夕外多夜夢大天太夫央失夷奄奇奈奉奎奏契奔套奥奧奨奪奬奮女奴好如妃妄妊妖妙妥妨妬妹妻姉始姑姓委姚姜姥姪姫姻姿威娃娘娠娩娯娼婆婚婦婿媒媛嫁嫉嫌嫡嬉嬢孃子孔字存孜孝孟季孤学孫宅宇守安宋完宍宏宕宗官宙定宛宜宝実客宣室宥宮宰害宴宵家容宿寂寄寅密富寒寓寛寝察寡寢實寧審寬寮寵寸寺対寿封専射将將專尉尊尋導小少尖尚尤尭就尹尺尻尼尽尾尿局居屈届屋屏屑展属層履屯山岐岡岩岬岳岸峙峠峡峨峯峰島峻峽崇崎崔崖崚崩嵐嵩嵯嶋嶌嶺嶽巌巖川州巡巢巣工左巧巨巫差己已巳巴巷巻巽巾市布帆希帖帝帥師席帯帰帳帶常帽幅幌幕幡幣干平年幸幹幻幼幽幾庁広庄庇床序底店庚府度座庫庭庵庶康庸廃廉廊廟廣廳延廷建廻廿弁弄弊式弐弓弔引弘弛弟弥弦弧弱張強弾彈彌当彗彙形彦彩彪彫彬彭彰影役彼往征径待律後徐徒従得徘從徠御復循微徳徴徵德徹徽心必忌忍志忘忙応忠快念忽怒怖怜思怠急性怨怪恆恋恐恒恕恢恣恥恨恩恭息恰恵悉悌悔悟悠患悦悩悪悲悼情惇惑惚惜惟惠惡惣惧惨惰想惹惺愁愉意愚愛感愼慄慈態慌慎慕慢慣慧慨慮慰慶憂憎憐憤憧憩憬憲憶憾懇應懐懲懷懸戊成我戒或戚戟戦戯戰戲戴戸戻房所扇扉手才打払托扱扶批承技抄把抑抒投抗折抜択披抱抵抹押抽拂担拉拍拐拒拓拔拘拙招拜拝拠拡括拭拳拶拷拾持指按挑挙挟挨挫振挺挽挿捉捕捗捜捧捨据捲捷捺捻掃授掌排掘掛掠採探接控推措掬掲揃描提揚換握揭揮援揺損搖搜搬搭携搾摂摑摘摩摯摺撃撒撚撞撤撫播撮撰撲擁擊操擢擦擬攝支收改攻放政故敍敏救敗教敢散敦敬数整敵敷文斉斎斐斑斗料斜斡斤斥斧斬断斯新方於施旅旋族旗旛既日旦旧旨早旬旭旺昂昆昇昊昌明昏易昔星映春昧昨昭是昴昼時晃晄晋晏晒晚晝晟晦晨晩普景晴晶智暁暇暉暑暖暗暢暦暫暮暴曆曇曉曖曙曜曝曲曳更書曹曼曽曾替最月有朋服朔朕朗望朝期木未末本札朱朴机朽杉李杏材村杖杜杞束条来杭杯東杵杷松板枇析枕林枚果枝枠枢枯架柄柊柏某柑染柔柘柚柱柳柴柵査柾柿栃栄栓栖栗栞校株核根格栽桁桂桃案桐桑桔桜桝桟桧桶梁梅梓梗梛條梢梧梨梯械梶棄棋棒棚棟森棲棺椀椅椋植椎椙椛検椰椿楊楓楕楚楠楢業楯極楷楼楽概榊榎榛榮槇構槌槍様槙槻槽樂樋標樟模樣権横樫樹樺樽橋橘橙機橫橿檀檄檎檜檢櫂櫓櫛櫻欄欠次欣欧欲欺欽款歌歎歓止正此步武歩歪歯歳歴歷死殆殉殊残殖殴段殺殻殿毀毅母毎每毒比毘毛毬氏民気氣水氷永氾汀汁求汎汐汗汚汝江池汪汰汲決汽沃沈沌沓沖沙没沢沫河沸油治沼沿況泉泊泌法泡波泣泥注泰泳洋洒洗洛洞津洪洲洵洸活派流浄浅浙浜浦浩浪浬浮浴海浸消涉涙涯液涼淀淋淑淘淚淡淨淫深淳淵混添清渇済渉渋渓渕渚減渡渥渦温測港渴渾湊湖湘湛湧湯湾湿満源準溜溝溢溥溫溶溺滅滉滋滑滝滞滯滴漁漂漆漏演漕漠漢漣漫漬漱漸潔潜潟潤潮潰澁澄澤澪激濁濃濕濡濫濯瀋瀕瀧瀨瀬灘火灯灰灸灼災炉炊炎炒炭点為烈烏焉焚無焦焰然焼煉煌煎煕煙煤煥照煩煮熊熙熟熱燃燈燎燒燕燥燦燭燿爆爪爭爲爵父爽爾片版牌牒牙牛牝牟牡牢牧物牲特牽犀犠犬犯状狀狂狐狙狛狩独狭狸狹狼猛猟猪猫献猶猷猿獄獅獣獲獸玄率玉王玖玩玲珀珂珈珊珍珠班現球理琉琢琥琳琴琵琶瑚瑛瑞瑠瑳瑶璃璧環璽瓜瓢瓦瓶甕甘甚生産甥甦用甫田由甲申男町画界畏畑畔留畜畝畠畢略番異畳畿疊疋疎疏疑疫疲疾病症痕痘痛痢痩痴瘍瘤瘦療癌癒癖発登白百的皆皇皐皓皮皿盃盆益盗盛盜盟盡監盤盧目盲直相盾省眉看県眞真眠眸眺眼着睡督睦瞑瞥瞬瞭瞳矛矢知矩短矯石砂研砕砥砦砧砲破硝硫硬硯碁碎碑碓碗碧碩確磁磐磨磯礁礎礒示礼社祁祇祈祉祐祕祖祝神祢祥票祭祷祿禁禄禅禍禎福禪禮禰禱禽禾秀私秋科秒秘租秤秦秩称移稀程税稔稚稜稟種稲稻稼稽稿穀穂積穏穗穣穫穰穴究穹空穿突窃窄窒窓窟窪窮窯窺立竜章竣童竪端競竹竺竿笈笏笑笘笙笛笠符第笹筆筈等筋筑筒答策箇箋箏箔箕算管箱箸節範篆篇築篠篤篭簑簗簞簡簾簿籍籠米籾粉粋粒粕粗粘粛粟粥粧粹精糊糖糞糧糸系糾紀約紅紋納紐純紗紘紙級紛素紡索紫紬累細紳紹紺終絃組絆経結絞絡絢給統絵絶絹継続綜綠維綱網綴綸綺綻綾綿緊緋総緑緒緖線締緣編緩緯練緻縁縄縛縞縣縦縫縮縱績繁繊織繕繡繫繭繰纂纏纖缶罪置罰署罵罷羅羊美羚羞群羨義羽翁翌習翔翠翫翻翼耀老考者而耐耕耗耳耶耽聖聞聡聯聴職聽肇肉肋肌肖肘肝股肢肥肩肪肯育肴肺胃胆背胎胚胞胡胤胴胸能脂脅脇脈脊脚脩脱脳脹腎腐腔腕腫腰腸腹腺膏膚膜膝膠膨膳臆臓臟臣臥臨自臭至致臼與興舌舎舗舘舛舜舞舟舩航般舵舶舷船艇艦良色艶芋芙芝芥芦芭芯花芳芸芹芽苅苑苔苗苛若苦苫英苺茂茄茅茉茎茗茜茨茶茸草荏荒荘荷荻莉莊莞莫菅菊菌菓菖菜菩菫華菱萄萊萌萎萠萩萬萱落葉著葛葡董葦葬葵葺蒋蒐蒔蒙蒲蒸蒼蓄蓉蓋蓑蓬蓮蓼蔑蔓蔡蔣蔦蔭蔵蔽蕃蕉蕎蕗蕨蕪蕾薄薔薗薙薦薩薪薫薬薮薰藁藍藏藝藤藥藩藻蘇蘭虎虐虚虛虜虞虫虹蚊蚕蛇蛋蛍蛭蛮蜂蜜蜷蝦蝶融螺蟬蟹蠟血衆行術街衛衝衞衡衣表衰衷衿袁袈袋袖被袴裁裂装裏裕補裝裟裡裳裸製裾複褐褒襄襖襟襲西要覆覇見規視覚覧親観覽角解触言訂訃計訊討訓託記訟訣訪設許訳訴診註証詐詔評詞詠詢詣試詩詫詮詰話該詳誇誉誌認誓誕誘語誠誤説読誰課誼調諄談請諌諏諒論諜諦諧諭諮諸諺諾謀謁謂謄謎謙講謝謠謡謳謹識譜警議譲護讃讓谷豆豊豚象豪豹貌貝貞負財貢貧貨販貪貫責貯貰貴買貸費貼貿賀賂賃賄資賊賑賓賛賜賞賠賢賣賦質賭賴購贅贈贋赤赦走赳赴起超越趙趣足距跡跨路跳践踊踏踪蹄蹟蹴躍身車軌軍軒軟転軸軽較載輔輝輩輪輯輸輿轄轉轍轟辛辞辣辰辱農辺辻込辿迂迄迅迎近返迦迪迫迭述迷追退送逃逆透逐逓途逗這通逝逞速造逢連逮週進逸遁遂遅遇遊運遍過道達違遙遜遠遡遣遥適遭遮遵遷選遺遼避還邑那邦邪邸郁郊郎郞郡部郭郵郷都鄒鄭酉酌配酎酒酔酢酪酬酵酷酸醇醉醍醐醒醜醤醬醸釀采釈釉里重野量金釘釜針釣釧鈍鈴鉄鉛鉢鉱鉾銀銃銅銑銕銘銚銭鋒鋭鋳鋸鋼錄錆錐錘錠錦錫錬錮錯録鍊鍋鍛鍬鍵鍼鍾鎌鎖鎧鎭鎮鏡鐘鑄鑑長門閃閉開閏閑間関閣閤閥閲闇闊闘阜阪防阻阿陀附降限陛院陣除陥陪陰陳陵陶陷陸険陽隅隆隈隊階随隔隙際障隠隣險隷隻隼雀雁雄雅集雇雌雑雛雜離難雨雪雫雰雲零雷電需震霊霜霞霧露青靖静靜非面革靴鞄鞍鞘鞠鞭韓韮音韻響頁頂頃項順須頌預頑頒頓頗領頚頬頭頰頻頼題額顎顔顕願顚類顧顯風颯飛飜食飢飯飲飼飽飾餅養餌餓館饗首香馨馬馳馴駄駅駆駈駐駒駕駿騎騒験騰騷驍驗驚骨骸髄高髪髮鬱鬼魁魂魅魏魔魚魯鮎鮫鮭鮮鯉鯛鯨鰯鱒鱗鳥鳩鳳鳴鳶鴈鴎鴨鴻鵜鵠鵬鶏鶴鷄鷗鷲鷹鷺鹿麒麓麗麟麦麹麺麻麿黃黄黎黑黒默黙黛鼎鼓鼻齊齢龍欄廊朗虜類猪神祥福諸都侮僧勉勤卑嘆器墨層悔憎懲敏暑梅海渚漢煮琢碑社祉祈祐祖祝禍禎穀突節練繁署者臭著視謁謹賓贈逸難響𠮟'.split(''));
+
   private static readonly LATIN_WHITELIST = new Set<string>([
     'HarmonyOS', 'boot', 'vivo', 'OnePlus', 'Redmi', 'realme', 'Meizu',
     'nubia', 'iQOO', 'Lenovo',
@@ -33086,14 +33101,29 @@ export class KanaKanjiConverter {
   // Remove half-width katakana and pure-ASCII romaji only.
   // Full-width katakana is always kept (loanwords need カタカナ even when kanji exists).
   private static filterCandidates(kana: string, cands: string[]): string[] {
-    const preFiltered = cands.filter(c => {
-      if (/^[ｦ-ﾟ]+$/.test(c)) { return false; } // half-width katakana
+    // How many kanji-bearing candidates have been kept so far. The first two are
+    // protected even if they're uncommon lone kanji, because the primary kanji
+    // for a reading is often a common word the freq/grade allowlist happens to
+    // miss (飴 for あめ at #2, 埃 for ほこり at #1) -- these sit at the top of the
+    // list, while the historical/rare lone-kanji noise (傜/咨/佫...) is the long
+    // tail after them, which is what we drop.
+    let keptKanji = 0;
+    const preFiltered: string[] = [];
+    for (const c of cands) {
+      if (/^[ｦ-ﾟ]+$/.test(c)) { continue; } // half-width katakana
       // romaji / latin, but keep short ALL-CAPS acronyms (PTA, NHK, SNS, OK,
       // DL, PC) — real Japanese-context words, not romaji-conversion junk.
       if (/^[A-Za-zÀ-ɏ]+$/.test(c) && !/^[A-Z]{2,6}$/.test(c)
-          && !KanaKanjiConverter.LATIN_WHITELIST.has(c)) { return false; }
-      return true;
-    });
+          && !KanaKanjiConverter.LATIN_WHITELIST.has(c)) { continue; }
+      // Obscure lone kanji not in the common-kanji allowlist: drop it, but only
+      // once at least the top two kanji candidates have been kept, so a reading's
+      // primary kanji (which may be a common hyougai char missing from the
+      // allowlist) is never removed.
+      if (c.length === 1 && KanaKanjiConverter.hasKanjiChar(c)
+          && !KanaKanjiConverter.COMMON_KANJI.has(c) && keptKanji >= 2) { continue; }
+      if (KanaKanjiConverter.hasKanjiChar(c)) { keptKanji++; }
+      preFiltered.push(c);
+    }
     // Recover clean words from bracket-fragment candidates, then drop the rest.
     const filtered = KanaKanjiConverter.cleanArtifacts(preFiltered);
     return filtered.length > 0 ? filtered : [kana];
