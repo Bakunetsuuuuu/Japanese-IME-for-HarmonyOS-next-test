@@ -31942,6 +31942,13 @@ export class KanaKanjiConverter {
           /[てで]$/.test(segs[idx - 1])) {
         best = seg;
       }
+      // みる auxiliary ("…てみる" = try doing) directly after a て/で form stays
+      // kana -- same reasoning as おく above (考えて見よう/やって見た would be a
+      // spurious second 見る).
+      if (KanaKanjiConverter.isMiruAuxiliary(seg) && idx > 0 && segs[idx - 1].length > 1 &&
+          /[てで]$/.test(segs[idx - 1])) {
+        best = seg;
+      }
       // なくなった directly after a segment ending in れ (a potential-verb
       // stem: 眠れ/食べられ/見れ/来れ, ...) is the auxiliary negation
       // ("〜れなくなった" = became unable to ~"), conventionally kana, not
@@ -31959,6 +31966,20 @@ export class KanaKanjiConverter {
       // segment with no particle between them essentially never means
       // "cheap" in real text.
       if (seg === 'やすい' && idx > 0 &&
+          !KanaKanjiConverter.CASE_PARTICLES.has(segs[idx - 1]) &&
+          !KanaKanjiConverter.FW_CLASS_MAP[segs[idx - 1]]) {
+        best = seg;
+      }
+      // よう directly after another segment (not sentence-initial, not after a
+      // case particle) is the volitional auxiliary ("let's ~": 食べよう, 見よう,
+      // 上げよう, 呉れよう) attaching to an ichidan/カ変/サ変 verb's stem, not the
+      // standalone noun 様/用/曜/洋 lookup('よう') otherwise leads with. Whole
+      // common volitional forms (たべよう→食べよう, しよう) are already
+      // recognized as single dictionary spans and never reach here as a bare
+      // よう segment, so this only fires for the ones without their own entry
+      // (あげよう, くれよう, ...) -- exactly where it was defaulting to 様/用/曜
+      // and producing nonsense like 手伝ってあげ様.
+      if (seg === 'よう' && idx > 0 &&
           !KanaKanjiConverter.CASE_PARTICLES.has(segs[idx - 1]) &&
           !KanaKanjiConverter.FW_CLASS_MAP[segs[idx - 1]]) {
         best = seg;
@@ -32878,6 +32899,19 @@ export class KanaKanjiConverter {
     return KanaKanjiConverter.OKU_AUX_FORMS.has(kana);
   }
 
+  // Auxiliary みる forms (…てみる "try doing") that must stay kana after a て/で
+  // form -- 見る/診る is a real verb, but 〜てみる glued directly onto another
+  // verb's te-form is essentially always this "try" auxiliary in real Japanese
+  // (やってみる, 考えてみよう, 食べてみた), never a second independent 見る/診る.
+  private static readonly MIRU_AUX_FORMS: Set<string> = new Set<string>([
+    'みる', 'みた', 'みて', 'みよう', 'みます', 'みません', 'みたい', 'みれば',
+    'みたら', 'みたり', 'みなさい', 'みろ', 'みない',
+  ]);
+
+  private static isMiruAuxiliary(kana: string): boolean {
+    return KanaKanjiConverter.MIRU_AUX_FORMS.has(kana);
+  }
+
   // Public context-forced lead surface for a segment given the text committed
   // before it, or null for "no override". The decompose branch converts the
   // LAST segment with lookup()[0], which has no context, so a trailing おく
@@ -32886,7 +32920,17 @@ export class KanaKanjiConverter {
   // context); returns null for mozc so its composition is untouched.
   static contextLead(seg: string, prevText: string): string | null {
     if (KanaKanjiConverter.isMozcEngine()) { return null; }
-    if (KanaKanjiConverter.isOkuAuxiliary(seg) && prevText.length > 1 && /[てで]$/.test(prevText)) {
+    if (prevText.length > 1 && /[てで]$/.test(prevText)) {
+      if (KanaKanjiConverter.isOkuAuxiliary(seg) || KanaKanjiConverter.isMiruAuxiliary(seg)) {
+        return seg;
+      }
+    }
+    // よう directly after any non-particle segment is the volitional auxiliary
+    // (あげよう/くれよう), not the standalone noun 様/用/曜 -- see the matching
+    // joinSegs rule for why. isMozc guard above already excludes track B.
+    if (seg === 'よう' && prevText.length > 0 &&
+        !KanaKanjiConverter.CASE_PARTICLES.has(prevText) &&
+        KanaKanjiConverter.FW_CLASS_MAP[prevText] === undefined) {
       return seg;
     }
     return null;
@@ -32965,6 +33009,18 @@ export class KanaKanjiConverter {
     // splits off (おいて/おけば as their own trailing segment).
     if (KanaKanjiConverter.isOkuAuxiliary(kana) && prevSeg !== undefined &&
         prevSeg.length > 1 && /[てで]$/.test(prevSeg)) {
+      return kana;
+    }
+    // 〜てみる auxiliary (try doing): see joinSegs' matching special case for why.
+    if (KanaKanjiConverter.isMiruAuxiliary(kana) && prevSeg !== undefined &&
+        prevSeg.length > 1 && /[てで]$/.test(prevSeg)) {
+      return kana;
+    }
+    // よう volitional auxiliary (あげよう/くれよう): see joinSegs' matching
+    // special case for why.
+    if (kana === 'よう' && prevSeg !== undefined && prevSeg.length > 0 &&
+        !KanaKanjiConverter.CASE_PARTICLES.has(prevSeg) &&
+        KanaKanjiConverter.FW_CLASS_MAP[prevSeg] === undefined) {
       return kana;
     }
     // なくなった after れ: see joinSegs' matching special case for why.
