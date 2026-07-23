@@ -1561,41 +1561,13 @@ export class InputHandler {
     }
   }
 
-  private static readonly BRACKET_PAIRS: Set<string> =
-    new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
-
-  // Move the caret between a just-inserted bracket pair. Every BRACKET_PAIRS
-  // entry is exactly two BMP code units (() （） 「」 【】 …), so exactly one
-  // left-move lands the caret between them.
-  //
-  // Two failure modes drove this to a DELAYED, RELATIVE move:
-  //  - Absolute selectByRange(getTextIndexAtCursor()-1) put the caret several
-  //    characters PAST the bracket whenever the field had text after the cursor,
-  //    because that editor's getTextIndexAtCursor doesn't reliably return the
-  //    live caret offset. A relative move can't overshoot -- it steps one unit
-  //    left from wherever the caret actually is.
-  //  - A relative move fired immediately in insertText's .then() did nothing,
-  //    because insertText's promise can resolve before the edit is applied, so
-  //    the move ran against pre-insert state and was undone by the settling
-  //    insert. Deferring it a couple of frames lets the insert land first.
-  // Only one move is issued (a fixed delay, not a retry loop): a second move
-  // after the first succeeded would push the caret out the left of the pair.
-  private placeCaretBetweenBrackets(client: inputMethodEngine.InputClient): void {
-    setTimeout(() => {
-      client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
-        .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
-    }, 40);
-  }
-
   insertText(text: string): void {
-    if (InputHandler.BRACKET_PAIRS.has(text) && this.inputClient) {
-      const client = this.inputClient;
-      client.insertText(text).then(() => {
-        this.placeCaretBetweenBrackets(client);
-      }).catch((e: Error) => console.error('shuntiIME insertText(bracket) failed', JSON.stringify(e)));
-    } else {
-      this.inputClient?.insertText(text);
-    }
+    // Brackets used to auto-place the caret between the pair (「|」), but no
+    // caret-move primitive worked reliably across the editors this IME runs in
+    // -- moveCursor was a no-op on some, and the absolute-index selectByRange
+    // overshot on others -- so the pair is now inserted plainly and the caret
+    // stays after it, same as any other committed text.
+    this.inputClient?.insertText(text);
     if (text.length > 0) {
       for (let i = 0; i < text.length; i++) {
         this.insertedBuffer.push(text[i]);
