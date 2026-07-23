@@ -186,6 +186,25 @@ export class NextWordPredictor {
     }
   }
 
+  // LEARNED-ONLY next surfaces for a context (no seed, no generic particles),
+  // most-used first, 2-word context ahead of 1-word. This is the signal used to
+  // rerank *conversion* candidates by real usage: unlike the hand-curated
+  // CONTEXT_HINTS table (one entry per homophone), it generalises to every word
+  // pair the user has actually written, so 映画を→見る, 資料を→作る etc. all get
+  // disambiguated once the user has typed them, with no per-word coding.
+  static learnedNext(prev1: string, prev2?: string): string[] {
+    if (prev1.length === 0) { return []; }
+    const out: string[] = [];
+    const push = (w: string): void => {
+      if (w.length > 0 && out.indexOf(w) < 0) { out.push(w); }
+    };
+    if (prev2 !== undefined && prev2.length > 0) {
+      NextWordPredictor.rankedInto(NextWordPredictor.learnedBi[prev2 + BI_SEP + prev1], push);
+    }
+    NextWordPredictor.rankedInto(NextWordPredictor.learned[prev1], push);
+    return out;
+  }
+
   private static rankedInto(entry: Record<string, number> | undefined, push: (w: string) => void): void {
     if (entry === undefined) { return; }
     const scored: Scored[] = [];

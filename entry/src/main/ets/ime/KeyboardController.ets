@@ -570,6 +570,27 @@ export class InputHandler {
     AppStorage.setOrCreate('predictions', strip);
   }
 
+  // Reorder conversion candidates so any the user has actually written after the
+  // current recent-word context lead. General homophone disambiguation from real
+  // usage (the learned next-word bigram), the scalable counterpart to the
+  // hand-curated CONTEXT_HINTS table: it needs no per-word entries and covers
+  // whatever vocabulary this user writes. Stable: matched candidates keep their
+  // learned order, everything else keeps its original order.
+  private applyContextRerank(candidates: string[]): string[] {
+    if (candidates.length < 2 || this.recentWords.length === 0) { return candidates; }
+    const prev1 = this.recentWords[this.recentWords.length - 1];
+    const prev2 = this.recentWords.length >= 2 ? this.recentWords[this.recentWords.length - 2] : undefined;
+    const learned = NextWordPredictor.learnedNext(prev1, prev2);
+    if (learned.length === 0) { return candidates; }
+    const boosted: string[] = [];
+    for (const s of learned) {
+      if (candidates.indexOf(s) >= 0 && boosted.indexOf(s) < 0) { boosted.push(s); }
+    }
+    if (boosted.length === 0) { return candidates; }
+    const rest = candidates.filter((c: string) => boosted.indexOf(c) < 0);
+    return [...boosted, ...rest];
+  }
+
   // Commit a tapped next-word prediction. Nothing is composing, so this inserts
   // the word directly, records the transition, and re-predicts from the tapped
   // word so predictions chain (私 → tap は → tap …).
@@ -1342,6 +1363,15 @@ export class InputHandler {
     if (altSeg !== null && !candidates.includes(altSeg)) {
       candidates.splice(insertAt, 0, altSeg);
     }
+
+    // General learned-context rerank: if the user has actually written one of
+    // these candidates after the current context before (映画を→見る, 資料を→作る),
+    // pull it to the front. Unlike the hand-curated CONTEXT_HINTS table this
+    // generalises to EVERY word pair the user types -- no per-homophone coding,
+    // it just learns. Empty (no reorder) until the pair has been written, and
+    // it only ever matches a full-word candidate, so partial-input candidate
+    // lists are untouched.
+    candidates = this.applyContextRerank(candidates);
 
     // Predictive completion: once enough of a known common phrase's reading
     // has been typed to be unambiguous, lead with the whole thing rather than
