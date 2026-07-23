@@ -23884,6 +23884,13 @@ const DICTIONARY: Record<string, string[]> = {
   'げきつよ': ['激強'],
   'ぐぬぬ': ['ぐぬぬ'],
   'のどぼとけ': ['喉仏', 'のどぼとけ'],
+  'とうしゃ': ['当社', 'とうしゃ'],
+  'びるど': ['ビルド', 'びるど'],
+  'どきゅめんと': ['ドキュメント', 'どきゅめんと'],
+  'じっそう': ['実装', '実相'],
+  'ごうほう': ['合法', '号砲'],
+  'すぱなー': ['スパナー', 'すぱなー'],
+  'ふたまた': ['二股', '二叉'],
   'かくじつ': ['確実'],
   'ふかくじつ': ['不確実'],
   'そんがい': ['損害'],
@@ -32541,8 +32548,15 @@ export class KanaKanjiConverter {
     // okurigana (its trailing kana == the reading's), promote that kanji form.
     // Restricted to that closed suffix set so kana-convention words
     // (ありがとう, ございます, ちょっと…) are never touched.
+    // Skipped when the in-code DICTIONARY explicitly authored kana as this
+    // exact reading's own first candidate: that's a deliberate curation
+    // decision (a real word that just happens to end in one of these
+    // substrings, not a compound verb -- ひまわり ends in "まわり" but is not
+    // a 回る-compound, so it kept getting hijacked into 火回り) and must win
+    // over this generic heuristic rather than be silently overridden by it.
+    const authoredKanaFirst = entry !== undefined && entry.length > 0 && entry[0] === kana;
     if (result.length > 1 && result[0] === kana && kana.length >= 4 &&
-        KanaKanjiConverter.endsWithCompoundVerbSuffix(kana)) {
+        !authoredKanaFirst && KanaKanjiConverter.endsWithCompoundVerbSuffix(kana)) {
       // Promote the first kanji-bearing candidate whose okurigana ending (its
       // final kana) matches the reading's — for a compound verb that final
       // char always agrees (…直す/…回る/…込んだ), and it rules out an
