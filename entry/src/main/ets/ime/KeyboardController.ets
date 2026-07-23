@@ -17,6 +17,7 @@ import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
+import { EmojiSuggest } from './EmojiSuggest';
 import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
@@ -543,7 +544,17 @@ export class InputHandler {
       this.saveNextWord();
     }
     this.lastCommittedSurface = committed;
-    AppStorage.setOrCreate('predictions', NextWordPredictor.predict(tailWord));
+    // Emoji for the just-committed word lead the strip (😊 right after 嬉しい,
+    // 🐱 after 猫) -- a conventional emoji is a likelier next tap than a particle
+    // for the handful of words that have one -- followed by the next-word
+    // predictions. Most words have no emoji, so the strip is just next-words.
+    const strip: string[] = [];
+    const emoji = EmojiSuggest.forSurface(tailWord);
+    for (const e of emoji) { if (strip.indexOf(e) < 0) { strip.push(e); } }
+    for (const w of NextWordPredictor.predict(tailWord)) {
+      if (strip.indexOf(w) < 0 && strip.length < 6) { strip.push(w); }
+    }
+    AppStorage.setOrCreate('predictions', strip);
   }
 
   // Commit a tapped next-word prediction. Nothing is composing, so this inserts
