@@ -1,5 +1,6 @@
 import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
+import { JP_FONT_FAMILY } from './JpFont';
 
 type FlickDir = 'center' | 'up' | 'right' | 'down' | 'left';
 
@@ -20,7 +21,6 @@ function getChar(key: FlickKeyDef, dir: FlickDir): string {
   return key.center;
 }
 
-// Flick rules: 1st=center, then left→up→right→down (5 chars), left→up→down (4 chars), numbers always at down
 const ALPHA_GRID: FlickKeyDef[][] = [
   [
     { center: '@', left: '-', up: '_', right: '/', down: '1', special: 'symbol' },
@@ -44,6 +44,8 @@ const ALPHA_GRID: FlickKeyDef[][] = [
   ],
 ];
 
+const CELL_RADIUS = 14;
+
 @Component
 export struct AlphabetFlickKeyboardView {
   @Prop inputMode: string = InputMode.HIRAGANA;
@@ -51,13 +53,6 @@ export struct AlphabetFlickKeyboardView {
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
-  @StorageLink('themeVariant') themeVariant: string = 'original';
-  @State showLayoutPopup: boolean = false;
-  @State hoveredOption: string = '';
-  @State showSettingsPopup: boolean = false;
-  @State hoveredSetting: string = '';
-  @State showSettingsPanel: boolean = false;
-  @State oneHandMode: boolean = false;
 
   @State activeRow: number = -1;
   @State activeCol: number = -1;
@@ -66,26 +61,28 @@ export struct AlphabetFlickKeyboardView {
   @State flickDir: FlickDir = 'center';
 
   private readonly THRESHOLD: number = 20;
+
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
-  private layoutMenuTimer: number = -1;
-  private touchDownX: number = 0;
-  private touchDownY: number = 0;
-  private spaceMenuTimer: number = -1;
-  private spaceTouchDownX: number = 0;
-  private spaceTouchDownY: number = 0;
+
+  @State lastChar: string = '';
 
   private h(): InputHandler { return InputHandler.getInstance(); }
 
   private startBsRepeat(): void {
     this.h().handleBackspace();
     this.bsDelayTimer = setTimeout(() => {
-      this.bsRepeatTimer = setInterval(() => { this.h().handleBackspace(); }, 100);
+      this.bsRepeatTimer = setInterval(() => {
+        this.h().handleBackspace();
+      }, 100);
     }, 500);
   }
+
   private stopBsRepeat(): void {
-    clearTimeout(this.bsDelayTimer); clearInterval(this.bsRepeatTimer);
-    this.bsDelayTimer = -1; this.bsRepeatTimer = -1;
+    clearTimeout(this.bsDelayTimer);
+    clearInterval(this.bsRepeatTimer);
+    this.bsDelayTimer = -1;
+    this.bsRepeatTimer = -1;
   }
 
   private dirFrom(dx: number, dy: number): FlickDir {
@@ -99,13 +96,20 @@ export struct AlphabetFlickKeyboardView {
   }
 
   private hintColor(row: number, col: number, dir: FlickDir): ResourceColor {
-    if (this.isActive(row, col) && this.flickDir === dir) { return kbTheme(this.isDark, this.themeVariant).accentStrongBg; }
-    return this.isDark ? '#888888' : '#999999';
+    if (this.isActive(row, col) && this.flickDir === dir) { return kbTheme(this.isDark).accentStrong; }
+    return kbTheme(this.isDark).textSecondary;
   }
 
   private keyBg(row: number, col: number, key: FlickKeyDef): ResourceColor {
-    if (this.isActive(row, col)) { return this.isDark ? '#3A6FB0' : '#B8D4F0'; }
-    return kbTheme(this.isDark, this.themeVariant).keyBg;
+    if (key.special === 'case') { return kbTheme(this.isDark).specialBg; }
+    if (this.isActive(row, col)) { return kbTheme(this.isDark).accentSoft; }
+    return kbTheme(this.isDark).keyBg;
+  }
+
+  private centerLabel(row: number, col: number, key: FlickKeyDef): string {
+    if (key.special === 'case') { return this.caseLabel(); }
+    if (this.isActive(row, col)) { return getChar(key, this.flickDir); }
+    return key.center;
   }
 
   private caseLabel(): string { return 'a/A'; }
@@ -123,8 +127,11 @@ export struct AlphabetFlickKeyboardView {
     }
     if (e.type === TouchType.Down) {
       const t = e.touches[0];
-      this.touchStartX = t.x; this.touchStartY = t.y;
-      this.activeRow = row; this.activeCol = col; this.flickDir = 'center';
+      this.touchStartX = t.x;
+      this.touchStartY = t.y;
+      this.activeRow = row;
+      this.activeCol = col;
+      this.flickDir = 'center';
     } else if (e.type === TouchType.Move) {
       if (this.isActive(row, col) && e.touches.length > 0) {
         const t = e.touches[0];
@@ -136,7 +143,9 @@ export struct AlphabetFlickKeyboardView {
         const dir = this.dirFrom(tc.x - this.touchStartX, tc.y - this.touchStartY);
         this.onCommit(key, dir);
       }
-      this.activeRow = -1; this.activeCol = -1; this.flickDir = 'center';
+      this.activeRow = -1;
+      this.activeCol = -1;
+      this.flickDir = 'center';
     }
   }
 
@@ -150,111 +159,67 @@ export struct AlphabetFlickKeyboardView {
     this.lastChar = /^[a-z]$/.test(ch) ? ch : '';
   }
 
-  @State lastChar: string = '';
-
   build() {
-    Stack() {
-      Column({ space: 2 }) {
-        ForEach([0, 1, 2, 3], (rowIdx: number) => {
-          Row({ space: 3 }) {
-            this.LeftKey(rowIdx)
-            ForEach([0, 1, 2], (colIdx: number) => {
-              this.KeyCell(rowIdx, colIdx, ALPHA_GRID[rowIdx][colIdx])
-            }, (colIdx: number) => String(colIdx))
-            this.RightKey(rowIdx)
-          }
-          .width('100%')
-          .justifyContent(FlexAlign.Center)
-          .layoutWeight(1)
-        }, (rowIdx: number) => String(rowIdx))
-      }
-      .width('100%')
-      .height('100%')
-      .padding({ bottom: 8, top: 4, left: 2, right: 2 })
-
-      if (this.showLayoutPopup) {
-        Column()
-          .width('100%')
-          .height('100%')
-          .onClick(() => { this.showLayoutPopup = false; })
-
-        Column() {
-          this.layoutPopup()
+    Column({ space: 4 }) {
+      ForEach([0, 1, 2, 3], (rowIdx: number) => {
+        Row({ space: 4 }) {
+          this.LeftKey(rowIdx)
+          ForEach([0, 1, 2], (colIdx: number) => {
+            this.KeyCell(rowIdx, colIdx, ALPHA_GRID[rowIdx][colIdx])
+          }, (colIdx: number) => String(colIdx))
+          this.RightKey(rowIdx)
         }
         .width('100%')
-        .alignItems(HorizontalAlign.Start)
-        .padding({ left: 8, bottom: '22%' })
-        .justifyContent(FlexAlign.End)
-      }
+        .justifyContent(FlexAlign.Center)
+        .layoutWeight(1)
+      }, (rowIdx: number) => String(rowIdx))
     }
     .width('100%')
     .height('100%')
+    .padding({ bottom: 8, top: 4 })
   }
 
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
       Text('取消')
-        .fontSize(13).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
-        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
-        .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .onClick(() => { this.h().handleUndo(); this.lastChar = ''; })
+        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        .onClick(() => {
+          this.h().undoLastDeletion();
+          this.lastChar = '';
+        })
     } else if (rowIdx === 1) {
       Text('◄')
-        .fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
-        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
-        .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
+        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => { this.h().handleCursorLeft(); this.lastChar = ''; })
     } else if (rowIdx === 2) {
       Text('記号')
-        .fontSize(13).fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark, this.themeVariant).specialKeyBg)
-        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
-        .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'symbol'); })
+        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        .onClick(() => {
+          AppStorage.setOrCreate('keyboardSubMode', 'symbol');
+        })
     } else {
       Text('あA')
-        .fontSize(12).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
-        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
-        .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .animation({ duration: 80 })
-        .onTouch((e: TouchEvent) => {
-          if (e.type === TouchType.Down) {
-            this.activeRow = rowIdx; this.activeCol = -1;
-            this.touchDownX = e.touches[0].x; this.touchDownY = e.touches[0].y;
-            this.layoutMenuTimer = setTimeout(() => {
-              this.showLayoutPopup = true;
-              this.activeRow = -1; this.activeCol = -1;
-              this.layoutMenuTimer = -1;
-            }, 400);
-          } else if (e.type === TouchType.Move) {
-            const dx = Math.abs(e.touches[0].x - this.touchDownX);
-            if (dx > 15) { clearTimeout(this.layoutMenuTimer); this.layoutMenuTimer = -1; }
-            if (this.showLayoutPopup) {
-              const hdy = e.touches[0].y - this.touchDownY;
-              if (hdy < -180) { this.hoveredOption = 'QWERTY'; }
-              else if (hdy < -120) { this.hoveredOption = 'FLICK'; }
-              else { this.hoveredOption = ''; }
-            }
-          } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
-            clearTimeout(this.layoutMenuTimer); this.layoutMenuTimer = -1;
-            if (this.showLayoutPopup) {
-              if (this.hoveredOption) { AppStorage.setOrCreate('keyboardLayout', this.hoveredOption); }
-              this.showLayoutPopup = false; this.hoveredOption = '';
-              this.activeRow = -1; this.activeCol = -1; return;
-            }
-            if (this.activeRow === rowIdx) {
-              this.h().commitTopCandidate();
-              AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
-            }
-            this.activeRow = -1; this.activeCol = -1;
-          }
+        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        .onClick(() => {
+          this.h().commitTopCandidate();
+          this.h().cycleInputMode();
+          this.lastChar = '';
         })
     }
   }
@@ -262,230 +227,129 @@ export struct AlphabetFlickKeyboardView {
   @Builder RightKey(rowIdx: number) {
     if (rowIdx === 0) {
       Text('⌫')
-        .fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
-        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
-        .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .animation({ duration: 80 })
+        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
           if (event.type === TouchType.Down) {
-            this.activeRow = rowIdx; this.activeCol = -1; this.lastChar = '';
+            this.lastChar = '';
             this.startBsRepeat();
           } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-            this.activeRow = -1; this.activeCol = -1; this.stopBsRepeat();
+            this.stopBsRepeat();
           }
         })
     } else if (rowIdx === 1) {
       Text('►')
-        .fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
-        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
-        .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .animation({ duration: 80 })
-        .onTouch((e: TouchEvent) => {
-          if (e.type === TouchType.Down) { this.activeRow = rowIdx; this.activeCol = -1; }
-          else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
-            if (this.activeRow === rowIdx) { this.h().handleCursorRight(); this.lastChar = ''; }
-            this.activeRow = -1; this.activeCol = -1;
-          }
-        })
+        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        .onClick(() => { this.h().handleCursorRight(); this.lastChar = ''; })
     } else if (rowIdx === 2) {
       Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
+        .fontFamily(JP_FONT_FAMILY)
         .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
-        .fontWeight(FontWeight.Medium).textAlign(TextAlign.Center)
+        .textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).funcKeyBg : kbTheme(this.isDark, this.themeVariant).specialKeyBg)
-        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
-        .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .animation({ duration: 80 })
-        .onTouch((e: TouchEvent) => {
-          if (e.type === TouchType.Down) {
-            this.activeRow = rowIdx; this.activeCol = -1;
-            this.spaceTouchDownX = e.touches[0].x; this.spaceTouchDownY = e.touches[0].y;
-            this.spaceMenuTimer = setTimeout(() => {
-              this.showSettingsPopup = true;
-              this.activeRow = -1; this.activeCol = -1;
-              this.spaceMenuTimer = -1;
-            }, 400);
-          } else if (e.type === TouchType.Move) {
-            const dx = Math.abs(e.touches[0].x - this.spaceTouchDownX);
-            if (dx > 15) { clearTimeout(this.spaceMenuTimer); this.spaceMenuTimer = -1; }
-            if (this.showSettingsPopup) {
-              const hdy = e.touches[0].y - this.spaceTouchDownY;
-              if (hdy < -180) { this.hoveredSetting = 'onehand'; }
-              else if (hdy < -120) { this.hoveredSetting = 'settings'; }
-              else { this.hoveredSetting = ''; }
-            }
-          } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
-            clearTimeout(this.spaceMenuTimer); this.spaceMenuTimer = -1;
-            if (this.showSettingsPopup) {
-              if (this.hoveredSetting === 'settings') {
-                this.showSettingsPopup = false; this.showSettingsPanel = true;
-              } else if (this.hoveredSetting === 'onehand') {
-                this.oneHandMode = !this.oneHandMode; this.showSettingsPopup = false;
-              }
-              this.showSettingsPopup = false; this.hoveredSetting = '';
-              this.activeRow = -1; this.activeCol = -1; return;
-            }
-            if (this.activeRow === rowIdx) {
-              const st = AppStorage.get<string>('inputState') ?? 'IDLE';
-              if (st === 'COMPOSING') { this.h().handleBunsetsu(); }
-              else { this.h().handleSpaceKey(); }
-              this.lastChar = '';
-            }
-            this.activeRow = -1; this.activeCol = -1;
+        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        .onClick(() => {
+          const st = AppStorage.get<string>('inputState') ?? 'IDLE';
+          if (st === 'COMPOSING') {
+            this.h().handleBunsetsu();
+          } else {
+            this.h().handleSpaceKey();
           }
+          this.lastChar = '';
         })
     } else {
       Text('→')
-        .fontSize(16).fontWeight(FontWeight.Bold).textAlign(TextAlign.Center)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(16).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(this.activeRow === rowIdx && this.activeCol === -1 ? kbTheme(this.isDark, this.themeVariant).accentStrongBg : kbTheme(this.isDark, this.themeVariant).accentBg)
-        .fontColor(kbTheme(this.isDark, this.themeVariant).onAccentText)
-        .borderRadius(14).shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-        .animation({ duration: 80 })
+        .backgroundColor(kbTheme(this.isDark).accent).fontColor(kbTheme(this.isDark).onAccent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
           const st = AppStorage.get<string>('inputState') ?? 'IDLE';
-          if (st === 'BUNSETSU') { this.h().commitBunsetsu(); }
-          else if (st === 'SELECTING') { this.h().commitTopCandidate(); }
-          else if (st === 'COMPOSING') { this.h().commitRaw(); }
-          else { this.h().handleEnterKey(); }
+          if (st === 'BUNSETSU') {
+            this.h().commitBunsetsu();
+          } else if (st === 'SELECTING') {
+            this.h().commitTopCandidate();
+          } else if (st === 'COMPOSING') {
+            this.h().commitRaw();
+          } else {
+            this.h().handleEnterKey();
+          }
           this.lastChar = '';
         })
     }
   }
 
   @Builder KeyCell(rowIdx: number, colIdx: number, key: FlickKeyDef) {
-    Column({ space: 0 }) {
-      Text(key.up !== undefined ? key.up : ' ')
-        .fontSize(11).fontColor(this.hintColor(rowIdx, colIdx, 'up'))
-        .width('100%').height('28%').textAlign(TextAlign.Center)
+    if (this.isLandscape) {
+      Text(this.centerLabel(rowIdx, colIdx, key))
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(this.isActive(rowIdx, colIdx) ? 17 : 14)
+        .fontColor(key.special === 'case' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+        .fontWeight(FontWeight.Medium)
+        .textAlign(TextAlign.Center)
+        .width(this.flickKeyWidthVp)
+        .height('100%')
+        .backgroundColor(this.keyBg(rowIdx, colIdx, key))
+        .borderRadius(CELL_RADIUS)
+        .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        .onTouch((e: TouchEvent) => {
+          this.handleTouch(e, rowIdx, colIdx, key);
+        })
+    } else {
+      Column({ space: 0 }) {
+        Text(key.up !== undefined ? key.up : ' ')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(11)
+          .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
+          .width('100%').height('28%')
+          .textAlign(TextAlign.Center)
 
-      Row({ space: 0 }) {
-        Text(key.left !== undefined ? key.left : ' ')
-          .fontSize(11).fontColor(this.hintColor(rowIdx, colIdx, 'left'))
-          .width('25%').textAlign(TextAlign.Center)
+        Row({ space: 0 }) {
+          Text(key.left !== undefined ? key.left : ' ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
+            .width('25%').textAlign(TextAlign.Center)
 
-        Text(this.isActive(rowIdx, colIdx) ? (key.special === 'case' ? this.caseLabel() : getChar(key, this.flickDir)) :
-          key.special === 'case' ? this.caseLabel() : key.center)
-          .fontSize(this.isActive(rowIdx, colIdx) ? 20 : 17)
-          .fontColor(kbTheme(this.isDark, this.themeVariant).keyText)
-          .fontWeight(FontWeight.Medium)
-          .width('50%').textAlign(TextAlign.Center)
+          Text(this.centerLabel(rowIdx, colIdx, key))
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(this.isActive(rowIdx, colIdx) ? 22 : 18)
+            .fontColor(key.special === 'case' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+            .fontWeight(FontWeight.Medium)
+            .width('50%').textAlign(TextAlign.Center)
 
-        Text(key.right !== undefined ? key.right : ' ')
-          .fontSize(11).fontColor(this.hintColor(rowIdx, colIdx, 'right'))
-          .width('25%').textAlign(TextAlign.Center)
-      }
-      .width('100%').height('44%')
-
-      Text(key.down !== undefined ? key.down : ' ')
-        .fontSize(11).fontColor(this.hintColor(rowIdx, colIdx, 'down'))
-        .width('100%').height('28%').textAlign(TextAlign.Center)
-    }
-    .width(this.flickKeyWidthVp).height('100%')
-    .backgroundColor(this.keyBg(rowIdx, colIdx, key))
-    .borderRadius(14)
-    .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 2 })
-    .onTouch((e: TouchEvent) => { this.handleTouch(e, rowIdx, colIdx, key); })
-  }
-
-  @Builder layoutPopup() {
-    Column() {
-      Row() {
-        Text('QWERTY')
-          .fontSize(15).textAlign(TextAlign.Center)
-          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-          .borderRadius(16)
-          .backgroundColor(this.hoveredOption === 'QWERTY' ? kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
-          .fontColor(this.hoveredOption === 'QWERTY' ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
-          .width('100%')
-      }
-      Row() {
-        Text('フリック')
-          .fontSize(15).textAlign(TextAlign.Center)
-          .padding({ left: 16, right: 16, top: 12, bottom: 12 })
-          .borderRadius(16)
-          .backgroundColor(this.hoveredOption === 'FLICK' ? kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
-          .fontColor(this.hoveredOption === 'FLICK' ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
-          .width('100%')
-      }
-    }
-    .padding(6)
-    .width(200)
-    .backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
-    .borderRadius(22)
-    .shadow({ radius: 6, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 4 })
-  }
-
-  @Builder settingsPopup() {
-    Column() {
-      Row() {
-        Text('設定').fontSize(15).textAlign(TextAlign.Center)
-          .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
-          .backgroundColor(this.hoveredSetting === 'settings' ? kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
-          .fontColor(this.hoveredSetting === 'settings' ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
-          .width('100%')
-      }
-      Row() {
-        Text('片手キーボード').fontSize(15).textAlign(TextAlign.Center)
-          .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
-          .backgroundColor(this.hoveredSetting === 'onehand' ? kbTheme(this.isDark, this.themeVariant).accentBg : kbTheme(this.isDark, this.themeVariant).candidateBg)
-          .fontColor(this.hoveredSetting === 'onehand' ? kbTheme(this.isDark, this.themeVariant).onAccentText : kbTheme(this.isDark, this.themeVariant).keyText)
-          .width('100%')
-      }
-    }
-    .padding(6).width(180).backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
-    .borderRadius(22).shadow({ radius: 6, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 4 })
-  }
-
-  @Builder settingsPanel() {
-    Column() {
-      Row() {
-        Text('設定').fontSize(16).fontWeight(FontWeight.Bold)
-          .fontColor(kbTheme(this.isDark, this.themeVariant).previewText)
-      }.width('100%').justifyContent(FlexAlign.Center).height(40)
-      .backgroundColor(kbTheme(this.isDark, this.themeVariant).composingBarBg)
-
-      Scroll() {
-        Flex({ direction: FlexDirection.Row, wrap: FlexWrap.Wrap }) {
-          this.SettingItem('テーマ', '🎨')
-          this.SettingItem('デフォルトレイアウト', '⌨')
-          this.SettingItem('ユーザ辞書', '📕')
-          this.SettingItem('サウンド', '🔈')
-          this.SettingItem('入力設定', '⚙')
+          Text(key.right !== undefined ? key.right : ' ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
+            .width('25%').textAlign(TextAlign.Center)
         }
-        .padding(12)
+        .width('100%').height('44%')
+
+        Text(key.down !== undefined ? key.down : ' ')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(11)
+          .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
+          .width('100%').height('28%')
+          .textAlign(TextAlign.Center)
       }
-      .layoutWeight(1)
-
-      Row() {
-        Text('閉じる').fontSize(14).fontColor(kbTheme(this.isDark, this.themeVariant).accentBg)
-      }.width('100%').justifyContent(FlexAlign.Center).height(44)
-      .backgroundColor(kbTheme(this.isDark, this.themeVariant).selectingBarBg)
-      .onClick(() => { this.showSettingsPanel = false; })
+      .width(this.flickKeyWidthVp)
+      .height('100%')
+      .backgroundColor(this.keyBg(rowIdx, colIdx, key))
+      .borderRadius(CELL_RADIUS)
+      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      .onTouch((e: TouchEvent) => {
+        this.handleTouch(e, rowIdx, colIdx, key);
+      })
     }
-    .width('100%').height('100%')
   }
-
-  @Builder SettingItem(label: string, icon: string) {
-    Column() {
-      Text(icon).fontSize(28).margin({ bottom: 4 })
-      Text(label).fontSize(13).fontColor(kbTheme(this.isDark, this.themeVariant).keyText)
-    }
-    .width(100).height(90).justifyContent(FlexAlign.Center).alignItems(HorizontalAlign.Center)
-    .borderRadius(14).backgroundColor(kbTheme(this.isDark, this.themeVariant).keyBg)
-    .shadow({ radius: 1, color: kbTheme(this.isDark, this.themeVariant).shadowColor, offsetY: 1 })
-    .margin(6)
-    .onClick(() => {
-      if (label === 'テーマ') {
-        const next = AppStorage.get<string>('themeVariant') === 'glass' ? 'original' : 'glass';
-        AppStorage.setOrCreate('themeVariant', next);
-      }
-      this.showSettingsPanel = false;
-    })
-  }
-
 }

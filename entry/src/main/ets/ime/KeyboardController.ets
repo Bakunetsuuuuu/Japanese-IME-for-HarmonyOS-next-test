@@ -188,6 +188,7 @@ export class InputHandler {
   private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
+  private conversionEnd: number = 0;
   // Cap for the persistent deleted-character log (recordDeletedChar) --
   // unlike restoreStack above (a short-lived undo stack wiped by the next
   // keystroke, see insertText), this survives typing and is only capped by
@@ -588,6 +589,8 @@ export class InputHandler {
     this.lastDeletedChar = '';
     this.insertedBuffer = [];
     this.restoreStack = [];
+    this.conversionEnd = 0;
+    AppStorage.setOrCreate('convEnd', 0);
     if (!AppStorage.has('inputMode')) {
       AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
     }
@@ -601,12 +604,14 @@ export class InputHandler {
     this.lastDeletedChar = '';
     this.insertedBuffer = [];
     this.restoreStack = [];
+    this.conversionEnd = 0;
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
     AppStorage.setOrCreate('predictions', [] as string[]);
     this.lastCommittedSurface = '';
     AppStorage.setOrCreate('inputState', InputState.IDLE);
+    AppStorage.setOrCreate('convEnd', 0);
   }
 
   handleKeyPress(key: string): void {
@@ -872,6 +877,7 @@ export class InputHandler {
     this.lastDeletedChar = '';
     this.insertedBuffer = [];
     this.restoreStack = [];
+    this.conversionEnd = 0;
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -881,6 +887,7 @@ export class InputHandler {
     AppStorage.setOrCreate('bunsetsuDisplay', '');
     AppStorage.setOrCreate('bunsetsuCurrent', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
+    AppStorage.setOrCreate('convEnd', 0);
     this.refreshClipboardPreview();
   }
 
@@ -1213,8 +1220,13 @@ export class InputHandler {
     // so it doesn't linger next to live conversion candidates.
     AppStorage.setOrCreate('predictions', [] as string[]);
 
-    const fullKatakana = KanaKanjiConverter.toKatakana(composing);
-    const segs = this.kanjiConverter.segment(composing);
+    // conversionEnd defines the split point: text before it is converted,
+    // text after stays as kana. 0 means convert the full text.
+    const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
+    const target = composing.slice(0, rangeEnd);
+
+    const fullKatakana = KanaKanjiConverter.toKatakana(target);
+    const segs = this.kanjiConverter.segment(target);
     let candidates: string[];
     // Recomputed below whenever the composing text is multi-segment. Reset
     // here so a single-segment / symbol-prefix / stale commit falls back to
@@ -1222,7 +1234,7 @@ export class InputHandler {
     this.lastAlignment = undefined;
 
     if (segs.length <= 1) {
-      candidates = this.kanjiConverter.lookup(composing);
+      candidates = this.kanjiConverter.lookup(target);
     } else {
       // Auto-converted prefix (all but the last segment). Computed once here
       // so BOTH the whole-reading-hit branch and the decompose branch below
@@ -1243,14 +1255,14 @@ export class InputHandler {
       // Try full-text lookup first. If it returns a real dictionary hit
       // (not just the katakana/kana fallback), use it — this prevents
       // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
-      const fullCands = this.kanjiConverter.lookup(composing);
+      const fullCands = this.kanjiConverter.lookup(target);
       const fullFirst = fullCands[0];
       // A dict-authored loanword (こんびに→コンビニ) has fullFirst === the
       // auto-katakana, so the plain fullFirst!==fullKatakana test would reject
       // it and fall to segmentation (こんび+に → garbage). Treat a whole
       // reading that IS a dictionary word as a real hit regardless.
-      const hasRealHit = (fullFirst !== fullKatakana && fullFirst !== composing) ||
-        KanaKanjiConverter.isDictionaryWord(composing);
+      const hasRealHit = (fullFirst !== fullKatakana && fullFirst !== target) ||
+        KanaKanjiConverter.isDictionaryWord(target);
 
       if (hasRealHit) {
         candidates = fullCands;
@@ -1270,7 +1282,7 @@ export class InputHandler {
         if (hasSymbolPrefix) {
           // No usable kanji join — plain kana leads, same as the
           // segmentJoinFallback bail-out for single-lookup composing text.
-          candidates.push(composing);
+          candidates.push(target);
         } else if (segCands.length > 0) {
           // Position 0: best Viterbi candidate
           candidates.push(segCands[0]);
@@ -1283,7 +1295,7 @@ export class InputHandler {
         for (let i = 1; i < segCands.length; i++) {
           if (!candidates.includes(segCands[i])) { candidates.push(segCands[i]); }
         }
-        if (!candidates.includes(composing)) { candidates.push(composing); }
+        if (!candidates.includes(target)) { candidates.push(target); }
       }
     }
 
@@ -1294,7 +1306,7 @@ export class InputHandler {
     // homophone in any earlier word — 橋/箸 in はしをわたる, 撮る/取る in
     // 写真をとった — never appeared anywhere in the list. (Empty for track B,
     // whose lookup already routed through composeMozcCandidates above.)
-    const alts = this.kanjiConverter.sentenceAlternatives(composing);
+    const alts = this.kanjiConverter.sentenceAlternatives(target);
     // Insert the alternatives just ABOVE the katakana/kana fallbacks, not at a
     // fixed position 1: a whole-phrase dict entry can already carry a genuine
     // kanji alternative at candidate[1] (はなをみる → 花を観る, 花を見る), and
@@ -1303,7 +1315,7 @@ export class InputHandler {
     // slot the alternatives right before it, so both the entry's own
     // alternatives and the per-segment swaps stay above the fallbacks.
     const kIdx = candidates.indexOf(fullKatakana);
-    const cIdx = candidates.indexOf(composing);
+    const cIdx = candidates.indexOf(target);
     let insertAt: number;
     if (kIdx < 0 && cIdx < 0) { insertAt = candidates.length; }
     else if (kIdx < 0) { insertAt = cIdx; }
@@ -1322,7 +1334,7 @@ export class InputHandler {
     // alternatives above: its boundary-detour search occasionally yields a
     // linguistically odd reparse (先生似合う for せんせいにあう), so it's a
     // lower-priority alternative, not the second candidate.
-    const altSeg = this.kanjiConverter.findAlternateSegmentation(composing);
+    const altSeg = this.kanjiConverter.findAlternateSegmentation(target);
     if (altSeg !== null && !candidates.includes(altSeg)) {
       candidates.splice(insertAt, 0, altSeg);
     }
@@ -1330,7 +1342,7 @@ export class InputHandler {
     // Predictive completion: once enough of a known common phrase's reading
     // has been typed to be unambiguous, lead with the whole thing rather than
     // making the user type out a full greeting/set phrase.
-    const predictive = findPredictiveCompletion(composing);
+    const predictive = findPredictiveCompletion(target);
     if (predictive !== null && !candidates.includes(predictive)) {
       candidates = [predictive, ...candidates];
     }
@@ -1347,20 +1359,20 @@ export class InputHandler {
     // date is a likelier intent than a prefix-completion (教育 for きょういく).
     // Ephemeral live values -- excluded from conversion learning by
     // isNonLearningCandidate.
-    const dateTimes = DateTimePredictor.predict(composing, new Date());
+    const dateTimes = DateTimePredictor.predict(target, new Date());
     for (const d of dateTimes) {
       if (!candidates.includes(d)) { candidates.splice(insAt, 0, d); insAt++; }
     }
 
     // Common-word prefix completions (かいし→会社), after any date/time values.
-    const completions = PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned());
+    const completions = PredictiveConversion.predict(target, KanaKanjiConverter.getLearned());
     for (const c of completions) {
       if (!candidates.includes(c)) { candidates.splice(insAt, 0, c); insAt++; }
     }
 
     // Numeral formatting (1000000→1,000,000 / 100万 / 百万) for bare-digit input.
     // Ephemeral like the above -- excluded from conversion learning.
-    const numForms = NumberFormatter.predict(composing);
+    const numForms = NumberFormatter.predict(target);
     for (const nf of numForms) {
       if (!candidates.includes(nf)) { candidates.splice(insAt, 0, nf); insAt++; }
     }
@@ -1384,8 +1396,18 @@ export class InputHandler {
 
   handleCursorLeft(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    const composing = AppStorage.get<string>('composingText') ?? '';
     if (state === InputState.BUNSETSU) {
       this.selectBunsetsuSegment(this.bCur - 1);
+    } else if ((state === InputState.COMPOSING || state === InputState.SELECTING) && composing.length > 0) {
+      if (this.conversionEnd === 0) {
+        this.conversionEnd = composing.length;
+      }
+      if (this.conversionEnd > 1) {
+        this.conversionEnd--;
+        AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        this.updateCandidates();
+      }
     } else {
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
         .catch((_e: Error) => {});
@@ -1394,8 +1416,17 @@ export class InputHandler {
 
   handleCursorRight(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    const composing = AppStorage.get<string>('composingText') ?? '';
     if (state === InputState.BUNSETSU) {
       this.selectBunsetsuSegment(this.bCur + 1);
+    } else if ((state === InputState.COMPOSING || state === InputState.SELECTING) && composing.length > 0) {
+      if (this.conversionEnd > 0 && this.conversionEnd < composing.length) {
+        this.conversionEnd++;
+        AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        this.updateCandidates();
+      } else if (this.conversionEnd === 0) {
+        // Already at full length, no change needed
+      }
     } else {
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
         .catch((_e: Error) => {});
@@ -1420,6 +1451,8 @@ export class InputHandler {
     AppStorage.setOrCreate('composingText', current + kana);
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    this.conversionEnd = (current + kana).length;
+    AppStorage.setOrCreate('convEnd', this.conversionEnd);
     this.lastDeletedChar = '';
     this.restoreStack = [];
     this.updateCandidates();

@@ -7,10 +7,12 @@ import { CandidateBar } from '../components/CandidateBar';
 import { PredictionBar } from '../components/PredictionBar';
 import { KeyboardView } from '../components/KeyboardView';
 import { FlickKeyboardView } from '../components/FlickKeyboardView';
+import { AlphabetFlickKeyboardView } from '../components/AlphabetFlickKeyboardView';
 import { SymbolView } from '../components/SymbolView';
 import { EmojiView } from '../components/EmojiView';
 import { NumericPadView } from '../components/NumericPadView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
+import { ExpandedCandidateView } from '../components/ExpandedCandidateView';
 import { SettingsBar } from '../components/SettingsBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
@@ -41,6 +43,8 @@ struct KeyboardPage {
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
+  @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
+  @StorageLink('convEnd') convEnd: number = 0;
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -127,7 +131,8 @@ struct KeyboardPage {
             })
             CandidateBar({
               candidates: this.candidates,
-              selectedIndex: this.selectedIndex
+              selectedIndex: this.selectedIndex,
+              showExpand: true
             })
           }
           .width('100%')
@@ -140,23 +145,42 @@ struct KeyboardPage {
             // Landscape has much less vertical room to spare for the keys below,
             // so this strip and the candidate row underneath both run compact.
             Row() {
-              Text(this.composingText + this.pendingRomaji)
-                .fontFamily(JP_FONT_FAMILY)
-                .fontSize(this.isLandscape ? 11 : 16)
-                .fontWeight(FontWeight.Medium)
-                .fontColor(kbTheme(this.isDark).textPrimary)
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
-                .padding({ left: 12, right: 8 })
-                .border((this.composingText + this.pendingRomaji).length > 0 ?
-                  { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
-                  { width: { bottom: 0 } })
-                .layoutWeight(1)
+              if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
+                if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
+                  Text(this.composingText.slice(0, this.convEnd))
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(this.isLandscape ? 11 : 16)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(kbTheme(this.isDark).textPrimary)
+                    .maxLines(1)
+                    .decoration({ type: TextDecorationType.Underline })
+                    .decorationColor(kbTheme(this.isDark).accent)
+                  Text(this.composingText.slice(this.convEnd))
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(this.isLandscape ? 11 : 16)
+                    .fontColor(kbTheme(this.isDark).textSecondary)
+                    .maxLines(1)
+                } else {
+                  Text(this.composingText + this.pendingRomaji)
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(this.isLandscape ? 11 : 16)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor(kbTheme(this.isDark).textPrimary)
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                    .padding({ left: 12, right: 8 })
+                    .border((this.composingText + this.pendingRomaji).length > 0 ?
+                      { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
+                      { width: { bottom: 0 } })
+                    .layoutWeight(1)
+                }
+              }
             }
             .width('100%')
             .height(this.isLandscape ? 14 : 28)
             .backgroundColor(kbTheme(this.isDark).panelBg)
             .alignItems(VerticalAlign.Center)
+            .padding({ left: 12, right: 8 })
 
             // Candidate bar row + layout toggle
             Row() {
@@ -164,7 +188,8 @@ struct KeyboardPage {
                 if (this.candidates.length > 0) {
                   CandidateBar({
                     candidates: this.candidates,
-                    selectedIndex: this.selectedIndex
+                    selectedIndex: this.selectedIndex,
+                    showExpand: true
                   })
                 } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
                   this.predictions.length > 0) {
@@ -246,8 +271,18 @@ struct KeyboardPage {
         // lays out its keys at full intended size, then this wrapper visually
         // (and for hit-testing) scales the whole thing down toward one side.
         Column() {
-          if (this.keyboardSubMode === 'numeric') {
+          if (this.candidateExpanded && this.candidates.length > 0) {
+            ExpandedCandidateView({
+              candidates: this.candidates,
+              selectedIndex: this.selectedIndex
+            })
+          } else if (this.keyboardSubMode === 'numeric') {
             NumericPadView()
+          } else if (this.keyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
+            AlphabetFlickKeyboardView({
+              inputMode: this.inputMode,
+              isLandscape: this.isLandscape
+            })
           } else if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
             FlickKeyboardView({
               inputMode: this.inputMode,
