@@ -16,6 +16,7 @@ import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
 import { DateTimePredictor } from './DateTimePredictor';
+import { NumberFormatter } from './NumberFormatter';
 import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
@@ -792,7 +793,10 @@ export class InputHandler {
     if (PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned()).indexOf(text) >= 0) {
       return true;
     }
-    return DateTimePredictor.predict(composing, new Date()).indexOf(text) >= 0;
+    if (DateTimePredictor.predict(composing, new Date()).indexOf(text) >= 0) {
+      return true;
+    }
+    return NumberFormatter.predict(composing).indexOf(text) >= 0;
   }
 
   // Learn from a committed candidate. For a multi-segment sentence whose
@@ -1343,6 +1347,13 @@ export class InputHandler {
       if (!candidates.includes(c)) { candidates.splice(insAt, 0, c); insAt++; }
     }
 
+    // Numeral formatting (1000000→1,000,000 / 100万 / 百万) for bare-digit input.
+    // Ephemeral like the above -- excluded from conversion learning.
+    const numForms = NumberFormatter.predict(composing);
+    for (const nf of numForms) {
+      if (!candidates.includes(nf)) { candidates.splice(insAt, 0, nf); insAt++; }
+    }
+
     AppStorage.setOrCreate('candidates', candidates);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
   }
@@ -1554,20 +1565,26 @@ export class InputHandler {
     new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
 
   // Move the caret between a just-inserted bracket pair. Every BRACKET_PAIRS
-  // entry is exactly two BMP code units (() （） 「」 【】 …), so after the pair
-  // is inserted the caret sits two units past where it should, and a single
-  // relative left-move lands it precisely between the brackets.
+  // entry is exactly two BMP code units (() （） 「」 【】 …), so exactly one
+  // left-move lands the caret between them.
   //
-  // This deliberately uses the RELATIVE moveCursor rather than reading the
-  // absolute caret index and collapsing a selection there: getTextIndexAtCursor
-  // could resolve before the insert was applied or return an index relative to
-  // the whole field, and selectByRange(idx-1) then dropped the caret several
-  // characters PAST the bracket (or nowhere) -- exactly the "cursor jumps ahead
-  // / doesn't move" bug. A one-unit left move can neither overshoot nor land
-  // ahead. Called from insertText's .then(), i.e. after the insert resolved.
+  // Two failure modes drove this to a DELAYED, RELATIVE move:
+  //  - Absolute selectByRange(getTextIndexAtCursor()-1) put the caret several
+  //    characters PAST the bracket whenever the field had text after the cursor,
+  //    because that editor's getTextIndexAtCursor doesn't reliably return the
+  //    live caret offset. A relative move can't overshoot -- it steps one unit
+  //    left from wherever the caret actually is.
+  //  - A relative move fired immediately in insertText's .then() did nothing,
+  //    because insertText's promise can resolve before the edit is applied, so
+  //    the move ran against pre-insert state and was undone by the settling
+  //    insert. Deferring it a couple of frames lets the insert land first.
+  // Only one move is issued (a fixed delay, not a retry loop): a second move
+  // after the first succeeded would push the caret out the left of the pair.
   private placeCaretBetweenBrackets(client: inputMethodEngine.InputClient): void {
-    client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
-      .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
+    setTimeout(() => {
+      client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+        .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
+    }, 40);
   }
 
   insertText(text: string): void {
