@@ -13,6 +13,7 @@ import type { UserPosEntry } from './ConjugationEngine';
 import { buildUserExpansion } from './ConjugationEngine';
 import { SettingsStore, KeyboardSettings } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
+import { NextWordPredictor } from './NextWordPredictor';
 import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
@@ -191,6 +192,11 @@ export class InputHandler {
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
+  private nextWordPrefs: dataPreferences.Preferences | undefined = undefined;
+  private nextWordSaveTimer: number = -1;
+  // Surface of the immediately-preceding commit, used as the bigram key for
+  // next-word learning (see NextWordPredictor / pushPredictions).
+  private lastCommittedSurface: string = '';
   private symbolPrefs: dataPreferences.Preferences | undefined = undefined;
   private symbolSaveTimer: number = -1;
   // Per-symbol tap counts, used to rank the symbol panel's "recent" tab by
@@ -217,6 +223,18 @@ export class InputHandler {
         try {
           const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
           KanaKanjiConverter.setLearned(data);
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, 'shunti_nextword')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.nextWordPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
+          NextWordPredictor.setLearned(data);
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
@@ -487,6 +505,57 @@ export class InputHandler {
     }, 2000);
   }
 
+  private saveNextWord(): void {
+    clearTimeout(this.nextWordSaveTimer);
+    this.nextWordSaveTimer = setTimeout(() => {
+      const prefs = this.nextWordPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(NextWordPredictor.getLearned()))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 2000);
+  }
+
+  // The word next-word prediction should key on after committing `text`: the
+  // final 文節's surface when a multi-segment sentence was committed (recovered
+  // from the same alignment learnCommit uses), otherwise the whole text. Keying
+  // on the tail word means 「今日は」→ predicts after は，「駅で待つ」→ after 待つ,
+  // instead of on the useless whole-sentence string.
+  private predictionTailWord(text: string): string {
+    const a = this.lastAlignment;
+    if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
+      return text.slice(a.prefixText.length);
+    }
+    return text;
+  }
+
+  // Record the previous→current word transition for learning, then publish the
+  // predicted next words for the just-committed word into the candidate strip.
+  // Called on every commit (conversion or tapped prediction); the strip stays
+  // visible in the IDLE state until the user starts a new composition (which
+  // clears it -- see updateCandidates).
+  private pushPredictions(committed: string, tailWord: string): void {
+    if (this.lastCommittedSurface.length > 0) {
+      NextWordPredictor.record(this.lastCommittedSurface, committed);
+      this.saveNextWord();
+    }
+    this.lastCommittedSurface = committed;
+    AppStorage.setOrCreate('predictions', NextWordPredictor.predict(tailWord));
+  }
+
+  // Commit a tapped next-word prediction. Nothing is composing, so this inserts
+  // the word directly, records the transition, and re-predicts from the tapped
+  // word so predictions chain (私 → tap は → tap …).
+  commitPrediction(index: number): void {
+    const preds = AppStorage.get<string[]>('predictions') ?? [];
+    if (index < 0 || index >= preds.length) { return; }
+    const text = preds[index];
+    if (text.length === 0) { return; }
+    this.insertText(text);
+    KanaKanjiConverter.addContext(text);
+    this.pushPredictions(text, text);
+  }
+
   onInputStart(
     kbCtrl: inputMethodEngine.KeyboardController,
     client: inputMethodEngine.InputClient
@@ -521,6 +590,8 @@ export class InputHandler {
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
+    AppStorage.setOrCreate('predictions', [] as string[]);
+    this.lastCommittedSurface = '';
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
@@ -603,6 +674,12 @@ export class InputHandler {
       const deleted = this.insertedBuffer.pop() ?? '';
       if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
       this.inputClient?.deleteForward(1);
+      // The committed word the next-word strip was keyed on is being edited
+      // away -- retire the strip so a now-stale prediction can't be tapped.
+      if (this.lastCommittedSurface.length > 0) {
+        this.lastCommittedSurface = '';
+        AppStorage.setOrCreate('predictions', [] as string[]);
+      }
       return;
     }
 
@@ -689,7 +766,11 @@ export class InputHandler {
       this.learnCommit(composing, text);
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
+      const tail = this.predictionTailWord(text);
       this.saveLearning();
+      this.resetComposition();
+      this.pushPredictions(text, tail);
+      return;
     }
     this.resetComposition();
   }
@@ -725,11 +806,14 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
     if (candidates.length > 0) {
-      this.learnCommit(composing, candidates[idx]);
-      this.insertText(candidates[idx]);
-      KanaKanjiConverter.addContext(candidates[idx]);
+      const chosen = candidates[idx];
+      this.learnCommit(composing, chosen);
+      this.insertText(chosen);
+      KanaKanjiConverter.addContext(chosen);
+      const tail = this.predictionTailWord(chosen);
       this.resetComposition();
       this.saveLearning();
+      this.pushPredictions(chosen, tail);
       return;
     }
     this.commitPending();
@@ -1045,6 +1129,9 @@ export class InputHandler {
       AppStorage.setOrCreate('candidates', [] as string[]);
       return;
     }
+    // A new composition has started -- retire the post-commit next-word strip
+    // so it doesn't linger next to live conversion candidates.
+    AppStorage.setOrCreate('predictions', [] as string[]);
 
     const fullKatakana = KanaKanjiConverter.toKatakana(composing);
     const segs = this.kanjiConverter.segment(composing);
