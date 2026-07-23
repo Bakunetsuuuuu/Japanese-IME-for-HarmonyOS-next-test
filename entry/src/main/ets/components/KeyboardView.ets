@@ -31,6 +31,8 @@ export struct KeyboardView {
   @State isCapsLock: boolean = false;
   @State showSpaceMenu: boolean = false;
   @State hoveredSpaceOption: string = '';
+  @State showModeMenu: boolean = false;
+  @State hoveredModeOption: string = '';
   // Key widths pre-computed from screen density in KeyboardController
   @StorageLink('keyWidthVp') keyWidthVp: number = 36;
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
@@ -180,6 +182,61 @@ export struct KeyboardView {
         .width('100%')
         .height('100%')
       }
+
+      if (this.showModeMenu) {
+        Stack() {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('#00000000')
+            .onClick(() => { this.showModeMenu = false; this.hoveredModeOption = ''; })
+
+          Column() {
+            Row() {
+              Text('QWERTY')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15).textAlign(TextAlign.Center)
+                .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+                .backgroundColor(this.hoveredModeOption === 'QWERTY' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+                .fontColor(this.hoveredModeOption === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+                .width('100%')
+                .onHover((isHover: boolean) => {
+                  this.hoveredModeOption = isHover ? 'QWERTY' : '';
+                })
+                .onClick(() => {
+                  AppStorage.setOrCreate('keyboardLayout', 'QWERTY');
+                  this.showModeMenu = false;
+                  this.hoveredModeOption = '';
+                })
+            }
+            Row() {
+              Text('フリック')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15).textAlign(TextAlign.Center)
+                .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+                .backgroundColor(this.hoveredModeOption === 'FLICK' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+                .fontColor(this.hoveredModeOption === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+                .width('100%')
+                .onHover((isHover: boolean) => {
+                  this.hoveredModeOption = isHover ? 'FLICK' : '';
+                })
+                .onClick(() => {
+                  AppStorage.setOrCreate('keyboardLayout', 'FLICK');
+                  this.showModeMenu = false;
+                  this.hoveredModeOption = '';
+                })
+            }
+          }
+          .padding(6).width(180)
+          .backgroundColor(kbTheme(this.isDark).panelBg)
+          .borderRadius(22)
+          .shadow({ radius: 6, color: kbTheme(this.isDark).shadowColor, offsetY: 4 })
+          .alignSelf(ItemAlign.Start)
+          .margin({ left: 8, bottom: '22%' })
+        }
+        .width('100%')
+        .height('100%')
+      }
     }
     .width('100%')
     .height('100%')
@@ -300,6 +357,12 @@ export struct KeyboardView {
       .fontColor(kbTheme(this.isDark).onAccent)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      .gesture(
+        LongPressGesture({ duration: 400 })
+          .onAction(() => {
+            this.showModeMenu = true;
+          })
+      )
       .onClick(() => {
         this.getHandler().commitRaw();
         this.getHandler().cycleInputMode();
