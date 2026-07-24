@@ -191,13 +191,14 @@ export struct AlphabetFlickKeyboardView {
   }
 
   // Themed content for the one-handed hint popup so it reads as part of the
-  // keyboard (accent bubble, JP font) instead of the default system tooltip.
+  // keyboard: theme surface (dark bg+white text in dark mode, light bg+dark
+  // text in light mode) with the JP font, not the default system tooltip.
   @Builder OneHandHintPopup() {
     Text(this.oneHandHint === 'left' ? '左手モード' : '右手モード')
       .fontFamily(JP_FONT_FAMILY)
       .fontSize(13)
       .fontWeight(FontWeight.Medium)
-      .fontColor(kbTheme(this.isDark).onAccent)
+      .fontColor(kbTheme(this.isDark).textPrimary)
       .padding({ left: 14, right: 14, top: 7, bottom: 7 })
   }
 
@@ -262,7 +263,7 @@ export struct AlphabetFlickKeyboardView {
           builder: this.OneHandHintPopup,
           placement: Placement.Top,
           enableArrow: true,
-          popupColor: kbTheme(this.isDark).accent,
+          popupColor: kbTheme(this.isDark).specialBg,
           radius: 14,
           mask: false,
         })
@@ -339,7 +340,7 @@ export struct AlphabetFlickKeyboardView {
           builder: this.OneHandHintPopup,
           placement: Placement.Top,
           enableArrow: true,
-          popupColor: kbTheme(this.isDark).accent,
+          popupColor: kbTheme(this.isDark).specialBg,
           radius: 14,
           mask: false,
         })
