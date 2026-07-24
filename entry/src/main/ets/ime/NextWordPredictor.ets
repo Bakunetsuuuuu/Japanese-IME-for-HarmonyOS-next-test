@@ -180,7 +180,13 @@ export class NextWordPredictor {
     if (keys.length > MAX_LEARNED_VALS_PER_KEY) {
       let minWord = keys[0];
       for (const k of keys) { if (entry[k] < entry[minWord]) { minWord = k; } }
-      delete entry[minWord];
+      const newEntry: Record<string, number> = {};
+      for (const k of keys) {
+        if (k !== minWord) {
+          newEntry[k] = entry[k];
+        }
+      }
+      store[key] = newEntry;
     }
   }
 

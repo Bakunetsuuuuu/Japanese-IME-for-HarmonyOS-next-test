@@ -29,6 +29,8 @@ export struct KeyboardView {
   @Prop isLandscape: boolean = false;
   @State isShift: boolean = false;
   @State isCapsLock: boolean = false;
+  @State showSpaceMenu: boolean = false;
+  @State hoveredSpaceOption: string = '';
   // Key widths pre-computed from screen density in KeyboardController
   @StorageLink('keyWidthVp') keyWidthVp: number = 36;
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
@@ -41,6 +43,9 @@ export struct KeyboardView {
 
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
+  private spaceMenuTimer: number = -1;
+  private spaceTouchDownX: number = 0;
+  private spaceTouchDownY: number = 0;
 
   private startBsRepeat(): void {
     this.getHandler().handleBackspace();
@@ -59,75 +64,125 @@ export struct KeyboardView {
   }
 
   build() {
-    Column({ space: 5 }) {
-      // Number row — dropped in landscape to give the letter rows more height;
-      // vertical space is tight there and this row is the least-used one.
-      if (!this.isLandscape) {
+    Stack() {
+      Column({ space: 5 }) {
+        if (!this.isLandscape) {
+          Row({ space: 5 }) {
+            ForEach(NUMBER_ROW, (key: string) => {
+              this.RegularKey(key, this.keyWidthVp)
+            }, (key: string) => key)
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .layoutWeight(1)
+        }
+
+        ForEach([0, 1], (rowIdx: number) => {
+          Row({ space: 5 }) {
+            ForEach(rowIdx === 1 && this.inputMode === InputMode.ALPHANUMERIC ? ROW1_ALPHANUMERIC : ROWS[rowIdx], (key: string) => {
+              this.RegularKey(key, this.keyWidthVp)
+            }, (key: string) => key)
+          }
+          .width('100%')
+          .justifyContent(FlexAlign.Center)
+          .layoutWeight(1)
+        }, (rowIdx: number) => String(rowIdx))
+
         Row({ space: 5 }) {
-          ForEach(NUMBER_ROW, (key: string) => {
+          this.ShiftKey()
+          ForEach(ROWS[2], (key: string) => {
             this.RegularKey(key, this.keyWidthVp)
           }, (key: string) => key)
+          this.BackspaceKey()
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .layoutWeight(1)
+
+        Row({ space: 5 }) {
+          this.ModeKey()
+          this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
+            const ch = this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、';
+            const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+            if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+            else { this.getHandler().handleDirectKana(ch); }
+          })
+          this.SpaceKey()
+          this.BunsetsuKey()
+          this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
+            const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
+            const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+            if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
+            else { this.getHandler().handleDirectKana(ch); }
+          })
+          this.EnterKey()
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
         .layoutWeight(1)
       }
+      .width('100%')
+      .height('100%')
+      .padding({ bottom: 8, top: 4, left: 2, right: 2 })
 
-      // QWERTY rows 0 and 1. Row 1 drops the kana-only ー-shortcut '-' key in
-      // ALPHANUMERIC mode, where it serves no purpose.
-      ForEach([0, 1], (rowIdx: number) => {
-        Row({ space: 5 }) {
-          ForEach(rowIdx === 1 && this.inputMode === InputMode.ALPHANUMERIC ? ROW1_ALPHANUMERIC : ROWS[rowIdx], (key: string) => {
-            this.RegularKey(key, this.keyWidthVp)
-          }, (key: string) => key)
+      if (this.showSpaceMenu) {
+        Stack() {
+          Column()
+            .width('100%')
+            .height('100%')
+            .backgroundColor('#00000000')
+            .onClick(() => { this.showSpaceMenu = false; this.hoveredSpaceOption = ''; })
+
+          Column() {
+            Row() {
+              Text('設定')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15).textAlign(TextAlign.Center)
+                .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+                .backgroundColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+                .fontColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+                .width('100%')
+                .onHover((isHover: boolean) => {
+                  this.hoveredSpaceOption = isHover ? 'settings' : '';
+                })
+                .onClick(() => {
+                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                  this.showSpaceMenu = false;
+                  this.hoveredSpaceOption = '';
+                })
+            }
+            Row() {
+              Text('片手キーボード')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15).textAlign(TextAlign.Center)
+                .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
+                .backgroundColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+                .fontColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+                .width('100%')
+                .onHover((isHover: boolean) => {
+                  this.hoveredSpaceOption = isHover ? 'onehand' : '';
+                })
+                .onClick(() => {
+                  const cur = AppStorage.get<boolean>('oneHandedMode') ?? false;
+                  AppStorage.setOrCreate('oneHandedMode', !cur);
+                  this.showSpaceMenu = false;
+                  this.hoveredSpaceOption = '';
+                })
+            }
+          }
+          .padding(6).width(180)
+          .backgroundColor(kbTheme(this.isDark).panelBg)
+          .borderRadius(22)
+          .shadow({ radius: 6, color: kbTheme(this.isDark).shadowColor, offsetY: 4 })
+          .alignSelf(ItemAlign.End)
+          .margin({ right: 8, bottom: '22%' })
         }
         .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .layoutWeight(1)
-      }, (rowIdx: number) => String(rowIdx))
-
-      // Bottom letter row (z-m) with shift and backspace
-      Row({ space: 5 }) {
-        this.ShiftKey()
-        ForEach(ROWS[2], (key: string) => {
-          this.RegularKey(key, this.keyWidthVp)
-        }, (key: string) => key)
-        this.BackspaceKey()
+        .height('100%')
       }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .layoutWeight(1)
-
-      // Function row. 文節 (per-segment conversion — lets you fix up
-      // individual bunsetsu of a converted sentence instead of only ever
-      // choosing among whole-sentence candidates; FlickKeyboardView already
-      // exposes this via its own dedicated key) sits right after the space
-      // key, which is sized shorter to make room for it.
-      Row({ space: 5 }) {
-        this.ModeKey()
-        this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
-          const ch = this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、';
-          const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-          if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
-          else { this.getHandler().handleDirectKana(ch); }
-        })
-        this.SpaceKey()
-        this.BunsetsuKey()
-        this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
-          const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
-          const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-          if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
-          else { this.getHandler().handleDirectKana(ch); }
-        })
-        this.EnterKey()
-      }
-      .width('100%')
-      .justifyContent(FlexAlign.Center)
-      .layoutWeight(1)
     }
     .width('100%')
     .height('100%')
-    .padding({ bottom: 8, top: 4, left: 2, right: 2 })
   }
 
   @Builder RegularKey(value: string, width: number) {
@@ -223,6 +278,12 @@ export struct KeyboardView {
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      .gesture(
+        LongPressGesture({ duration: 400 })
+          .onAction(() => {
+            this.showSpaceMenu = true;
+          })
+      )
       .onClick(() => {
         this.getHandler().handleSpaceKey();
       })
