@@ -174,6 +174,14 @@ struct KeyboardPage {
                     .layoutWeight(1)
                 }
               }
+              Blank()
+              Text('設定')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(this.isLandscape ? 10 : 13)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .onClick(() => {
+                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                })
             }
             .width('100%')
             .height(this.isLandscape ? 14 : 28)
