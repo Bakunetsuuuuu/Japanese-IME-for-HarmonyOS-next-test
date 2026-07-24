@@ -186,7 +186,7 @@ export class NextWordPredictor {
           newEntry[k] = entry[k];
         }
       }
-      NextWordPredictor.learned[prev] = newEntry;
+      store[key] = newEntry;
     }
   }
 
