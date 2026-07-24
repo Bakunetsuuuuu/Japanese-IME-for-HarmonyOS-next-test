@@ -11,7 +11,7 @@ import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
 import type { UserPosEntry } from './ConjugationEngine';
 import { buildUserExpansion } from './ConjugationEngine';
-import { SettingsStore, KeyboardSettings } from './SettingsStore';
+import { SettingsStore, KeyboardSettings, isDarkFromConfiguration } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
@@ -668,33 +668,12 @@ export class InputHandler {
     this.pushPredictions(words);
   }
 
-  // Re-checks the OS light/dark setting on every keyboard launch, not just at
-  // extension process creation / onConfigurationUpdate. Those two alone
-  // should in principle keep 'isDark' current for the whole life of the IME
-  // extension process, but that process outlives many keyboard show/hide
-  // cycles and onConfigurationUpdate delivery to this extension type isn't
-  // reliably prompt on every device/OS build -- so a theme switched while the
-  // keyboard was hidden could leave 'isDark' stale (wrong background/text
-  // colors across the panel, e.g. the one-handed hint popup rendering with
-  // the light theme's colors under a dark OS). Same read as
-  // KeyboardController.applyColorMode; duplicated rather than shared because
-  // this runs on InputHandler, which only holds the InputMethodExtensionContext,
-  // not a KeyboardController reference.
-  private refreshColorMode(): void {
-    if (!this.imeContext) { return; }
-    try {
-      const cm = (this.imeContext.config as ESObject)['colorMode'] as number;
-      AppStorage.setOrCreate('isDark', cm === 0);
-    } catch (_e) {}
-  }
-
   onInputStart(
     kbCtrl: inputMethodEngine.KeyboardController,
     client: inputMethodEngine.InputClient
   ): void {
     this.kbController = kbCtrl;
     this.inputClient = client;
-    this.refreshColorMode();
     this.converter.reset();
     this.reloadUserDict();
     this.reloadSettings();
@@ -1832,15 +1811,21 @@ export class KeyboardController {
     this.loadViterbiData();
   }
 
-  // Detect system dark mode via the extension context configuration.
-  // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
+  // One-time startup read of the extension context's own configuration --
+  // reliable only here (onCreate), before any onConfigurationUpdate has had a
+  // chance to fire. See isDarkFromConfiguration's comment for why every LATER
+  // update must go through applyColorModeFrom(newConfig) with the pushed
+  // Configuration object instead of calling this again.
   applyColorMode(): void {
-    try {
-      const cm = (this.context.config as ESObject)['colorMode'] as number;
-      AppStorage.setOrCreate('isDark', cm === 0);
-    } catch (_e) {
-      AppStorage.setOrCreate('isDark', false);
-    }
+    AppStorage.setOrCreate('isDark', isDarkFromConfiguration(this.context.config as ESObject));
+  }
+
+  // Applies the Configuration object handed directly to onConfigurationUpdate
+  // (InputMethodExtAbility's own onConfigurationUpdate calls this). This is
+  // the only path that actually tracks the OS light/dark toggle live -- see
+  // isDarkFromConfiguration's comment.
+  applyColorModeFrom(config: ESObject): void {
+    AppStorage.setOrCreate('isDark', isDarkFromConfiguration(config));
   }
 
   onDestroy(): void {

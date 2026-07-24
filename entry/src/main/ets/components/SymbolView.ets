@@ -105,7 +105,10 @@ const LICENSE_TEXT: string =
   '  https://github.com/WorksApplications/SudachiDict\n' +
   '詳細なライセンス全文は THIRD_PARTY_NOTICES.md を参照してください。\n\n' +
   '■ アプリコード\n' +
-  'MIT License';
+  'MIT License\n\n' +
+  '■ 開発\n' +
+  '開発者: Shunti (X: @shunti_nitijou)\n' +
+  '協力者: Hashima (X: @nycjg1)';
 
 // Grid area budget (unchanged from before the redesign, so the overall
 // keyboard body height doesn't shift when switching into the symbol panel).
@@ -175,7 +178,7 @@ export struct SymbolView {
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(48).height(40)
-          .fontColor(kbTheme(this.isDark).onAccent)
+          .fontColor(kbTheme(this.isDark).textPrimary)
           .backgroundColor(kbTheme(this.isDark).specialBg)
           .borderRadius(20)
           .onClick(() => {
@@ -296,7 +299,7 @@ export struct SymbolView {
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(18).textAlign(TextAlign.Center)
           .width(52).height(44)
-          .fontColor(kbTheme(this.isDark).onAccent)
+          .fontColor(kbTheme(this.isDark).textPrimary)
           .backgroundColor(kbTheme(this.isDark).specialBg)
           .borderRadius(14)
           .onClick(() => { this.h().handleBackspace(); })

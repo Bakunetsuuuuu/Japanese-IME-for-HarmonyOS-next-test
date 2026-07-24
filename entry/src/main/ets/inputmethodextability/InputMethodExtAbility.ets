@@ -10,11 +10,13 @@ export default class InputMethodExtAbility extends InputMethodExtensionAbility {
     this.kbController.onCreate();
   }
 
-  onConfigurationUpdate(_config: object): void {
-    // Always go through applyColorMode() (not a direct isDark write here)
-    // so a user-pinned テーマ (settings panel 外観 > テーマ) keeps winning
-    // over an OS color-mode change instead of being silently overridden.
-    this.kbController?.applyColorMode();
+  onConfigurationUpdate(newConfig: object): void {
+    // Use the pushed Configuration directly (applyColorModeFrom), not
+    // applyColorMode()'s context.config re-read -- see
+    // isDarkFromConfiguration's comment (SettingsStore.ets) for why only the
+    // object handed to this callback is guaranteed to reflect the OS's
+    // current light/dark setting.
+    this.kbController?.applyColorModeFrom(newConfig as ESObject);
   }
 
   onDestroy(): void {

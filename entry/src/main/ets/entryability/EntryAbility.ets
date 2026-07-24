@@ -2,7 +2,7 @@ import { UIAbility } from '@kit.AbilityKit';
 import type { Want, AbilityConstant } from '@kit.AbilityKit';
 import type { window } from '@kit.ArkUI';
 import { registerJpFont } from '../components/JpFont';
-import { resolveMainAppIsDark } from '../ime/SettingsStore';
+import { resolveMainAppIsDark, isDarkFromConfiguration } from '../ime/SettingsStore';
 
 // Stashes a "please open this URL in the in-app browser" request (see
 // KeyboardController.openGithubRepo) into AppStorage for Index.ets to pick
@@ -49,10 +49,12 @@ export default class EntryAbility extends UIAbility {
   // Fires on an OS-level color-mode change while the app is already
   // running (system config changed, not window-stage recreated) -- without
   // this, isDark would only ever be (re-)computed at the next cold start.
-  // Re-reads this.context.config (same idiom as InputMethodExtAbility's own
-  // onConfigurationUpdate) rather than parsing the pushed config param.
-  onConfigurationUpdate(_newConfig: object): void {
-    this.applyColorMode();
+  // Uses the pushed Configuration directly rather than this.applyColorMode()
+  // (which re-reads this.context.config) -- see isDarkFromConfiguration's
+  // comment for why only the object handed to this callback is guaranteed to
+  // reflect the OS's current setting.
+  onConfigurationUpdate(newConfig: object): void {
+    AppStorage.setOrCreate('isDark', isDarkFromConfiguration(newConfig as ESObject));
   }
 
   onDestroy(): void {
