@@ -172,7 +172,10 @@ export struct KeyboardView {
       .width(this.specialKeyWidthVp)
       .height('100%')
       .backgroundColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark).accent : kbTheme(this.isDark).specialBg)
-      .fontColor(kbTheme(this.isDark).onAccent)
+      // onAccent (always white) only reads correctly against the accent fill
+      // above; the inactive state's specialBg is light in light mode, so it
+      // needs the theme's normal text color instead or the glyph washes out.
+      .fontColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       // QWERTY has no 記号 key, so the shift/caps key doubles as the left-lean
@@ -221,7 +224,7 @@ export struct KeyboardView {
       .width(this.specialKeyWidthVp)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).specialBg)
-      .fontColor(kbTheme(this.isDark).onAccent)
+      .fontColor(kbTheme(this.isDark).textPrimary)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onTouch((event: TouchEvent) => {
@@ -241,7 +244,7 @@ export struct KeyboardView {
       .width(this.specialKeyWidthVp)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).specialBg)
-      .fontColor(kbTheme(this.isDark).onAccent)
+      .fontColor(kbTheme(this.isDark).textPrimary)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
@@ -299,7 +302,7 @@ export struct KeyboardView {
       .width(this.specialKeyWidthVp)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).specialBg)
-      .fontColor(kbTheme(this.isDark).onAccent)
+      .fontColor(kbTheme(this.isDark).textPrimary)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {

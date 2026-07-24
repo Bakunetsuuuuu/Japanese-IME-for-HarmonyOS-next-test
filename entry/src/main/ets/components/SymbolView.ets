@@ -175,7 +175,7 @@ export struct SymbolView {
           .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(48).height(40)
-          .fontColor(kbTheme(this.isDark).onAccent)
+          .fontColor(kbTheme(this.isDark).textPrimary)
           .backgroundColor(kbTheme(this.isDark).specialBg)
           .borderRadius(20)
           .onClick(() => {
@@ -296,7 +296,7 @@ export struct SymbolView {
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(18).textAlign(TextAlign.Center)
           .width(52).height(44)
-          .fontColor(kbTheme(this.isDark).onAccent)
+          .fontColor(kbTheme(this.isDark).textPrimary)
           .backgroundColor(kbTheme(this.isDark).specialBg)
           .borderRadius(14)
           .onClick(() => { this.h().handleBackspace(); })

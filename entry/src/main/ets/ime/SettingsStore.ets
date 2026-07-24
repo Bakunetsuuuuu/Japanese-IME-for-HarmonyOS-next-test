@@ -115,7 +115,27 @@ export class SettingsStore {
 // reads, which does) -- cast the context itself rather than context.config.
 export function resolveMainAppIsDark(context: common.Context): boolean {
   try {
-    const cm = (context as ESObject)['config']['colorMode'] as number;
+    return isDarkFromConfiguration((context as ESObject)['config']);
+  } catch (_e) {
+    return false;
+  }
+}
+
+// Reads colorMode off a Configuration object directly -- specifically the one
+// handed to onConfigurationUpdate(newConfig), NOT a re-read of context.config.
+// That distinction matters: nothing in the ability lifecycle contract
+// guarantees context.config is kept mutated in place as the OS setting
+// changes after the ability/extension was created -- it's confirmed live only
+// at that initial read (used by resolveMainAppIsDark/applyColorMode above for
+// their one-time startup checks). Re-reading context.config from inside
+// onConfigurationUpdate was the actual bug behind light/dark not tracking a
+// live OS toggle: the callback fired, but the "fresh" read kept returning
+// whatever color mode was active back at startup. The Configuration object
+// onConfigurationUpdate is called with is the one value guaranteed to be the
+// new state, so every update path must use it directly instead.
+export function isDarkFromConfiguration(config: ESObject): boolean {
+  try {
+    const cm = config['colorMode'] as number;
     // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
     return cm === 0;
   } catch (_e) {
