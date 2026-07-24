@@ -99,6 +99,12 @@ const SEED_NEXT: Record<string, string[]> = {
   'とても': ['いい', '良い'],
 };
 
+// Curated cold-start sentence openers: the words a message/sentence commonly
+// begins with, offered before this user's own opener habit has accumulated.
+const SEED_OPENERS: string[] = [
+  'とりあえず', 'あと', 'それで', 'なんか', 'あの', 'すみません', 'お疲れ様です', 'ありがとう',
+];
+
 interface Scored {
   word: string;
   count: number;
@@ -123,6 +129,13 @@ export class NextWordPredictor {
   // 2-word context: "prev2\x1fprev1" -> (next -> count). Sentence-level flow
   // (映画を→見る, not just を→…) lives here and outranks the 1-word guess.
   private static learnedBi: Record<string, Record<string, number>> = {};
+
+  // Reserved unigram-store key (never a real committed surface, so it can't
+  // collide with any word and it persists for free with the rest of `learned`).
+  // Under it we count how often each word STARTS a sentence, so after the user
+  // finishes one sentence the strip can offer their habitual next-sentence
+  // openers (口癖 openers: てか/なんか/とりあえず…) instead of going blank.
+  private static readonly START_KEY = '\u0002';
 
   static setLearned(data: LearnedStore | Record<string, Record<string, number>>): void {
     if (data === undefined || data === null) {
@@ -184,6 +197,24 @@ export class NextWordPredictor {
     if (prev2.length > 0 && prev2.length <= MAX_KEY_LEN) {
       NextWordPredictor.bump(NextWordPredictor.learnedBi, prev2 + BI_SEP + prev1, next);
     }
+  }
+
+  // True when `surface` ends a sentence, so the next committed word begins a new
+  // one (and is a sentence opener rather than a continuation).
+  static isSentenceEnd(surface: string): boolean {
+    if (surface.length === 0) { return false; }
+    const last = surface[surface.length - 1];
+    return last === '。' || last === '！' || last === '？'
+      || last === '!' || last === '?' || last === '.' || last === '\n';
+  }
+
+  // Record that `word` began a sentence (口癖 opener). Kept under the reserved
+  // START_KEY in the same unigram store, so it's capped and persisted like any
+  // other learned transition. A punctuation-tailed surface is never an opener.
+  static recordOpener(word: string): void {
+    if (word.length === 0 || word.length > MAX_KEY_LEN) { return; }
+    if (NextWordPredictor.isSentenceEnd(word)) { return; }
+    NextWordPredictor.bump(NextWordPredictor.learned, NextWordPredictor.START_KEY, word);
   }
 
   // LEARNED-ONLY next surfaces for a context (no seed, no generic particles),
@@ -257,6 +288,19 @@ export class NextWordPredictor {
       w2 = next;
     }
     return chain;
+  }
+
+  // Habitual sentence openers, this user's most-used first, then the curated
+  // seed. Offered when the previous commit ended a sentence (or at message
+  // start), where ordinary next-word prediction has no context to work from.
+  static openers(): string[] {
+    const out: string[] = [];
+    const push = (w: string): void => {
+      if (w.length > 0 && out.indexOf(w) < 0 && out.length < MAX_PREDICTIONS) { out.push(w); }
+    };
+    NextWordPredictor.rankedInto(NextWordPredictor.learned[NextWordPredictor.START_KEY], push);
+    for (const w of SEED_OPENERS) { push(w); }
+    return out;
   }
 
   // Predicted next words given the last one or two committed words, best first.

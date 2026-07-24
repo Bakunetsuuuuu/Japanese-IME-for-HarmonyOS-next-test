@@ -553,7 +553,14 @@ export class InputHandler {
     let w2 = this.recentWords.length >= 1 ? this.recentWords[this.recentWords.length - 1] : '';
     for (const w of newWords) {
       if (w.length === 0) { continue; }
-      NextWordPredictor.record(w1, w2, w); // (prev2, prev1) -> w
+      // A word with nothing before it, or one right after a sentence-ending
+      // word, begins a sentence -- learn it as a habitual opener rather than
+      // recording a cross-sentence bigram (which would just be junk context).
+      if (w2.length === 0 || NextWordPredictor.isSentenceEnd(w2)) {
+        NextWordPredictor.recordOpener(w);
+      } else {
+        NextWordPredictor.record(w1, w2, w); // (prev2, prev1) -> w
+      }
       w1 = w2;
       w2 = w;
     }
@@ -578,7 +585,12 @@ export class InputHandler {
         wordGroups.push(words);
       }
     };
-    if (w2.length > 0) {
+    if (NextWordPredictor.isSentenceEnd(w2)) {
+      // Just finished a sentence: offer this user's habitual next-sentence
+      // openers instead of continuations of the punctuation-tailed word (which
+      // has none). Keeps the strip useful across sentence boundaries.
+      for (const w of NextWordPredictor.openers()) { pushChip(w, [w]); }
+    } else if (w2.length > 0) {
       const phrase = NextWordPredictor.phraseCompletion(w2, w1);
       if (phrase.length >= 2) { pushChip(phrase.join(''), phrase); }
       for (const e of EmojiSuggest.forSurface(w2)) { pushChip(e, [e]); }

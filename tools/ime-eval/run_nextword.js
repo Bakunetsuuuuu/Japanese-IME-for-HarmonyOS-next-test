@@ -159,6 +159,23 @@ function main() {
   check('phrase: dominant habit chains multiple words', chain[0] === 'マジで' && chain.length >= 2, JSON.stringify(chain));
   check('phrase: capped by maxWords param', NW.phraseCompletion('お疲れ', '', 1).length <= 1, JSON.stringify(NW.phraseCompletion('お疲れ', '', 1)));
 
+  // --- sentence openers (口癖 openers): learned starters lead, seed backs them up ---
+  NW.setLearned({});
+  check('isSentenceEnd true for 。！？/./\\n', NW.isSentenceEnd('です。') && NW.isSentenceEnd('マジ！') && NW.isSentenceEnd('ok?') && !NW.isSentenceEnd('です'));
+  // cold start: seed openers only
+  check('openers cold-start uses seed', NW.openers()[0] === 'とりあえず', JSON.stringify(NW.openers()));
+  // a learned opener (recorded 3x) leads ahead of the seed
+  for (let i = 0; i < 3; i++) { NW.recordOpener('てか'); }
+  NW.recordOpener('なんか');
+  check('learned opener てか leads', NW.openers()[0] === 'てか', JSON.stringify(NW.openers()));
+  check('openers still include seed after learned', NW.openers().includes('とりあえず'), JSON.stringify(NW.openers()));
+  // a punctuation-tailed word is never learned as an opener
+  NW.recordOpener('です。');
+  check('punctuation tail not learned as opener', !NW.openers().includes('です。'), JSON.stringify(NW.openers()));
+  // openers live under a reserved key, invisible to ordinary word prediction
+  check('opener key does not leak into predict', !NW.predict('てか').includes('なんか') || NW.getLearned().uni['てか'] !== undefined);
+  check('openers survive get/setLearned round-trip', (() => { const s = NW.getLearned(); NW.setLearned(s); return NW.openers()[0] === 'てか'; })(), JSON.stringify(NW.openers()));
+
   console.log(`\n[NEXTWORD] ${failures === 0 ? 'ALL PASS' : failures + ' FAILURES'}`);
   if (failures > 0) process.exit(1);
 }
