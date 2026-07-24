@@ -59,14 +59,17 @@ export struct AlphabetFlickKeyboardView {
   @State touchStartX: number = 0;
   @State touchStartY: number = 0;
   @State flickDir: FlickDir = 'center';
+  // '' | 'right' | 'left' -- which one-handed hint popup is showing.
+  @State oneHandHint: string = '';
 
   private readonly THRESHOLD: number = 20;
 
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
-  private spaceMenuTimer: number = -1;
-  private spaceTouchDownX: number = 0;
-  private spaceTouchDownY: number = 0;
+  private curDelayTimer: number = -1;
+  private curRepeatTimer: number = -1;
+  private curAccelTimer: number = -1;
+  private ohHintTimer: number = -1;
 
   @State lastChar: string = '';
 
@@ -86,6 +89,31 @@ export struct AlphabetFlickKeyboardView {
     clearInterval(this.bsRepeatTimer);
     this.bsDelayTimer = -1;
     this.bsRepeatTimer = -1;
+  }
+
+  // Hold-to-repeat for the ◄/► caret keys, accelerating once held past ~1s.
+  private startCurRepeat(dir: string): void {
+    const move = (): void => {
+      if (dir === 'left') { this.h().handleCursorLeft(); }
+      else { this.h().handleCursorRight(); }
+    };
+    move();
+    this.curDelayTimer = setTimeout(() => {
+      this.curRepeatTimer = setInterval(move, 110);
+      this.curAccelTimer = setTimeout(() => {
+        clearInterval(this.curRepeatTimer);
+        this.curRepeatTimer = setInterval(move, 40);
+      }, 600);
+    }, 400);
+  }
+
+  private stopCurRepeat(): void {
+    clearTimeout(this.curDelayTimer);
+    clearInterval(this.curRepeatTimer);
+    clearTimeout(this.curAccelTimer);
+    this.curDelayTimer = -1;
+    this.curRepeatTimer = -1;
+    this.curAccelTimer = -1;
   }
 
   private dirFrom(dx: number, dy: number): FlickDir {
@@ -207,7 +235,10 @@ export struct AlphabetFlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => { this.h().handleCursorLeft(); this.lastChar = ''; })
+        .onTouch((event: TouchEvent) => {
+          if (event.type === TouchType.Down) { this.lastChar = ''; this.startCurRepeat('left'); }
+          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
+        })
     } else if (rowIdx === 2) {
       Text('記号')
         .fontFamily(JP_FONT_FAMILY)
@@ -215,12 +246,26 @@ export struct AlphabetFlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        // Swipe up on the 記号 key -> left-leaning one-handed mode.
+        // Long-press to reveal the 左手モード hint, then flick up to switch.
+        .bindPopup(this.oneHandHint === 'left', {
+          message: '左手モード',
+          placement: Placement.Top,
+          enableArrow: true,
+        })
         .gesture(
-          PanGesture({ direction: PanDirection.Up, distance: 24 })
-            .onActionStart(() => {
-              this.h().toggleOneHanded('left');
-            })
+          GestureGroup(GestureMode.Sequence,
+            LongPressGesture({ duration: 300 })
+              .onAction(() => {
+                this.oneHandHint = 'left';
+                this.ohHintTimer = setTimeout(() => { this.oneHandHint = ''; }, 1500);
+              }),
+            PanGesture({ direction: PanDirection.Up, distance: 20 })
+              .onActionStart(() => {
+                this.h().toggleOneHanded('left');
+                clearTimeout(this.ohHintTimer);
+                this.oneHandHint = '';
+              })
+          )
         )
         .onClick(() => {
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
@@ -263,7 +308,10 @@ export struct AlphabetFlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => { this.h().handleCursorRight(); this.lastChar = ''; })
+        .onTouch((event: TouchEvent) => {
+          if (event.type === TouchType.Down) { this.lastChar = ''; this.startCurRepeat('right'); }
+          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
+        })
     } else if (rowIdx === 2) {
       Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
         .fontFamily(JP_FONT_FAMILY)
@@ -272,12 +320,26 @@ export struct AlphabetFlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        // Swipe up on the space key -> right-leaning one-handed mode.
+        // Long-press to reveal the 右手モード hint, then flick up to switch.
+        .bindPopup(this.oneHandHint === 'right', {
+          message: '右手モード',
+          placement: Placement.Top,
+          enableArrow: true,
+        })
         .gesture(
-          PanGesture({ direction: PanDirection.Up, distance: 24 })
-            .onActionStart(() => {
-              this.h().toggleOneHanded('right');
-            })
+          GestureGroup(GestureMode.Sequence,
+            LongPressGesture({ duration: 300 })
+              .onAction(() => {
+                this.oneHandHint = 'right';
+                this.ohHintTimer = setTimeout(() => { this.oneHandHint = ''; }, 1500);
+              }),
+            PanGesture({ direction: PanDirection.Up, distance: 20 })
+              .onActionStart(() => {
+                this.h().toggleOneHanded('right');
+                clearTimeout(this.ohHintTimer);
+                this.oneHandHint = '';
+              })
+          )
         )
         .onClick(() => {
           const st = AppStorage.get<string>('inputState') ?? 'IDLE';
