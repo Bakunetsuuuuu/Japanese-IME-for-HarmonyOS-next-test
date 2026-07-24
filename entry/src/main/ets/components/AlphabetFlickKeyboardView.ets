@@ -1,5 +1,4 @@
 import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
-import { toKatakana } from '../ime/JapaneseConverter';
 import { kbTheme } from './Theme';
 import { JP_FONT_FAMILY } from './JpFont';
 
@@ -14,7 +13,7 @@ interface FlickKeyDef {
   special?: string;
 }
 
-function getKanaByDir(key: FlickKeyDef, dir: FlickDir): string {
+function getChar(key: FlickKeyDef, dir: FlickDir): string {
   if (dir === 'up' && key.up !== undefined) { return key.up; }
   if (dir === 'right' && key.right !== undefined) { return key.right; }
   if (dir === 'down' && key.down !== undefined) { return key.down; }
@@ -22,35 +21,33 @@ function getKanaByDir(key: FlickKeyDef, dir: FlickDir): string {
   return key.center;
 }
 
-// 3 center kana columns (displayed in cols 1-3 of the 5-col layout)
-const FLICK_GRID: FlickKeyDef[][] = [
+const ALPHA_GRID: FlickKeyDef[][] = [
   [
-    { center: 'あ', up: 'う', right: 'え', down: 'お', left: 'い' },
-    { center: 'か', up: 'く', right: 'け', down: 'こ', left: 'き' },
-    { center: 'さ', up: 'す', right: 'せ', down: 'そ', left: 'し' },
+    { center: '@', left: '-', up: '_', right: '/', down: '1', special: 'symbol' },
+    { center: 'a', left: 'b', up: 'c', down: '2' },
+    { center: 'd', left: 'e', up: 'f', down: '3' },
   ],
   [
-    { center: 'た', up: 'つ', right: 'て', down: 'と', left: 'ち' },
-    { center: 'な', up: 'ぬ', right: 'ね', down: 'の', left: 'に' },
-    { center: 'は', up: 'ふ', right: 'へ', down: 'ほ', left: 'ひ' },
+    { center: 'g', left: 'h', up: 'i', down: '4' },
+    { center: 'j', left: 'k', up: 'l', down: '5' },
+    { center: 'm', left: 'n', up: 'o', down: '6' },
   ],
   [
-    { center: 'ま', up: 'む', right: 'め', down: 'も', left: 'み' },
-    { center: 'や', up: 'ゆ', down: 'よ' },
-    { center: 'ら', up: 'る', right: 'れ', down: 'ろ', left: 'り' },
+    { center: 'p', left: 'q', up: 'r', right: 's', down: '7' },
+    { center: 't', left: 'u', up: 'v', down: '8' },
+    { center: 'w', left: 'x', up: 'y', right: 'z', down: '9' },
   ],
   [
-    { center: '゛', up: '゜', down: '小', special: 'dakuten' },
-    { center: 'わ', up: 'ん', right: 'ー', down: '～', left: 'を' },
-    { center: '、', up: '？', right: '！', down: '…', left: '。', special: 'punct' },
+    { center: 'a', special: 'case' },
+    { center: "'", left: '"', up: ':', right: ';', down: '0' },
+    { center: '.', left: ',', up: '?', down: '!' },
   ],
 ];
 
-// Flick cell corner radius (design tokens: "flick cells 14px").
 const CELL_RADIUS = 14;
 
 @Component
-export struct FlickKeyboardView {
+export struct AlphabetFlickKeyboardView {
   @Prop inputMode: string = InputMode.HIRAGANA;
   @Prop isLandscape: boolean = false;
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
@@ -73,6 +70,8 @@ export struct FlickKeyboardView {
   private spaceTouchDownX: number = 0;
   private spaceTouchDownY: number = 0;
 
+  @State lastChar: string = '';
+
   private h(): InputHandler { return InputHandler.getInstance(); }
 
   private startBsRepeat(): void {
@@ -91,15 +90,6 @@ export struct FlickKeyboardView {
     this.bsRepeatTimer = -1;
   }
 
-  private toMode(kana: string): string {
-    if (this.inputMode === InputMode.KATAKANA && /[ぁ-ん]/.test(kana)) {
-      return toKatakana(kana);
-    }
-    return kana;
-  }
-
-  private rowH(): number { return this.isLandscape ? 50 : 64; }
-
   private dirFrom(dx: number, dy: number): FlickDir {
     if (Math.abs(dx) < this.THRESHOLD && Math.abs(dy) < this.THRESHOLD) { return 'center'; }
     if (Math.abs(dx) >= Math.abs(dy)) { return dx > 0 ? 'right' : 'left'; }
@@ -115,50 +105,31 @@ export struct FlickKeyboardView {
     return kbTheme(this.isDark).textSecondary;
   }
 
-  private centerLabel(row: number, col: number, key: FlickKeyDef): string {
-    if (key.special === 'dakuten') { return key.center; }
-    if (key.special === 'punct') {
-      const raw = this.isActive(row, col) ? getKanaByDir(key, this.flickDir) : key.center;
-      return this.inputMode === InputMode.ALPHANUMERIC ? this.jpToAsciiPunct(raw) : raw;
-    }
-    if (this.isActive(row, col)) { return this.toMode(getKanaByDir(key, this.flickDir)); }
-    return this.toMode(key.center);
-  }
-
   private keyBg(row: number, col: number, key: FlickKeyDef): ResourceColor {
-    if (key.special === 'dakuten') { return kbTheme(this.isDark).specialBg; }
+    if (key.special === 'case') { return kbTheme(this.isDark).specialBg; }
     if (this.isActive(row, col)) { return kbTheme(this.isDark).accentSoft; }
     return kbTheme(this.isDark).keyBg;
   }
 
-  private jpToAsciiPunct(s: string): string {
-    const m: Record<string, string> = {
-      '、': ',', '。': '.', '！': '!', '？': '?', '…': '...',
-    };
-    return m[s] ?? s;
+  private centerLabel(row: number, col: number, key: FlickKeyDef): string {
+    if (key.special === 'case') { return this.caseLabel(); }
+    if (this.isActive(row, col)) { return getChar(key, this.flickDir); }
+    return key.center;
   }
 
-  private onCommit(key: FlickKeyDef, dir: FlickDir): void {
-    if (key.special === 'dakuten') {
-      this.h().handleVariantCycle();
-      return;
-    }
-    if (key.special === 'punct') {
-      const raw = getKanaByDir(key, dir);
-      const punct = this.inputMode === InputMode.ALPHANUMERIC ? this.jpToAsciiPunct(raw) : raw;
-      const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-      if (state === InputState.IDLE) {
-        this.h().insertText(punct);
-      } else {
-        this.h().handleDirectKana(punct);
+  private caseLabel(): string { return 'a/A'; }
+
+  private handleTouch(e: TouchEvent, row: number, col: number, key: FlickKeyDef): void {
+    if (key.special === 'case') {
+      if (e.type === TouchType.Up) {
+        if (this.lastChar && /^[a-z]$/.test(this.lastChar)) {
+          this.h().handleBackspace();
+          this.h().insertText(this.lastChar.toUpperCase());
+          this.lastChar = this.lastChar.toUpperCase();
+        }
       }
       return;
     }
-    const kana = this.toMode(getKanaByDir(key, dir));
-    this.h().handleDirectKana(kana);
-  }
-
-  private handleTouch(e: TouchEvent, row: number, col: number, key: FlickKeyDef): void {
     if (e.type === TouchType.Down) {
       const t = e.touches[0];
       this.touchStartX = t.x;
@@ -183,6 +154,16 @@ export struct FlickKeyboardView {
     }
   }
 
+  private onCommit(key: FlickKeyDef, dir: FlickDir): void {
+    if (key.special === 'case') { return; }
+    let ch = getChar(key, dir);
+    if (/^[a-zA-Z]$/.test(ch)) { ch = ch.toLowerCase(); }
+    const st = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (st === InputState.IDLE) { this.h().insertText(ch); }
+    else { this.h().handleKeyPress(ch); }
+    this.lastChar = /^[a-z]$/.test(ch) ? ch : '';
+  }
+
   build() {
     Stack() {
       Column({ space: 4 }) {
@@ -190,7 +171,7 @@ export struct FlickKeyboardView {
           Row({ space: 4 }) {
             this.LeftKey(rowIdx)
             ForEach([0, 1, 2], (colIdx: number) => {
-              this.KeyCell(rowIdx, colIdx, FLICK_GRID[rowIdx][colIdx])
+              this.KeyCell(rowIdx, colIdx, ALPHA_GRID[rowIdx][colIdx])
             }, (colIdx: number) => String(colIdx))
             this.RightKey(rowIdx)
           }
@@ -264,12 +245,8 @@ export struct FlickKeyboardView {
     .height('100%')
   }
 
-  // Left column keys per row
   @Builder LeftKey(rowIdx: number) {
     if (rowIdx === 0) {
-      // 数字パッドの入口は「あA」キー側のサイクルに一本化した(setNumericPadEnabled
-      // 参照)。この枠は常に取消を表示する。押すたびに直近削除した文字を1つずつ
-      // 戻す(消し過ぎた分を押した回数だけ復元する順次アンドゥ)。
       Text('取消')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
@@ -278,6 +255,7 @@ export struct FlickKeyboardView {
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
           this.h().undoLastDeletion();
+          this.lastChar = '';
         })
     } else if (rowIdx === 1) {
       Text('◄')
@@ -286,7 +264,7 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => { this.h().handleCursorLeft(); })
+        .onClick(() => { this.h().handleCursorLeft(); this.lastChar = ''; })
     } else if (rowIdx === 2) {
       Text('記号')
         .fontFamily(JP_FONT_FAMILY)
@@ -298,7 +276,7 @@ export struct FlickKeyboardView {
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
         })
     } else {
-      Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
+      Text('あA')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(12).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
@@ -307,11 +285,11 @@ export struct FlickKeyboardView {
         .onClick(() => {
           this.h().commitTopCandidate();
           this.h().cycleInputMode();
+          this.lastChar = '';
         })
     }
   }
 
-  // Right column keys per row
   @Builder RightKey(rowIdx: number) {
     if (rowIdx === 0) {
       Text('⌫')
@@ -322,6 +300,7 @@ export struct FlickKeyboardView {
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
           if (event.type === TouchType.Down) {
+            this.lastChar = '';
             this.startBsRepeat();
           } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
             this.stopBsRepeat();
@@ -334,7 +313,7 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => { this.h().handleCursorRight(); })
+        .onClick(() => { this.h().handleCursorRight(); this.lastChar = ''; })
     } else if (rowIdx === 2) {
       Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
         .fontFamily(JP_FONT_FAMILY)
@@ -356,6 +335,7 @@ export struct FlickKeyboardView {
           } else {
             this.h().handleSpaceKey();
           }
+          this.lastChar = '';
         })
     } else {
       Text('→')
@@ -375,19 +355,17 @@ export struct FlickKeyboardView {
           } else {
             this.h().handleEnterKey();
           }
+          this.lastChar = '';
         })
     }
   }
 
   @Builder KeyCell(rowIdx: number, colIdx: number, key: FlickKeyDef) {
     if (this.isLandscape) {
-      // Landscape rows are short on height; drop the flick-direction hints and
-      // just show the center glyph. Flicking itself is unaffected — dirFrom()
-      // reads the touch gesture, not this label.
       Text(this.centerLabel(rowIdx, colIdx, key))
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(this.isActive(rowIdx, colIdx) ? 17 : 14)
-        .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+        .fontColor(key.special === 'case' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
         .fontWeight(FontWeight.Medium)
         .textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp)
@@ -400,7 +378,7 @@ export struct FlickKeyboardView {
         })
     } else {
       Column({ space: 0 }) {
-        Text(key.up !== undefined ? this.toMode(key.up) : ' ')
+        Text(key.up !== undefined ? key.up : ' ')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(11)
           .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
@@ -408,7 +386,7 @@ export struct FlickKeyboardView {
           .textAlign(TextAlign.Center)
 
         Row({ space: 0 }) {
-          Text(key.left !== undefined ? this.toMode(key.left) : ' ')
+          Text(key.left !== undefined ? key.left : ' ')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
@@ -417,11 +395,11 @@ export struct FlickKeyboardView {
           Text(this.centerLabel(rowIdx, colIdx, key))
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(this.isActive(rowIdx, colIdx) ? 22 : 18)
-            .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+            .fontColor(key.special === 'case' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
             .fontWeight(FontWeight.Medium)
             .width('50%').textAlign(TextAlign.Center)
 
-          Text(key.right !== undefined ? this.toMode(key.right) : ' ')
+          Text(key.right !== undefined ? key.right : ' ')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
@@ -429,7 +407,7 @@ export struct FlickKeyboardView {
         }
         .width('100%').height('44%')
 
-        Text(key.down !== undefined ? this.toMode(key.down) : ' ')
+        Text(key.down !== undefined ? key.down : ' ')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(11)
           .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
