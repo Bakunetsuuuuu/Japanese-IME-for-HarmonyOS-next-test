@@ -41,9 +41,6 @@ export struct KeyboardView {
 
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
-  private spaceMenuTimer: number = -1;
-  private spaceTouchDownX: number = 0;
-  private spaceTouchDownY: number = 0;
 
   private startBsRepeat(): void {
     this.getHandler().handleBackspace();

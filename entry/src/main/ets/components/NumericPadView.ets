@@ -75,6 +75,9 @@ export struct NumericPadView {
 
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
+  private curDelayTimer: number = -1;
+  private curRepeatTimer: number = -1;
+  private curAccelTimer: number = -1;
 
   private startBsRepeat(): void {
     this.h().handleBackspace();
@@ -90,6 +93,31 @@ export struct NumericPadView {
     clearInterval(this.bsRepeatTimer);
     this.bsDelayTimer = -1;
     this.bsRepeatTimer = -1;
+  }
+
+  // Hold-to-repeat for the ◄/► caret keys, accelerating once held past ~1s.
+  private startCurRepeat(dir: string): void {
+    const move = (): void => {
+      if (dir === 'left') { this.h().handleCursorLeft(); }
+      else { this.h().handleCursorRight(); }
+    };
+    move();
+    this.curDelayTimer = setTimeout(() => {
+      this.curRepeatTimer = setInterval(move, 110);
+      this.curAccelTimer = setTimeout(() => {
+        clearInterval(this.curRepeatTimer);
+        this.curRepeatTimer = setInterval(move, 40);
+      }, 600);
+    }, 400);
+  }
+
+  private stopCurRepeat(): void {
+    clearTimeout(this.curDelayTimer);
+    clearInterval(this.curRepeatTimer);
+    clearTimeout(this.curAccelTimer);
+    this.curDelayTimer = -1;
+    this.curRepeatTimer = -1;
+    this.curAccelTimer = -1;
   }
 
   private insert(ch: string): void {
@@ -254,7 +282,10 @@ export struct NumericPadView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => { this.h().handleCursorLeft(); })
+        .onTouch((event: TouchEvent) => {
+          if (event.type === TouchType.Down) { this.startCurRepeat('left'); }
+          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
+        })
     } else if (rowIdx === 2) {
       Text('記号')
         .fontFamily(JP_FONT_FAMILY)
@@ -303,7 +334,10 @@ export struct NumericPadView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => { this.h().handleCursorRight(); })
+        .onTouch((event: TouchEvent) => {
+          if (event.type === TouchType.Down) { this.startCurRepeat('right'); }
+          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
+        })
     } else if (rowIdx === 2) {
       Text('space')
         .fontFamily(JP_FONT_FAMILY)
