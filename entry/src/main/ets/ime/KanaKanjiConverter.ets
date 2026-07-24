@@ -33537,6 +33537,47 @@ export class KanaKanjiConverter {
     return /[一-鿿々〆〇]/.test(c);
   }
 
+  private static readonly BRACKET_DICT: Record<string, string[]> = {
+    '（': ['（）', '（', '「」', '『』', '【】', '〖〗', '〔〕', '〈〉', '《》'],
+    '）': ['）', '（）', '」', '』', '】', '〗', '〕', '〉', '》'],
+    '(': ['()', '(', '（）', '「」', '『』'],
+    ')': [')', '()', '）', '」', '』'],
+    '「': ['「」', '「', '『』', '【】'],
+    '」': ['」', '「」', '』', '】'],
+    '『': ['『』', '『', '「」'],
+    '』': ['』', '『』', '」'],
+    '【': ['【】', '【', '〖〗'],
+    '】': ['】', '【】', '〗'],
+    '〖': ['〖〗', '〖', '【】'],
+    '〗': ['〗', '〖〗', '】'],
+    '〔': ['〔〕', '〔', '（）'],
+    '〕': ['〕', '〔〕', '）'],
+    '〈': ['〈〉', '〈'],
+    '〉': ['〉', '〈〉'],
+    '《': ['《》', '《'],
+    '》': ['》', '《》'],
+    '{': ['{}', '{', '｛｝'],
+    '}': ['}', '{}', '｝'],
+    '｛': ['｛｝', '｛', '{}'],
+    '｝': ['｝', '｛｝', '}'],
+    '[': ['[]', '[', '［］'],
+    ']': [']', '[]', '］'],
+  };
+
+  static isBracketChar(c: string): boolean {
+    return c.length === 1 && KanaKanjiConverter.BRACKET_DICT[c] !== undefined;
+  }
+
+  static lookupBracket(kana: string): string[] | null {
+    if (kana.length === 0) { return null; }
+    const first = kana[0];
+    const entry = KanaKanjiConverter.BRACKET_DICT[first];
+    if (entry === undefined) { return null; }
+    const result: string[] = [...entry];
+    if (!result.includes(kana)) { result.push(kana); }
+    return result;
+  }
+
   // A candidate with no kana, kanji, or alphanumerics — i.e. only brackets /
   // arrows / punctuation, like "()" or "→". Used to keep such symbol "words"
   // (e.g. かっこ→"()") out of joined multi-segment phrases.

@@ -1386,6 +1386,16 @@ export class InputHandler {
     const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
     const target = composing.slice(0, rangeEnd);
 
+    // Bracket-only input (（, ）, 「, 」, etc.): bypass mozc/dictionary lookup
+    // entirely and use the dedicated bracket dictionary. This ensures bracket
+    // candidates always appear regardless of engine or dictionary state.
+    const bracketCands = KanaKanjiConverter.lookupBracket(target);
+    if (bracketCands !== null) {
+      AppStorage.setOrCreate('candidates', bracketCands);
+      AppStorage.setOrCreate('selectedCandidateIndex', 0);
+      return;
+    }
+
     const fullKatakana = KanaKanjiConverter.toKatakana(target);
     const segs = this.kanjiConverter.segment(target);
     let candidates: string[];
