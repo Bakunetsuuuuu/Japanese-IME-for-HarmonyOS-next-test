@@ -162,6 +162,14 @@ export struct KeyboardView {
       .fontColor(kbTheme(this.isDark).onAccent)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      // QWERTY has no 記号 key, so the shift/caps key doubles as the left-lean
+      // one-handed toggle: swipe up on it (repeat to return to full width).
+      .gesture(
+        PanGesture({ direction: PanDirection.Up, distance: 24 })
+          .onActionStart(() => {
+            this.getHandler().toggleOneHanded('left');
+          })
+      )
       .onClick(() => {
         if (this.isCapsLock) {
           this.isCapsLock = false;
@@ -225,7 +233,7 @@ export struct KeyboardView {
       .gesture(
         PanGesture({ direction: PanDirection.Up, distance: 24 })
           .onActionStart(() => {
-            this.getHandler().setOneHandedMode(true, 'right');
+            this.getHandler().toggleOneHanded('right');
           })
       )
       .onClick(() => {

@@ -240,7 +240,7 @@ export struct FlickKeyboardView {
         .gesture(
           PanGesture({ direction: PanDirection.Up, distance: 24 })
             .onActionStart(() => {
-              this.h().setOneHandedMode(true, 'left');
+              this.h().toggleOneHanded('left');
             })
         )
         .onClick(() => {
@@ -296,7 +296,7 @@ export struct FlickKeyboardView {
         .gesture(
           PanGesture({ direction: PanDirection.Up, distance: 24 })
             .onActionStart(() => {
-              this.h().setOneHandedMode(true, 'right');
+              this.h().toggleOneHanded('right');
             })
         )
         .onClick(() => {
