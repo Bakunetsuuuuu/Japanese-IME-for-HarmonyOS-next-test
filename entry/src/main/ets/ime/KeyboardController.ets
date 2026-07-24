@@ -453,6 +453,20 @@ export class InputHandler {
     }
   }
 
+  // Toggle one-handed mode for a given side, driven by the same key-swipe both
+  // to enter and to leave: an up-swipe engages that side, and repeating it while
+  // already leaning that way returns to full width. Swiping the other side's key
+  // switches sides directly.
+  toggleOneHanded(side: string): void {
+    const on = AppStorage.get<boolean>('oneHandedMode') ?? false;
+    const cur = AppStorage.get<string>('oneHandedSide') ?? 'right';
+    if (on && cur === side) {
+      this.setOneHandedMode(false, side);
+    } else {
+      this.setOneHandedMode(true, side);
+    }
+  }
+
   // Switching the keyboard layout from the keyboard's own settings panel
   // takes effect immediately (same process, no reload round-trip needed) —
   // more reliable than the main-app toggle, which depends on the extension
