@@ -668,12 +668,33 @@ export class InputHandler {
     this.pushPredictions(words);
   }
 
+  // Re-checks the OS light/dark setting on every keyboard launch, not just at
+  // extension process creation / onConfigurationUpdate. Those two alone
+  // should in principle keep 'isDark' current for the whole life of the IME
+  // extension process, but that process outlives many keyboard show/hide
+  // cycles and onConfigurationUpdate delivery to this extension type isn't
+  // reliably prompt on every device/OS build -- so a theme switched while the
+  // keyboard was hidden could leave 'isDark' stale (wrong background/text
+  // colors across the panel, e.g. the one-handed hint popup rendering with
+  // the light theme's colors under a dark OS). Same read as
+  // KeyboardController.applyColorMode; duplicated rather than shared because
+  // this runs on InputHandler, which only holds the InputMethodExtensionContext,
+  // not a KeyboardController reference.
+  private refreshColorMode(): void {
+    if (!this.imeContext) { return; }
+    try {
+      const cm = (this.imeContext.config as ESObject)['colorMode'] as number;
+      AppStorage.setOrCreate('isDark', cm === 0);
+    } catch (_e) {}
+  }
+
   onInputStart(
     kbCtrl: inputMethodEngine.KeyboardController,
     client: inputMethodEngine.InputClient
   ): void {
     this.kbController = kbCtrl;
     this.inputClient = client;
+    this.refreshColorMode();
     this.converter.reset();
     this.reloadUserDict();
     this.reloadSettings();
