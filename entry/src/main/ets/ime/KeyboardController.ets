@@ -1006,7 +1006,14 @@ export class InputHandler {
     this.bChosen = [];
     this.bCur = 0;
     this.lastDeletedChar = '';
-    this.insertedBuffer = [];
+    // NOTE: insertedBuffer is deliberately NOT cleared here. It is a rolling
+    // log of characters actually inserted into the field (capped at 50), used
+    // by the IDLE backspace to know which char it is deleting so the 取消 key
+    // can restore it. resetComposition runs after every commit, so clearing it
+    // here threw away the just-committed word's characters -- backspacing a
+    // committed word then recorded nothing, and 取消 kept replaying whatever
+    // stale history remained. It is cleared only on field start/stop
+    // (onInputStart / onInputStop), which is the correct scope for it.
     this.restoreStack = [];
     this.conversionEnd = 0;
     AppStorage.setOrCreate('composingText', '');
