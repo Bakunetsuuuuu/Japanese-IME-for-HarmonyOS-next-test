@@ -600,6 +600,19 @@ export class InputHandler {
     this.predictionWordGroups = wordGroups;
   }
 
+  // In casual JP chat "。" is rarely typed; sentences/clauses are broken with a
+  // 全角スペース, a newline, or by sending (Enter). Treat those the same way a
+  // sentence-ending mark is treated in pushPredictions: drop the running word
+  // context so the NEXT commit is learned as a fresh opener (口癖 の書き出し)
+  // rather than chained across the break, and surface this user's habitual
+  // openers right now.
+  private markSentenceBoundary(): void {
+    this.recentWords = [];
+    const openers = NextWordPredictor.openers();
+    AppStorage.setOrCreate('predictions', openers);
+    this.predictionWordGroups = openers.map((w: string): string[] => [w]);
+  }
+
   // Reorder conversion candidates so any the user has actually written after the
   // current recent-word context lead. General homophone disambiguation from real
   // usage (the learned next-word bigram), the scalable counterpart to the
@@ -726,7 +739,13 @@ export class InputHandler {
 
     if (state === InputState.IDLE || composing.length === 0) {
       const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
-      this.insertText(mode === InputMode.ALPHANUMERIC ? ' ' : '　');
+      if (mode === InputMode.ALPHANUMERIC) {
+        this.insertText(' ');
+      } else {
+        // A 全角スペース in JP mode is a chat clause break -> sentence boundary.
+        this.insertText('　');
+        this.markSentenceBoundary();
+      }
       return;
     }
 
@@ -831,6 +850,10 @@ export class InputHandler {
       }).catch((_e: Error) => {
         this.inputClient?.sendKeyFunction(0);
       });
+      // Enter in an idle field sends the message (or inserts a newline): either
+      // way the current sentence is finished, so reset context and offer the
+      // next-message openers.
+      this.markSentenceBoundary();
     }
   }
 
