@@ -17,6 +17,7 @@ import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
+import { EmojiSuggest } from './EmojiSuggest';
 import { registerJpFont } from '../components/JpFont';
 
 interface InputMethodSubtype {
@@ -197,9 +198,14 @@ export class InputHandler {
   private learningSaveTimer: number = -1;
   private nextWordPrefs: dataPreferences.Preferences | undefined = undefined;
   private nextWordSaveTimer: number = -1;
-  // Surface of the immediately-preceding commit, used as the bigram key for
-  // next-word learning (see NextWordPredictor / pushPredictions).
-  private lastCommittedSurface: string = '';
+  // The last (up to) two committed words, at word granularity, used as the
+  // 1- and 2-word context for next-word prediction/learning (see
+  // NextWordPredictor / pushPredictions). Newest last.
+  private recentWords: string[] = [];
+  // Parallel to the 'predictions' AppStorage strip: the individual word(s) each
+  // displayed chip represents (a phrase chip's own words, or [text] for a
+  // plain single-word/emoji chip) -- see pushPredictions/commitPrediction.
+  private predictionWordGroups: string[][] = [];
   private symbolPrefs: dataPreferences.Preferences | undefined = undefined;
   private symbolSaveTimer: number = -1;
   // Per-symbol tap counts, used to rank the symbol panel's "recent" tab by
@@ -236,6 +242,9 @@ export class InputHandler {
       })
       .then((val: dataPreferences.ValueType) => {
         try {
+          // Either the v2 {v,uni,bi} store or a legacy flat unigram map; the
+          // cast satisfies setLearned's union parameter and setLearned itself
+          // decides which shape it is (by checking `.v`) and migrates the old one.
           const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
           NextWordPredictor.setLearned(data);
         } catch (_e) {}
@@ -519,36 +528,118 @@ export class InputHandler {
     }, 2000);
   }
 
-  // The word next-word prediction should key on after committing `text`: the
-  // final 文節's surface when a multi-segment sentence was committed (recovered
-  // from the same alignment learnCommit uses), otherwise the whole text. Keying
-  // on the tail word means 「今日は」→ predicts after は，「駅で待つ」→ after 待つ,
-  // instead of on the useless whole-sentence string.
-  private predictionTailWord(text: string): string {
+  // The individual words a commit consists of, newest-relevant last: every 文節
+  // surface when a multi-segment sentence was committed (recovered from the same
+  // alignment learnCommit uses), otherwise the whole text as one word. Splitting
+  // a committed sentence into its words is what lets next-word learning pick up
+  // the sentence-internal flow (映画→を→見る), not just the final word.
+  private committedWords(text: string): string[] {
     const a = this.lastAlignment;
     if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
-      return text.slice(a.prefixText.length);
+      const words = a.prefixSurfaces.slice();
+      words.push(text.slice(a.prefixText.length));
+      return words.filter((w: string) => w.length > 0);
     }
-    return text;
+    return text.length > 0 ? [text] : [];
   }
 
-  // Record the previous→current word transition for learning, then publish the
-  // predicted next words for the just-committed word into the candidate strip.
-  // Called on every commit (conversion or tapped prediction); the strip stays
-  // visible in the IDLE state until the user starts a new composition (which
-  // clears it -- see updateCandidates).
-  private pushPredictions(committed: string, tailWord: string): void {
-    if (this.lastCommittedSurface.length > 0) {
-      NextWordPredictor.record(this.lastCommittedSurface, committed);
-      this.saveNextWord();
+  // Learn this commit's word transitions with a rolling 2-word context, then
+  // publish the next-word strip. `newWords` are the words just committed (a
+  // whole sentence contributes each of its 文節). Called on every commit
+  // (conversion or tapped prediction); the strip stays visible in IDLE until a
+  // new composition starts (which clears it -- see updateCandidates).
+  private pushPredictions(newWords: string[]): void {
+    let w1 = this.recentWords.length >= 2 ? this.recentWords[this.recentWords.length - 2] : '';
+    let w2 = this.recentWords.length >= 1 ? this.recentWords[this.recentWords.length - 1] : '';
+    for (const w of newWords) {
+      if (w.length === 0) { continue; }
+      // A word with nothing before it, or one right after a sentence-ending
+      // word, begins a sentence -- learn it as a habitual opener rather than
+      // recording a cross-sentence bigram (which would just be junk context).
+      if (w2.length === 0 || NextWordPredictor.isSentenceEnd(w2)) {
+        NextWordPredictor.recordOpener(w);
+      } else {
+        NextWordPredictor.record(w1, w2, w); // (prev2, prev1) -> w
+      }
+      w1 = w2;
+      w2 = w;
     }
-    this.lastCommittedSurface = committed;
-    AppStorage.setOrCreate('predictions', NextWordPredictor.predict(tailWord));
+    this.saveNextWord();
+    this.recentWords = [];
+    if (w1.length > 0) { this.recentWords.push(w1); }
+    if (w2.length > 0) { this.recentWords.push(w2); }
+    // Strip, in priority order: a personal habitual phrase (口癖/定型文, e.g. a
+    // recurring sign-off 了解しました！ or a favorite filler like マジで) as ONE
+    // multi-word chip when the user has repeated it enough to be a clear habit
+    // (see NextWordPredictor.phraseCompletion) -- one tap instead of one per
+    // word; then emoji for the last word; then ordinary single-word next-word
+    // predictions. predictionWordGroups is kept parallel to the displayed strip
+    // so commitPrediction can replay a multi-word chip's OWN words through
+    // pushPredictions (correct learning bookkeeping) rather than treating the
+    // whole concatenated phrase as a single "word".
+    const strip: string[] = [];
+    const wordGroups: string[][] = [];
+    const pushChip = (text: string, words: string[]): void => {
+      if (text.length > 0 && strip.indexOf(text) < 0 && strip.length < 6) {
+        strip.push(text);
+        wordGroups.push(words);
+      }
+    };
+    if (NextWordPredictor.isSentenceEnd(w2)) {
+      // Just finished a sentence: offer this user's habitual next-sentence
+      // openers instead of continuations of the punctuation-tailed word (which
+      // has none). Keeps the strip useful across sentence boundaries.
+      for (const w of NextWordPredictor.openers()) { pushChip(w, [w]); }
+    } else if (w2.length > 0) {
+      const phrase = NextWordPredictor.phraseCompletion(w2, w1);
+      if (phrase.length >= 2) { pushChip(phrase.join(''), phrase); }
+      for (const e of EmojiSuggest.forSurface(w2)) { pushChip(e, [e]); }
+      for (const w of NextWordPredictor.predict(w2, w1)) { pushChip(w, [w]); }
+    }
+    AppStorage.setOrCreate('predictions', strip);
+    this.predictionWordGroups = wordGroups;
   }
 
-  // Commit a tapped next-word prediction. Nothing is composing, so this inserts
-  // the word directly, records the transition, and re-predicts from the tapped
-  // word so predictions chain (私 → tap は → tap …).
+  // In casual JP chat "。" is rarely typed; sentences/clauses are broken with a
+  // 全角スペース, a newline, or by sending (Enter). Treat those the same way a
+  // sentence-ending mark is treated in pushPredictions: drop the running word
+  // context so the NEXT commit is learned as a fresh opener (口癖 の書き出し)
+  // rather than chained across the break, and surface this user's habitual
+  // openers right now.
+  private markSentenceBoundary(): void {
+    this.recentWords = [];
+    const openers = NextWordPredictor.openers();
+    AppStorage.setOrCreate('predictions', openers);
+    this.predictionWordGroups = openers.map((w: string): string[] => [w]);
+  }
+
+  // Reorder conversion candidates so any the user has actually written after the
+  // current recent-word context lead. General homophone disambiguation from real
+  // usage (the learned next-word bigram), the scalable counterpart to the
+  // hand-curated CONTEXT_HINTS table: it needs no per-word entries and covers
+  // whatever vocabulary this user writes. Stable: matched candidates keep their
+  // learned order, everything else keeps its original order.
+  private applyContextRerank(candidates: string[]): string[] {
+    if (candidates.length < 2 || this.recentWords.length === 0) { return candidates; }
+    const prev1 = this.recentWords[this.recentWords.length - 1];
+    const prev2 = this.recentWords.length >= 2 ? this.recentWords[this.recentWords.length - 2] : undefined;
+    const learned = NextWordPredictor.learnedNext(prev1, prev2);
+    if (learned.length === 0) { return candidates; }
+    const boosted: string[] = [];
+    for (const s of learned) {
+      if (candidates.indexOf(s) >= 0 && boosted.indexOf(s) < 0) { boosted.push(s); }
+    }
+    if (boosted.length === 0) { return candidates; }
+    const rest = candidates.filter((c: string) => boosted.indexOf(c) < 0);
+    return [...boosted, ...rest];
+  }
+
+  // Commit a tapped next-word prediction (a plain word, an emoji, or a
+  // multi-word habitual-phrase chip). Nothing is composing, so this inserts
+  // the chip's text directly, then replays its OWN word(s) through
+  // pushPredictions -- for a phrase chip that both correctly learns each
+  // internal transition (reinforcing the habit further) and re-predicts from
+  // its true last word, so predictions keep chaining naturally.
   commitPrediction(index: number): void {
     const preds = AppStorage.get<string[]>('predictions') ?? [];
     if (index < 0 || index >= preds.length) { return; }
@@ -556,7 +647,10 @@ export class InputHandler {
     if (text.length === 0) { return; }
     this.insertText(text);
     KanaKanjiConverter.addContext(text);
-    this.pushPredictions(text, text);
+    const words = index < this.predictionWordGroups.length && this.predictionWordGroups[index].length > 0
+      ? this.predictionWordGroups[index]
+      : [text];
+    this.pushPredictions(words);
   }
 
   onInputStart(
@@ -594,7 +688,11 @@ export class InputHandler {
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
     AppStorage.setOrCreate('predictions', [] as string[]);
-    this.lastCommittedSurface = '';
+    this.recentWords = [];
+    this.predictionWordGroups = [];
+    // Leaving the field: drop the recent-context buffer so homophone ranking in
+    // the next app/text box doesn't inherit this one's context.
+    KanaKanjiConverter.clearContext();
     AppStorage.setOrCreate('inputState', InputState.IDLE);
   }
 
@@ -641,7 +739,13 @@ export class InputHandler {
 
     if (state === InputState.IDLE || composing.length === 0) {
       const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
-      this.insertText(mode === InputMode.ALPHANUMERIC ? ' ' : '　');
+      if (mode === InputMode.ALPHANUMERIC) {
+        this.insertText(' ');
+      } else {
+        // A 全角スペース in JP mode is a chat clause break -> sentence boundary.
+        this.insertText('　');
+        this.markSentenceBoundary();
+      }
       return;
     }
 
@@ -679,8 +783,9 @@ export class InputHandler {
       this.inputClient?.deleteForward(1);
       // The committed word the next-word strip was keyed on is being edited
       // away -- retire the strip so a now-stale prediction can't be tapped.
-      if (this.lastCommittedSurface.length > 0) {
-        this.lastCommittedSurface = '';
+      if (this.recentWords.length > 0) {
+        this.recentWords = [];
+        this.predictionWordGroups = [];
         AppStorage.setOrCreate('predictions', [] as string[]);
       }
       return;
@@ -745,6 +850,10 @@ export class InputHandler {
       }).catch((_e: Error) => {
         this.inputClient?.sendKeyFunction(0);
       });
+      // Enter in an idle field sends the message (or inserts a newline): either
+      // way the current sentence is finished, so reset context and offer the
+      // next-message openers.
+      this.markSentenceBoundary();
     }
   }
 
@@ -777,9 +886,9 @@ export class InputHandler {
       }
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
-      const tail = this.predictionTailWord(text);
+      const words = this.committedWords(text);
       this.resetComposition();
-      this.pushPredictions(text, tail);
+      this.pushPredictions(words);
       return;
     }
     this.resetComposition();
@@ -837,9 +946,9 @@ export class InputHandler {
       }
       this.insertText(chosen);
       KanaKanjiConverter.addContext(chosen);
-      const tail = this.predictionTailWord(chosen);
+      const words = this.committedWords(chosen);
       this.resetComposition();
-      this.pushPredictions(chosen, tail);
+      this.pushPredictions(words);
       return;
     }
     this.commitPending();
@@ -1201,6 +1310,7 @@ export class InputHandler {
     // A new composition has started -- retire the post-commit next-word strip
     // so it doesn't linger next to live conversion candidates.
     AppStorage.setOrCreate('predictions', [] as string[]);
+    this.predictionWordGroups = [];
 
     const fullKatakana = KanaKanjiConverter.toKatakana(composing);
     const segs = this.kanjiConverter.segment(composing);
@@ -1253,7 +1363,15 @@ export class InputHandler {
         // it would produce nonsense like "()よ" for かっこよ. Fall back to the
         // plain kana/katakana candidates instead of using that prefix.
         const lastSeg = segs[segs.length - 1];
-        const lastCands = this.kanjiConverter.lookup(lastSeg);
+        let lastCands = this.kanjiConverter.lookup(lastSeg);
+        // The last segment is converted here with no context (unlike prefix
+        // segments, which go through autoConvert). Let a context rule force its
+        // lead -- e.g. a trailing おく auxiliary after a て/で form stays kana
+        // (読んで + おいて → 読んでおいて, not 読んで置いて).
+        const forcedLead = KanaKanjiConverter.contextLead(lastSeg, prefixText);
+        if (forcedLead !== null && lastCands.length > 0 && lastCands[0] !== forcedLead) {
+          lastCands = [forcedLead, ...lastCands.filter((c: string) => c !== forcedLead)];
+        }
         const segCands = hasSymbolPrefix ? [] : lastCands.map((c: string) => prefixText + c);
         candidates = [];
         if (hasSymbolPrefix) {
@@ -1315,6 +1433,15 @@ export class InputHandler {
     if (altSeg !== null && !candidates.includes(altSeg)) {
       candidates.splice(insertAt, 0, altSeg);
     }
+
+    // General learned-context rerank: if the user has actually written one of
+    // these candidates after the current context before (映画を→見る, 資料を→作る),
+    // pull it to the front. Unlike the hand-curated CONTEXT_HINTS table this
+    // generalises to EVERY word pair the user types -- no per-homophone coding,
+    // it just learns. Empty (no reorder) until the pair has been written, and
+    // it only ever matches a full-word candidate, so partial-input candidate
+    // lists are untouched.
+    candidates = this.applyContextRerank(candidates);
 
     // Predictive completion: once enough of a known common phrase's reading
     // has been typed to be unambiguous, lead with the whole thing rather than
@@ -1561,41 +1688,13 @@ export class InputHandler {
     }
   }
 
-  private static readonly BRACKET_PAIRS: Set<string> =
-    new Set(['()', '（）', '「」', '[]', '{}', '【】', '『』', '〔〕', '［］', '｛｝']);
-
-  // Move the caret between a just-inserted bracket pair. Every BRACKET_PAIRS
-  // entry is exactly two BMP code units (() （） 「」 【】 …), so exactly one
-  // left-move lands the caret between them.
-  //
-  // Two failure modes drove this to a DELAYED, RELATIVE move:
-  //  - Absolute selectByRange(getTextIndexAtCursor()-1) put the caret several
-  //    characters PAST the bracket whenever the field had text after the cursor,
-  //    because that editor's getTextIndexAtCursor doesn't reliably return the
-  //    live caret offset. A relative move can't overshoot -- it steps one unit
-  //    left from wherever the caret actually is.
-  //  - A relative move fired immediately in insertText's .then() did nothing,
-  //    because insertText's promise can resolve before the edit is applied, so
-  //    the move ran against pre-insert state and was undone by the settling
-  //    insert. Deferring it a couple of frames lets the insert land first.
-  // Only one move is issued (a fixed delay, not a retry loop): a second move
-  // after the first succeeded would push the caret out the left of the pair.
-  private placeCaretBetweenBrackets(client: inputMethodEngine.InputClient): void {
-    setTimeout(() => {
-      client.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
-        .catch((e: Error) => console.error('shuntiIME moveCursor(bracket) failed', JSON.stringify(e)));
-    }, 40);
-  }
-
   insertText(text: string): void {
-    if (InputHandler.BRACKET_PAIRS.has(text) && this.inputClient) {
-      const client = this.inputClient;
-      client.insertText(text).then(() => {
-        this.placeCaretBetweenBrackets(client);
-      }).catch((e: Error) => console.error('shuntiIME insertText(bracket) failed', JSON.stringify(e)));
-    } else {
-      this.inputClient?.insertText(text);
-    }
+    // Brackets used to auto-place the caret between the pair (「|」), but no
+    // caret-move primitive worked reliably across the editors this IME runs in
+    // -- moveCursor was a no-op on some, and the absolute-index selectByRange
+    // overshot on others -- so the pair is now inserted plainly and the caret
+    // stays after it, same as any other committed text.
+    this.inputClient?.insertText(text);
     if (text.length > 0) {
       for (let i = 0; i < text.length; i++) {
         this.insertedBuffer.push(text[i]);

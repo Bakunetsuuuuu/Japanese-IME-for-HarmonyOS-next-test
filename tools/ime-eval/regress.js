@@ -58,7 +58,9 @@ function convertWith(conv, KKC, reading) {
   if ((full[0] !== fullKata && full[0] !== reading) || KKC.isDictionaryWord(reading)) return full[0];
   const prefixParts = segs.slice(0, -1).map((s, i) => conv.autoConvert(s, segs[i + 1], segs[i - 1]));
   if (prefixParts.some((p) => KKC.isSymbolOnly(p))) return reading;
-  return prefixParts.join('') + conv.lookup(segs[segs.length - 1])[0];
+  const _ls = segs[segs.length - 1], _pt = prefixParts.join('');
+  const _lc = conv.lookup(_ls), _f = (typeof KKC.contextLead === 'function') ? KKC.contextLead(_ls, _pt) : null;
+  return _pt + ((_f !== null && _lc[0] !== _f) ? _f : _lc[0]);
 }
 
 function main() {
