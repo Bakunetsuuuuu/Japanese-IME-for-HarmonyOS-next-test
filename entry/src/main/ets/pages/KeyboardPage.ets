@@ -110,215 +110,233 @@ struct KeyboardPage {
   }
 
   build() {
-    Column() {
-      // Symbol/Emoji/Settings views take the full panel (no preview bar).
-      // Numeric keeps the preview bar — without it the pad's rows stretch to
-      // fill the whole panel height and end up uncomfortably tall.
-      if (this.keyboardSubMode === 'symbol') {
-        SymbolView()
-      } else if (this.keyboardSubMode === 'emoji') {
-        EmojiView()
-      } else if (this.keyboardSubMode === 'settings') {
-        SettingsBar()
-      } else {
-        // Preview bar
-        if (this.inputState === InputState.BUNSETSU) {
-          // Two-row preview: segment chips on top, candidates below
-          Column() {
-            BunsetsuBar({
-              segments: this.bunsetsuTexts,
-              currentIndex: this.bunsetsuCurrent
-            })
-            CandidateBar({
-              candidates: this.candidates,
-              selectedIndex: this.selectedIndex,
-              showExpand: true
-            })
-          }
-          .width('100%')
-          .backgroundColor(kbTheme(this.isDark).panelBg)
-          .borderWidth({ bottom: 1 })
-          .borderColor(kbTheme(this.isDark).divider)
+    Stack() {
+      Column() {
+        // Symbol/Emoji/Settings views take the full panel (no preview bar).
+        // Numeric keeps the preview bar — without it the pad's rows stretch to
+        // fill the whole panel height and end up uncomfortably tall.
+        if (this.keyboardSubMode === 'symbol') {
+          SymbolView()
+        } else if (this.keyboardSubMode === 'emoji') {
+          EmojiView()
+        } else if (this.keyboardSubMode === 'settings') {
+          SettingsBar()
         } else {
-          Column() {
-            // Composing kana strip — always visible to prevent layout shifts.
-            // Landscape has much less vertical room to spare for the keys below,
-            // so this strip and the candidate row underneath both run compact.
-            Row() {
-              if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
-                if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
-                  Text(this.composingText.slice(0, this.convEnd))
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(this.isLandscape ? 11 : 16)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor(kbTheme(this.isDark).textPrimary)
-                    .maxLines(1)
-                    .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
-                  Text(this.composingText.slice(this.convEnd))
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(this.isLandscape ? 11 : 16)
-                    .fontColor(kbTheme(this.isDark).textSecondary)
-                    .maxLines(1)
-                } else {
-                  Text(this.composingText + this.pendingRomaji)
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(this.isLandscape ? 11 : 16)
-                    .fontWeight(FontWeight.Medium)
-                    .fontColor(kbTheme(this.isDark).textPrimary)
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    .padding({ left: 12, right: 8 })
-                    .border((this.composingText + this.pendingRomaji).length > 0 ?
-                      { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
-                      { width: { bottom: 0 } })
-                    .layoutWeight(1)
-                }
-              }
-              Blank()
-              Text('設定')
-                .fontFamily(JP_FONT_FAMILY)
-                .fontSize(this.isLandscape ? 10 : 13)
-                .fontColor(kbTheme(this.isDark).textSecondary)
-                .onClick(() => {
-                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
-                })
+          // Preview bar
+          if (this.inputState === InputState.BUNSETSU) {
+            // Two-row preview: segment chips on top, candidates below
+            Column() {
+              BunsetsuBar({
+                segments: this.bunsetsuTexts,
+                currentIndex: this.bunsetsuCurrent
+              })
+              CandidateBar({
+                candidates: this.candidates,
+                selectedIndex: this.selectedIndex,
+                showExpand: true
+              })
             }
             .width('100%')
-            .height(this.isLandscape ? 14 : 28)
             .backgroundColor(kbTheme(this.isDark).panelBg)
-            .alignItems(VerticalAlign.Center)
-            .padding({ left: 12, right: 8 })
-
-            // Candidate bar row + layout toggle
-            Row() {
+            .borderWidth({ bottom: 1 })
+            .borderColor(kbTheme(this.isDark).divider)
+          } else {
+            Column() {
+              // Composing kana strip — always visible to prevent layout shifts.
+              // Landscape has much less vertical room to spare for the keys below,
+              // so this strip and the candidate row underneath both run compact.
               Row() {
-                if (this.candidates.length > 0) {
-                  CandidateBar({
-                    candidates: this.candidates,
-                    selectedIndex: this.selectedIndex,
-                    showExpand: true
-                  })
-                } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
-                  this.predictions.length > 0) {
-                  // Idle right after a commit: offer the likely next words to tap.
-                  PredictionBar({ predictions: this.predictions })
-                } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
-                  this.clipboardPreview.length > 0) {
-                  // Gboard-style: centered paste suggestion when nothing is composing,
-                  // rather than left-aligned like an actual conversion candidate.
-                  Text(this.clipboardPreview)
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(this.isLandscape ? 11 : 16)
-                    .maxLines(1)
-                    .textOverflow({ overflow: TextOverflow.Ellipsis })
-                    // Cap how wide the chip can grow instead of letting it stretch to
-                    // fill the row — short clips hug their text, long ones truncate
-                    // with "…" at the cap instead of a background that runs on past
-                    // where the (ellipsized) text actually ends.
-                    .constraintSize({ maxWidth: '90%' })
-                    .padding(this.isLandscape ?
-                      { left: 8, right: 8, top: 2, bottom: 2 } :
-                      { left: 12, right: 12, top: 6, bottom: 6 })
-                    .borderRadius(this.isLandscape ? 11 : 17)
-                    .backgroundColor(kbTheme(this.isDark).candidateBg)
-                    .fontColor(kbTheme(this.isDark).textSecondary)
-                    .onClick(() => {
-                      const result = InputHandler.getInstance().pasteClipboard();
-                      if (result === 'extendAction') {
-                        // Fire-and-forget request to the focused field's own
-                        // paste handler (see pasteClipboard's comment) --
-                        // there's no reliable signal for whether it actually
-                        // had anything to paste, so this can only say the
-                        // request went out, not that it definitely worked.
-                        promptAction.showToast({
-                          message: '貼り付け操作を送信しました（アプリによっては反映されないことがあります）',
-                        });
-                      } else if (result === 'none') {
-                        promptAction.showToast({
-                          message: '画像・ファイルはキーボードから直接貼り付けできません。貼り付け先アプリ自体の貼り付け機能をご利用ください',
-                        });
-                      }
-                    })
+                if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
+                  if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
+                    Text(this.composingText.slice(0, this.convEnd))
+                      .fontFamily(JP_FONT_FAMILY)
+                      .fontSize(this.isLandscape ? 11 : 16)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(kbTheme(this.isDark).textPrimary)
+                      .maxLines(1)
+                      .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
+                    Text(this.composingText.slice(this.convEnd))
+                      .fontFamily(JP_FONT_FAMILY)
+                      .fontSize(this.isLandscape ? 11 : 16)
+                      .fontColor(kbTheme(this.isDark).textSecondary)
+                      .maxLines(1)
+                  } else {
+                    Text(this.composingText + this.pendingRomaji)
+                      .fontFamily(JP_FONT_FAMILY)
+                      .fontSize(this.isLandscape ? 11 : 16)
+                      .fontWeight(FontWeight.Medium)
+                      .fontColor(kbTheme(this.isDark).textPrimary)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .padding({ left: 12, right: 8 })
+                      .border((this.composingText + this.pendingRomaji).length > 0 ?
+                        { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
+                        { width: { bottom: 0 } })
+                      .layoutWeight(1)
+                  }
                 }
+                Blank()
+                Text('設定')
+                  .fontFamily(JP_FONT_FAMILY)
+                  .fontSize(this.isLandscape ? 10 : 13)
+                  .fontColor(kbTheme(this.isDark).textSecondary)
+                  .onClick(() => {
+                    AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                  })
+              }
+              .width('100%')
+              .height(this.isLandscape ? 14 : 28)
+              .backgroundColor(kbTheme(this.isDark).panelBg)
+              .alignItems(VerticalAlign.Center)
+              .padding({ left: 12, right: 8 })
+
+              // Candidate bar row + layout toggle
+              Row() {
+                Row() {
+                  if (this.candidates.length > 0) {
+                    CandidateBar({
+                      candidates: this.candidates,
+                      selectedIndex: this.selectedIndex,
+                      showExpand: true
+                    })
+                  } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
+                    this.predictions.length > 0) {
+                    // Idle right after a commit: offer the likely next words to tap.
+                    PredictionBar({ predictions: this.predictions })
+                  } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
+                    this.clipboardPreview.length > 0) {
+                    // Gboard-style: centered paste suggestion when nothing is composing,
+                    // rather than left-aligned like an actual conversion candidate.
+                    Text(this.clipboardPreview)
+                      .fontFamily(JP_FONT_FAMILY)
+                      .fontSize(this.isLandscape ? 11 : 16)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      // Cap how wide the chip can grow instead of letting it stretch to
+                      // fill the row — short clips hug their text, long ones truncate
+                      // with "…" at the cap instead of a background that runs on past
+                      // where the (ellipsized) text actually ends.
+                      .constraintSize({ maxWidth: '90%' })
+                      .padding(this.isLandscape ?
+                        { left: 8, right: 8, top: 2, bottom: 2 } :
+                        { left: 12, right: 12, top: 6, bottom: 6 })
+                      .borderRadius(this.isLandscape ? 11 : 17)
+                      .backgroundColor(kbTheme(this.isDark).candidateBg)
+                      .fontColor(kbTheme(this.isDark).textSecondary)
+                      .onClick(() => {
+                        const result = InputHandler.getInstance().pasteClipboard();
+                        if (result === 'extendAction') {
+                          // Fire-and-forget request to the focused field's own
+                          // paste handler (see pasteClipboard's comment) --
+                          // there's no reliable signal for whether it actually
+                          // had anything to paste, so this can only say the
+                          // request went out, not that it definitely worked.
+                          promptAction.showToast({
+                            message: '貼り付け操作を送信しました（アプリによっては反映されないことがあります）',
+                          });
+                        } else if (result === 'none') {
+                          promptAction.showToast({
+                            message: '画像・ファイルはキーボードから直接貼り付けできません。貼り付け先アプリ自体の貼り付け機能をご利用ください',
+                          });
+                        }
+                      })
+                  }
+                }
+                .width('100%')
+                .height(this.isLandscape ? 22 : 48)
+                .justifyContent(FlexAlign.Center)
+                .alignItems(VerticalAlign.Center)
               }
               .width('100%')
               .height(this.isLandscape ? 22 : 48)
-              .justifyContent(FlexAlign.Center)
+              .backgroundColor(kbTheme(this.isDark).panelBg)
               .alignItems(VerticalAlign.Center)
             }
             .width('100%')
-            .height(this.isLandscape ? 22 : 48)
-            .backgroundColor(kbTheme(this.isDark).panelBg)
-            .alignItems(VerticalAlign.Center)
+          }
+
+          // Keyboard — fills all height remaining after the preview bar.
+          // One-handed mode shrinks+docks this via a scale transform anchored to
+          // an edge, rather than touching the pixel-tuned computeKeyWidths /
+          // applyKeyboardWidthsForVp system: each inner view still measures and
+          // lays out its keys at full intended size, then this wrapper visually
+          // (and for hit-testing) scales the whole thing down toward one side.
+          Column() {
+            if (this.keyboardSubMode === 'numeric') {
+              NumericPadView()
+            } else if (this.keyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
+              AlphabetFlickKeyboardView({
+                inputMode: this.inputMode,
+                isLandscape: this.isLandscape
+              })
+            } else if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
+              FlickKeyboardView({
+                inputMode: this.inputMode,
+                isLandscape: this.isLandscape
+              })
+            } else {
+              KeyboardView({
+                inputMode: this.inputMode,
+                isLandscape: this.isLandscape
+              })
+            }
           }
           .width('100%')
+          .layoutWeight(1)
+          .scale(this.oneHandedMode ?
+            { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
+            { x: 1, y: 1 })
         }
-
-        // Keyboard — fills all height remaining after the preview bar.
-        // One-handed mode shrinks+docks this via a scale transform anchored to
-        // an edge, rather than touching the pixel-tuned computeKeyWidths /
-        // applyKeyboardWidthsForVp system: each inner view still measures and
-        // lays out its keys at full intended size, then this wrapper visually
-        // (and for hit-testing) scales the whole thing down toward one side.
-        Column() {
-          if (this.candidateExpanded && this.candidates.length > 0) {
-            ExpandedCandidateView({
-              candidates: this.candidates,
-              selectedIndex: this.selectedIndex
-            })
-          } else if (this.keyboardSubMode === 'numeric') {
-            NumericPadView()
-          } else if (this.keyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
-            AlphabetFlickKeyboardView({
-              inputMode: this.inputMode,
-              isLandscape: this.isLandscape
-            })
-          } else if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
-            FlickKeyboardView({
-              inputMode: this.inputMode,
-              isLandscape: this.isLandscape
-            })
-          } else {
-            KeyboardView({
-              inputMode: this.inputMode,
-              isLandscape: this.isLandscape
-            })
+      }
+      .width('100%')
+      .height('100%')
+      .backgroundColor(kbTheme(this.isDark).panelBg)
+      .onAreaChange((_oldArea: Area, newArea: Area) => {
+        // Confirmed via on-device diagnostics: this device's IME panel framework
+        // silently shrinks the panel to a fraction of the width requested via
+        // panel.resize() (~76% observed, with no corresponding cutout reported —
+        // a software policy, not a hardware inset), so it isn't queryable up
+        // front. Correct key widths from what this root view actually measures,
+        // and also record the (measured / raw guess) ratio as a learned scale
+        // factor — see KeyboardController.computeKeyWidths for why: this panel
+        // is reused across show/hide, so a later resize may not be followed by
+        // a fresh onAreaChange, and the learned scale lets that next guess
+        // start out already corrected instead of reverting to the raw width.
+        const measuredVp = Number(newArea.width);
+        if (measuredVp > 0) {
+          const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
+          applyKeyboardWidthsForVp(measuredVp, isTabletClass);
+          if (!isTabletClass) {
+            const rawFullVp = AppStorage.get<number>('lastRawFullVp') ?? 0;
+            if (rawFullVp > 0) {
+              const ratio = Math.min(1, Math.max(0.3, measuredVp / rawFullVp));
+              const isLand = AppStorage.get<boolean>('lastRawFullVpIsLandscape') ?? this.isLandscape;
+              AppStorage.setOrCreate(isLand ? 'widthScaleLandscape' : 'widthScalePortrait', ratio);
+            }
           }
         }
+      })
+
+      // Expanded candidate list — a top-level Stack sibling of the base panel
+      // above, NOT nested inside the keyboard's own Column. That placement
+      // matters for two reasons: (1) the keyboard Column only spans the area
+      // below the preview/candidate-bar strip, so nesting it there capped the
+      // grid to that same sliver instead of the fuller panel; (2) the keyboard
+      // Column is what one-handed mode's .scale() transform shrinks and docks
+      // to a corner — sitting outside it means the expanded grid always renders
+      // at full size and full position regardless of one-handed mode. Full
+      // width/height so it fully covers (not just overlaps) everything below,
+      // preview strip included.
+      if (this.candidateExpanded && this.candidates.length > 0) {
+        ExpandedCandidateView({
+          candidates: this.candidates,
+          selectedIndex: this.selectedIndex
+        })
         .width('100%')
-        .layoutWeight(1)
-        .scale(this.oneHandedMode ?
-          { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
-          { x: 1, y: 1 })
+        .height('100%')
       }
     }
     .width('100%')
     .height('100%')
-    .backgroundColor(kbTheme(this.isDark).panelBg)
-    .onAreaChange((_oldArea: Area, newArea: Area) => {
-      // Confirmed via on-device diagnostics: this device's IME panel framework
-      // silently shrinks the panel to a fraction of the width requested via
-      // panel.resize() (~76% observed, with no corresponding cutout reported —
-      // a software policy, not a hardware inset), so it isn't queryable up
-      // front. Correct key widths from what this root view actually measures,
-      // and also record the (measured / raw guess) ratio as a learned scale
-      // factor — see KeyboardController.computeKeyWidths for why: this panel
-      // is reused across show/hide, so a later resize may not be followed by
-      // a fresh onAreaChange, and the learned scale lets that next guess
-      // start out already corrected instead of reverting to the raw width.
-      const measuredVp = Number(newArea.width);
-      if (measuredVp > 0) {
-        const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
-        applyKeyboardWidthsForVp(measuredVp, isTabletClass);
-        if (!isTabletClass) {
-          const rawFullVp = AppStorage.get<number>('lastRawFullVp') ?? 0;
-          if (rawFullVp > 0) {
-            const ratio = Math.min(1, Math.max(0.3, measuredVp / rawFullVp));
-            const isLand = AppStorage.get<boolean>('lastRawFullVpIsLandscape') ?? this.isLandscape;
-            AppStorage.setOrCreate(isLand ? 'widthScaleLandscape' : 'widthScalePortrait', ratio);
-          }
-        }
-      }
-    })
   }
 }
