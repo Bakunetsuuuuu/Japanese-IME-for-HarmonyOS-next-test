@@ -32104,6 +32104,16 @@ export class KanaKanjiConverter {
     'へんい': '変移', 'ほうしゅつ': '放出', 'ぼうだい': '膨大', 'ほうてき': '法的', 'ほうる': '放る', 'ぼこう': '母校',
     'ぼつご': '没後', 'めぐむ': '恵む', 'もぞう': '模造', 'もらす': '漏らす', 'やすらか': '安らか', 'ゆうすい': '湧水',
     'ようせつ': '溶接', 'りゃく': '略', 'りんがく': '林学', 'わびる': '詫びる', 'われめ': '割れ目',
+    // Same map, net/casual (5ch-register) subset: common chat vocabulary where
+    // the standard kanji/katakana form sat behind an old-term or okurigana-less
+    // garbage lead (鵜呑 for 鵜呑み, 労咳 for 老害, 揚足 for 揚げ足, 印室 for
+    // 陰湿…). Kana-preferred net words (やばい/えもい/草) and slang/formal
+    // homophones where the formal word must keep [0] (やむ=止む, やみ=闇,
+    // はっぱ=葉っぱ) were deliberately left out.
+    'あおり': '煽り', 'あげあし': '揚げ足', 'あまのじゃく': '天邪鬼', 'いんしつ': '陰湿', 'うのみ': '鵜呑み',
+    'えごさ': 'エゴサ', 'しったかぶり': '知ったかぶり', 'どやがお': 'ドヤ顔', 'へそまがり': 'へそ曲がり',
+    'まうんと': 'マウント', 'みどく': '未読', 'もろは': '諸刃',
+    'やじうま': '野次馬', 'りょうば': '両刃', 'ろうがい': '老害',
   };
 
   // Promote COMMON_WORD_BY_READING[reading] to the front when present.
