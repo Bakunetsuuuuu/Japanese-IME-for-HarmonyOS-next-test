@@ -62,8 +62,6 @@ export struct FlickKeyboardView {
   @State touchStartX: number = 0;
   @State touchStartY: number = 0;
   @State flickDir: FlickDir = 'center';
-  @State showSpaceMenu: boolean = false;
-  @State hoveredSpaceOption: string = '';
 
   private readonly THRESHOLD: number = 20;
 
@@ -203,62 +201,6 @@ export struct FlickKeyboardView {
       .height('100%')
       .padding({ bottom: 8, top: 4 })
 
-      if (this.showSpaceMenu) {
-        Stack() {
-          Column()
-            .width('100%')
-            .height('100%')
-            .backgroundColor('#00000000')
-            .onClick(() => { this.showSpaceMenu = false; this.hoveredSpaceOption = ''; })
-
-          Column() {
-            Row() {
-              Text('設定')
-                .fontFamily(JP_FONT_FAMILY)
-                .fontSize(15).textAlign(TextAlign.Center)
-                .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
-                .backgroundColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
-                .fontColor(this.hoveredSpaceOption === 'settings' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
-                .width('100%')
-                .onHover((isHover: boolean) => {
-                  this.hoveredSpaceOption = isHover ? 'settings' : '';
-                })
-                .onClick(() => {
-                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
-                  this.showSpaceMenu = false;
-                  this.hoveredSpaceOption = '';
-                })
-            }
-            Row() {
-              Text('片手キーボード')
-                .fontFamily(JP_FONT_FAMILY)
-                .fontSize(15).textAlign(TextAlign.Center)
-                .padding({ left: 16, right: 16, top: 12, bottom: 12 }).borderRadius(16)
-                .backgroundColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
-                .fontColor(this.hoveredSpaceOption === 'onehand' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
-                .width('100%')
-                .onHover((isHover: boolean) => {
-                  this.hoveredSpaceOption = isHover ? 'onehand' : '';
-                })
-                .onClick(() => {
-                  const cur = AppStorage.get<boolean>('oneHandedMode') ?? false;
-                  AppStorage.setOrCreate('oneHandedMode', !cur);
-                  this.showSpaceMenu = false;
-                  this.hoveredSpaceOption = '';
-                })
-            }
-          }
-          .padding(6).width(180)
-          .backgroundColor(kbTheme(this.isDark).panelBg)
-          .borderRadius(22)
-          .shadow({ radius: 6, color: kbTheme(this.isDark).shadowColor, offsetY: 4 })
-          .alignSelf(ItemAlign.End)
-          .margin({ right: 8, bottom: '22%' })
-        }
-        .width('100%')
-        .height('100%')
-      }
-
     }
     .width('100%')
     .height('100%')
@@ -294,6 +236,13 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        // Swipe up on the 記号 key -> left-leaning one-handed mode.
+        .gesture(
+          PanGesture({ direction: PanDirection.Up, distance: 24 })
+            .onActionStart(() => {
+              this.h().setOneHandedMode(true, 'left');
+            })
+        )
         .onClick(() => {
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
         })
@@ -343,10 +292,11 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        // Swipe up on the space key -> right-leaning one-handed mode.
         .gesture(
-          LongPressGesture({ duration: 400 })
-            .onAction(() => {
-              this.showSpaceMenu = true;
+          PanGesture({ direction: PanDirection.Up, distance: 24 })
+            .onActionStart(() => {
+              this.h().setOneHandedMode(true, 'right');
             })
         )
         .onClick(() => {
