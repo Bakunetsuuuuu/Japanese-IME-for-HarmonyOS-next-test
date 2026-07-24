@@ -33024,6 +33024,21 @@ export class KanaKanjiConverter {
         list = kana.indexOf('ー') >= 0 ? [kata, kana] : [kana, kata];
       }
     }
+    // Inline dictionary fallback for entries mozc lacks (e.g. かっこ→"()",
+    // symbol readings, emoji mappings). Only fires when the inline dictionary
+    // has entries that aren't already covered by mozc results.
+    const inlineEntry = DICTIONARY[kana];
+    if (inlineEntry && inlineEntry.length > 0) {
+      const hasNew = inlineEntry.some((c: string) => list.indexOf(c) < 0);
+      if (hasNew) {
+        for (const c of inlineEntry) {
+          if (!list.includes(c)) { list.push(c); }
+        }
+        const kata = KanaKanjiConverter.toKatakana(kana);
+        if (kata !== kana && !list.includes(kata)) { list.push(kata); }
+        if (!list.includes(kana)) { list.push(kana); }
+      }
+    }
     // Same user-intent layering as track A's lookupCore (and in the same
     // priority order): the user's learned candidate choices outrank raw
     // dictionary/DP-hint order, and explicitly registered user-dictionary
@@ -33399,6 +33414,25 @@ export class KanaKanjiConverter {
   // form is always available separately in the same candidate list, so they're
   // dropped rather than just deprioritized.
   private static isMarkupArtifact(c: string): boolean {
+    if (c.length > 0 && /^[()（）「」『』【】〖〗｛｝\[\]〈〉《》〔〕〘〙〚〛]+$/.test(c)) {
+      const stack: string[] = [];
+      const pairs: Record<string, string> = {
+        '(': ')', '（': '）', '「': '」', '『': '』', '【': '】',
+        '〖': '〗', '{': '}', '｛': '｝', '[': ']', '〈': '〉',
+        '《': '》', '〔': '〕', '〘': '〙', '〚': '〛'
+      };
+      const closing = new Set(Object.values(pairs));
+      let valid = true;
+      for (const ch of c) {
+        if (pairs[ch] !== undefined) {
+          stack.push(pairs[ch]);
+        } else if (closing.has(ch)) {
+          if (stack.length === 0 || stack[stack.length - 1] !== ch) { valid = false; break; }
+          stack.pop();
+        }
+      }
+      if (valid && stack.length === 0) { return false; }
+    }
     // Gloss/alternate-form annotations that leaked in as a single candidate:
     // 写す・映す, 見る・視る, 書く・描く・画く (interpunct between kanji words), and
     // 嘲笑う / 嘲う (spaced slash). Katakana loanword dots (サン・テグジュペリ) have
