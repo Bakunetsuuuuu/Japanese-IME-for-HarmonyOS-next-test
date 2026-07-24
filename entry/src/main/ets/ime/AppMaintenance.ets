@@ -13,10 +13,11 @@ import type common from '@ohos.app.ability.common';
 // individually hardened (UserDictStore/UserPosStore/ConjugationEngine), so
 // this is a recovery convenience, not the only line of defense.
 export class AppMaintenance {
-  // Learned conversions, symbol-usage frequency: the "it learned my habits"
-  // state. Safe to clear on a whim; regenerates with use.
+  // Learned conversions, next-word/phrase habits, symbol-usage frequency: the
+  // "it learned my habits" state. Safe to clear on a whim; regenerates with use.
   private static readonly LEARNING_STORES: string[] = [
     'shunti_learning',
+    'shunti_nextword',
     'shunti_symbol_freq',
   ];
 
@@ -25,6 +26,7 @@ export class AppMaintenance {
   // yet still "succeeds" as far as the user's recovery goal).
   private static readonly ALL_STORES: string[] = [
     'shunti_learning',
+    'shunti_nextword',
     'shunti_symbol_freq',
     'shunti_userdict',
     'shunti_userpos',

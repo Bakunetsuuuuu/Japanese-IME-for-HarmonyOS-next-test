@@ -43,7 +43,9 @@ function main() {
     if ((full[0] !== fullKata && full[0] !== reading) || KanaKanjiConverter.isDictionaryWord(reading)) return full[0];
     const prefixParts = segs.slice(0, -1).map((s, i) => conv.autoConvert(s, segs[i + 1], segs[i - 1]));
     if (prefixParts.some((p) => KanaKanjiConverter.isSymbolOnly(p))) return reading;
-    return prefixParts.join('') + conv.lookup(segs[segs.length - 1])[0];
+    const _ls = segs[segs.length - 1], _pt = prefixParts.join('');
+    const _lc = conv.lookup(_ls), _f = KanaKanjiConverter.contextLead(_ls, _pt);
+    return _pt + ((_f !== null && _lc[0] !== _f) ? _f : _lc[0]);
   };
 
   const corpus = require('./corpus_test7.js');
