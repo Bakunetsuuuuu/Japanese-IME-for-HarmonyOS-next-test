@@ -919,11 +919,22 @@ export class InputHandler {
         this.learnCommit(reading, text);
         this.saveLearning();
       }
-      this.insertText(text + tail);
-      KanaKanjiConverter.addContext(text + tail);
+      this.insertText(text);
+      KanaKanjiConverter.addContext(text);
       const words = this.committedWords(text);
-      this.resetComposition();
       this.pushPredictions(words);
+      if (tail.length > 0) {
+        this.converter.reset();
+        this.lastAlignment = undefined;
+        this.conversionEnd = tail.length;
+        AppStorage.setOrCreate('composingText', tail);
+        AppStorage.setOrCreate('pendingRomaji', '');
+        AppStorage.setOrCreate('convEnd', tail.length);
+        AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+        this.updateCandidates();
+      } else {
+        this.resetComposition();
+      }
       return;
     }
     this.resetComposition();
@@ -982,11 +993,22 @@ export class InputHandler {
         this.learnCommit(reading, chosen);
         this.saveLearning();
       }
-      this.insertText(chosen + tail);
-      KanaKanjiConverter.addContext(chosen + tail);
+      this.insertText(chosen);
+      KanaKanjiConverter.addContext(chosen);
       const words = this.committedWords(chosen);
-      this.resetComposition();
       this.pushPredictions(words);
+      if (tail.length > 0) {
+        this.converter.reset();
+        this.lastAlignment = undefined;
+        this.conversionEnd = tail.length;
+        AppStorage.setOrCreate('composingText', tail);
+        AppStorage.setOrCreate('pendingRomaji', '');
+        AppStorage.setOrCreate('convEnd', tail.length);
+        AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+        this.updateCandidates();
+      } else {
+        this.resetComposition();
+      }
       return;
     }
     this.commitPending();
