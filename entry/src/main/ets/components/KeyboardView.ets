@@ -62,6 +62,17 @@ export struct KeyboardView {
     this.bsRepeatTimer = -1;
   }
 
+  // Themed content for the one-handed hint popup so it reads as part of the
+  // keyboard (accent bubble, JP font) instead of the default system tooltip.
+  @Builder OneHandHintPopup() {
+    Text(this.oneHandHint === 'left' ? '左手モード' : '右手モード')
+      .fontFamily(JP_FONT_FAMILY)
+      .fontSize(13)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(kbTheme(this.isDark).onAccent)
+      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+  }
+
   build() {
     Stack() {
       Column({ space: 5 }) {
@@ -167,9 +178,12 @@ export struct KeyboardView {
       // control: long-press to reveal the 左手モード hint, then flick up to
       // switch. A plain tap still cycles shift/caps via onClick.
       .bindPopup(this.oneHandHint === 'left', {
-        message: '左手モード',
+        builder: this.OneHandHintPopup,
         placement: Placement.Top,
         enableArrow: true,
+        popupColor: kbTheme(this.isDark).accent,
+        radius: 14,
+        mask: false,
       })
       .gesture(
         GestureGroup(GestureMode.Sequence,
@@ -249,9 +263,12 @@ export struct KeyboardView {
       // while it shows to switch. Gating on the long-press stops a stray flick
       // from misfiring; a plain tap still inserts a space via onClick.
       .bindPopup(this.oneHandHint === 'right', {
-        message: '右手モード',
+        builder: this.OneHandHintPopup,
         placement: Placement.Top,
         enableArrow: true,
+        popupColor: kbTheme(this.isDark).accent,
+        radius: 14,
+        mask: false,
       })
       .gesture(
         GestureGroup(GestureMode.Sequence,
