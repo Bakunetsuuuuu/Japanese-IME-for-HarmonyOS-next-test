@@ -62,6 +62,9 @@ export struct FlickKeyboardView {
   @State touchStartX: number = 0;
   @State touchStartY: number = 0;
   @State flickDir: FlickDir = 'center';
+  // '' | 'right' | 'left' -- which one-handed hint popup is showing (armed by a
+  // long-press on the space / 記号 key; an up-flick while it shows commits).
+  @State oneHandHint: string = '';
 
   private readonly THRESHOLD: number = 20;
 
@@ -70,6 +73,7 @@ export struct FlickKeyboardView {
   private curDelayTimer: number = -1;
   private curRepeatTimer: number = -1;
   private curAccelTimer: number = -1;
+  private ohHintTimer: number = -1;
 
   private h(): InputHandler { return InputHandler.getInstance(); }
 
@@ -265,12 +269,26 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        // Swipe up on the 記号 key -> left-leaning one-handed mode.
+        // Long-press to reveal the 左手モード hint, then flick up to switch.
+        .bindPopup(this.oneHandHint === 'left', {
+          message: '左手モード',
+          placement: Placement.Top,
+          enableArrow: true,
+        })
         .gesture(
-          PanGesture({ direction: PanDirection.Up, distance: 24 })
-            .onActionStart(() => {
-              this.h().toggleOneHanded('left');
-            })
+          GestureGroup(GestureMode.Sequence,
+            LongPressGesture({ duration: 300 })
+              .onAction(() => {
+                this.oneHandHint = 'left';
+                this.ohHintTimer = setTimeout(() => { this.oneHandHint = ''; }, 1500);
+              }),
+            PanGesture({ direction: PanDirection.Up, distance: 20 })
+              .onActionStart(() => {
+                this.h().toggleOneHanded('left');
+                clearTimeout(this.ohHintTimer);
+                this.oneHandHint = '';
+              })
+          )
         )
         .onClick(() => {
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
@@ -324,12 +342,28 @@ export struct FlickKeyboardView {
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        // Swipe up on the space key -> right-leaning one-handed mode.
+        // Long-press the space key to reveal the 右手モード hint, then flick up
+        // while it shows to switch. Gating on the long-press stops a stray flick
+        // from misfiring. A plain tap still inserts a space via onClick.
+        .bindPopup(this.oneHandHint === 'right', {
+          message: '右手モード',
+          placement: Placement.Top,
+          enableArrow: true,
+        })
         .gesture(
-          PanGesture({ direction: PanDirection.Up, distance: 24 })
-            .onActionStart(() => {
-              this.h().toggleOneHanded('right');
-            })
+          GestureGroup(GestureMode.Sequence,
+            LongPressGesture({ duration: 300 })
+              .onAction(() => {
+                this.oneHandHint = 'right';
+                this.ohHintTimer = setTimeout(() => { this.oneHandHint = ''; }, 1500);
+              }),
+            PanGesture({ direction: PanDirection.Up, distance: 20 })
+              .onActionStart(() => {
+                this.h().toggleOneHanded('right');
+                clearTimeout(this.ohHintTimer);
+                this.oneHandHint = '';
+              })
+          )
         )
         .onClick(() => {
           const st = AppStorage.get<string>('inputState') ?? 'IDLE';

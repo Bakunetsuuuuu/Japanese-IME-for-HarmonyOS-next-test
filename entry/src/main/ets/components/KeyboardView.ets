@@ -29,6 +29,9 @@ export struct KeyboardView {
   @Prop isLandscape: boolean = false;
   @State isShift: boolean = false;
   @State isCapsLock: boolean = false;
+  // '' | 'right' | 'left' -- which one-handed hint popup is showing (armed by a
+  // long-press on the space / shift key; an up-flick while it shows commits).
+  @State oneHandHint: string = '';
   // Key widths pre-computed from screen density in KeyboardController
   @StorageLink('keyWidthVp') keyWidthVp: number = 36;
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
@@ -41,6 +44,7 @@ export struct KeyboardView {
 
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
+  private ohHintTimer: number = -1;
 
   private startBsRepeat(): void {
     this.getHandler().handleBackspace();
@@ -160,12 +164,27 @@ export struct KeyboardView {
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       // QWERTY has no 記号 key, so the shift/caps key doubles as the left-lean
-      // one-handed toggle: swipe up on it (repeat to return to full width).
+      // control: long-press to reveal the 左手モード hint, then flick up to
+      // switch. A plain tap still cycles shift/caps via onClick.
+      .bindPopup(this.oneHandHint === 'left', {
+        message: '左手モード',
+        placement: Placement.Top,
+        enableArrow: true,
+      })
       .gesture(
-        PanGesture({ direction: PanDirection.Up, distance: 24 })
-          .onActionStart(() => {
-            this.getHandler().toggleOneHanded('left');
-          })
+        GestureGroup(GestureMode.Sequence,
+          LongPressGesture({ duration: 300 })
+            .onAction(() => {
+              this.oneHandHint = 'left';
+              this.ohHintTimer = setTimeout(() => { this.oneHandHint = ''; }, 1500);
+            }),
+          PanGesture({ direction: PanDirection.Up, distance: 20 })
+            .onActionStart(() => {
+              this.getHandler().toggleOneHanded('left');
+              clearTimeout(this.ohHintTimer);
+              this.oneHandHint = '';
+            })
+        )
       )
       .onClick(() => {
         if (this.isCapsLock) {
@@ -226,12 +245,28 @@ export struct KeyboardView {
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-      // Swipe up on the space key -> right-leaning one-handed mode.
+      // Long-press the space key to reveal the 右手モード hint, then flick up
+      // while it shows to switch. Gating on the long-press stops a stray flick
+      // from misfiring; a plain tap still inserts a space via onClick.
+      .bindPopup(this.oneHandHint === 'right', {
+        message: '右手モード',
+        placement: Placement.Top,
+        enableArrow: true,
+      })
       .gesture(
-        PanGesture({ direction: PanDirection.Up, distance: 24 })
-          .onActionStart(() => {
-            this.getHandler().toggleOneHanded('right');
-          })
+        GestureGroup(GestureMode.Sequence,
+          LongPressGesture({ duration: 300 })
+            .onAction(() => {
+              this.oneHandHint = 'right';
+              this.ohHintTimer = setTimeout(() => { this.oneHandHint = ''; }, 1500);
+            }),
+          PanGesture({ direction: PanDirection.Up, distance: 20 })
+            .onActionStart(() => {
+              this.getHandler().toggleOneHanded('right');
+              clearTimeout(this.ohHintTimer);
+              this.oneHandHint = '';
+            })
+        )
       )
       .onClick(() => {
         this.getHandler().handleSpaceKey();
