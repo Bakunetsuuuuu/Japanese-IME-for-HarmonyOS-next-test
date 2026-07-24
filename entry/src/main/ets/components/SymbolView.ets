@@ -105,7 +105,10 @@ const LICENSE_TEXT: string =
   '  https://github.com/WorksApplications/SudachiDict\n' +
   '詳細なライセンス全文は THIRD_PARTY_NOTICES.md を参照してください。\n\n' +
   '■ アプリコード\n' +
-  'MIT License';
+  'MIT License\n\n' +
+  '■ 開発\n' +
+  '開発者: Shunti (X: @shunti_nitijou)\n' +
+  '協力者: Hashima (X: @nycjg1)';
 
 // Grid area budget (unchanged from before the redesign, so the overall
 // keyboard body height doesn't shift when switching into the symbol panel).
