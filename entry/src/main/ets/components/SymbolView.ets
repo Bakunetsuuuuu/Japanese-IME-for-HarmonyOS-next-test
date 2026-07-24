@@ -108,7 +108,7 @@ const LICENSE_TEXT: string =
   'MIT License\n\n' +
   '■ 開発\n' +
   '開発者: Shunti (X: @shunti_nitijou)\n' +
-  '協力者: Hashima (X: @nycjg1)';
+  '協力者: Hashima';
 
 // Grid area budget (unchanged from before the redesign, so the overall
 // keyboard body height doesn't shift when switching into the symbol panel).
