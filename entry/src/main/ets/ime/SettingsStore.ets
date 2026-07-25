@@ -6,7 +6,10 @@ import type common from '@ohos.app.ability.common';
 // UserDictStore: the main app writes, the extension calls load(ctx, true) to
 // force a fresh disk read past its own process's in-memory cache.
 export interface KeyboardSettings {
-  keyboardLayout: string;
+  // Split so kana (ひらがな) and alphabet (アルファベット) input can each use
+  // QWERTY or FLICK independently -- see load()'s legacyLayout migration note.
+  kanaKeyboardLayout: string;
+  alphabetKeyboardLayout: string;
   oneHandedMode: boolean;
   oneHandedSide: string;
   // 'custom' = hand-built dictionary (default, unchanged behavior).
@@ -21,7 +24,8 @@ export interface KeyboardSettings {
 }
 
 const DEFAULTS: KeyboardSettings = {
-  keyboardLayout: 'QWERTY',
+  kanaKeyboardLayout: 'QWERTY',
+  alphabetKeyboardLayout: 'QWERTY',
   oneHandedMode: false,
   oneHandedSide: 'right',
   conversionEngine: 'custom',
@@ -37,14 +41,21 @@ export class SettingsStore {
         await dataPreferences.removePreferencesFromCache(context, SettingsStore.STORE);
       }
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      const layout = await prefs.get('keyboardLayout', DEFAULTS.keyboardLayout);
+      // Legacy single 'keyboardLayout' key from before kana/alphabet were
+      // split -- read it as the fallback default for both new keys, so an
+      // existing install's FLICK/QWERTY choice carries over unchanged until
+      // the user picks them independently (at which point the new keys win).
+      const legacyLayout = await prefs.get('keyboardLayout', DEFAULTS.kanaKeyboardLayout);
+      const kanaLayout = await prefs.get('kanaKeyboardLayout', legacyLayout);
+      const alphabetLayout = await prefs.get('alphabetKeyboardLayout', legacyLayout);
       const oneHanded = await prefs.get('oneHandedMode', DEFAULTS.oneHandedMode);
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
       const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
       const numericPad = await prefs.get('numericPadEnabled', DEFAULTS.numericPadEnabled);
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, engine, numericPad, forceReload }));
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, forceReload }));
       return {
-        keyboardLayout: String(layout),
+        kanaKeyboardLayout: String(kanaLayout),
+        alphabetKeyboardLayout: String(alphabetLayout),
         oneHandedMode: oneHanded === true,
         oneHandedSide: String(side),
         conversionEngine: String(engine),
@@ -53,7 +64,8 @@ export class SettingsStore {
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
       return {
-        keyboardLayout: DEFAULTS.keyboardLayout,
+        kanaKeyboardLayout: DEFAULTS.kanaKeyboardLayout,
+        alphabetKeyboardLayout: DEFAULTS.alphabetKeyboardLayout,
         oneHandedMode: DEFAULTS.oneHandedMode,
         oneHandedSide: DEFAULTS.oneHandedSide,
         conversionEngine: DEFAULTS.conversionEngine,
@@ -62,14 +74,25 @@ export class SettingsStore {
     }
   }
 
-  static async saveKeyboardLayout(context: common.Context, layout: string): Promise<void> {
+  static async saveKanaKeyboardLayout(context: common.Context, layout: string): Promise<void> {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('keyboardLayout', layout);
+      await prefs.put('kanaKeyboardLayout', layout);
       await prefs.flush();
-      console.info('shuntiIME SettingsStore.saveKeyboardLayout ok', layout);
+      console.info('shuntiIME SettingsStore.saveKanaKeyboardLayout ok', layout);
     } catch (e) {
-      console.error('shuntiIME SettingsStore.saveKeyboardLayout error', JSON.stringify(e));
+      console.error('shuntiIME SettingsStore.saveKanaKeyboardLayout error', JSON.stringify(e));
+    }
+  }
+
+  static async saveAlphabetKeyboardLayout(context: common.Context, layout: string): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('alphabetKeyboardLayout', layout);
+      await prefs.flush();
+      console.info('shuntiIME SettingsStore.saveAlphabetKeyboardLayout ok', layout);
+    } catch (e) {
+      console.error('shuntiIME SettingsStore.saveAlphabetKeyboardLayout error', JSON.stringify(e));
     }
   }
 

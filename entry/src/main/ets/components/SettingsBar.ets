@@ -24,7 +24,8 @@ export struct SettingsBar {
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
-  @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
+  @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
+  @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   @StorageLink('conversionEngine') conversionEngine: string = 'custom';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @State showHistory: boolean = false;
@@ -184,7 +185,7 @@ export struct SettingsBar {
       // reliable than the main app's copy of this same toggle, which has to
       // round-trip through shared preferences for the extension to pick it up.
       Row() {
-        Text('キーボードレイアウト')
+        Text('かな入力レイアウト')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
           .fontColor(kbTheme(this.isDark).textPrimary)
@@ -197,10 +198,10 @@ export struct SettingsBar {
             .fontWeight(FontWeight.Medium)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.keyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.keyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.keyboardLayout === 'QWERTY' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setKeyboardLayout('QWERTY'); })
+            .backgroundColor(this.kanaKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.kanaKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.kanaKeyboardLayout === 'QWERTY' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setKanaKeyboardLayout('QWERTY'); })
 
           Text('フリック')
             .fontFamily(JP_FONT_FAMILY)
@@ -208,10 +209,47 @@ export struct SettingsBar {
             .fontWeight(FontWeight.Medium)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.keyboardLayout === 'FLICK' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.keyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.keyboardLayout === 'FLICK' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setKeyboardLayout('FLICK'); })
+            .backgroundColor(this.kanaKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.kanaKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.kanaKeyboardLayout === 'FLICK' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setKanaKeyboardLayout('FLICK'); })
+        }
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(TRACK_RADIUS)
+        .padding(3)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+
+      Row() {
+        Text('アルファベット入力レイアウト')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+
+        Row({ space: 2 }) {
+          Text('QWERTY')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.alphabetKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.alphabetKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.alphabetKeyboardLayout === 'QWERTY' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setAlphabetKeyboardLayout('QWERTY'); })
+
+          Text('フリック')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.alphabetKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.alphabetKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.alphabetKeyboardLayout === 'FLICK' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setAlphabetKeyboardLayout('FLICK'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
         .borderRadius(TRACK_RADIUS)
