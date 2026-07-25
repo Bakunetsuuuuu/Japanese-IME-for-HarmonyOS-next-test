@@ -348,7 +348,8 @@ export class InputHandler {
     SettingsStore.load(this.imeContext, true)
       .then((s: KeyboardSettings) => {
         console.info('shuntiIME reloadSettings applied', JSON.stringify(s));
-        AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
+        AppStorage.setOrCreate('kanaKeyboardLayout', s.kanaKeyboardLayout);
+        AppStorage.setOrCreate('alphabetKeyboardLayout', s.alphabetKeyboardLayout);
         AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
         AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
@@ -470,15 +471,23 @@ export class InputHandler {
   // Switching the keyboard layout from the keyboard's own settings panel
   // takes effect immediately (same process, no reload round-trip needed) —
   // more reliable than the main-app toggle, which depends on the extension
-  // picking the change back up on its own next reload.
-  setKeyboardLayout(layout: string): void {
-    AppStorage.setOrCreate('keyboardLayout', layout);
+  // picking the change back up on its own next reload. かな/アルファベット are
+  // independent settings (each can be QWERTY or FLICK on its own).
+  setKanaKeyboardLayout(layout: string): void {
+    AppStorage.setOrCreate('kanaKeyboardLayout', layout);
     if (this.imeContext) {
-      SettingsStore.saveKeyboardLayout(this.imeContext, layout);
+      SettingsStore.saveKanaKeyboardLayout(this.imeContext, layout);
     }
   }
 
-  // Same immediate-switch pattern as setOneHandedMode/setKeyboardLayout
+  setAlphabetKeyboardLayout(layout: string): void {
+    AppStorage.setOrCreate('alphabetKeyboardLayout', layout);
+    if (this.imeContext) {
+      SettingsStore.saveAlphabetKeyboardLayout(this.imeContext, layout);
+    }
+  }
+
+  // Same immediate-switch pattern as setOneHandedMode/setKanaKeyboardLayout
   // above. Toggling this off while the 数字パッド (numeric subMode) happens
   // to be open would strand the user on a panel cycleInputMode's あA key can
   // no longer reach -- fall back to kana so the setting and the panel
@@ -511,7 +520,7 @@ export class InputHandler {
     AppStorage.setOrCreate('inputMode', InputMode.ALPHANUMERIC);
   }
 
-  // Same immediate-switch pattern as setKeyboardLayout above. applyConversionEngine
+  // Same immediate-switch pattern as setKanaKeyboardLayout above. applyConversionEngine
   // lazily fetches the mozc rawfiles the first time 'mozc' is actually selected.
   setConversionEngine(engine: string): void {
     AppStorage.setOrCreate('conversionEngine', engine);

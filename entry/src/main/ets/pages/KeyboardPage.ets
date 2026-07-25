@@ -33,7 +33,8 @@ struct KeyboardPage {
   @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
   @StorageLink('isLandscape') isLandscape: boolean = false;
-  @StorageLink('keyboardLayout') keyboardLayout: string = 'QWERTY';
+  @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
+  @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   @StorageLink('keyboardSubMode') keyboardSubMode: string = 'kana';
   @StorageLink('bunsetsuTexts') bunsetsuTexts: string[] = [];
   @StorageLink('bunsetsuRaw') bunsetsuRaw: string[] = [];
@@ -94,7 +95,8 @@ struct KeyboardPage {
   private reloadSettingsIntoStorage(): void {
     SettingsStore.load(getContext(this), true).then((s: KeyboardSettings) => {
       console.info('shuntiIME KeyboardPage settings reload applied', JSON.stringify(s));
-      AppStorage.setOrCreate('keyboardLayout', s.keyboardLayout);
+      AppStorage.setOrCreate('kanaKeyboardLayout', s.kanaKeyboardLayout);
+      AppStorage.setOrCreate('alphabetKeyboardLayout', s.alphabetKeyboardLayout);
       AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
       AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
       AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
@@ -264,12 +266,12 @@ struct KeyboardPage {
           Column() {
             if (this.keyboardSubMode === 'numeric') {
               NumericPadView()
-            } else if (this.keyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
+            } else if (this.alphabetKeyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
               AlphabetFlickKeyboardView({
                 inputMode: this.inputMode,
                 isLandscape: this.isLandscape
               })
-            } else if (this.keyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
+            } else if (this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
               FlickKeyboardView({
                 inputMode: this.inputMode,
                 isLandscape: this.isLandscape
