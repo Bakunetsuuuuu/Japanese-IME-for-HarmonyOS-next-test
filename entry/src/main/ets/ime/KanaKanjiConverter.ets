@@ -25560,6 +25560,9 @@ const DICTIONARY: Record<string, string[]> = {
   'こはるねあみ': ['小春音アミ'],
   'りりー': ['Lily'],
   'かあいゆき': ['歌愛ユキ'],
+  // さよ: 人名としての読みを優先しつつ、3番目にVOICEVOXの小夜/SAYOを追加
+  // (学習機能で使用頻度が高ければ自然と前に来る)。
+  'さよ': ['小夜', '紗代', '小夜/SAYO'],
 };
 
 // track A (engine='custom') POS/conjugation layer, Phase 1: whole-word
