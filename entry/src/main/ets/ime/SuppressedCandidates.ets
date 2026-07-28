@@ -15,8 +15,16 @@
 // caller (so a boost can't resurrect it), while the bundled dictionaries are
 // untouched and the whole list can be cleared again from the settings panel.
 
+import dataPreferences from '@ohos.data.preferences';
+
 const MAX_READINGS = 500;
 const MAX_PER_READING = 20;
+
+// Shared by both processes: the IME extension writes here as candidates are
+// deleted, and the main app's 削除した候補 screen reads/rewrites the same store
+// to restore them. Exported so neither side can drift onto a different name.
+export const SUPPRESSED_STORE: string = 'shunti_suppressed';
+export const SUPPRESSED_KEY: string = 'v1';
 
 export class SuppressedCandidates {
   // reading -> surfaces the user removed for that reading
@@ -76,5 +84,64 @@ export class SuppressedCandidates {
     const kept = cands.filter((c: string) => list.indexOf(c) < 0);
     if (kept.length > 0) { return kept; }
     return [reading];
+  }
+
+  // ---- plain-map helpers for the main app's 削除した候補 screen ----
+  // That screen edits a map loaded straight from disk (a different process
+  // from the IME extension, so it must not touch the static above).
+
+  // Restore one deleted candidate. Returns the updated map; a reading left with
+  // nothing suppressed is dropped so `count()` stays truthful.
+  static restore(
+    map: Record<string, string[]>,
+    reading: string,
+    surface: string
+  ): Record<string, string[]> {
+    const list = map[reading];
+    if (list === undefined) { return map; }
+    const next = list.filter((s: string) => s !== surface);
+    const out: Record<string, string[]> = {};
+    for (const r of Object.keys(map)) {
+      if (r !== reading) { out[r] = map[r]; }
+    }
+    if (next.length > 0) { out[reading] = next; }
+    return out;
+  }
+
+  // Read the deletion list fresh from disk. forceReload drops the in-process
+  // cache so writes made by the other process (app ⇄ IME) are picked up --
+  // same contract as UserDictStore.load.
+  static async load(
+    context: ESObject,
+    forceReload: boolean = false
+  ): Promise<Record<string, string[]>> {
+    try {
+      if (forceReload) {
+        await dataPreferences.removePreferencesFromCache(context, SUPPRESSED_STORE);
+      }
+      const prefs = await dataPreferences.getPreferences(context, SUPPRESSED_STORE);
+      const raw = await prefs.get(SUPPRESSED_KEY, '{}');
+      const parsed = JSON.parse(String(raw)) as Record<string, string[]>;
+      const clean: Record<string, string[]> = {};
+      if (parsed === null || typeof parsed !== 'object') { return clean; }
+      for (const k of Object.keys(parsed)) {
+        const v = parsed[k];
+        if (Array.isArray(v) && v.length > 0) {
+          const surfaces = v.filter((s: string) => typeof s === 'string' && s.length > 0);
+          if (surfaces.length > 0) { clean[k] = surfaces; }
+        }
+      }
+      return clean;
+    } catch (_e) {
+      return {};
+    }
+  }
+
+  static async save(context: ESObject, map: Record<string, string[]>): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SUPPRESSED_STORE);
+      await prefs.put(SUPPRESSED_KEY, JSON.stringify(map));
+      await prefs.flush();
+    } catch (_e) {}
   }
 }

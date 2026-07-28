@@ -43,7 +43,7 @@ export struct CandidateBar {
       const removed = InputHandler.getInstance().suppressCandidate(this.menuIndex);
       this.closeMenu();
       if (removed.length > 0) {
-        promptAction.showToast({ message: `「${removed}」を候補から削除しました（設定から元に戻せます）` });
+        promptAction.showToast({ message: `「${removed}」を候補から削除しました（アプリの「削除した候補」から元に戻せます）` });
       }
     })
   }

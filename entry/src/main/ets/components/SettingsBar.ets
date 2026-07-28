@@ -28,7 +28,6 @@ export struct SettingsBar {
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   @StorageLink('conversionEngine') conversionEngine: string = 'custom';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
-  @StorageLink('suppressedCount') suppressedCount: number = 0;
   @State showHistory: boolean = false;
 
   // Re-read the system clipboard whenever the settings panel opens, so the
@@ -284,43 +283,6 @@ export struct SettingsBar {
           .selectedColor(kbTheme(this.isDark).accent)
           .onChange((isOn: boolean) => {
             InputHandler.getInstance().setNumericPadEnabled(isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: 13 })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      // Recovery path for the long-press → 削除 action on a candidate. Without
-      // it a mistaken deletion would be permanent and invisible, since the
-      // suppressed surface simply stops appearing with nothing to point at.
-      Row() {
-        Column({ space: 2 }) {
-          Text('削除した変換候補を元に戻す')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-          Text(this.suppressedCount > 0
-            ? `${this.suppressedCount}件の読みで候補を削除しています`
-            : '削除した候補はありません')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Text('元に戻す')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(12)
-          .fontWeight(FontWeight.Medium)
-          .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-          .borderRadius(PILL_RADIUS)
-          .backgroundColor(kbTheme(this.isDark).funcBg)
-          .fontColor(this.suppressedCount > 0 ? kbTheme(this.isDark).textPrimary : kbTheme(this.isDark).textSecondary)
-          .onClick(() => {
-            if (this.suppressedCount === 0) { return; }
-            InputHandler.getInstance().clearSuppressedCandidates();
-            promptAction.showToast({ message: '削除した変換候補をすべて元に戻しました' });
           })
       }
       .width('100%')

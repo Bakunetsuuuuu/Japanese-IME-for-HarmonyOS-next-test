@@ -16,7 +16,7 @@ import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
 import { UnknownWordLearner } from './UnknownWordLearner';
-import { SuppressedCandidates } from './SuppressedCandidates';
+import { SuppressedCandidates, SUPPRESSED_STORE, SUPPRESSED_KEY } from './SuppressedCandidates';
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
 import { EmojiSuggest } from './EmojiSuggest';
@@ -269,16 +269,15 @@ export class InputHandler {
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
-    dataPreferences.getPreferences(this.imeContext, 'shunti_suppressed')
+    dataPreferences.getPreferences(this.imeContext, SUPPRESSED_STORE)
       .then((prefs: dataPreferences.Preferences) => {
         this.suppressedPrefs = prefs;
-        return prefs.get('v1', '{}');
+        return prefs.get(SUPPRESSED_KEY, '{}');
       })
       .then((val: dataPreferences.ValueType) => {
         try {
           const data = JSON.parse(String(val)) as Record<string, string[]>;
           SuppressedCandidates.setSuppressed(data);
-          this.publishSuppressedCount();
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
@@ -594,21 +593,28 @@ export class InputHandler {
     }, 2000);
   }
 
-  // Drives the settings panel's "元に戻す" entry, which is the only visible
-  // trace that anything was deleted at all.
-  private publishSuppressedCount(): void {
-    AppStorage.setOrCreate('suppressedCount', SuppressedCandidates.count());
-  }
-
   private saveSuppressed(): void {
     clearTimeout(this.suppressedSaveTimer);
     this.suppressedSaveTimer = setTimeout(() => {
       const prefs = this.suppressedPrefs;
       if (!prefs) { return; }
-      prefs.put('v1', JSON.stringify(SuppressedCandidates.getSuppressed()))
+      prefs.put(SUPPRESSED_KEY, JSON.stringify(SuppressedCandidates.getSuppressed()))
         .then(() => prefs.flush())
         .catch((_e: Error) => {});
     }, 500);
+  }
+
+  // Re-read the deletion list from disk. The main app's 削除した候補 screen is a
+  // different process, so restores made there are invisible here until this
+  // runs -- called on every onInputStart, the same refresh point the user
+  // dictionary and settings use.
+  private reloadSuppressed(): void {
+    if (!this.imeContext) { return; }
+    SuppressedCandidates.load(this.imeContext, true)
+      .then((data: Record<string, string[]>) => {
+        SuppressedCandidates.setSuppressed(data);
+      })
+      .catch((_e: Error) => {});
   }
 
   // The reading the visible candidates were produced from: the composing text
@@ -640,7 +646,6 @@ export class InputHandler {
     if (!SuppressedCandidates.suppress(reading, surface)) { return ''; }
     KanaKanjiConverter.forgetChoice(reading, surface);
     UnknownWordLearner.forget(reading, surface);
-    this.publishSuppressedCount();
     this.saveSuppressed();
     this.saveLearning();
     this.saveUnknownWords();
@@ -660,16 +665,6 @@ export class InputHandler {
       this.updateCandidates();
     }
     return surface;
-  }
-
-  // Undo every candidate deletion (settings panel). The learned counts erased
-  // alongside them are NOT restored -- they were usage statistics, not the
-  // deletion itself -- so a restored candidate simply returns to its ordinary
-  // dictionary ranking.
-  clearSuppressedCandidates(): void {
-    SuppressedCandidates.clear();
-    this.publishSuppressedCount();
-    this.saveSuppressed();
   }
 
   // "Can the converter already produce this surface for this reading?" -- the
@@ -846,6 +841,7 @@ export class InputHandler {
     this.converter.reset();
     this.reloadUserDict();
     this.reloadSettings();
+    this.reloadSuppressed();
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);

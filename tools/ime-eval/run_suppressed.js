@@ -18,7 +18,12 @@ function build(names) {
   for (const n of names) {
     const src = path.join(ROOT, `entry/src/main/ets/ime/${n}.ets`);
     const tsPath = path.join(tmp, `${n}.ts`);
-    fs.writeFileSync(tsPath, '// @ts-nocheck\n' + fs.readFileSync(src, 'utf-8'));
+    // The @ohos.* preferences import has no Node equivalent. Only load()/save()
+    // touch it and those are the device-side persistence wrappers, not the pure
+    // suppression logic under test here -- stub it so the rest can be exercised.
+    const body = fs.readFileSync(src, 'utf-8')
+      .replace(/^import\s+\w+\s+from\s+'@ohos[^']*';$/gm, 'const dataPreferences: any = undefined;');
+    fs.writeFileSync(tsPath, '// @ts-nocheck\n' + body);
     outs.push(tsPath);
   }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
@@ -110,6 +115,27 @@ function main() {
   SC.setSuppressed(saved);
   check('deletions survive a save/load round-trip',
     SC.filter('はし', cands).indexOf('箸') < 0);
+
+  // ---- restore(): the app screen's per-row 戻す ----
+  let m = { 'はし': ['橋', '箸'], 'あめ': ['飴'] };
+  m = SC.restore(m, 'はし', '箸');
+  check('restore() removes just that surface',
+    m['はし'].join(',') === '橋', JSON.stringify(m));
+  check('restore() leaves other readings alone', m['あめ'].join(',') === '飴');
+  m = SC.restore(m, 'はし', '橋');
+  check('restore() drops a reading once its last surface is back',
+    m['はし'] === undefined, JSON.stringify(m));
+  check('restore() of an absent pair is a no-op',
+    Object.keys(SC.restore(m, 'ない', '無い')).join(',') === 'あめ');
+
+  // A restored surface must actually reappear once the map is reloaded.
+  SC.setSuppressed({ 'はし': ['橋', '箸'] });
+  check('deleted surfaces are filtered before restore',
+    SC.filter('はし', cands).join(',') === '端,はし');
+  SC.setSuppressed(SC.restore(SC.getSuppressed(), 'はし', '箸'));
+  check('restored surface reappears in the candidate list',
+    SC.filter('はし', cands).join(',') === '箸,端,はし',
+    SC.filter('はし', cands).join(','));
 
   // ---- deleting an unknown-word candidate must not leave it re-offerable ----
   const NEVER_KNOWN = () => false;
