@@ -34028,6 +34028,16 @@ export class KanaKanjiConverter {
   // is a reasonable starting point.
   private static readonly MOZC_SINGLE_CONTENT_PENALTY = 2500;
 
+  // 「に＋内容語」に割られて壊れる複合助詞（連語）。getWordInfo でまとめて
+  // 割り引く。ここに載せるのは、割った側の読みが実在の内容語になってしまい
+  // 出力が明確に誤りになるものだけ。により/によって/について/にかんして など
+  // 既に一語で正しく取れているものは触れない。
+  private static readonly COMPOUND_PARTICLES: Set<string> = new Set<string>([
+    'による', 'によると',
+  ]);
+
+  private static readonly COMPOUND_PARTICLE_DISCOUNT = 4000;
+
   // 「〜やすい」(easy to ~) 補助形容詞の活用形。動詞連用形に直接くっつく
   // 用法だけを対象にしたいので、使う側で「直前が格助詞でない」ガードを
   // かける (joinSegs / autoConvert の同じ条件を参照)。
@@ -34062,18 +34072,25 @@ export class KanaKanjiConverter {
   // over any corpus statistics to ensure correct POS class for function words.
   private getWordInfo(sub: string): number[] {
     if (KanaKanjiConverter.isMozcEngine()) { return this.getWordInfoMozc(sub); }
+    // 複合助詞（連語）は、まるごと一語として認めるより「に＋内容語」に割った方が
+    // 安くなってしまう。に は極めて安い助詞で、残った部分にも 夜/取って/置いて
+    // といった常用の内容語読みがあり、しかも部分側は COMMON_READINGS のボーナスを
+    // 受けられるのに、機能語として早期 return するこの経路では全体側がボーナスを
+    // 受けられないため。結果:
+    //   台風による被害   → 台風に夜被害
+    //   報告によると雨だ  → 報告に夜と雨だ
+    //   現代における課題  → 現代に置ける課題
+    //   私にとって大切   → 私に取って大切
+    // 以前は によると だけが個別に割引されていたが、その によると すら
+    // 「による」が先に割れるせいで一度も成立していなかった。同じ理由で失敗する
+    // 複合助詞をまとめて割り引く。VN_FUNCTION_WORD 自体を下げると他の機能語の
+    // DP コストまで動くので、対象を列挙する形は元の特例と同じ。
+    if (KanaKanjiConverter.COMPOUND_PARTICLES.has(sub)) {
+      const cls = KanaKanjiConverter.FW_CLASS_MAP[sub] ?? 73;
+      return [KanaKanjiConverter.VN_FUNCTION_WORD - KanaKanjiConverter.COMPOUND_PARTICLE_DISCOUNT, cls, cls];
+    }
     const fc = KanaKanjiConverter.FW_CLASS_MAP[sub];
     if (fc !== undefined) {
-      // によると (as one span) loses to による+と every time despite both
-      // being FW_CLASS_MAP-registered: the connection matrix gives NOUN->と
-      // a large negative edge-cost discount (と is an extremely common
-      // particle after nouns generally), which COMMON_READINGS can't offset
-      // here since it's never consulted on this early-return path. Special-
-      // cased rather than lowering VN_FUNCTION_WORD globally, which would
-      // perturb every other FW_CLASS_MAP entry's DP costs.
-      if (sub === 'によると') {
-        return [KanaKanjiConverter.VN_FUNCTION_WORD - 2000, fc, fc];
-      }
       return [KanaKanjiConverter.VN_FUNCTION_WORD, fc, fc];
     }
     // へや (部屋) has the same problem as によると above, just via
