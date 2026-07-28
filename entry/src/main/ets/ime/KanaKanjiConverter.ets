@@ -31754,6 +31754,22 @@ export class KanaKanjiConverter {
     // (暮れ, 屍体/死体/etc.) — see appendRegisteredWords/boostCommonWords above
     // for the same problem at the dictionary-ordering level.
     'くれ': true, 'したい': true, 'した': true, 'し': true,
+    // 受身の助動詞語幹「され」。「なり」(上記) と同じ homograph 衝突で、
+    // 大規模辞書側の珍しい固有名詞「佐連」に毎回負けていた。され自体は
+    // 辞書に一語として無いため、更新されました→更新佐連ました のように
+    // され+接尾 の全形が崩れる（されました/されて/されず/されなかった/
+    // されたら/されません/されます/されれば）。サ変名詞＋受身は日常語なので
+    // 影響が大きい。かな固定にすれば され+ました 等が素直に連結する。
+    'され': true,
+    // 「〜したい」の活用形。したい/したくない は既にかな固定されているが、
+    // 同じ語形の残りが漏れており 支度(したく)・買った(かった) という別語に
+    // 化けていた（変更したくて→変更支度て、予約したかった→予約した買った）。
+    // 2文字の「したく」自体は名詞「支度」が正当なので入れず、助動詞用法しか
+    // あり得ない長いスパンだけを対象にする。
+    'したくて': true, 'したかった': true, 'したくなる': true, 'したくなった': true,
+    // 「〜しやすい」は既に強スパン扱いだが連用形の しやすく が漏れていて
+    // し+安く に割れていた（操作しやすく→操作し安く）。
+    'しやすく': true,
     'しまった': true, 'しまって': true,
     // しまう(finish/end up doing) conjugates as …てしまい before another verb
     // (忘れてしまい謝った), same family as しまった/しまって above which were
@@ -33896,6 +33912,27 @@ export class KanaKanjiConverter {
   // is a reasonable starting point.
   private static readonly MOZC_SINGLE_CONTENT_PENALTY = 2500;
 
+  // 可能形「〜できる」の活用形。サ変名詞の直後では、この語形は毎回
+  // で(格助詞) + き… の分割に競り負ける: で は極めて安い助詞で、続く き…
+  // には 来る/着る という常用の内容語読みがあるため、合計コストが
+  // できます 一語より安くなってしまう。実害は大きく、
+  //   予約できました    → 予約で来ました
+  //   接続できなかった  → 接続で来なかった
+  //   インストールできない → インストールで着ない
+  // のように、サ変名詞＋可能形という日本語で最も頻出する構文の一つが
+  // 軒並み壊れる。語形自体はすべて辞書にあり単独では正しく変換される
+  // ので、必要なのは分割を防ぐことだけ。
+  //
+  // できた/できて だけは以前から下の個別リストに入っていたが、同じ理由で
+  // 失敗する残りの活用形が漏れていた。1語ずつ足すのではなくパラダイム
+  // 単位でまとめて扱う。辞書に無い語形(できず等)は DP のスパン採用条件
+  // (inDict) で弾かれるので、ここに含まれていても無害。
+  private static readonly DEKIRU_FORMS: Set<string> = new Set<string>([
+    'できる', 'できます', 'できました', 'できません', 'できませんでした',
+    'できない', 'できなかった', 'できた', 'できて', 'できれば', 'できたら',
+    'できず', 'できなくて', 'できなければ', 'できたり',
+  ]);
+
   // Returns [nodeCost, leftMacroClass, rightMacroClass] for a kana segment.
   // FW_CLASS_MAP / FUNCTION_WORDS are checked FIRST — grammar rules take priority
   // over any corpus statistics to ensure correct POS class for function words.
@@ -33932,13 +33969,16 @@ export class KanaKanjiConverter {
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
         sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
         sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
-        sub === 'できた' || sub === 'できて' || sub === 'かくかてい' ||
+        sub === 'かくかてい' ||
         sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
         sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
         sub === 'とばなかった' || sub === 'くもが' || sub === 'はいきした' ||
         sub === 'みとおしを' || sub === 'かわを' || sub === 'そこを' ||
         sub === 'たばねてとめた' || sub === 'かわいて' || sub === 'ごにん' ||
         sub === 'ごほん' || sub === 'したくない' || sub === 'めんどくさすぎ') {
+      return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
+    }
+    if (KanaKanjiConverter.DEKIRU_FORMS.has(sub)) {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {
