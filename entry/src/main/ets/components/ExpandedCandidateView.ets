@@ -90,6 +90,7 @@ export struct ExpandedCandidateView {
                 placement: Placement.Top,
                 enableArrow: true,
                 popupColor: kbTheme(this.isDark).cardBg,
+                backgroundBlurStyle: BlurStyle.NONE,
                 radius: 12,
                 mask: true,
                 onStateChange: (e: PopupStateChangeParam) => {

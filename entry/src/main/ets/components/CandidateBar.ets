@@ -70,6 +70,7 @@ export struct CandidateBar {
               placement: Placement.Top,
               enableArrow: true,
               popupColor: kbTheme(this.isDark).cardBg,
+              backgroundBlurStyle: BlurStyle.NONE,
               radius: 12,
               // Masked: deleting is destructive enough to deserve a deliberate
               // second tap, and tapping the mask dismisses without deleting.

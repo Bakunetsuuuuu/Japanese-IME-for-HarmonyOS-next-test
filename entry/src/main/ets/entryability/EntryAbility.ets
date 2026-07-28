@@ -2,7 +2,7 @@ import { UIAbility } from '@kit.AbilityKit';
 import type { Want, AbilityConstant } from '@kit.AbilityKit';
 import type { window } from '@kit.ArkUI';
 import { registerJpFont } from '../components/JpFont';
-import { resolveMainAppIsDark, isDarkFromConfiguration } from '../ime/SettingsStore';
+import { isDarkFromConfiguration, isDarkFromResourceManager } from '../ime/SettingsStore';
 
 // Stashes a "please open this URL in the in-app browser" request (see
 // KeyboardController.openGithubRepo) into AppStorage for Index.ets to pick
@@ -36,23 +36,26 @@ export default class EntryAbility extends UIAbility {
     applyOpenUrlWant(want);
   }
 
-  // Resolves the OS color mode into AppStorage('isDark'), which every
+  // Resolves the live OS color mode into AppStorage('isDark'), which every
   // main-app page (Index/DevDict/PrivacyPolicy/WebViewPage) reads via
   // @StorageLink instead of each independently calling
   // display.getDefaultDisplaySync() on its own in aboutToAppear (which
   // never updated again after that first read, and read the wrong field
-  // besides -- see resolveMainAppIsDark's comment).
+  // besides). Backed by resourceManager (isDarkFromResourceManager), not
+  // context.config -- see that function's comment for why: context.config
+  // is only a snapshot from ability creation, so calling this from
+  // onForeground with a context.config-based read (the previous approach)
+  // never actually picked up a theme change made while backgrounded.
   private applyColorMode(): void {
-    AppStorage.setOrCreate('isDark', resolveMainAppIsDark(this.context));
+    AppStorage.setOrCreate('isDark', isDarkFromResourceManager(this.context as ESObject));
   }
 
-  // Fires on an OS-level color-mode change while the app is already
-  // running (system config changed, not window-stage recreated) -- without
-  // this, isDark would only ever be (re-)computed at the next cold start.
-  // Uses the pushed Configuration directly rather than this.applyColorMode()
-  // (which re-reads this.context.config) -- see isDarkFromConfiguration's
-  // comment for why only the object handed to this callback is guaranteed to
-  // reflect the OS's current setting.
+  // Fires on an OS-level color-mode change while the app is already running
+  // (system config changed, not window-stage recreated), on OS
+  // versions/timings where this callback actually reaches the ability. Uses
+  // the pushed Configuration directly -- see isDarkFromConfiguration's
+  // comment for why only the object handed to this callback (not a
+  // context.config re-read) is guaranteed fresh here.
   onConfigurationUpdate(newConfig: object): void {
     AppStorage.setOrCreate('isDark', isDarkFromConfiguration(newConfig as ESObject));
   }

@@ -11,7 +11,7 @@ import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
 import type { UserPosEntry } from './ConjugationEngine';
 import { buildUserExpansion } from './ConjugationEngine';
-import { SettingsStore, KeyboardSettings, isDarkFromConfiguration } from './SettingsStore';
+import { SettingsStore, KeyboardSettings, isDarkFromConfiguration, isDarkFromResourceManager } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
@@ -2022,19 +2022,20 @@ export class KeyboardController {
     this.loadViterbiData();
   }
 
-  // One-time startup read of the extension context's own configuration --
-  // reliable only here (onCreate), before any onConfigurationUpdate has had a
-  // chance to fire. See isDarkFromConfiguration's comment for why every LATER
-  // update must go through applyColorModeFrom(newConfig) with the pushed
-  // Configuration object instead of calling this again.
+  // Re-resolves the live OS color mode via resourceManager (see
+  // isDarkFromResourceManager's comment for why this, not context.config,
+  // is what must be called anywhere isDark needs to be current -- including
+  // repeatedly, from inputStart, not just once at onCreate).
   applyColorMode(): void {
-    AppStorage.setOrCreate('isDark', isDarkFromConfiguration(this.context.config as ESObject));
+    AppStorage.setOrCreate('isDark', isDarkFromResourceManager(this.context as ESObject));
   }
 
   // Applies the Configuration object handed directly to onConfigurationUpdate
-  // (InputMethodExtAbility's own onConfigurationUpdate calls this). This is
-  // the only path that actually tracks the OS light/dark toggle live -- see
-  // isDarkFromConfiguration's comment.
+  // (InputMethodExtAbility's own onConfigurationUpdate calls this), on the
+  // rare OS versions/timings where that callback does fire for this
+  // extension. isDarkFromConfiguration's comment covers why the object
+  // handed to the callback (not a context.config re-read) is what's safe to
+  // trust here.
   applyColorModeFrom(config: ESObject): void {
     AppStorage.setOrCreate('isDark', isDarkFromConfiguration(config));
   }
@@ -2197,6 +2198,13 @@ export class KeyboardController {
         kbCtrl: inputMethodEngine.KeyboardController,
         client: inputMethodEngine.InputClient
       ) => {
+        // Re-resolve the live color mode on every keyboard invocation --
+        // see applyColorMode's comment. An earlier attempt at this called
+        // the old context.config-reading applyColorMode() here, which
+        // didn't help (that read was just as stale as the one it was
+        // replacing); applyColorMode() itself is now backed by
+        // resourceManager, which actually is live.
+        this.applyColorMode();
         this.inputHandle.onInputStart(kbCtrl, client);
         this.panel?.show();
       });
