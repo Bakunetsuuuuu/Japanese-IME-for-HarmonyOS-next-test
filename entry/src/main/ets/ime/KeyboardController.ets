@@ -897,6 +897,31 @@ export class InputHandler {
     return [composing.slice(0, end), composing.slice(end)];
   }
 
+  // Shared tail-continuation for commitCandidate/commitTopCandidate: when the
+  // conversion range was shrunk (see splitAtConversionEnd), the untouched
+  // tail re-enters COMPOSING instead of being inserted as literal kana, so
+  // the user can keep converting it. Reinitializes the same fields
+  // handleDirectKana does when starting a fresh composing text from scratch
+  // (conversionEnd set to the tail's own length, pendingRomaji/
+  // lastDeletedChar/restoreStack cleared). An empty tail means the whole
+  // composing text was committed, so it falls back to the ordinary full reset.
+  private finishCommitWithTail(tail: string): void {
+    if (tail.length === 0) {
+      this.resetComposition();
+      return;
+    }
+    this.converter.reset();
+    this.lastAlignment = undefined;
+    this.conversionEnd = tail.length;
+    this.lastDeletedChar = '';
+    this.restoreStack = [];
+    AppStorage.setOrCreate('composingText', tail);
+    AppStorage.setOrCreate('pendingRomaji', '');
+    AppStorage.setOrCreate('convEnd', tail.length);
+    AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    this.updateCandidates();
+  }
+
   commitCandidate(index: number): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.BUNSETSU) {
@@ -923,18 +948,7 @@ export class InputHandler {
       KanaKanjiConverter.addContext(text);
       const words = this.committedWords(text);
       this.pushPredictions(words);
-      if (tail.length > 0) {
-        this.converter.reset();
-        this.lastAlignment = undefined;
-        this.conversionEnd = tail.length;
-        AppStorage.setOrCreate('composingText', tail);
-        AppStorage.setOrCreate('pendingRomaji', '');
-        AppStorage.setOrCreate('convEnd', tail.length);
-        AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-        this.updateCandidates();
-      } else {
-        this.resetComposition();
-      }
+      this.finishCommitWithTail(tail);
       return;
     }
     this.resetComposition();
@@ -997,18 +1011,7 @@ export class InputHandler {
       KanaKanjiConverter.addContext(chosen);
       const words = this.committedWords(chosen);
       this.pushPredictions(words);
-      if (tail.length > 0) {
-        this.converter.reset();
-        this.lastAlignment = undefined;
-        this.conversionEnd = tail.length;
-        AppStorage.setOrCreate('composingText', tail);
-        AppStorage.setOrCreate('pendingRomaji', '');
-        AppStorage.setOrCreate('convEnd', tail.length);
-        AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-        this.updateCandidates();
-      } else {
-        this.resetComposition();
-      }
+      this.finishCommitWithTail(tail);
       return;
     }
     this.commitPending();
