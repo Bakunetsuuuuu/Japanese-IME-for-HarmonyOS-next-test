@@ -32427,8 +32427,73 @@ export class KanaKanjiConverter {
   // dictionary entry). Pulled out so every join goes through the same
   // grammar special-cases (てきた/てきて, あい/すいの様態, COLLOCATION_HINTS)
   // instead of two copies drifting apart.
+  // reading -> the CONTEXT_HINTS keys that start with it, built once on first
+  // use. Without it, applyInSentenceHints would scan all ~98 keys for every
+  // segment of every join, and joinSegs runs on each keystroke of a composing
+  // string; with it the overwhelmingly common "this reading has no hint" case
+  // costs a single Map lookup.
+  private static hintsByReading: Map<string, string[]> | undefined = undefined;
+
+  private static hintKeysFor(reading: string): string[] | undefined {
+    let index = KanaKanjiConverter.hintsByReading;
+    if (index === undefined) {
+      index = new Map<string, string[]>();
+      for (const key of Object.keys(CONTEXT_HINTS)) {
+        const sep = key.indexOf('|');
+        if (sep <= 0) { continue; }
+        const reading0 = key.slice(0, sep);
+        const list = index.get(reading0);
+        if (list === undefined) { index.set(reading0, [key]); } else { list.push(key); }
+      }
+      KanaKanjiConverter.hintsByReading = index;
+    }
+    return index.get(reading);
+  }
+
+  // Resolve a segment's homophone using the REST OF THE SAME SENTENCE as
+  // context, with the same curated CONTEXT_HINTS table the cross-sentence
+  // reranker uses (see its application in the candidate builder, which scores
+  // against the committed-text buffer).
+  //
+  // That buffer is empty while the first sentence is being typed, so for
+  // one-shot conversion -- the normal case -- the whole 98-entry table did
+  // nothing, even when the deciding word was sitting right there in the same
+  // phrase: 今年の夏は例年よりあつい kept 熱い despite 夏, and 冷房がきいて
+  // いなくてあつい kept 熱い despite 冷房. Both are literally listed as
+  // triggers for あつい|暑い.
+  //
+  // Only swaps to a surface lookup() actually offers for that reading, and
+  // never touches a segment that was deliberately kept as kana (a function
+  // word, or one of the grammar special-cases above), so this can only pick a
+  // different homophone -- never introduce a kanji where the join decided
+  // kana belongs.
+  private applyInSentenceHints(segs: string[], surfaces: string[]): void {
+    for (let i = 0; i < segs.length; i++) {
+      if (surfaces[i] === segs[i]) { continue; }
+      const keys = KanaKanjiConverter.hintKeysFor(segs[i]);
+      if (keys === undefined) { continue; }
+      let context = '';
+      for (let j = 0; j < surfaces.length; j++) {
+        if (j !== i) { context += surfaces[j]; }
+      }
+      if (context.length === 0) { continue; }
+      for (const key of keys) {
+        const surface = key.slice(key.indexOf('|') + 1);
+        if (surface === surfaces[i]) { break; }
+        let hit = false;
+        for (const trigger of CONTEXT_HINTS[key]) {
+          if (context.indexOf(trigger) >= 0) { hit = true; break; }
+        }
+        if (!hit) { continue; }
+        if (this.lookup(segs[i], true).indexOf(surface) < 0) { continue; }
+        surfaces[i] = surface;
+        break;
+      }
+    }
+  }
+
   private joinSegs(segs: string[]): string | null {
-    let joined = '';
+    const surfaces: string[] = [];
     let allRecognized = true;
     for (let idx = 0; idx < segs.length; idx++) {
       const seg = segs[idx];
@@ -32596,8 +32661,11 @@ export class KanaKanjiConverter {
       // phrase would be nonsense like "()よ". Abandon the join so the plain
       // hiragana leads instead.
       if (KanaKanjiConverter.isSymbolOnly(best)) { return null; }
-      joined += best;
+      surfaces.push(best);
     }
+    // Homophones the rest of this same sentence can settle (夏…→暑い).
+    this.applyInSentenceHints(segs, surfaces);
+    const joined = surfaces.join('');
     // Previously there was a short-circuit here returning `joined` whenever it
     // contained any kanji, on the theory that kanji presence implied a trustworthy
     // join. It didn't: almost every join contains kanji from at least one
