@@ -5,6 +5,7 @@
     "pages/DevDict",
     "pages/PrivacyPolicy",
     "pages/WebViewPage",
-    "pages/DictionaryEditPage"
+    "pages/DictionaryEditPage",
+    "pages/SuppressedList"
   ]
 }

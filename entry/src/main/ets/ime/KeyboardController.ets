@@ -15,6 +15,8 @@ import { SettingsStore, KeyboardSettings, isDarkFromConfiguration } from './Sett
 import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
+import { UnknownWordLearner } from './UnknownWordLearner';
+import { SuppressedCandidates, SUPPRESSED_STORE, SUPPRESSED_KEY } from './SuppressedCandidates';
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
 import { EmojiSuggest } from './EmojiSuggest';
@@ -199,6 +201,10 @@ export class InputHandler {
   private learningSaveTimer: number = -1;
   private nextWordPrefs: dataPreferences.Preferences | undefined = undefined;
   private nextWordSaveTimer: number = -1;
+  private unknownWordPrefs: dataPreferences.Preferences | undefined = undefined;
+  private unknownWordSaveTimer: number = -1;
+  private suppressedPrefs: dataPreferences.Preferences | undefined = undefined;
+  private suppressedSaveTimer: number = -1;
   // The last (up to) two committed words, at word granularity, used as the
   // 1- and 2-word context for next-word prediction/learning (see
   // NextWordPredictor / pushPredictions). Newest last.
@@ -248,6 +254,30 @@ export class InputHandler {
           // decides which shape it is (by checking `.v`) and migrates the old one.
           const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
           NextWordPredictor.setLearned(data);
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, 'shunti_unknownword')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.unknownWordPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
+          UnknownWordLearner.setLearned(data);
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, SUPPRESSED_STORE)
+      .then((prefs: dataPreferences.Preferences) => {
+        this.suppressedPrefs = prefs;
+        return prefs.get(SUPPRESSED_KEY, '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          const data = JSON.parse(String(val)) as Record<string, string[]>;
+          SuppressedCandidates.setSuppressed(data);
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
@@ -552,6 +582,129 @@ export class InputHandler {
     }, 2000);
   }
 
+  private saveUnknownWords(): void {
+    clearTimeout(this.unknownWordSaveTimer);
+    this.unknownWordSaveTimer = setTimeout(() => {
+      const prefs = this.unknownWordPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(UnknownWordLearner.getLearned()))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 2000);
+  }
+
+  private saveSuppressed(): void {
+    clearTimeout(this.suppressedSaveTimer);
+    this.suppressedSaveTimer = setTimeout(() => {
+      const prefs = this.suppressedPrefs;
+      if (!prefs) { return; }
+      prefs.put(SUPPRESSED_KEY, JSON.stringify(SuppressedCandidates.getSuppressed()))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 500);
+  }
+
+  // Re-read the deletion list from disk. The main app's 削除した候補 screen is a
+  // different process, so restores made there are invisible here until this
+  // runs -- called on every onInputStart, the same refresh point the user
+  // dictionary and settings use.
+  private reloadSuppressed(): void {
+    if (!this.imeContext) { return; }
+    SuppressedCandidates.load(this.imeContext, true)
+      .then((data: Record<string, string[]>) => {
+        SuppressedCandidates.setSuppressed(data);
+      })
+      .catch((_e: Error) => {});
+  }
+
+  // The reading the visible candidates were produced from: the composing text
+  // clipped to the conversion range (see splitAtConversionEnd). Shared by
+  // updateCandidates and suppressCandidate so a deletion is always keyed on
+  // exactly the reading the deleted candidate was offered for.
+  private conversionTarget(): string {
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
+    return composing.slice(0, rangeEnd);
+  }
+
+  // Long-press → 削除 on a candidate. Stops that surface being offered for this
+  // reading again, and erases the learned records behind it so neither the
+  // conversion-learning boost nor unknown-word learning can bring it straight
+  // back. Bundled dictionaries are never modified -- see SuppressedCandidates.
+  // Returns the deleted surface (for the confirmation toast), or '' if the
+  // deletion was refused (e.g. the as-typed kana, which must stay committable).
+  suppressCandidate(index: number): string {
+    const candidates = AppStorage.get<string[]>('candidates') ?? [];
+    if (index < 0 || index >= candidates.length) { return ''; }
+    const surface = candidates[index];
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    const bunsetsu = state === InputState.BUNSETSU;
+    const reading = bunsetsu
+      ? (this.bCur < this.bSegs.length ? this.bSegs[this.bCur] : '')
+      : this.conversionTarget();
+    if (reading.length === 0 || surface.length === 0) { return ''; }
+    if (!SuppressedCandidates.suppress(reading, surface)) { return ''; }
+    KanaKanjiConverter.forgetChoice(reading, surface);
+    UnknownWordLearner.forget(reading, surface);
+    this.saveSuppressed();
+    this.saveLearning();
+    this.saveUnknownWords();
+    // Rebuild what's on screen so the chip disappears immediately.
+    if (bunsetsu) {
+      // The segment's chosen surface is held separately from the candidate
+      // list (autoConvert, not lookup), so deleting the surface it currently
+      // shows would otherwise leave the deleted text in the 文節 display and
+      // commit it. Fall back to the best surviving candidate.
+      if (this.bChosen[this.bCur] === surface) {
+        const left = SuppressedCandidates.filter(reading, this.kanjiConverter.lookup(reading));
+        this.bChosen[this.bCur] = left.length > 0 ? left[0] : reading;
+      }
+      this.updateBunsetsuStorage();
+    } else {
+      AppStorage.setOrCreate('selectedCandidateIndex', 0);
+      this.updateCandidates();
+    }
+    return surface;
+  }
+
+  // "Can the converter already produce this surface for this reading?" -- the
+  // test that makes a hand-assembled word count as UNKNOWN (see
+  // UnknownWordLearner). Checks the live candidate list rather than the raw
+  // dictionaries so a word reachable through any current path (dict.json,
+  // mozc, the user dictionary, an earlier unknown-word learn) is never
+  // re-learned as if it were missing.
+  private isKnownConversion(reading: string, surface: string): boolean {
+    if (UnknownWordLearner.candidates(reading).indexOf(surface) >= 0) { return true; }
+    if (this.kanjiConverter.lookup(reading).indexOf(surface) >= 0) { return true; }
+    // lookup() only answers "is this whole reading a dictionary entry". The
+    // converter also reaches compounds by segmenting and auto-converting each
+    // segment (the multi-segment branch of updateCandidates), and a word THAT
+    // route already produces isn't missing either -- without this check every
+    // ordinary kanji compound typed in two commits (会社→見学) would look like
+    // an unknown word and crowd out the genuinely unreachable ones.
+    const segs = this.kanjiConverter.segment(reading);
+    if (segs.length <= 1) { return false; }
+    let joined = '';
+    for (let i = 0; i < segs.length; i++) {
+      joined += this.kanjiConverter.autoConvert(segs[i], segs[i + 1], segs[i - 1]);
+    }
+    return joined === surface;
+  }
+
+  // Feed one committed conversion to the unknown-word learner, then persist if
+  // it changed anything. Called from the ordinary commit paths only -- bunsetsu
+  // editing and raw-kana commits close the run instead (see endUnknownWordRun).
+  private observeUnknownWord(reading: string, surface: string): void {
+    UnknownWordLearner.observe(reading, surface,
+      (r: string, s: string): boolean => this.isKnownConversion(r, s));
+    this.saveUnknownWords();
+  }
+
+  private endUnknownWordRun(): void {
+    UnknownWordLearner.endRun((r: string, s: string): boolean => this.isKnownConversion(r, s));
+    this.saveUnknownWords();
+  }
+
   // The individual words a commit consists of, newest-relevant last: every 文節
   // surface when a multi-segment sentence was committed (recovered from the same
   // alignment learnCommit uses), otherwise the whole text as one word. Splitting
@@ -632,6 +785,8 @@ export class InputHandler {
   // openers right now.
   private markSentenceBoundary(): void {
     this.recentWords = [];
+    // A finished sentence also finishes whatever word was being assembled.
+    this.endUnknownWordRun();
     const openers = NextWordPredictor.openers();
     AppStorage.setOrCreate('predictions', openers);
     this.predictionWordGroups = openers.map((w: string): string[] => [w]);
@@ -686,6 +841,7 @@ export class InputHandler {
     this.converter.reset();
     this.reloadUserDict();
     this.reloadSettings();
+    this.reloadSuppressed();
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -720,6 +876,7 @@ export class InputHandler {
     // Leaving the field: drop the recent-context buffer so homophone ranking in
     // the next app/text box doesn't inherit this one's context.
     KanaKanjiConverter.clearContext();
+    this.endUnknownWordRun();
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('convEnd', 0);
   }
@@ -809,6 +966,10 @@ export class InputHandler {
       const deleted = this.insertedBuffer.pop() ?? '';
       if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
       this.inputClient?.deleteForward(1);
+      // Backspacing the okurigana off a just-committed word (かける→翔ける→翔)
+      // is one of the two ways users hand-build a word the dictionary lacks --
+      // shorten the learner's view of the run to match what's left on screen.
+      UnknownWordLearner.truncate();
       // The committed word the next-word strip was keyed on is being edited
       // away -- retire the strip so a now-stale prediction can't be tapped.
       if (this.recentWords.length > 0) {
@@ -890,6 +1051,9 @@ export class InputHandler {
     const pending = this.converter.flushPending();
     const all = composing + pending;
     if (all.length > 0) { this.insertText(all); }
+    // Committing as raw kana is not a conversion, so it closes any word the
+    // user was assembling rather than extending it.
+    this.endUnknownWordRun();
     this.resetComposition();
   }
 
@@ -952,6 +1116,7 @@ export class InputHandler {
       if (!this.isNonLearningCandidate(reading, text)) {
         this.learnCommit(reading, text);
         this.saveLearning();
+        this.observeUnknownWord(reading, text);
       }
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
@@ -1015,6 +1180,7 @@ export class InputHandler {
       if (!this.isNonLearningCandidate(reading, chosen)) {
         this.learnCommit(reading, chosen);
         this.saveLearning();
+        this.observeUnknownWord(reading, chosen);
       }
       this.insertText(chosen);
       KanaKanjiConverter.addContext(chosen);
@@ -1395,8 +1561,7 @@ export class InputHandler {
 
     // conversionEnd defines the split point: text before it is converted,
     // text after stays as kana. 0 means convert the full text.
-    const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
-    const target = composing.slice(0, rangeEnd);
+    const target = this.conversionTarget();
 
     const fullKatakana = KanaKanjiConverter.toKatakana(target);
     const segs = this.kanjiConverter.segment(target);
@@ -1544,6 +1709,14 @@ export class InputHandler {
     // reading (which the exact conversion already handles) adds nothing here --
     // this is why it never disturbs the whole-sentence conversion candidates.
     let insAt = candidates.length > 0 ? 1 : 0;
+    // 未知語学習: a word this user has hand-assembled from single kanji / by
+    // trimming a longer conversion enough times (see UnknownWordLearner) is
+    // something the dictionaries genuinely cannot produce, so it leads the
+    // injected alternatives -- it is the one entry here that exists solely
+    // because this user kept asking for it.
+    for (const u of UnknownWordLearner.candidates(target)) {
+      if (!candidates.includes(u)) { candidates.splice(insAt, 0, u); insAt++; }
+    }
     // Date/time expansion (きょう→2026年7月23日, いま→15:05, あした→翌日…) leads the
     // alternatives for its trigger readings -- when someone types きょう the live
     // date is a likelier intent than a prefix-completion (教育 for きょういく).
@@ -1567,7 +1740,10 @@ export class InputHandler {
       if (!candidates.includes(nf)) { candidates.splice(insAt, 0, nf); insAt++; }
     }
 
-    AppStorage.setOrCreate('candidates', candidates);
+    // Candidates the user deleted by long-pressing them are dropped last, so
+    // every source above (dictionaries, learning, the injected predictions) is
+    // covered by the one filter -- see SuppressedCandidates.
+    AppStorage.setOrCreate('candidates', SuppressedCandidates.filter(target, candidates));
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
   }
 
@@ -1715,7 +1891,8 @@ export class InputHandler {
     AppStorage.setOrCreate('bunsetsuRaw', this.bSegs as string[]);
     AppStorage.setOrCreate('bunsetsuCurrent', this.bCur);
     AppStorage.setOrCreate('bunsetsuDisplay', segTexts.join(''));
-    const cands = this.kanjiConverter.lookup(this.bSegs[this.bCur]);
+    const seg = this.bSegs[this.bCur];
+    const cands = SuppressedCandidates.filter(seg, this.kanjiConverter.lookup(seg));
     AppStorage.setOrCreate('candidates', cands);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.BUNSETSU);

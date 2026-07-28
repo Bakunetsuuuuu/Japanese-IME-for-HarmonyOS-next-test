@@ -348,8 +348,21 @@ struct Index {
           .divider({ strokeWidth: 1, color: kbTheme(this.isDark).divider })
         }
 
-        // Footer
-        Row() {
+        // Footer. Flex-wrapped: these secondary-screen links no longer fit on
+        // one line on narrow displays now that 削除した候補 is among them.
+        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
+          // Entry point for candidates deleted by long-pressing them on the
+          // keyboard -- the only place those deletions can be reviewed and
+          // undone (see pages/SuppressedList.ets).
+          Text('削除した候補')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).accent)
+            .onClick(() => { router.pushUrl({ url: 'pages/SuppressedList' }); })
+          Text('  ·  ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
           Text('プライバシーポリシー')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
@@ -374,7 +387,6 @@ struct Index {
             .onClick(() => { this.confirmFullReset = false; this.showRepair = true; })
         }
         .width('100%')
-        .justifyContent(FlexAlign.Center)
         .padding({ top: 12, bottom: 16 })
       }
       .width('100%')
