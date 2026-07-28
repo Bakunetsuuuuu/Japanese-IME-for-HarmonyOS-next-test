@@ -32484,7 +32484,12 @@ export class KanaKanjiConverter {
       // sentence-initially, so a やすい directly glued onto a non-particle
       // segment with no particle between them essentially never means
       // "cheap" in real text.
-      if (seg === 'やすい' && idx > 0 &&
+      // The same reasoning holds for every inflection of that auxiliary
+      // (やすく/やすくなった/やすかった…), which used to fall straight through
+      // to 安く/安かった: 疲れやすくなった came out 疲れ安くなった. The guard is
+      // unchanged, so a genuine 安い still wins wherever it is properly marked
+      // (服が安くなった -- prev is が, a case particle, so this never fires).
+      if (KanaKanjiConverter.YASUI_AUX_FORMS.has(seg) && idx > 0 &&
           !KanaKanjiConverter.CASE_PARTICLES.has(segs[idx - 1]) &&
           !KanaKanjiConverter.FW_CLASS_MAP[segs[idx - 1]]) {
         best = seg;
@@ -33512,10 +33517,10 @@ export class KanaKanjiConverter {
     }
     // やすい directly after another segment: see joinSegs' matching special
     // case for why.
-    if (kana === 'やすい' && prevSeg !== undefined &&
+    if (KanaKanjiConverter.YASUI_AUX_FORMS.has(kana) && prevSeg !== undefined &&
         !KanaKanjiConverter.CASE_PARTICLES.has(prevSeg) &&
         !KanaKanjiConverter.FW_CLASS_MAP[prevSeg]) {
-      return 'やすい';
+      return kana;
     }
     // てきた/てきて/き(ちゃ...): see joinSegs' matching special case for why.
     if (prevSeg !== undefined && prevSeg.length > 1 && /[てで]$/.test(prevSeg) &&
@@ -33939,6 +33944,14 @@ export class KanaKanjiConverter {
   // same 0-9000ish scale as track A's, so the same order-of-magnitude value
   // is a reasonable starting point.
   private static readonly MOZC_SINGLE_CONTENT_PENALTY = 2500;
+
+  // 「〜やすい」(easy to ~) 補助形容詞の活用形。動詞連用形に直接くっつく
+  // 用法だけを対象にしたいので、使う側で「直前が格助詞でない」ガードを
+  // かける (joinSegs / autoConvert の同じ条件を参照)。
+  private static readonly YASUI_AUX_FORMS: Set<string> = new Set<string>([
+    'やすい', 'やすく', 'やすくて', 'やすかった', 'やすくない',
+    'やすくなった', 'やすくなる', 'やすければ', 'やすさ',
+  ]);
 
   // 可能形「〜できる」の活用形。サ変名詞の直後では、この語形は毎回
   // で(格助詞) + き… の分割に競り負ける: で は極めて安い助詞で、続く き…

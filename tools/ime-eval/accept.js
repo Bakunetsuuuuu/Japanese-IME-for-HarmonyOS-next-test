@@ -5,6 +5,8 @@
 // still counts as a failure — the point is "did it produce natural Japanese",
 // not "did it match one arbitrary gold".
 module.exports = {
+  // 「なんか最近〜」の なんか は口語のフィラーなので、かな表記の方がむしろ自然。
+  'なんかさいきんつかれやすくなったきがする': ['なんか最近疲れやすくなった気がする'],
   'あしたてんきになるといいな': ['明日天気になると良いな'],
   'えきまであるいていく': ['駅まで歩いていく'],
   'ひるごはんはなにたべる': ['昼ごはんは何食べる'],
