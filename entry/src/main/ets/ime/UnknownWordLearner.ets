@@ -227,6 +227,27 @@ export class UnknownWordLearner {
     UnknownWordLearner.flush(isKnown);
   }
 
+  // Erase an assembled word. Used when the user deletes the candidate: without
+  // this the assembly count would survive the deletion and re-offer the word
+  // immediately. Rebuilds rather than using `delete`, matching the codebase.
+  static forget(reading: string, surface: string): void {
+    const entry = UnknownWordLearner.counts[reading];
+    if (entry === undefined || entry[surface] === undefined) { return; }
+    const next: Record<string, number> = {};
+    for (const s of Object.keys(entry)) {
+      if (s !== surface) { next[s] = entry[s]; }
+    }
+    if (Object.keys(next).length > 0) {
+      UnknownWordLearner.counts[reading] = next;
+      return;
+    }
+    const remaining: Record<string, Record<string, number>> = {};
+    for (const r of Object.keys(UnknownWordLearner.counts)) {
+      if (r !== reading) { remaining[r] = UnknownWordLearner.counts[r]; }
+    }
+    UnknownWordLearner.counts = remaining;
+  }
+
   // Learned words for exactly this reading, most-assembled first. Empty until a
   // word has cleared LEARN_THRESHOLD.
   static candidates(reading: string): string[] {

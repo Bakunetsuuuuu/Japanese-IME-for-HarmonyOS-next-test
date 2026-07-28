@@ -1,6 +1,7 @@
 import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
 import { JP_FONT_FAMILY } from './JpFont';
+import { promptAction } from '@kit.ArkUI';
 
 @Component
 export struct ExpandedCandidateView {
@@ -9,6 +10,36 @@ export struct ExpandedCandidateView {
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
+  // Same long-press-to-delete affordance as the candidate bar; see CandidateBar
+  // for why the popup reads its text from state instead of a builder argument.
+  @State menuIndex: number = -1;
+  @State menuCandidate: string = '';
+
+  private closeMenu(): void {
+    this.menuIndex = -1;
+    this.menuCandidate = '';
+  }
+
+  @Builder DeleteMenu() {
+    Row({ space: 6 }) {
+      Text('🗑')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(14)
+      Text(`「${this.menuCandidate}」を候補から削除`)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(kbTheme(this.isDark).textPrimary)
+    }
+    .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+    .onClick(() => {
+      const removed = InputHandler.getInstance().suppressCandidate(this.menuIndex);
+      this.closeMenu();
+      if (removed.length > 0) {
+        promptAction.showToast({ message: `「${removed}」を候補から削除しました（設定から元に戻せます）` });
+      }
+    })
+  }
 
   build() {
     // One-handed mode docks the panel itself to that side (thumb-reachable),
@@ -54,6 +85,24 @@ export struct ExpandedCandidateView {
                   .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
                   .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
               }
+              .bindPopup(this.menuIndex === index, {
+                builder: this.DeleteMenu,
+                placement: Placement.Top,
+                enableArrow: true,
+                popupColor: kbTheme(this.isDark).cardBg,
+                radius: 12,
+                mask: true,
+                onStateChange: (e: PopupStateChangeParam) => {
+                  if (!e.isVisible && this.menuIndex === index) { this.closeMenu(); }
+                },
+              })
+              .gesture(
+                LongPressGesture({ duration: 400 })
+                  .onAction(() => {
+                    this.menuCandidate = candidate;
+                    this.menuIndex = index;
+                  })
+              )
               .onClick(() => {
                 InputHandler.getInstance().commitCandidate(index);
                 AppStorage.setOrCreate('candidateExpanded', false);

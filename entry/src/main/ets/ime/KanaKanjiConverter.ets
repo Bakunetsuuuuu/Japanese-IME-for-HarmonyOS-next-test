@@ -31909,6 +31909,30 @@ export class KanaKanjiConverter {
     }
   }
 
+  // Erase a learned reading→surface record. Used when the user deletes a
+  // candidate: the suppression list stops it being displayed, but the learned
+  // count also has to go, or it would keep re-ranking a candidate that is no
+  // longer there and keep feeding PredictiveConversion (which completes
+  // straight out of this store, bypassing the candidate list entirely).
+  // Rebuilds rather than using `delete`, matching the rest of this file.
+  static forgetChoice(kana: string, candidate: string): void {
+    const entry = KanaKanjiConverter.learned[kana];
+    if (entry === undefined || entry[candidate] === undefined) { return; }
+    const next: Record<string, number> = {};
+    for (const k of Object.keys(entry)) {
+      if (k !== candidate) { next[k] = entry[k]; }
+    }
+    if (Object.keys(next).length > 0) {
+      KanaKanjiConverter.learned[kana] = next;
+      return;
+    }
+    const remaining: Record<string, Record<string, number>> = {};
+    for (const r of Object.keys(KanaKanjiConverter.learned)) {
+      if (r !== kana) { remaining[r] = KanaKanjiConverter.learned[r]; }
+    }
+    KanaKanjiConverter.learned = remaining;
+  }
+
   // Per-segment ("文節") learning for the ordinary whole-sentence commit path.
   // Committing a multi-segment candidate used to record only the entire
   // reading→surface pair (recordChoice(wholeReading, wholeSurface)), a key

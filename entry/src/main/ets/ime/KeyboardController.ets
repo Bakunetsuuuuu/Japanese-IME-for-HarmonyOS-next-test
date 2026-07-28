@@ -16,6 +16,7 @@ import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
 import { UnknownWordLearner } from './UnknownWordLearner';
+import { SuppressedCandidates } from './SuppressedCandidates';
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
 import { EmojiSuggest } from './EmojiSuggest';
@@ -202,6 +203,8 @@ export class InputHandler {
   private nextWordSaveTimer: number = -1;
   private unknownWordPrefs: dataPreferences.Preferences | undefined = undefined;
   private unknownWordSaveTimer: number = -1;
+  private suppressedPrefs: dataPreferences.Preferences | undefined = undefined;
+  private suppressedSaveTimer: number = -1;
   // The last (up to) two committed words, at word granularity, used as the
   // 1- and 2-word context for next-word prediction/learning (see
   // NextWordPredictor / pushPredictions). Newest last.
@@ -263,6 +266,19 @@ export class InputHandler {
         try {
           const data = JSON.parse(String(val)) as Record<string, Record<string, number>>;
           UnknownWordLearner.setLearned(data);
+        } catch (_e) {}
+      })
+      .catch((_e: Error) => {});
+    dataPreferences.getPreferences(this.imeContext, 'shunti_suppressed')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.suppressedPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          const data = JSON.parse(String(val)) as Record<string, string[]>;
+          SuppressedCandidates.setSuppressed(data);
+          this.publishSuppressedCount();
         } catch (_e) {}
       })
       .catch((_e: Error) => {});
@@ -576,6 +592,84 @@ export class InputHandler {
         .then(() => prefs.flush())
         .catch((_e: Error) => {});
     }, 2000);
+  }
+
+  // Drives the settings panel's "元に戻す" entry, which is the only visible
+  // trace that anything was deleted at all.
+  private publishSuppressedCount(): void {
+    AppStorage.setOrCreate('suppressedCount', SuppressedCandidates.count());
+  }
+
+  private saveSuppressed(): void {
+    clearTimeout(this.suppressedSaveTimer);
+    this.suppressedSaveTimer = setTimeout(() => {
+      const prefs = this.suppressedPrefs;
+      if (!prefs) { return; }
+      prefs.put('v1', JSON.stringify(SuppressedCandidates.getSuppressed()))
+        .then(() => prefs.flush())
+        .catch((_e: Error) => {});
+    }, 500);
+  }
+
+  // The reading the visible candidates were produced from: the composing text
+  // clipped to the conversion range (see splitAtConversionEnd). Shared by
+  // updateCandidates and suppressCandidate so a deletion is always keyed on
+  // exactly the reading the deleted candidate was offered for.
+  private conversionTarget(): string {
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
+    return composing.slice(0, rangeEnd);
+  }
+
+  // Long-press → 削除 on a candidate. Stops that surface being offered for this
+  // reading again, and erases the learned records behind it so neither the
+  // conversion-learning boost nor unknown-word learning can bring it straight
+  // back. Bundled dictionaries are never modified -- see SuppressedCandidates.
+  // Returns the deleted surface (for the confirmation toast), or '' if the
+  // deletion was refused (e.g. the as-typed kana, which must stay committable).
+  suppressCandidate(index: number): string {
+    const candidates = AppStorage.get<string[]>('candidates') ?? [];
+    if (index < 0 || index >= candidates.length) { return ''; }
+    const surface = candidates[index];
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    const bunsetsu = state === InputState.BUNSETSU;
+    const reading = bunsetsu
+      ? (this.bCur < this.bSegs.length ? this.bSegs[this.bCur] : '')
+      : this.conversionTarget();
+    if (reading.length === 0 || surface.length === 0) { return ''; }
+    if (!SuppressedCandidates.suppress(reading, surface)) { return ''; }
+    KanaKanjiConverter.forgetChoice(reading, surface);
+    UnknownWordLearner.forget(reading, surface);
+    this.publishSuppressedCount();
+    this.saveSuppressed();
+    this.saveLearning();
+    this.saveUnknownWords();
+    // Rebuild what's on screen so the chip disappears immediately.
+    if (bunsetsu) {
+      // The segment's chosen surface is held separately from the candidate
+      // list (autoConvert, not lookup), so deleting the surface it currently
+      // shows would otherwise leave the deleted text in the 文節 display and
+      // commit it. Fall back to the best surviving candidate.
+      if (this.bChosen[this.bCur] === surface) {
+        const left = SuppressedCandidates.filter(reading, this.kanjiConverter.lookup(reading));
+        this.bChosen[this.bCur] = left.length > 0 ? left[0] : reading;
+      }
+      this.updateBunsetsuStorage();
+    } else {
+      AppStorage.setOrCreate('selectedCandidateIndex', 0);
+      this.updateCandidates();
+    }
+    return surface;
+  }
+
+  // Undo every candidate deletion (settings panel). The learned counts erased
+  // alongside them are NOT restored -- they were usage statistics, not the
+  // deletion itself -- so a restored candidate simply returns to its ordinary
+  // dictionary ranking.
+  clearSuppressedCandidates(): void {
+    SuppressedCandidates.clear();
+    this.publishSuppressedCount();
+    this.saveSuppressed();
   }
 
   // "Can the converter already produce this surface for this reading?" -- the
@@ -1446,8 +1540,7 @@ export class InputHandler {
 
     // conversionEnd defines the split point: text before it is converted,
     // text after stays as kana. 0 means convert the full text.
-    const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
-    const target = composing.slice(0, rangeEnd);
+    const target = this.conversionTarget();
 
     const fullKatakana = KanaKanjiConverter.toKatakana(target);
     const segs = this.kanjiConverter.segment(target);
@@ -1626,7 +1719,10 @@ export class InputHandler {
       if (!candidates.includes(nf)) { candidates.splice(insAt, 0, nf); insAt++; }
     }
 
-    AppStorage.setOrCreate('candidates', candidates);
+    // Candidates the user deleted by long-pressing them are dropped last, so
+    // every source above (dictionaries, learning, the injected predictions) is
+    // covered by the one filter -- see SuppressedCandidates.
+    AppStorage.setOrCreate('candidates', SuppressedCandidates.filter(target, candidates));
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
   }
 
@@ -1774,7 +1870,8 @@ export class InputHandler {
     AppStorage.setOrCreate('bunsetsuRaw', this.bSegs as string[]);
     AppStorage.setOrCreate('bunsetsuCurrent', this.bCur);
     AppStorage.setOrCreate('bunsetsuDisplay', segTexts.join(''));
-    const cands = this.kanjiConverter.lookup(this.bSegs[this.bCur]);
+    const seg = this.bSegs[this.bCur];
+    const cands = SuppressedCandidates.filter(seg, this.kanjiConverter.lookup(seg));
     AppStorage.setOrCreate('candidates', cands);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.BUNSETSU);
