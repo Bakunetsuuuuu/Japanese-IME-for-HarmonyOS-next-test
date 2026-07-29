@@ -34173,8 +34173,24 @@ export class KanaKanjiConverter {
     'おかなきゃ', 'おかなければ', 'おいたら', 'おいたり', 'おいてる', 'おいてね',
   ]);
 
+  // 完全一致だけでは、後ろに何か続いて1スパンになった形を取りこぼす:
+  // 買っておけばよかった は かって|おけばよかった と切れるので、
+  // 'おけば' の完全一致では引っかからず 買って置けばよかった になっていた。
+  // 前方一致にする。呼び出し側が「直前が て/で で終わる2文字以上」を要求して
+  // いるので、置き場 のような別語をここで巻き込むことはない。
+  // 前方一致も見る形。買っておけばよかった は かって|おけばよかった と切れるので
+  // 'おけば' の完全一致では引っかからず 買って置けばよかった になっていた。
+  //
+  // 前方一致を許すのは下の3語だけ。OKU_AUX_FORMS 全部でやると
+  // おき→起きていた、おく→送った を巻き込んで壊す(実測 REGRESSED 4)。
+  private static readonly OKU_AUX_PREFIXES: string[] = ['おけば', 'おこう', 'おいたら'];
+
   private static isOkuAuxiliary(kana: string): boolean {
-    return KanaKanjiConverter.OKU_AUX_FORMS.has(kana);
+    if (KanaKanjiConverter.OKU_AUX_FORMS.has(kana)) { return true; }
+    for (const f of KanaKanjiConverter.OKU_AUX_PREFIXES) {
+      if (kana.length > f.length && kana.startsWith(f)) { return true; }
+    }
+    return false;
   }
 
   // Auxiliary みる forms (…てみる "try doing") that must stay kana after a て/で
