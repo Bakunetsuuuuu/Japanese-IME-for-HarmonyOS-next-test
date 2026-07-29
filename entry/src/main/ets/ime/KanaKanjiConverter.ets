@@ -32885,11 +32885,14 @@ export class KanaKanjiConverter {
     return [lead, ...rest];
   }
 
+  // 文字列は for...of ではなく添字で回す(このファイルの他の文字走査に合わせる。
+  // ArkTS では文字列のイテレータに頼らない方が安全)。
   private static isAllKanji(s: string): boolean {
-    for (const c of s) {
-      if (!KanaKanjiConverter.hasKanjiChar(c)) { return false; }
+    if (s.length === 0) { return false; }
+    for (let i = 0; i < s.length; i++) {
+      if (!KanaKanjiConverter.hasKanjiChar(s.charAt(i))) { return false; }
     }
-    return s.length > 0;
+    return true;
   }
 
   private static boostCommonWords(cands: string[]): string[] {
