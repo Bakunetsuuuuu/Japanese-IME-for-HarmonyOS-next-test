@@ -33317,22 +33317,27 @@ export class KanaKanjiConverter {
     return out;
   }
 
+  // How many times the committed-context buffer hits a curated trigger for
+  // this reading→candidate pair. 0 means "the table has nothing to say here".
+  private static hintScore(reading: string, cand: string): number {
+    const triggers = CONTEXT_HINTS[reading + '|' + cand];
+    if (triggers === undefined) { return 0; }
+    let score = 0;
+    for (const ctx of KanaKanjiConverter.contextBuffer) {
+      for (const trigger of triggers) {
+        if (ctx.indexOf(trigger) >= 0) { score += 1; }
+      }
+    }
+    return score;
+  }
+
   private static contextRerank(reading: string, cands: string[]): string[] {
     const buffer = KanaKanjiConverter.contextBuffer;
     if (buffer.length === 0) { return cands; }
     const scores: number[] = [];
     let hasSignal = false;
     for (let i = 0; i < cands.length; i++) {
-      const key = reading + '|' + cands[i];
-      const triggers = CONTEXT_HINTS[key];
-      let score = 0;
-      if (triggers) {
-        for (const ctx of buffer) {
-          for (const trigger of triggers) {
-            if (ctx.indexOf(trigger) >= 0) { score += 1; }
-          }
-        }
-      }
+      const score = KanaKanjiConverter.hintScore(reading, cands[i]);
       scores.push(score);
       if (score > 0) { hasSignal = true; }
     }
@@ -33484,7 +33489,12 @@ export class KanaKanjiConverter {
     if (KanaKanjiConverter.FUNCTION_WORDS[kana] && result[0] !== kana) {
       const hasLearned = KanaKanjiConverter.learned[kana] &&
                          Object.keys(KanaKanjiConverter.learned[kana]).length > 0;
-      if (!hasLearned) {
+      // 文脈表が実際に発火して選んだ先頭は、機能語のかな固定より優先する。
+      // なく は「〜なく」の助動詞でもあるためここで常にかなへ戻されており、
+      // 赤ちゃんが→泣く / 鳥が→鳴く のように表にちゃんと書いてある語まで
+      // 一度も選ばれないままだった(contextRerank が並べ替えた直後に潰される)。
+      const hinted = KanaKanjiConverter.hintScore(kana, result[0]) > 0;
+      if (!hasLearned && !hinted) {
         const rest = result.filter((c: string) => c !== kana);
         result = [kana, ...rest];
       }
