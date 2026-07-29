@@ -33103,6 +33103,11 @@ export class KanaKanjiConverter {
   // 動詞の連用形にしか付かない語尾。これが次のセグメントなら、手前は動詞。
   // ます/ました/たい 等は まちます のように一語のスパンになって割れないので
   // 入れていない(割れたときだけの救済)。
+  // 動詞の未然形にしか付かない語尾。
+  private static readonly MIZEN_FOLLOWERS: Set<string> = new Set<string>([
+    'ずに', 'ず', 'ぬ', 'ずには', 'ずとも',
+  ]);
+
   private static readonly RENYOU_FOLLOWERS: Set<string> = new Set<string>([
     'なさい', 'なさいませ', 'ましょう', 'ましょうか', 'ませんか', 'なさって',
     // ます形は普通 まちます のように一語のスパンになって割れないが、
@@ -33289,6 +33294,16 @@ export class KanaKanjiConverter {
       // 正しく出る(まちます→待ちます, まちたい→待ちたい)ので、同じ手を借りる。
       // seg+ます を引いて ます で終わる語が返れば、その ます を落とした部分が
       // 求める連用形。表を作らずに済み、辞書に動詞がある限り自動で効く。
+      // ずに/ず/ぬ は動詞の未然形にしか付かない。連用形の規則(下)と同じ手で、
+      // seg+ない を引いて漢字の ない形が返ればその ない を落としたものが未然形。
+      //   何も岩ずに → 何も言わずに   のまずに → 飲まずに
+      if (idx + 1 < segs.length && KanaKanjiConverter.MIZEN_FOLLOWERS.has(segs[idx + 1])) {
+        const nai = this.lookup(seg + 'ない', true)[0];
+        if (nai !== undefined && nai.endsWith('ない') && nai.length > 2 &&
+            KanaKanjiConverter.hasKanjiChar(nai[0])) {
+          best = nai.slice(0, nai.length - 2);
+        }
+      }
       if (idx + 1 < segs.length && KanaKanjiConverter.RENYOU_FOLLOWERS.has(segs[idx + 1])) {
         const masu = this.lookup(seg + 'ます', true)[0];
         // 漢字が出たときだけ差し替える。ます形がかなのまま返るのは辞書に
