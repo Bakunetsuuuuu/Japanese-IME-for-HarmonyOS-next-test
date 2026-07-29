@@ -25554,6 +25554,24 @@ const DICTIONARY: Record<string, string[]> = {
   'しょく': ['職', '食', '色', '触'],            // 職31
   'はなされた': ['話された', '放された', '離された'],
   'ひきかた': ['弾き方', '引き方'],
+  // ── 分割で負けていた語。単独では正しく出るのに文中で割れていたもの、
+  // または候補自体が無かったもの。
+  'みずから': ['自ら', 'みずから'],           // みず＋から に割れて「水から」
+  'にあって': ['似合って', 'に会って'],        // に＋あって で「に会って」
+  'にあう': ['似合う', 'に合う'],
+  'にあっています': ['似合っています'],
+  'はなしあおう': ['話し合おう'],             // はなし＋あおう で「話会おう」
+  'はなしあった': ['話し合った'],
+  'はなしあう': ['話し合う'],
+  'みなさい': ['見なさい', '皆'],             // みな＋さい で「三奈際」
+  'おかり': ['お借り'],                      // おか＋り で「丘り」
+  'おかりできますか': ['お借りできますか'],
+  'たかく': ['高く', '多角'],                 // 高く評価 が 多角評価 に
+  // せんこう の既定が 選好(経済学の術語)。
+  'せんこう': ['専攻', '先行', '選考', '閃光', '選好'],
+  'せんこうして': ['専攻して', '先行して', '選考して'],
+  'せんこうしている': ['専攻している', '先行している'],
+
   // あわない の既定が 会わない。実文は 合わない35 対 会わない8 で、
   // 「体質に合わない」「サイズが合わない」のような定型が多い。素の あう は
   // 会う54 対 合う24 なので既定を動かさない(ない形だけ逆転する)。
@@ -34443,6 +34461,12 @@ export class KanaKanjiConverter {
   // 候補としては lookup で出せるので、DP のスパン候補から外すだけにする。
   private static readonly NEVER_SPAN: Set<string> = new Set<string>([
     'こは',
+    // ははそ(柞・古語の木の名)が 母は/母その より安いスパンになり、
+    // 「母はその作家を高く評価している」→「柞の作家を…」。
+    'ははそ',
+    // せんこうし(先行詞・言語学の術語)が せんこう＋し に勝ち、
+    // 「物理学を専攻している」→「物理学を先行詞ている」。
+    'せんこうし',
   ]);
 
   // True if `reading` is a *content* word authored in one of the dictionaries
@@ -34598,6 +34622,7 @@ export class KanaKanjiConverter {
   // unknown single chars heavily penalised (15000) to avoid spurious splits.
   private static readonly VN_UNKNOWN_SINGLE = 15000;
   private static readonly VN_FUNCTION_WORD  = 1500;
+  private static readonly WA_SWALLOW_PENALTY = 500;
   private static readonly VN_DEFAULT        = 5000;
   // Track B analogue of track A's per-span singleContentPenalty (see
   // getWordInfo below) -- see the DP comment in segment() for why single
@@ -34698,7 +34723,13 @@ export class KanaKanjiConverter {
         // きょう が COMMON_READINGS にあるため、きょう＋安い助詞 の方が
         // 常に安く、きょうと/きょうそう に同じ常用ボーナスを足しても差が
         // 付かない(京都に住む→今日とに住む, 競争→今日そう)。
-        sub === 'きょうと' || sub === 'きょうそう') {
+        sub === 'きょうと' || sub === 'きょうそう' ||
+        // みず/はなし/に は単独で安いので、みずから→みず＋から(水から)、
+        // はなしあおう→はなし＋あおう(話会おう)、にあって→に＋あって(に会って)
+        // と割れていた。いずれも複合語として一語で扱うのが正しい。
+        sub === 'みずから' || sub === 'はなしあおう' || sub === 'はなしあう' ||
+        sub === 'はなしあった' || sub === 'にあって' || sub === 'にあう' ||
+        sub === 'にあっています' || sub === 'にあいます') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.DEKIRU_FORMS.has(sub)) {
@@ -35419,7 +35450,19 @@ export class KanaKanjiConverter {
           const nc = info[0];
           const lc = info[1];
           const rc = info[2];
-          const total = best[i] + nc + this.getEdgeCost(rightClass[i], lc);
+          // 名詞のすぐ後ろに は で始まる語を丸ごと当てる分割は、ほぼ必ず
+          // 「名詞＋主題の は」を取り違えている。は は名詞の後で最も出やすい
+          // 助詞なのに、後続語の側が長さボーナスで勝ってしまう:
+          //     僕は知っている      → 僕|走って|いる     (僕走っている)
+          //     …については何も     → …について|花|に|も (について花にも)
+          //     忠告は役に立つ      → 忠告|早く|に|立つ  (忠告早くに立つ)
+          //     母はその作家を      → 柞|の|作家|を      (柞の作家を)
+          // 名詞＋名詞の複合語は普通それ自体が1つの辞書項目になっているので、
+          // ここで割を食うことは少ない。値は 0〜3000 を 500 刻みで振って、
+          // 手書きコーパスに回帰が出ず実文コーパスが最大になる点を採った。
+          const topicPenalty = (len > 1 && sub.charCodeAt(0) === 0x306F &&
+              rightClass[i] === KanaKanjiConverter.VC_NOUN) ? KanaKanjiConverter.WA_SWALLOW_PENALTY : 0;
+          const total = best[i] + nc + topicPenalty + this.getEdgeCost(rightClass[i], lc);
           if (total < best[i + len]) {
             best[i + len] = total;
             prevPos[i + len] = i;
