@@ -106,7 +106,8 @@ function main() {
     // the isCitationFormAlt path let a kana-kept segment contribute its
     // plain-form verb kanji (出る/勝つ/来る/産む) without leaking particle
     // homographs (は→歯, なら→成ら).
-    { reading: 'しあいにでる', want: '試合に出る' },
+    // しあいにでる は「格助詞の直後の でる は 出る」という規則が入って候補0に
+    // なったので、候補0を採点する corpus3 側へ移した。
     { reading: 'あいてにかつ', want: '相手に勝つ' },
     { reading: 'よあけがくる', want: '夜明けが来る' },
     { reading: 'たまごをうむ', want: '卵を産む' },
