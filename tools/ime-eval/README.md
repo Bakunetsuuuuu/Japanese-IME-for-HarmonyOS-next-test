@@ -12,6 +12,44 @@ labeled corpus of natural Japanese `[reading, goldSurface]` pairs.
 
 ## Run
 
+### 実文コーパス (Tatoeba, 約42k文)
+
+手書きの corpus*.js は小さく(~1.2k)、修正と同時に書かれたものが多いので、
+既知の良い挙動を確認する用途に寄っている。こちらはこのIMEを知らない人が
+書いた外部の文なので、点数は大きく下がる代わりに正直で、バグ発見に向く。
+
+```sh
+node tools/ime-eval/fetch_real_corpus.js    # Tatoeba を cache_real/ に取得(gitignore)
+node tools/ime-eval/build_real_corpus.js    # 読みを復元して [読み,表記] に変換
+node tools/ime-eval/run_real.js --rank      # 誤りを頻度順に集計 ← これを見て直す
+```
+
+### 同音異義語だけを採点する (run_homophone.js)
+
+実文の残る差の大半が表記の好み(事/こと、時/とき)になった段階では、文全体の
+一致率は鈍い。同音語の選択を1つ直しても％がほとんど動かず、逆に表記の好みに
+合わせにいくと変換の質が下がる。
+
+```sh
+node tools/ime-eval/run_homophone.js --rank        # 読みごとの誤り内訳
+node tools/ime-eval/run_homophone.js --reading きく # 特定の読みの実例
+```
+
+判定の単位を「文」から「1回の同音語選択」に落とす。実文で漢字表記が2種類以上
+使われている読みだけを対象にするので、表記ゆれは自動的に外れ、点数がそのまま
+「文脈から正しい同音語を選べた割合」になる。
+
+**注意**: Tatoeba は翻訳・文語寄りで、口語や現代的な用法とはズレる。実際
+「起こる107対怒る20」「後悔49対公開5」と出るが、どちらも既定を寄せると
+反対側(別に怒ってない/更新が公開された)が壊れることを測定で確認している。
+頻度は候補であって結論ではない。
+
+`--rank` は各誤りの差分だけを取り出して頻度順に並べる。表記ゆれ(事/こと、
+時/とき)は**両方向に**現れるので書き手の流儀と判別でき、片側だけが別語に
+なっている行が実バグ。データは取得のみでコミットしない(Tatoeba は CC BY 2.0 FR、
+アプリにも同梱しない)。
+
+
 ```sh
 node tools/ime-eval/run.js            # TRAIN summary accuracy
 node tools/ime-eval/run.js --misses   # also print every miss (gold vs got)

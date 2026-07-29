@@ -1151,6 +1151,13 @@ export class InputHandler {
   // Anything else (single segment, symbol prefix, a predictive/alt-segment
   // pick whose surface no longer starts with the prefix) falls back to the
   // plain whole reading→surface record.
+  // Longest whole reading still recorded verbatim by learnCommit. Long enough
+  // for the names, set phrases and stock sentences people actually retype;
+  // past that a reading is a one-off sentence that would only burn a slot in
+  // the learning store (and turn into noisy predictive completions, since
+  // PredictiveConversion completes straight out of that store).
+  private static readonly MAX_WHOLE_LEARN_LEN = 12;
+
   private learnCommit(composing: string, text: string): void {
     const a = this.lastAlignment;
     if (a !== undefined && text.length > a.prefixText.length && text.startsWith(a.prefixText)) {
@@ -1158,6 +1165,17 @@ export class InputHandler {
       const surfaces = a.prefixSurfaces.slice();
       surfaces.push(lastSurface);
       KanaKanjiConverter.recordSegmentedChoice(a.segs, surfaces);
+      // ...and the whole reading too. Per-segment records are what make a
+      // correction generalize (とった→撮った carries to the next sentence), but
+      // they are keyed on the SEGMENTS while the candidate list for a
+      // multi-segment reading is reordered by applyLearning under the WHOLE
+      // reading -- so picking 写真を取った for しゃしんをとった recorded
+      // しゃしん/とった and left しゃしんをとった itself unlearned. Re-typing the
+      // exact same phrase therefore never promoted the choice, no matter how
+      // many times it was made: the one case a user most expects to stick.
+      if (composing.length <= InputHandler.MAX_WHOLE_LEARN_LEN) {
+        KanaKanjiConverter.recordChoice(composing, text);
+      }
     } else {
       KanaKanjiConverter.recordChoice(composing, text);
     }
@@ -1740,6 +1758,11 @@ export class InputHandler {
       if (!candidates.includes(nf)) { candidates.splice(insAt, 0, nf); insAt++; }
     }
 
+    // Now that every source has contributed, pull whatever this user has
+    // actually been picking for this reading to the front. Applied here rather
+    // than relying on lookup()'s own learning boost because most of the list
+    // above never passed through lookup() -- see applyLearnedOrder.
+    candidates = KanaKanjiConverter.applyLearnedOrder(target, candidates);
     // Candidates the user deleted by long-pressing them are dropped last, so
     // every source above (dictionaries, learning, the injected predictions) is
     // covered by the one filter -- see SuppressedCandidates.

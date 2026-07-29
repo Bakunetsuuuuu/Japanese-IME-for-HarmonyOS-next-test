@@ -82,7 +82,17 @@ function main() {
   // whichever single word is ambiguous.
   const TOP_N = 4;
   const cases = [
-    { reading: 'はしをわたる', want: '橋を渡る' },
+    // はしをわたる was here asserting 橋を渡る as the ALTERNATIVE, back when
+    // candidate[0] was 箸を渡る. applyInSentenceHints now resolves はし with
+    // the rest of the phrase (渡 is a listed trigger for はし|橋), so 橋を渡る
+    // is the DEFAULT and there is no alternative left to test -- 箸を渡る isn't
+    // even offered (the 箸 branch degenerates to 箸を亘/箸を亙). Dropped rather
+    // than re-pointed: the case now belongs to the corpus scripts, which grade
+    // candidate[0], not to this position-1+ test.
+    // 送り仮名を持たない裸漢字の後退(demoteOkuriganaLessKanji)で初めて上位に
+    // 来た候補。以前の のる は 乗る|乗|乘|培|宣|搭|載|駕|騎 と、読みを表せない
+    // 裸漢字が並んで 載る が候補列に存在すらしなかった。
+    { reading: 'のる', want: '載る' },
     { reading: 'しゃしんをとった', want: '写真を取った' },
     { reading: 'あめがふってきた', want: '飴が降ってきた' },
     { reading: 'せんせいにあう', want: '先生に合う' },
@@ -96,7 +106,8 @@ function main() {
     // the isCitationFormAlt path let a kana-kept segment contribute its
     // plain-form verb kanji (出る/勝つ/来る/産む) without leaking particle
     // homographs (は→歯, なら→成ら).
-    { reading: 'しあいにでる', want: '試合に出る' },
+    // しあいにでる は「格助詞の直後の でる は 出る」という規則が入って候補0に
+    // なったので、候補0を採点する corpus3 側へ移した。
     { reading: 'あいてにかつ', want: '相手に勝つ' },
     { reading: 'よあけがくる', want: '夜明けが来る' },
     { reading: 'たまごをうむ', want: '卵を産む' },

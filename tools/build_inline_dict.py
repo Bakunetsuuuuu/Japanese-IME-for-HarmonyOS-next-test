@@ -378,6 +378,9 @@ VERBS = [
     ('つづき',   '続き',     conj_ichidan),  # 続きる not right; skip
     # godan-u
     ('うた',     '歌',       conj_godan_u),
+    ('むか',     '向か',     conj_godan_u),  # 向かう: 活用が生成されておらず
+                                            # 向っています/向ったら のように
+                                            # 送り仮名が欠けた形しか出なかった
     ('かの',     '叶',       conj_godan_u),  # 叶う
     ('おも',     '思',       conj_godan_u),
     ('ちか',     '誓',       conj_godan_u),  # 誓う
