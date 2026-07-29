@@ -157,7 +157,8 @@ function main() {
   };
 
   // --- a plain lookup() candidate (this always worked) ---
-  promotes('lookup候補', 'かみ', '紙');
+  // かみ の既定は 紙 になったので、既定でない候補を選ぶ形に直した。
+  promotes('lookup候補', 'かみ', '髪');
   promotes('lookup候補', 'きかい', '機会');
   promotes('lookup候補(下位)', 'こうしん', '行進');
 
