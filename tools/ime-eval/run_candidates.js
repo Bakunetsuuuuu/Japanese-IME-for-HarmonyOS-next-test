@@ -89,6 +89,10 @@ function main() {
     // even offered (the 箸 branch degenerates to 箸を亘/箸を亙). Dropped rather
     // than re-pointed: the case now belongs to the corpus scripts, which grade
     // candidate[0], not to this position-1+ test.
+    // 送り仮名を持たない裸漢字の後退(demoteOkuriganaLessKanji)で初めて上位に
+    // 来た候補。以前の のる は 乗る|乗|乘|培|宣|搭|載|駕|騎 と、読みを表せない
+    // 裸漢字が並んで 載る が候補列に存在すらしなかった。
+    { reading: 'のる', want: '載る' },
     { reading: 'しゃしんをとった', want: '写真を取った' },
     { reading: 'あめがふってきた', want: '飴が降ってきた' },
     { reading: 'せんせいにあう', want: '先生に合う' },

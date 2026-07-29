@@ -33137,7 +33137,10 @@ export class KanaKanjiConverter {
     // signal of intent — take priority over all of the above.
     const withGlobal = KanaKanjiConverter.appendRegisteredWords(global, filtered);
     const boosted0 = KanaKanjiConverter.boostCommonWords(withGlobal);
-    const boosted = KanaKanjiConverter.boostCommonWordByReading(kana, boosted0);
+    const boosted1 = KanaKanjiConverter.boostCommonWordByReading(kana, boosted0);
+    // Before learning, so a user who really does pick a bare kanji can still
+    // pull it back to the front.
+    const boosted = KanaKanjiConverter.demoteOkuriganaLessKanji(kana, boosted1);
     const ordered = KanaKanjiConverter.applyLearning(kana, boosted);
     const withUser = KanaKanjiConverter.withRegisteredWords(user, ordered);
     let result = KanaKanjiConverter.contextRerank(kana, withUser);
@@ -33906,6 +33909,38 @@ export class KanaKanjiConverter {
 
   // Remove half-width katakana and pure-ASCII romaji only.
   // Full-width katakana is always kept (loanwords need カタカナ even when kanji exists).
+  // 送り仮名を持たない裸の漢字を、用言の読みでは後ろに下げる。
+  //
+  // とまる の候補は 止まる|泊まる|留まる|停まる のあとに 止|泊|留 と続いていた。
+  // 「電車が止」とは書けないので、これらは読みを表せない候補であり、漢字同音
+  // ダンプ由来の残骸でしかない。それが 1〜9 位を占めるため、実際に使える候補
+  // (停まる や かな) が候補バーの外へ押し出されていた。はかる では 億|商|図|
+  // 度|擬|料 が、のる では 乗|乘|培|宣|搭|載|駕|騎 が同様に居座る。
+  //
+  // 発動条件を「る で終わる読み」かつ「先頭候補も る で終わる」に絞る:
+  //   - 音読みの名詞は る で終わらない(約/役/学/白 のような く 終わりとは違う)
+  //     ので、る 終わりの裸漢字はまず用言を表せない。く/す/つ 終わりに広げると
+  //     やく→約/薬/訳、はく→白/博 のような正当な名詞まで下げてしまう。
+  //   - 先頭が裸漢字のとき(つる→鶴、まく→捲)はその読みが用言だと確信できない
+  //     ので何もしない。鶴/幕 は従来どおり先頭のまま。
+  // 落とさず順序だけ変えるので、必要な候補は一覧を開けば必ず残っている。
+  private static demoteOkuriganaLessKanji(kana: string, cands: string[]): string[] {
+    if (cands.length < 3 || !kana.endsWith('る') || kana.length < 2) { return cands; }
+    if (!cands[0].endsWith('る')) { return cands; }
+    const bare: string[] = [];
+    const rest: string[] = [];
+    for (const c of cands) {
+      // 「裸の漢字」= かなを一切含まない候補。カタカナ表記や送り仮名付きは対象外。
+      if (c.length > 0 && !/[ぁ-んァ-ヶー]/.test(c) && KanaKanjiConverter.hasKanjiChar(c)) {
+        bare.push(c);
+      } else {
+        rest.push(c);
+      }
+    }
+    if (bare.length === 0 || rest.length === 0) { return cands; }
+    return [...rest, ...bare];
+  }
+
   private static filterCandidates(kana: string, cands: string[]): string[] {
     // How many kanji-bearing candidates have been kept so far. The first two are
     // protected even if they're uncommon lone kanji, because the primary kanji
