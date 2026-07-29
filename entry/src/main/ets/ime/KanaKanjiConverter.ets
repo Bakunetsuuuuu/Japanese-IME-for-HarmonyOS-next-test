@@ -33141,6 +33141,11 @@ export class KanaKanjiConverter {
   // 動詞の連用形にしか付かない語尾。これが次のセグメントなら、手前は動詞。
   // ます/ました/たい 等は まちます のように一語のスパンになって割れないので
   // 入れていない(割れたときだけの救済)。
+  // で始まりの 出る の活用形。直前が を/に のときだけ 出 を当てる。
+  private static readonly DERU_FORMS: Set<string> = new Set<string>([
+    'でる', 'でます', 'でよう', 'でない', 'でれば', 'でたい', 'でました',
+  ]);
+
   // 動詞の未然形にしか付かない語尾。
   private static readonly MIZEN_FOLLOWERS: Set<string> = new Set<string>([
     'ずに', 'ず', 'ぬ', 'ずには', 'ずとも',
@@ -33214,6 +33219,13 @@ export class KanaKanjiConverter {
       if (KanaKanjiConverter.isOkuAuxiliary(seg) && idx > 0 && segs[idx - 1].length > 1 &&
           /[てで]$/.test(segs[idx - 1])) {
         best = seg;
+      }
+      // でる/でて は 読んでる/読んでて のように て形＋いる の縮約でも現れるため
+      // 既定はかなにしてある。ただし直前が格助詞 を/に なら縮約ではありえず、
+      // 動詞の 出る:「試合にでる」→「試合に出る」。
+      if (idx >= 1 && (segs[idx - 1] === 'を' || segs[idx - 1] === 'に') &&
+          KanaKanjiConverter.DERU_FORMS.has(seg) && best === seg) {
+        best = '出' + seg.slice(1);
       }
       // 名詞のすぐ後ろの たち は複数を表す接尾辞。動詞の 立ち ではない:
       //   学生たち → 学生立ち   漁師たち → 漁師立ち
