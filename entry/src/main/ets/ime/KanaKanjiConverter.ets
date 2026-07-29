@@ -25571,6 +25571,14 @@ const DICTIONARY: Record<string, string[]> = {
   'せんこう': ['専攻', '先行', '選考', '閃光', '選好'],
   'みかた': ['味方', '見方', '観方'],          // 味方19 対 見方3
   'いっこう': ['一行', '一向', '一考', '一光'],  // 一行18
+  'ほか': ['他', '外', 'ほか'],                 // 他27
+  'かか': ['書か', '欠か', '掛か'],              // 書か14
+  'はなされている': ['話されている', '放されている'],
+  'はなされる': ['話される', '放される'],
+  'はなされた': ['話された', '放された'],
+  'かくしん': ['確信', '核心', '革新', '各人'],   // 確信37
+  'かくしんして': ['確信して'], 'かくしんした': ['確信した'],
+  'かくしんしている': ['確信している'],
   'せんこうして': ['専攻して', '先行して', '選考して'],
   'せんこうしている': ['専攻している', '先行している'],
 
@@ -34631,6 +34639,10 @@ export class KanaKanjiConverter {
   // unknown single chars heavily penalised (15000) to avoid spurious splits.
   private static readonly VN_UNKNOWN_SINGLE = 15000;
   private static readonly VN_FUNCTION_WORD  = 1500;
+  // 主題の は が続きうる直前の語のクラス: 名詞(0) と、は を後ろに取れる
+  // 助詞 で(51)/から(56)/まで(57)/複合助詞(63) — では/からは/までは/については。
+  // が(48)/を(49)/に(50) の後ろに は は来ないので入れない。
+  private static readonly WA_PREV_CLASSES: Set<number> = new Set<number>([0, 51, 56, 57, 63]);
   private static readonly WA_SWALLOW_PENALTY = 500;
   private static readonly VN_DEFAULT        = 5000;
   // Track B analogue of track A's per-span singleContentPenalty (see
@@ -34737,7 +34749,9 @@ export class KanaKanjiConverter {
         // はなしあおう→はなし＋あおう(話会おう)、にあって→に＋あって(に会って)
         // と割れていた。いずれも複合語として一語で扱うのが正しい。
         sub === 'みずから' || sub === 'はなしあおう' || sub === 'はなしあう' ||
-        sub === 'はなしあった' || sub === 'がまん') {
+        sub === 'はなしあった' || sub === 'がまん' ||
+        // かく(書く)＋しんし(紳士) に割れていた。
+        sub === 'かくしんしている') {
         // にあう/にあって もここに入れて 似合う を通したが、「彼に会います」
         // 「駅で友達に会って」の方が圧倒的に多く、実文コーパスで26件悪化した
         // ので外した。単独の にあう は DICTIONARY 側で 似合う を先頭にしてある。
@@ -35472,7 +35486,8 @@ export class KanaKanjiConverter {
           // ここで割を食うことは少ない。値は 0〜3000 を 500 刻みで振って、
           // 手書きコーパスに回帰が出ず実文コーパスが最大になる点を採った。
           const topicPenalty = (len > 1 && sub.charCodeAt(0) === 0x306F &&
-              rightClass[i] === KanaKanjiConverter.VC_NOUN) ? KanaKanjiConverter.WA_SWALLOW_PENALTY : 0;
+              KanaKanjiConverter.WA_PREV_CLASSES.has(rightClass[i]))
+              ? KanaKanjiConverter.WA_SWALLOW_PENALTY : 0;
           const total = best[i] + nc + topicPenalty + this.getEdgeCost(rightClass[i], lc);
           if (total < best[i + len]) {
             best[i + len] = total;
