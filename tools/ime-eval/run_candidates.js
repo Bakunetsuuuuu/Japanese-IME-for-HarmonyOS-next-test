@@ -82,7 +82,13 @@ function main() {
   // whichever single word is ambiguous.
   const TOP_N = 4;
   const cases = [
-    { reading: 'はしをわたる', want: '橋を渡る' },
+    // はしをわたる was here asserting 橋を渡る as the ALTERNATIVE, back when
+    // candidate[0] was 箸を渡る. applyInSentenceHints now resolves はし with
+    // the rest of the phrase (渡 is a listed trigger for はし|橋), so 橋を渡る
+    // is the DEFAULT and there is no alternative left to test -- 箸を渡る isn't
+    // even offered (the 箸 branch degenerates to 箸を亘/箸を亙). Dropped rather
+    // than re-pointed: the case now belongs to the corpus scripts, which grade
+    // candidate[0], not to this position-1+ test.
     { reading: 'しゃしんをとった', want: '写真を取った' },
     { reading: 'あめがふってきた', want: '飴が降ってきた' },
     { reading: 'せんせいにあう', want: '先生に合う' },

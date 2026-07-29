@@ -31959,13 +31959,42 @@ export class KanaKanjiConverter {
   static recordChoice(kana: string, candidate: string): void {
     if (kana.length === 0 || candidate.length === 0 || candidate === kana) { return; }
     if (!KanaKanjiConverter.learned[kana]) {
-      if (Object.keys(KanaKanjiConverter.learned).length >= 500) { return; }
+      // At the cap, drop the least-used reading instead of refusing the new
+      // one. Refusing meant that once 500 readings had accumulated -- reachable
+      // for a daily driver -- conversion learning silently stopped forever, and
+      // nothing the user picked from then on was ever remembered.
+      if (Object.keys(KanaKanjiConverter.learned).length >= 500) {
+        KanaKanjiConverter.evictWeakestLearnedReading();
+      }
       KanaKanjiConverter.learned[kana] = {};
     }
     const entry = KanaKanjiConverter.learned[kana];
     if (entry[candidate] !== undefined || Object.keys(entry).length < 5) {
       entry[candidate] = (entry[candidate] ?? 0) + 1;
     }
+  }
+
+  // Drop the reading whose best-picked surface has the lowest count, so a full
+  // learning store keeps taking new words instead of freezing. Ties go to
+  // whichever key Object.keys yields first; no recency is tracked (the store
+  // holds counts only), and a genuinely-used reading climbs back immediately
+  // on its next pick.
+  private static evictWeakestLearnedReading(): void {
+    const readings = Object.keys(KanaKanjiConverter.learned);
+    if (readings.length === 0) { return; }
+    let weakest = readings[0];
+    let weakestScore = Number.MAX_SAFE_INTEGER;
+    for (const r of readings) {
+      const entry = KanaKanjiConverter.learned[r];
+      let best = 0;
+      for (const c of Object.keys(entry)) { if (entry[c] > best) { best = entry[c]; } }
+      if (best < weakestScore) { weakestScore = best; weakest = r; }
+    }
+    const remaining: Record<string, Record<string, number>> = {};
+    for (const r of readings) {
+      if (r !== weakest) { remaining[r] = KanaKanjiConverter.learned[r]; }
+    }
+    KanaKanjiConverter.learned = remaining;
   }
 
   // Erase a learned reading→surface record. Used when the user deletes a
@@ -32009,6 +32038,25 @@ export class KanaKanjiConverter {
     for (let i = 0; i < n; i++) {
       KanaKanjiConverter.recordChoice(readings[i], surfaces[i]);
     }
+  }
+
+  // Learned-choice ordering for a FINISHED candidate list -- i.e. after the
+  // caller has added everything lookup() itself doesn't produce.
+  //
+  // applyLearning below runs inside lookup(), so it can only reorder lookup's
+  // own results. But the list the user actually sees is assembled in
+  // KeyboardController.updateCandidates, which injects several more sources on
+  // top: per-segment sentence alternatives, the alternate segmentation, the
+  // predictive completion, date/number values, learned unknown words. Those
+  // injected entries were unreachable for learning -- picking 写真を取った for
+  // しゃしんをとった recorded the choice, but the surface isn't in
+  // lookup('しゃしんをとった') at all (it comes from sentenceAlternatives), so
+  // the boost had nothing to reorder and the pick sat at the same position
+  // forever however many times it was made. That is precisely the case where
+  // learning is supposed to help: a user only reaches past candidate 0 when
+  // the default is wrong for them.
+  static applyLearnedOrder(kana: string, cands: string[]): string[] {
+    return KanaKanjiConverter.applyLearning(kana, cands);
   }
 
   private static applyLearning(kana: string, cands: string[]): string[] {
