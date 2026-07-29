@@ -12,6 +12,24 @@ labeled corpus of natural Japanese `[reading, goldSurface]` pairs.
 
 ## Run
 
+### 実文コーパス (Tatoeba, 約42k文)
+
+手書きの corpus*.js は小さく(~1.2k)、修正と同時に書かれたものが多いので、
+既知の良い挙動を確認する用途に寄っている。こちらはこのIMEを知らない人が
+書いた外部の文なので、点数は大きく下がる代わりに正直で、バグ発見に向く。
+
+```sh
+node tools/ime-eval/fetch_real_corpus.js    # Tatoeba を cache_real/ に取得(gitignore)
+node tools/ime-eval/build_real_corpus.js    # 読みを復元して [読み,表記] に変換
+node tools/ime-eval/run_real.js --rank      # 誤りを頻度順に集計 ← これを見て直す
+```
+
+`--rank` は各誤りの差分だけを取り出して頻度順に並べる。表記ゆれ(事/こと、
+時/とき)は**両方向に**現れるので書き手の流儀と判別でき、片側だけが別語に
+なっている行が実バグ。データは取得のみでコミットしない(Tatoeba は CC BY 2.0 FR、
+アプリにも同梱しない)。
+
+
 ```sh
 node tools/ime-eval/run.js            # TRAIN summary accuracy
 node tools/ime-eval/run.js --misses   # also print every miss (gold vs got)
