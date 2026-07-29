@@ -91,6 +91,10 @@ function main() {
     const sentence = official.get(parts[0]);
     if (!sentence) { continue; }
     let reading = '', surface = '', ok = true;
+    // Token alignment is kept alongside the joined pair: run_homophone.js needs
+    // to know which span of the sentence each reading maps to, so it can grade
+    // one homophone decision at a time instead of the whole sentence.
+    const tokens = [];
     for (const tok of annotated.split(' ')) {
       if (!tok) { continue; }
       const m = TOKEN.exec(tok);
@@ -99,17 +103,19 @@ function main() {
       const r = resolve(m[1], m[2], written);
       if (r === null) { ok = false; break; }
       reading += r; surface += written;
+      tokens.push([r, written]);
     }
     if (!ok) { unresolved++; continue; }
     if (reading.length < MIN_LEN || reading.length > MAX_LEN) { continue; }
     if (!/^[ぁ-んァ-ヶー]+$/.test(reading)) { continue; }
     if (strip(surface) !== strip(sentence)) { mismatch++; continue; }
     // A katakana word is typed in hiragana, so that is the real input.
-    reading = reading.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+    const hira = (t) => t.replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60));
+    reading = hira(reading);
     const key = reading + '|' + surface;
     if (seen.has(key)) { continue; }
     seen.add(key);
-    rows.push([reading, surface]);
+    rows.push([reading, surface, tokens.map((t) => [hira(t[0]), t[1]])]);
   }
   fs.writeFileSync(OUT, JSON.stringify(rows));
   console.log(`usable ${rows.length}  (dropped: ${unresolved} unresolvable, ${mismatch} not matching the official sentence)`);
