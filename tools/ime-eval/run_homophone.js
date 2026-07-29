@@ -87,25 +87,39 @@ function main() {
     if (kept.length >= 2) { ambiguous.set(r, new Map(kept)); }
   }
 
-  // 3. 該当トークンごとに採点
-  let total = 0, correct = 0;
+  // 3. 該当トークンごとに採点。
+  //
+  // ここで文の他の部分まで巻き込まないことが重要。同音語トークンを含む文を
+  // 単純に「gold と一致したか」で採点すると、分割が崩れて文全体が壊れている
+  // 例(「潜水士て泳げる甲斐」「野手はボールを鳥そこ寝た」)まで同音語の誤りとして
+  // 数えてしまい、上位が"文が壊れている読み"で埋まって直す対象を見誤る。
+  //
+  // そこで採点するのは「差分が同音語トークン1箇所だけの文」に限る。gold と got の
+  // 共通接頭辞・接尾辞を剥がして残った差が、ちょうどその語の gold 表記であれば
+  // 同音語の選択ミス。それ以外の場所が違っていれば、それは別の原因なので対象外。
+  let total = 0, correct = 0, skipped = 0;
   const perReading = new Map();
-  for (const [reading, , tokens] of data) {
+  for (const [reading, gold, tokens] of data) {
     if (!tokens) { continue; }
-    if (!tokens.some(([r]) => ambiguous.has(r))) { continue; }
+    const amb = tokens.filter(([r]) => ambiguous.has(r));
+    if (amb.length !== 1) { continue; }   // 2つ以上あると差分の帰属が決まらない
+    const [r, w] = amb[0];
     const got = convert(reading);
-    for (const [r, w] of tokens) {
-      if (!ambiguous.has(r)) { continue; }
-      total++;
-      const ok = got.includes(w);
-      if (ok) { correct++; }
-      let s = perReading.get(r);
-      if (!s) { s = { ok: 0, ng: 0, examples: [] }; perReading.set(r, s); }
-      if (ok) { s.ok++; } else { s.ng++; if (s.examples.length < 3) { s.examples.push([reading, w, got]); } }
-    }
+    let s = perReading.get(r);
+    if (!s) { s = { ok: 0, ng: 0, examples: [] }; perReading.set(r, s); }
+    if (got === gold) { total++; correct++; s.ok++; continue; }
+    let a = 0;
+    while (a < gold.length && a < got.length && gold[a] === got[a]) { a++; }
+    let b = 0;
+    while (b < gold.length - a && b < got.length - a && gold[gold.length - 1 - b] === got[got.length - 1 - b]) { b++; }
+    const goldSpan = gold.slice(a, gold.length - b);
+    if (goldSpan !== w) { skipped++; continue; }   // 誤りは同音語以外の場所
+    total++; s.ng++;
+    if (s.examples.length < 3) { s.examples.push([reading, w, got.slice(a, got.length - b), got]); }
   }
   console.log(`[HOMOPHONE] ${correct}/${total} (${(100 * correct / total).toFixed(1)}%) 同音語の選択が正解`);
   console.log(`  対象の読み: ${ambiguous.size} 種 (実文で漢字表記が2種類以上, 各${MIN_OCCUR}回以上)`);
+  console.log(`  除外: ${skipped} 文 (誤りが同音語以外の場所にあり、選択の当否を判定できない)`);
 
   const target = process.argv.indexOf('--reading');
   if (target >= 0 && process.argv[target + 1]) {
@@ -113,7 +127,7 @@ function main() {
     const s = perReading.get(r);
     console.log(`\n${r}: ${s ? `正解 ${s.ok} / 誤り ${s.ng}` : '対象外'}`);
     if (usage.get(r)) { console.log('  実文での表記:', [...usage.get(r).entries()].sort((a, b) => b[1] - a[1]).map(([w, n]) => `${w}(${n})`).join(' ')); }
-    if (s) { for (const [rd, w, g] of s.examples) { console.log(`  ${rd}\n    gold片: ${w}\n    got   : ${g}`); } }
+    if (s) { for (const [rd, gw, gotSpan, full] of s.examples) { console.log(`  ${rd}\n    gold: ${gw}  got: ${gotSpan}\n    ${full}`); } }
     return;
   }
 
@@ -123,7 +137,7 @@ function main() {
     for (const [r, s] of rows.slice(0, 40)) {
       const u = [...usage.get(r).entries()].sort((a, b) => b[1] - a[1]).slice(0, 4).map(([w, n]) => `${w}${n}`).join(' ');
       const ex = s.examples[0];
-      console.log(String(s.ng).padStart(5), ' ', r.padEnd(10), u.padEnd(34), ex ? ex[2] : '');
+      console.log(String(s.ng).padStart(5), ' ', r.padEnd(10), u.padEnd(30), ex ? `${ex[1]} ← ${ex[2]}   ${ex[3]}` : '');
     }
   }
 }
