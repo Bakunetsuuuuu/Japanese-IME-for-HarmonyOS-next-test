@@ -1584,7 +1584,9 @@ const DICTIONARY: Record<string, string[]> = {
   'ぜんざい': ['ぜんざい'],
   'みつまめ': ['蜜豆'],
   'みりん': ['みりん', '味醂'],
-  'こしょう': ['胡椒', '故障', 'こしょう'],
+  // こしょう: 香辛料の 胡椒 は コショウ/こしょう と書くことも多く、
+  // 打つ機会は 故障 の方が多い。
+  'こしょう': ['故障', '胡椒', 'こしょう', '呼称'],
   'さくらもち': ['桜餅'],
   'おはぎ': ['おはぎ'],
   'かふぇらって': ['カフェラテ'],
@@ -8472,7 +8474,8 @@ const DICTIONARY: Record<string, string[]> = {
   'にかい': ['二回', '二階', '2階'],
   'さんかい': ['三回', '三階'],
   'よんかい': ['四回', '四階'],
-  'ごかい': ['五回', '五階', '後会'],
+  // ごかい の既定が 五回。数の 五回 より 誤解 の方が普通に打つ。
+  'ごかい': ['誤解', '五回', '五階', '後会'],
   'いちまい': ['一枚', '1枚'],
   'にまい': ['二枚', '2枚'],
   'さんまい': ['三枚', '3枚'],
@@ -15783,7 +15786,8 @@ const DICTIONARY: Record<string, string[]> = {
   'えみ': ['恵美', '笑美'],
   'あかり': ['明里', '朱里', '灯'],
   'こはる': ['小春', '心春'],
-  'のぞみ': ['希', '望', 'のぞみ', '希望', '希み'],
+  // のぞみ の既定が 希(単漢字)。名詞は 望み。
+  'のぞみ': ['望み', '希望', 'のぞみ', '希', '望'],
   'まい': ['舞', '麻衣', '真衣'],
   'りこ': ['梨子', '理子', '莉子'],
   'ほのか': ['穂香', '帆花'],
@@ -23344,7 +23348,8 @@ const DICTIONARY: Record<string, string[]> = {
   'おびじめ': ['帯締め'],
   'おびあげ': ['帯揚げ'],
   'たびうけ': ['足袋受け'],
-  'たび': ['足袋', '旅'],
+  // たび の既定が 足袋。和装の語より 旅/度(〜する度に)の方が頻出。
+  'たび': ['旅', '度', '足袋'],
   'ぶれざー': ['ブレザー'],
   'ちのぱん': ['チノパン'],
   'すらっくす': ['スラックス'],
@@ -25514,6 +25519,12 @@ const DICTIONARY: Record<string, string[]> = {
   'かみ': ['紙', '神', '髪', '上'],
   // とち の既定が「凸ち」。凸 に とっ の読みを当てた合成で、語ではない。
   'とち': ['土地', '栃', '徒歩'],
+  // global_dict は 不凍港 しか持っていないため preferGlobalLead が働いて
+  // しまう。不登校 の方が普通に打つ語なので、手書きの表で固定する。
+  'ふとうこう': ['不登校', '不凍港'],
+  // しんしゃ の既定が 親炙(古典語)。global_dict にも 親炙 があるため
+  // preferGlobalLead では動かない。
+  'しんしゃ': ['新車', '深謝', '親炙'],
   // あわない の既定が 会わない。実文は 合わない35 対 会わない8 で、
   // 「体質に合わない」「サイズが合わない」のような定型が多い。素の あう は
   // 会う54 対 合う24 なので既定を動かさない(ない形だけ逆転する)。
@@ -31063,6 +31074,8 @@ const CONTEXT_HINTS: Record<string, string[]> = {
   'かた|肩':       ['腕', '首', '凝', 'こり', '担', '背中', '持つなよ', '揉'],
   'めん|麺':       ['ラーメン', 'そば', 'うどん', 'つゆ', '茹で', 'パスタ', '替え玉'],
   'めん|綿':       ['布', '生地', '素材', '糸', '毛布', 'シャツ'],
+  'こしょう|胡椒':   ['塩', 'かけ', '振', '料理', 'スパイス', '味', 'ステーキ', 'スープ', '好み'],
+  'こしょう|故障':   ['修理', '直', '車', 'エンジン', '機械', 'パソコン', 'エアコン', '中'],
   // ─── こうかい (後悔/航海/公開) ─── 後悔 が既定。残り2つを文脈で引く。
   'こうかい|航海': ['船', '海岸', '港', '出航', '太平洋', '大西洋', '船長', '水夫', '甲板', '帆', '世界一周', '船旅'],
   'こうかい|公開': ['情報', '映画', 'データ', '株式', '一般', '公式', '公開日', 'ソース', '記者', '会見'],
@@ -32692,6 +32705,55 @@ export class KanaKanjiConverter {
     return [want, ...cands.slice(0, idx), ...cands.slice(idx + 1)];
   }
 
+  // dict.json は網羅性を優先して集めた辞書で、読みによっては現代語で
+  // まず使わない表記が先頭に来ている:
+  //     つかえ→痞  ゆうのう→憂悩  しんしゃ→親炙  たえ→妙  のぞみ→希
+  //     こしょう→胡椒  ごかい→五回  たび→足袋  せんこう→先行詞
+  // 一方 global_dict (mozc 由来) の並びは出現頻度から来ているので、
+  // 同じ読みで 使え/有能/新車/耐え/望み/故障/誤解/旅 と正しく並んでいる。
+  // 手で1語ずつ直すには多すぎるので、global_dict が先頭に置いた表記を
+  // 先頭に持ってくる。
+  //
+  // 手で書いた DICTIONARY に見出しがある読みは、意図してその並びにして
+  // あるので触らない(おいしい/きれい のかな優先など)。かな・カタカナが
+  // 先頭のときも、それは filterCandidates などが判断した結果なので残す。
+  private static preferGlobalLead(kana: string, global: string[] | undefined,
+                                  entry: string[] | undefined, cands: string[]): string[] {
+    if (global === undefined || global.length === 0 || cands.length === 0) { return cands; }
+    if (entry !== undefined && entry.length > 0) { return cands; }
+    const lead = global[0];
+    if (lead === cands[0] || lead === kana) { return cands; }
+    if (!KanaKanjiConverter.hasKanjiChar(lead[0])) { return cands; }
+    if (cands[0] === kana || KanaKanjiConverter.isPureKatakana(cands[0])) { return cands; }
+    if (cands.indexOf(lead) < 0) { return cands; }
+    // 現在の先頭が global_dict の候補に一つも入っていないときだけ動かす。
+    // 「頻度データが一度も見たことのない表記」がここでは обscure の指標になる。
+    // 単に global の先頭を無条件に持ち上げると、送り仮名の有無のような
+    // 単なる表記差(手続き→手続)まで動いて大きく悪化する(実測 -1.5pt)。
+    if (global.indexOf(cands[0]) >= 0) { return cands; }
+    // さらに、現在の先頭が送り仮名を持たない(＝漢字だけの)ときに限る。
+    // 潰したい 痞/憂悩/親炙/妙/五回/足袋/胡椒 はどれも漢字だけの語だが、
+    // 守りたい 降って/降る/痛く/手続き は活用形で必ずかなが付く。この条件が
+    // 無いと 雨が降って→雨が払底、頭が痛く→頭が委託 のように壊れる。
+    if (!KanaKanjiConverter.isAllKanji(cands[0]) || cands[0].length > 2) { return cands; }
+    // 送り仮名を落としただけの表記(痛 に対する 痛く)も「global に無い漢字だけの
+    // 語」に見えてしまう。同じ語なので別語に差し替えてはいけない
+    // (頭が痛く→頭が委託 になっていた)。送り仮名付きの形が global にあるなら
+    // ここは触らず、後段の demoteOkuriganaLessKanji に任せる。
+    for (const gc of global) {
+      if (gc.length > cands[0].length && gc.startsWith(cands[0])) { return cands; }
+    }
+    const rest = cands.filter((c: string) => c !== lead);
+    return [lead, ...rest];
+  }
+
+  private static isAllKanji(s: string): boolean {
+    for (const c of s) {
+      if (!KanaKanjiConverter.hasKanjiChar(c)) { return false; }
+    }
+    return s.length > 0;
+  }
+
   private static boostCommonWords(cands: string[]): string[] {
     const common: string[] = [];
     const rest: string[] = [];
@@ -33476,7 +33538,8 @@ export class KanaKanjiConverter {
     // finally the user's own learned/registered choices — the most explicit
     // signal of intent — take priority over all of the above.
     const withGlobal = KanaKanjiConverter.appendRegisteredWords(global, filtered);
-    const boosted0 = KanaKanjiConverter.boostCommonWords(withGlobal);
+    const preferGlobal = KanaKanjiConverter.preferGlobalLead(kana, global, entry, withGlobal);
+    const boosted0 = KanaKanjiConverter.boostCommonWords(preferGlobal);
     const boosted1 = KanaKanjiConverter.boostCommonWordByReading(kana, boosted0);
     // Before learning, so a user who really does pick a bare kanji can still
     // pull it back to the front.
