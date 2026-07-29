@@ -2340,7 +2340,8 @@ const DICTIONARY: Record<string, string[]> = {
   'しょうひぜい': ['消費税'],
   'しょとく': ['所得'],
   'しょうひ': ['消費'],
-  'とうし': ['投資'],
+  // 経済語としてここに足したが、とうし の最頻は「当時」(実文 26 対 12)。
+  'とうし': ['当時', '投資', '闘志', '凍死'],
   'かぶしき': ['株式'],
   'かぶか': ['株価'],
   'かわせ': ['為替'],
@@ -19716,7 +19717,10 @@ const DICTIONARY: Record<string, string[]> = {
   'せいやく': ['制約', '誓約'],
   'こうりょく': ['効力'],
   'ゆうこう': ['有効', '友好'],
-  'むこう': ['無効', '向こう'],
+  // 契約の語をまとめて足したときの並びで 無効 が先頭になっていたが、
+  // むこう は普通「向こう」(実文 31 対 3)。有効/無効 は対で打つ語なので
+  // 候補には残す。
+  'むこう': ['向こう', '無効'],
   'まちがえやすい': ['間違えやすい'],
   'よみにくい': ['読みにくい'],
   'かきにくい': ['書きにくい'],
@@ -20704,7 +20708,9 @@ const DICTIONARY: Record<string, string[]> = {
   'てんのうへいか': ['天皇陛下'],
   'ひとびと': ['人々'],
   'おうこく': ['王国'],
-  'ていこく': ['帝国'],
+  // 歴史語としてここに足したが、ていこく で打つのは「定刻」の方が多い
+  // (実文 13 対 6。帝国 は ローマ帝国/大英帝国 のように複合で打つことが多い)。
+  'ていこく': ['定刻', '帝国'],
   'ぶっきょうでんらい': ['仏教伝来'],
   'かんじのでんらい': ['漢字の伝来'],
   'めいじいしん': ['明治維新'],
@@ -25498,6 +25504,25 @@ const DICTIONARY: Record<string, string[]> = {
   // けんめい の既定が 件名。件名 はメール以外ではまず打たない語で、実文では
   // 賢明22 対 懸命5 対 件名0。件名 を消す必要はないので順序だけ下げる。
   'けんめい': ['賢明', '懸命', '件名', '原名', '顕明'],
+  // 以下も dict.json の既定が実際に打つ語とズレていたもの(実文の出現数を併記)。
+  // かい の既定が 甲斐。甲斐 は 生き甲斐/〜した甲斐がある のような束縛形で、
+  // 単独の かい は 会/買い/階。終助詞の かい(いいかい)まで 甲斐 になっていた。
+  'かい': ['会', '買い', '階', '貝', '甲斐', '回', '解', '界'],
+  // ぜんしん の既定が 前秦(4世紀の中国王朝)。
+  'ぜんしん': ['前進', '全身', '前身', '全心'],
+  // こうかい の既定が 公海。実文は 後悔49 航海13 公開5 公海0。
+  'こうかい': ['後悔', '航海', '公開', '公海', '更改', '公会'],
+  // サ変の活用形は別スパンになり、こちらの既定は 公開 のままだった。
+  // 文脈があれば applyInSentenceHints が 航海/公開 に引くので、既定は最頻の 後悔。
+  'こうかいした': ['後悔した', '公開した', '航海した'],
+  'こうかいして': ['後悔して', '公開して', '航海して'],
+  'こうかいする': ['後悔する', '公開する', '航海する'],
+  'こうかいしている': ['後悔している', '公開している', '航海している'],
+  // しん 単体の既定が 森。新方針 が 森方針 になっていた。
+  'しん': ['新', '真', '心', '芯', '身', '進', '神', '森'],
+  // きょうそう が きょう＋そう に割れていた件は getWordInfo 側で対処。
+  // 候補順はここで固定する(競争20 対 競走5)。
+  'きょうそう': ['競争', '競走', '強壮'],
   // しじ は 支持33 対 指示15 だが、単純に既定を入れ替えると「指示に従う」側が
   // 壊れる。実文での分布を見ると分かれ方がきれいで、
   //   支持 → 27/33 が する形 (支持した/支持して/支持する/支持します)
@@ -30964,6 +30989,12 @@ const CONTEXT_HINTS: Record<string, string[]> = {
   'しょうがい|生涯': ['一生', '人生', '生涯学習', '長い', '全体'],
   'こうつう|交通': ['電車', '道路', '運転', 'バス', '渋滞', '信号', '交差点', '乗り物'],
   'こうつう|口頭': ['発表', '試験', '説明', '言葉', '話す', '伝える', '報告'],
+  // ─── こうかい (後悔/航海/公開) ─── 後悔 が既定。残り2つを文脈で引く。
+  'こうかい|航海': ['船', '海岸', '港', '出航', '太平洋', '大西洋', '船長', '水夫', '甲板', '帆', '世界一周', '船旅'],
+  'こうかい|公開': ['情報', '映画', 'データ', '株式', '一般', '公式', '公開日', 'ソース', '記者', '会見'],
+  // ─── ぜんしん (前進/全身) ─── 前進 が既定(実文 12 対 8)。
+  'ぜんしん|全身': ['浴び', '筋肉', '汗', '鏡', '麻酔', '傷', '震え', '濡れ', '毛', '力を', '写真'],
+  'ぜんしん|前進': ['後退', '一歩', '部隊', '軍', '陣地', '前線'],
   'いし|意志': ['決意', '強い', '意識', '決断', '自分の', '固い'],
   'いし|医師': ['医者', '病院', '診察', '患者', '処方', '手術', '医療'],
   'いし|石':   ['岩', '砂', '地面', '川', '庭', '石ころ', '鉱物'],
@@ -31149,6 +31180,14 @@ const ADJACENT_PAIR_HINTS: Record<string, string> = {
   'きょうと|ちがって': '今日と', 'きょうと|かわらない': '今日と',
   'きょうと|くらべる': '今日と', 'きょうと|くらべて': '今日と',
   'きょうと|ても': '今日と',   // 今日とても
+  // きょうそう も同じ扱い(競争 を一語にした)。「今日そう思った」型は戻す。
+  'きょうそう|おもった': '今日そう', 'きょうそう|おもう': '今日そう',
+  'きょうそう|おもいます': '今日そう', 'きょうそう|いった': '今日そう',
+  'きょうそう|いってた': '今日そう', 'きょうそう|かんじた': '今日そう',
+  // こうかい の既定を 公海 から 後悔 にしたので、受身は明示する。
+  // 後悔される という言い方はまずしない(後悔するのは自分)。公開される は頻出。
+  'こうかい|され': '公開', 'こうかい|されて': '公開', 'こうかい|される': '公開',
+  'こうかい|されました': '公開', 'こうかい|されている': '公開',
 };
 
 // 現代仮名遣いで づ/ぢ を使う語を ず/じ で打ってしまう「読みの揺れ」の
@@ -31254,6 +31293,9 @@ export class KanaKanjiConverter {
     'せいと','きょうし','せんそう','おおいに',
     // みずうみ が みず＋うみ (水海) に割れていた(実文22件)。
     'みずうみ','きたく',
+    // にし (西) は2文字で、に/し が両方とも極めて安い機能語なので
+    // 太陽は西に沈む → 太陽はにしに沈む と割れていた(東/南 は3文字で無事)。
+    'にし',
     // Common compound nouns the segmenter otherwise splits into a common short
     // word + a cheap particle-like tail (ひる+ね, くつ+した, ほん+だ+な,
     // はんそ+で, ながそ+で, はつもう+で). Giving the whole reading the common
@@ -32691,7 +32733,28 @@ export class KanaKanjiConverter {
   private applyInSentenceHints(segs: string[], surfaces: string[]): void {
     for (let i = 0; i < segs.length; i++) {
       if (surfaces[i] === segs[i]) { continue; }
-      const keys = KanaKanjiConverter.hintKeysFor(segs[i]);
+      // サ変名詞は「こうかい」ではなく「こうかいした/して/される」で1スパンに
+      // なることが多く、表の見出し(素の読み)と一致しない。テーブルの大半は
+      // 公開/後悔/航海・支持/指示・進行/信仰 のようなサ変名詞なのに、
+      // 活用した瞬間にヒントが全く効かなくなっていた。読み・表記の両方から
+      // 同じ活用語尾を外して、語幹だけで引き直す。
+      let reading = segs[i];
+      let surface = surfaces[i];
+      let tail = '';
+      let keys = KanaKanjiConverter.hintKeysFor(reading);
+      if (keys === undefined) {
+        for (const t of KanaKanjiConverter.SURU_TAILS) {
+          if (reading.length > t.length && reading.endsWith(t) && surface.endsWith(t)) {
+            const stem = reading.slice(0, reading.length - t.length);
+            const found = KanaKanjiConverter.hintKeysFor(stem);
+            if (found !== undefined) {
+              keys = found; reading = stem; tail = t;
+              surface = surface.slice(0, surface.length - t.length);
+            }
+            break;
+          }
+        }
+      }
       if (keys === undefined) { continue; }
       let context = '';
       for (let j = 0; j < surfaces.length; j++) {
@@ -32699,19 +32762,26 @@ export class KanaKanjiConverter {
       }
       if (context.length === 0) { continue; }
       for (const key of keys) {
-        const surface = key.slice(key.indexOf('|') + 1);
-        if (surface === surfaces[i]) { break; }
+        const hinted = key.slice(key.indexOf('|') + 1);
+        if (hinted === surface) { break; }
         let hit = false;
         for (const trigger of CONTEXT_HINTS[key]) {
           if (context.indexOf(trigger) >= 0) { hit = true; break; }
         }
         if (!hit) { continue; }
-        if (this.lookup(segs[i], true).indexOf(surface) < 0) { continue; }
-        surfaces[i] = surface;
+        if (this.lookup(reading, true).indexOf(hinted) < 0) { continue; }
+        surfaces[i] = hinted + tail;
         break;
       }
     }
   }
+
+  // サ変の活用語尾。長いものから順に見る(される が され より先)。
+  private static readonly SURU_TAILS: string[] = [
+    'されました', 'されている', 'されない', 'されます', 'しました', 'しません',
+    'している', 'しないで', 'された', 'されて', 'される', 'したい', 'しない',
+    'します', 'しよう', 'すれば', 'したら', 'した', 'して', 'する', 'され',
+  ];
 
   private joinSegs(segs: string[]): string | null {
     const surfaces: string[] = [];
@@ -34373,7 +34443,10 @@ export class KanaKanjiConverter {
         sub === 'みとおしを' || sub === 'かわを' || sub === 'そこを' ||
         sub === 'たばねてとめた' || sub === 'かわいて' || sub === 'ごにん' ||
         sub === 'ごほん' || sub === 'したくない' || sub === 'めんどくさすぎ' ||
-        sub === 'きょうと') {
+        // きょう が COMMON_READINGS にあるため、きょう＋安い助詞 の方が
+        // 常に安く、きょうと/きょうそう に同じ常用ボーナスを足しても差が
+        // 付かない(京都に住む→今日とに住む, 競争→今日そう)。
+        sub === 'きょうと' || sub === 'きょうそう') {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.DEKIRU_FORMS.has(sub)) {
@@ -34426,14 +34499,20 @@ export class KanaKanjiConverter {
     // chars (particles/auxiliaries は/が/を/て/…) are handled above and never
     // reach here, so this only touches content readings.
     const singleContentPenalty = (sub.length === 1) ? 2500 : 0;
-    // "様態のそうだ" (Xそう = looks like X): a >=2-char span ending in そう that
-    // isn't a known common word is usually [verb/adj-stem]+そう being
-    // misparsed as a whole noun (思想, 尾張, etc.), not the auxiliary
-    // construction (遅刻しそう, 降りそう, 終わりそう). Penalize it so the
-    // segmenter prefers splitting off そう (already a cheap function word).
-    const souPenalty = (sub.length >= 3 && sub.endsWith('そう') &&
-        !KanaKanjiConverter.COMMON_READINGS.has(sub)) ? 5000 : 0;
-    return [KanaKanjiConverter.VN_DEFAULT - lenBonus - commonBonus + souPenalty + singleContentPenalty,
+    // ここには以前 souPenalty があった。「そう で終わる3文字以上の語は 様態の
+    // そうだ(遅刻しそう/降りそう)を名詞に誤読しているはず」として +5000 する
+    // ヒューリスティックで、代償に そう で終わる普通の漢語名詞が軒並み壊れて
+    // いた: 思想→し僧尼, 理想→りそう, 競争→今日そう。例外を COMMON_READINGS に
+    // 1語ずつ足して凌いでいたが(えらそう/はっそう など)、そう終わりの漢語は
+    // いくらでもあり追いつかない。
+    //
+    // 外して全評価を回すと、守ろうとしていた 様態のそうだ の側は connection
+    // matrix と lenBonus だけで正しく残った(遅刻しそう/雨が降りそう/高そうな/
+    // 壊れそう/死にそう/泣きそう/終わりそうにない いずれも維持)。
+    //   手書きコーパス 1119 → 1120 (REGRESSED 0)
+    //   実文コーパス   45.4% → 45.5%
+    // 守れていないものを守るために普通の名詞を壊していただけなので削除した。
+    return [KanaKanjiConverter.VN_DEFAULT - lenBonus - commonBonus + singleContentPenalty,
             KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
   }
 

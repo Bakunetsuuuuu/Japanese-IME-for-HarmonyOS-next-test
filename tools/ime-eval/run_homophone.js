@@ -97,7 +97,14 @@ function main() {
   // そこで採点するのは「差分が同音語トークン1箇所だけの文」に限る。gold と got の
   // 共通接頭辞・接尾辞を剥がして残った差が、ちょうどその語の gold 表記であれば
   // 同音語の選択ミス。それ以外の場所が違っていれば、それは別の原因なので対象外。
-  let total = 0, correct = 0, skipped = 0;
+  //
+  // 誤りは更に3種類に分かれ、直す価値が全く違うので分けて数える。
+  //   漢字→漢字 (神←髪, 航海←後悔)  … 本当の同音異義語の選択ミス。これが本題。
+  //   かな→漢字 (かい←甲斐)          … 過剰変換。終助詞の かい を 甲斐 にする等、
+  //                                     語の選択としても誤りなので直す価値がある。
+  //   漢字→かな (物←もの, 後←あと)   … 書き手の表記の好み。同じ語なので誤りでない。
+  // 3つ目を混ぜていた頃は もの/あと/とし が上位を占めて、直す対象を見誤った。
+  let total = 0, correct = 0, skipped = 0, over = 0, styleOnly = 0;
   const perReading = new Map();
   for (const [reading, gold, tokens] of data) {
     if (!tokens) { continue; }
@@ -114,12 +121,16 @@ function main() {
     while (b < gold.length - a && b < got.length - a && gold[gold.length - 1 - b] === got[got.length - 1 - b]) { b++; }
     const goldSpan = gold.slice(a, gold.length - b);
     if (goldSpan !== w) { skipped++; continue; }   // 誤りは同音語以外の場所
+    const gotSpan = got.slice(a, got.length - b);
+    if (!hasKanji(gotSpan)) { styleOnly++; continue; }   // 漢字→かな: 表記の好み
+    if (!hasKanji(goldSpan)) { over++; }                 // かな→漢字: 過剰変換
     total++; s.ng++;
-    if (s.examples.length < 3) { s.examples.push([reading, w, got.slice(a, got.length - b), got]); }
+    if (s.examples.length < 3) { s.examples.push([reading, w, gotSpan, got]); }
   }
   console.log(`[HOMOPHONE] ${correct}/${total} (${(100 * correct / total).toFixed(1)}%) 同音語の選択が正解`);
   console.log(`  対象の読み: ${ambiguous.size} 種 (実文で漢字表記が2種類以上, 各${MIN_OCCUR}回以上)`);
-  console.log(`  除外: ${skipped} 文 (誤りが同音語以外の場所にあり、選択の当否を判定できない)`);
+  console.log(`  内訳: 誤り ${total - correct} 件 (うち かな→漢字の過剰変換 ${over} 件)`);
+  console.log(`  除外: 同音語以外の誤り ${skipped} 文 / 漢字⇔かなの表記の好み ${styleOnly} 文`);
 
   const target = process.argv.indexOf('--reading');
   if (target >= 0 && process.argv[target + 1]) {
