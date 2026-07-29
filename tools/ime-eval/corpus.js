@@ -92,6 +92,7 @@ module.exports = [
   // only real reading is あたえる (confirmed against dict.json, global_dict.json,
   // and kanjidic2's kun readings for 与, none of which list あたる), so it was a
   // straightforward key/surface mismatch bug, not an ordering preference. ---
-  ['たからくじにあたる', '宝籤に当たる'],
+  // 宝籤 は戦前表記。現代の正式表記は 宝くじ (DICTIONARY で既定を修正)。
+  ['たからくじにあたる', '宝くじに当たる'],
   ['なぞなぞにあたる', 'なぞなぞに当たる'],
 ];
