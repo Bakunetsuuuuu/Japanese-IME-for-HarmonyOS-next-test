@@ -1,6 +1,7 @@
 import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
 import { JP_FONT_FAMILY } from './JpFont';
+import { promptAction } from '@kit.ArkUI';
 
 // Chip height (design tokens: "fixed 34px height" pill chips). Landscape gets
 // a much shorter bar since vertical space there is scarce.
@@ -14,6 +15,38 @@ export struct CandidateBar {
   @Prop showExpand: boolean = false;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('isLandscape') isLandscape: boolean = false;
+  // Which chip is showing its 削除 popup (-1 = none), and the text that chip
+  // holds. Kept as state rather than passed into the popup builder because a
+  // parameterised @Builder inside ForEach can capture a stale row -- the same
+  // reason KeyboardView drives its one-handed hint popup from state.
+  @State menuIndex: number = -1;
+  @State menuCandidate: string = '';
+
+  private closeMenu(): void {
+    this.menuIndex = -1;
+    this.menuCandidate = '';
+  }
+
+  @Builder DeleteMenu() {
+    Row({ space: 6 }) {
+      Text('🗑')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(14)
+      Text(`「${this.menuCandidate}」を候補から削除`)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(13)
+        .fontWeight(FontWeight.Medium)
+        .fontColor(kbTheme(this.isDark).textPrimary)
+    }
+    .padding({ left: 14, right: 14, top: 10, bottom: 10 })
+    .onClick(() => {
+      const removed = InputHandler.getInstance().suppressCandidate(this.menuIndex);
+      this.closeMenu();
+      if (removed.length > 0) {
+        promptAction.showToast({ message: `「${removed}」を候補から削除しました（アプリの「削除した候補」から元に戻せます）` });
+      }
+    })
+  }
 
   build() {
     Row() {
@@ -32,6 +65,29 @@ export struct CandidateBar {
             .padding({ left: this.isLandscape ? 10 : 18, right: this.isLandscape ? 10 : 18 })
             .borderRadius((this.isLandscape ? CHIP_H_LANDSCAPE : CHIP_H) / 2)
             .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+            .bindPopup(this.menuIndex === index, {
+              builder: this.DeleteMenu,
+              placement: Placement.Top,
+              enableArrow: true,
+              popupColor: kbTheme(this.isDark).cardBg,
+              backgroundBlurStyle: BlurStyle.NONE,
+              radius: 12,
+              // Masked: deleting is destructive enough to deserve a deliberate
+              // second tap, and tapping the mask dismisses without deleting.
+              mask: true,
+              onStateChange: (e: PopupStateChangeParam) => {
+                if (!e.isVisible && this.menuIndex === index) { this.closeMenu(); }
+              },
+            })
+            // Long-press to offer deletion; a plain tap still commits via
+            // onClick below, the same tap/hold split the space and shift keys use.
+            .gesture(
+              LongPressGesture({ duration: 400 })
+                .onAction(() => {
+                  this.menuCandidate = candidate;
+                  this.menuIndex = index;
+                })
+            )
             .onClick(() => {
               InputHandler.getInstance().commitCandidate(index);
             })

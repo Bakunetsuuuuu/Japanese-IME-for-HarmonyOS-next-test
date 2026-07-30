@@ -6,7 +6,10 @@ import type common from '@ohos.app.ability.common';
 // UserDictStore: the main app writes, the extension calls load(ctx, true) to
 // force a fresh disk read past its own process's in-memory cache.
 export interface KeyboardSettings {
-  keyboardLayout: string;
+  // Split so kana (ひらがな) and alphabet (アルファベット) input can each use
+  // QWERTY or FLICK independently -- see load()'s legacyLayout migration note.
+  kanaKeyboardLayout: string;
+  alphabetKeyboardLayout: string;
   oneHandedMode: boolean;
   oneHandedSide: string;
   // 'custom' = hand-built dictionary (default, unchanged behavior).
@@ -21,7 +24,8 @@ export interface KeyboardSettings {
 }
 
 const DEFAULTS: KeyboardSettings = {
-  keyboardLayout: 'QWERTY',
+  kanaKeyboardLayout: 'QWERTY',
+  alphabetKeyboardLayout: 'QWERTY',
   oneHandedMode: false,
   oneHandedSide: 'right',
   conversionEngine: 'custom',
@@ -37,14 +41,21 @@ export class SettingsStore {
         await dataPreferences.removePreferencesFromCache(context, SettingsStore.STORE);
       }
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      const layout = await prefs.get('keyboardLayout', DEFAULTS.keyboardLayout);
+      // Legacy single 'keyboardLayout' key from before kana/alphabet were
+      // split -- read it as the fallback default for both new keys, so an
+      // existing install's FLICK/QWERTY choice carries over unchanged until
+      // the user picks them independently (at which point the new keys win).
+      const legacyLayout = await prefs.get('keyboardLayout', DEFAULTS.kanaKeyboardLayout);
+      const kanaLayout = await prefs.get('kanaKeyboardLayout', legacyLayout);
+      const alphabetLayout = await prefs.get('alphabetKeyboardLayout', legacyLayout);
       const oneHanded = await prefs.get('oneHandedMode', DEFAULTS.oneHandedMode);
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
       const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
       const numericPad = await prefs.get('numericPadEnabled', DEFAULTS.numericPadEnabled);
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ layout, oneHanded, side, engine, numericPad, forceReload }));
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, forceReload }));
       return {
-        keyboardLayout: String(layout),
+        kanaKeyboardLayout: String(kanaLayout),
+        alphabetKeyboardLayout: String(alphabetLayout),
         oneHandedMode: oneHanded === true,
         oneHandedSide: String(side),
         conversionEngine: String(engine),
@@ -53,7 +64,8 @@ export class SettingsStore {
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
       return {
-        keyboardLayout: DEFAULTS.keyboardLayout,
+        kanaKeyboardLayout: DEFAULTS.kanaKeyboardLayout,
+        alphabetKeyboardLayout: DEFAULTS.alphabetKeyboardLayout,
         oneHandedMode: DEFAULTS.oneHandedMode,
         oneHandedSide: DEFAULTS.oneHandedSide,
         conversionEngine: DEFAULTS.conversionEngine,
@@ -62,14 +74,25 @@ export class SettingsStore {
     }
   }
 
-  static async saveKeyboardLayout(context: common.Context, layout: string): Promise<void> {
+  static async saveKanaKeyboardLayout(context: common.Context, layout: string): Promise<void> {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('keyboardLayout', layout);
+      await prefs.put('kanaKeyboardLayout', layout);
       await prefs.flush();
-      console.info('shuntiIME SettingsStore.saveKeyboardLayout ok', layout);
+      console.info('shuntiIME SettingsStore.saveKanaKeyboardLayout ok', layout);
     } catch (e) {
-      console.error('shuntiIME SettingsStore.saveKeyboardLayout error', JSON.stringify(e));
+      console.error('shuntiIME SettingsStore.saveKanaKeyboardLayout error', JSON.stringify(e));
+    }
+  }
+
+  static async saveAlphabetKeyboardLayout(context: common.Context, layout: string): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('alphabetKeyboardLayout', layout);
+      await prefs.flush();
+      console.info('shuntiIME SettingsStore.saveAlphabetKeyboardLayout ok', layout);
+    } catch (e) {
+      console.error('shuntiIME SettingsStore.saveAlphabetKeyboardLayout error', JSON.stringify(e));
     }
   }
 
@@ -102,41 +125,41 @@ export class SettingsStore {
   }
 }
 
-// Reads whether the OS is in dark mode -- the main app (EntryAbility) uses
-// this the same way KeyboardController.applyColorMode does for the keyboard,
-// so both halves of the app follow the system setting only (no manual
-// テーマ override; that was tried and deliberately dropped again).
-// Reads via context.config.colorMode, same as the keyboard extension's
-// applyColorMode -- NOT display.getDefaultDisplaySync(), whose Display
-// object has no colorMode field at all (that was the earlier bug: the
-// field read back undefined, so isDark always resolved to false).
-// common.Context's declared type has no `config` property (unlike the
-// concrete InputMethodExtensionContext type KeyboardController.applyColorMode
-// reads, which does) -- cast the context itself rather than context.config.
-export function resolveMainAppIsDark(context: common.Context): boolean {
-  try {
-    return isDarkFromConfiguration((context as ESObject)['config']);
-  } catch (_e) {
-    return false;
-  }
-}
-
 // Reads colorMode off a Configuration object directly -- specifically the one
 // handed to onConfigurationUpdate(newConfig), NOT a re-read of context.config.
 // That distinction matters: nothing in the ability lifecycle contract
 // guarantees context.config is kept mutated in place as the OS setting
 // changes after the ability/extension was created -- it's confirmed live only
-// at that initial read (used by resolveMainAppIsDark/applyColorMode above for
-// their one-time startup checks). Re-reading context.config from inside
-// onConfigurationUpdate was the actual bug behind light/dark not tracking a
-// live OS toggle: the callback fired, but the "fresh" read kept returning
-// whatever color mode was active back at startup. The Configuration object
+// at the ability/extension's own initial creation. Re-reading context.config
+// later (whether from onConfigurationUpdate or from an onForeground/
+// inputStart-style recheck) was the actual bug behind light/dark not
+// tracking a live OS toggle: the recheck ran, but kept returning whatever
+// color mode was active back at startup. The Configuration object
 // onConfigurationUpdate is called with is the one value guaranteed to be the
-// new state, so every update path must use it directly instead.
+// new state; isDarkFromResourceManager below is the fix for every other
+// recheck point, which can't rely on that callback firing.
 export function isDarkFromConfiguration(config: ESObject): boolean {
   try {
     const cm = config['colorMode'] as number;
     // ConfigurationConstant.ColorMode: COLOR_MODE_DARK=0, COLOR_MODE_LIGHT=1.
+    return cm === 0;
+  } catch (_e) {
+    return false;
+  }
+}
+
+// Reads the OS color mode via resourceManager.getConfigurationSync() instead
+// of context.config -- unlike context.config (a snapshot, only guaranteed
+// live at ability/extension creation -- see isDarkFromConfiguration's
+// comment), resourceManager's Configuration re-resolves the current system
+// setting on every call. This is the fix for isDark staying stuck until a
+// full app/keyboard restart: calling this from every "about to show UI
+// again" point (inputStart, onForeground) gets the live value without
+// depending on onConfigurationUpdate actually firing, which HarmonyOS
+// doesn't reliably deliver to a long-lived, mostly-idle IME extension.
+export function isDarkFromResourceManager(context: ESObject): boolean {
+  try {
+    const cm = context['resourceManager'].getConfigurationSync()['colorMode'] as number;
     return cm === 0;
   } catch (_e) {
     return false;

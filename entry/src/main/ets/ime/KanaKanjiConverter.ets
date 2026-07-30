@@ -169,7 +169,7 @@ const DICTIONARY: Record<string, string[]> = {
   'ご': ['ご', '御', '五', '後', '語'],
   'ろく': ['六'],
   'なな': ['七'],
-  'はち': ['八'],
+  'はち': ['八', 'ハチ'],
   'きゅう': ['九', '旧', '急', '球'],
   'じゅう': ['十', '住', '重'],
   'ひゃく': ['百'],
@@ -8612,7 +8612,7 @@ const DICTIONARY: Record<string, string[]> = {
   'おどる': ['踊る'],
   'おどった': ['踊った'],
   'おどらない': ['踊らない'],
-  'うたう': ['歌う'],
+  'うたう': ['歌う', 'UTAU'],
   'とぶ': ['飛ぶ'],
   'およぐ': ['泳ぐ'],
   'ふく': ['服', '吹く', '福', '複', '拭く'],
@@ -15737,7 +15737,7 @@ const DICTIONARY: Record<string, string[]> = {
   'おおしま': ['大島'],
   'はら': ['原', '腹', '腸'],
   'おがわ': ['小川'],
-  'まき': ['牧'],
+  'まき': ['牧', 'マキ'],
   'こじま': ['小島'],
   'たかぎ': ['高木'],
   'かわだ': ['川田'],
@@ -15771,8 +15771,8 @@ const DICTIONARY: Record<string, string[]> = {
   'だいき': ['大輝', '大樹', '大希'],
   'はるき': ['晴樹', '春樹', '陽樹'],
   'やまと': ['大和', '倭'],
-  'かいと': ['海翔', '快斗'],
-  'れん': ['蓮', '廉', '恋'],
+  'かいと': ['海翔', '快斗', 'KAITO'],
+  'れん': ['蓮', '廉', '恋', 'レン'],
   'ゆいか': ['唯花', '由衣花'],
   'みう': ['美羽', '海羽'],
   'りの': ['莉乃', '里乃'],
@@ -25452,6 +25452,117 @@ const DICTIONARY: Record<string, string[]> = {
   // itself a recognized span, so it lost the lattice contest and got
   // fragmented into めん+どくさ+すぎ (nonsense, 麺+毒さ+過ぎ-shaped).
   'めんどくさすぎ': ['めんどくさすぎ'],
+  // ボーカロイド・音声合成キャラクター名。単独の読みは既存の人名/一般語
+  // (かいと/れん/まき/はち等)に候補を追加する形で対応、ここはフルネーム
+  // の複合読みのみ新規キーとして追加する。
+  'はつねみく': ['初音ミク'],
+  'かがみねりん': ['鏡音リン'],
+  'かがみねれん': ['鏡音レン'],
+  'めぐりねるか': ['巡音ルカ'],
+  'かむいがくぽ': ['神威がくぽ'],
+  'おとまちうな': ['音街ウナ'],
+  'ねこむらいろは': ['猫村いろは'],
+  'つるまきまき': ['弦巻マキ'],
+  'なみねりつ': ['波音リツ'],
+  'かさねてと': ['重音テト'],
+  'あいえー': ['IA'],
+  'ふらわー': ['flower'],
+  'ぐみ': ['GUMI'],
+  'めいこ': ['MEIKO'],
+  'とうほくずんこ': ['東北ずん子'],
+  'とうほくいたこ': ['東北イタコ'],
+  'とうほくきりたん': ['東北きりたん'],
+  'ゆづきゆかり': ['結月ゆかり'],
+  'ことのはあかね': ['琴葉茜'],
+  'ことのはあおい': ['琴葉葵'],
+  'きずなあかり': ['紲星あかり'],
+  'ずんだもん': ['ずんだもん'],
+  'しこくめたん': ['四国めたん'],
+  'かすかべつむぎ': ['春日部つむぎ'],
+  'きょうまちせいか': ['京町セイカ'],
+  // 音楽・音声合成の編集ソフト名
+  'ぼーかろいど': ['VOCALOID'],
+  'しんせさいざーぶい': ['Synthesizer V'],
+  'せびおえーあい': ['CeVIO AI'],
+  'にゅーとりの': ['NEUTRINO'],
+  'ぼいすぼっくす': ['VOICEVOX'],
+  'ぼいすろいど': ['VOICEROID'],
+  'ぴあぷろすたじお': ['Piapro Studio'],
+  'どみの': ['Domino'],
+  'きゅーべーす': ['Cubase'],
+  'えふえるすたじお': ['FL Studio'],
+  'すたじおわん': ['Studio One'],
+  'ろじっくぷろ': ['Logic Pro'],
+  'えいぶるとんらいぶ': ['Ableton Live'],
+  'みゅーずすこあ': ['MuseScore'],
+  // 著名なボカロP名
+  'よねづけんし': ['米津玄師'],
+  'わうわか': ['wowaka'],
+  'なゆたんせいじん': ['ナユタン星人'],
+  'おれんじすたー': ['Orangestar'],
+  'ぴのきおぴー': ['ピノキオピー'],
+  'れるりり': ['れるりり'],
+  'かなりあ': ['Kanaria'],
+  'しゅどう': ['syudou'],
+  'ちのぞ': ['Chinozo'],
+  'てでぃろいど': ['TeddyLoid'],
+  'はちおうじぴー': ['八王子P'],
+  // VOICEVOX キャラクター（マイナー含む）
+  'あめはれはう': ['雨晴はう'],
+  'くろのたけひろ': ['玄野武宏'],
+  'しらかみとらたろう': ['白上虎太郎'],
+  'あおやまりゅうせい': ['青山龍星'],
+  'めいめいひまり': ['冥鳴ひまり'],
+  'きゅうしゅうそら': ['九州そら'],
+  'もちこさん': ['もち子さん'],
+  'けんざきめすお': ['剣崎雌雄'],
+  'ほわいとかる': ['WhiteCUL'],
+  'ごき': ['後鬼'],
+  'なんばーせぶん': ['No.7'],
+  'ちびしきじい': ['ちび式じい'],
+  'おうかみこ': ['櫻歌ミコ'],
+  'なーすろぼたいぷてぃー': ['ナースロボ＿タイプT'],
+  'すずまつあかし': ['雀松朱司'],
+  'きがしまそうりん': ['麒ヶ島宗麟'],
+  'はるかなな': ['春歌ナナ'],
+  'ねこつかいある': ['猫使アル'],
+  'ねこつかいびぃ': ['猫使ビィ'],
+  'ちゅうごくうさぎ': ['中国うさぎ'],
+  'くりたまろん': ['栗田まろん'],
+  'まんべつはなまる': ['満別花丸'],
+  'ことよみにあ': ['琴詠ニア'],
+  'ぞんこ': ['ぞん子'],
+  'ちゅうぶつるぎ': ['中部つるぎ'],
+  'りと': ['離途'],
+  'くろさわさえしろ': ['黒沢冴白'],
+  'ぼいどーる': ['Voidoll'],
+  // UTAU キャラクター（マイナー含む）
+  'あきたねる': ['亞北ネル'],
+  'よわねはく': ['弱音ハク'],
+  'うたねうた': ['唄音ウタ'],
+  'いちとまる': ['一斗まる'],
+  'ももねもも': ['桃音モモ'],
+  // Synthesizer V / CeVIO AI キャラクター
+  'はなくませんとう': ['花隈千冬'],
+  'こはるりっか': ['小春六花'],
+  'なついろかりん': ['夏色花梨'],
+  'そらりあ': ['Solaria'],
+  'えれのあふぉるて': ['Eleanor Forte'],
+  // 追加分: 抜けていた主要キャラクター
+  'みやまいもか': ['宮舞モカ'],
+  'いちえめいと': ['一恵明透'],
+  'たにざきこるね': ['谷崎コルネ'],
+  'ふしぎちゃつぼ': ['ふしぎ茶壺'],
+  'せいきしくれない': ['†聖騎士 紅桜†'],
+  'さとうささら': ['さとうささら'],
+  'すずきつづみ': ['鈴木つづみ'],
+  'ももやまなな': ['桃山なな'],
+  'こはるねあみ': ['小春音アミ'],
+  'りりー': ['Lily'],
+  'かあいゆき': ['歌愛ユキ'],
+  // さよ: VOICEVOXキャラクター名も「小夜」表記なので、人名の候補で兼用
+  // (「/SAYO」は誰も挿入したくない蛇足なので付けない)。
+  'さよ': ['小夜', '紗代'],
 };
 
 // track A (engine='custom') POS/conjugation layer, Phase 1: whole-word
@@ -30834,6 +30945,34 @@ const COLLOCATION_HINTS: Record<string, string> = {
   // neither is wrong on its own, but 風邪+を+引く isn't idiomatic Japanese).
   'かぜ|ひい': 'ひい', 'かぜ|ひく': 'ひく', 'かぜ|ひき': 'ひき',
   'かぜ|ひか': 'ひか', 'かぜ|ひこ': 'ひこ',
+  // 測る (instrument reading) vs 計る (count/time): 熱・体重・血圧のような
+  // 「量そのもの」を対象にすると 測る。時間をはかる は 計る が正しいので
+  // 対象名詞側で切り分ける。
+  'ねつ|はかっ': '測っ', 'ねつ|はかる': '測る', 'ねつ|はかり': '測り',
+  'たいじゅう|はかっ': '測っ', 'たいじゅう|はかる': '測る',
+  'しんちょう|はかる': '測る', 'けつあつ|はかる': '測る',
+  'おんど|はかっ': '測っ', 'おんど|はかる': '測る',
+  // 効く (take effect) vs 聞く (hear): 冷房/薬/効果が「きく」は効く。
+  'れいぼう|きい': '効い', 'えあこん|きい': '効い', 'くすり|きい': '効い',
+  'れいぼう|きく': '効く', 'えあこん|きく': '効く', 'くすり|きく': '効く',
+  // 混む (crowded) vs 込む: 道/電車/店 が「こんでいる」は混む。
+  'みち|こんで': '混んで', 'でんしゃ|こんで': '混んで', 'みせ|こんで': '混んで',
+  'どうろ|こんで': '混んで', 'てんない|こんで': '混んで',
+  // 停める (park a vehicle) vs 止める (halt): 駐車場/車 は停める。
+  'ちゅうしゃじょう|とめる': '停める', 'ちゅうしゃじょう|とめた': '停めた',
+  'くるま|とめる': '停める', 'くるま|とめた': '停めた',
+  // 追う (pursue): 行方/犯人 を「おって」は追う。放置すると 仰 という
+  // 意味不明な漢字になる。
+  'ゆくえ|おっ': '追っ', 'ゆくえ|おう': '追う',
+  'はんにん|おっ': '追っ', 'はんにん|おう': '追う',
+  // 拭く (wipe) vs 吹く (blow): 窓/テーブル/床 を「ふく」は拭く。
+  'まど|ふい': '拭い', 'まど|ふく': '拭く',
+  'てーぶる|ふい': '拭い', 'ゆか|ふい': '拭い',
+  'きれい|ふい': '拭い',
+  // 進める (advance) vs 勧める (recommend): 捜査/計画/作業 を進める。
+  'そうさ|すすめ': '進め', 'けいかく|すすめ': '進め', 'さぎょう|すすめ': '進め',
+  // 会う (meet a person) vs ある: 友人/彼/先生 に「あった」は会った。
+  'ゆうじん|あっ': '会っ', 'ともだち|あっ': '会っ', 'せんせい|あっ': '会っ',
   // いえをたてる (build a house): たてる alone defaults to 立てる (stand
   // something up/erect) since that's the more common bare-reading sense,
   // but a house/building as the object is always the construction sense.
@@ -30934,6 +31073,14 @@ interface MozcDpState {
 
 export class KanaKanjiConverter {
   private static readonly COMMON_READINGS: Set<string> = new Set(['あいする','あう','あおう','あかちゃん','あがる','あける','あさ','あさごはん','あさって','あし','あした','あじ','あじわう','あす','あそこ','あそぶ','あたたかい','あたま','あたらしい','あちら','あつい','あと','あなた','あに','あね','あぶない','あまり','あめ','ありがとう','ある','あるく','あれ','あんしん','あんぜん','いい','いう','いえ','いきる','いく','いしゃ','いす','いそがしい','いそぐ','いただきます','いちにち','いちねん','いっしょ','いつ','いつも','いま','いみ','いもうと','いる','いれる','うごく','うた','うち','うつくしい','うまれる','うみ','うる','うるさい','うれしい','えいが','えき','えらぶ','えんき','えんちょう','えんぴつ','おいしい','おおきい','おかね','おきる','おく','おくれる','おこる','おさけ','おしえる','おそい','おそく','おちゃ','おつかれ','おとうと','おととい','おとな','おどろく','おなか','おねがい','おはよう','おぼえる','おめでとう','おもい','おもう','おもしろい','おやすみ','およぐ','おりる','おわる','おんがく','かいけん','かいしゃ','かいぜん','かいはつ','かいふく','かう','かえる','かお','かぎ','かく','かくだい','かくにん','かさ','かぜ','かぞく','かちょう','かっこいい','かなしい','かなしむ','かのじょ','かばん','かぶか','かみ','かようび','からだ','かるい','かれ','かわ','かわいい','かんがえる','かんきょう','かんじ','かんじゃ','かんじる','かんたん','がくせい','がっこう','がんばる','き','きぎょう','きく','きこえる','きしゃ','きた','きっかけ','きっと','きっぷ','きて','きのう','きぶん','きぼう','きまる','きめる','きもち','きょう','きょうしつ','きょか','きょねん','きれい','きんし','きんようび','ぎじゅつ','くうこう','くすり','くだもの','くち','くつ','くに','くも','くらす','くらべる','くる','くるま','けいかく','けいこう','けいざい','けが','けしごむ','けっか','けっこう','けっこんする','けってい','けど','けはい','けんきゅう','けんとう','げつようび','げんいん','げんき','げんしょう','げんてい','げーむ','こうこう','こうじょう','こうはい','こうひょう','こうふく','こえて','ここ','こころ','こたえ','こちら','こと','ことし','こども','こまる','こめ','これ','これから','こわい','こんげつ','こんにちは','こんばんは','こーひー','ごご','ごぜん','ごちそうさま','ごはん','ごめん','さいふ','さかな','さがす','さがる','さっかー','さっき','さっそく','さびしい','さむい','さようなら','さわる','ざっし','しあわせ','しかし','しけん','しごと','しじょう','しずか','しつもんする','しぬ','しめる','しゃかい','しゃしん','しゃちょう','しゅうかん','しゅうしょく','しゅうまつ','しゅうり','しゅくだい','しゅっちょう','しょうにん','しる','しんかんせん','しんがく','しんこく','しんしゅつ','しんぱい','しんぶん','じかん','じっけん','じつは','じてんしゃ','じゅうみん','じゅぎょう','じゅんび','じょうしょう','じょうたい','じょじょに','じんこう','すいようび','すきになる','すぐ','すこし','すごい','すごく','すずしい','すぽーつ','すみません','すむ','する','すわる','ずっと','せいかつ','せいげん','せいさく','せいせき','せいそう','せいひん','せいりつ','せかい','せっきん','せなか','せまい','せんきょ','せんげつ','せんせい','せんたく','せんぱい','ぜったい','ぜんぜん','ぜんぶ','そこ','そして','そだつ','そちら','そつぎょう','そら','それ','それから','それで','そろそろ','たいさく','たいしょく','たいせつ','たいふう','たいへん','たいよう','たかい','たくさん','たくしー','たしか','たすける','たつ','たとえば','たのしい','たぶん','たべもの','たべる','たまご','たまに','だいがく','だいじ','だいじょうぶ','だいたい','だから','だす','だれ','だんだん','ちいき','ちいさい','ちかい','ちかてつ','ちこく','ちず','ちち','ちゅうがく','ちゅうもく','ちょうさ','ちょうどいい','ちょっと','ついに','つかう','つかれる','つき','つくえ','つくる','つづける','つまらない','つまり','つよい','て','ていあん','てがみ','てすと','てつだう','てれび','てんき','てんしょく','でかけ','でかける','できるだけ','でも','でる','でんき','でんしゃ','でんわ','とうとう','とおい','とおる','とき','ときどき','とくべつ','とけい','ところ','ところで','とても','とにかく','とぶ','とまる','ともだち','とる','どあ','どう','どうしても','どうりょう','どこ','どようび','どれ','どんどん','どんな','なかなか','ながい','なく','なぜ','なに','なまえ','なやむ','ならう','なる','なるべく','なん','なんか','なんて','なんとか','なんとなく','なんなん','におう','にく','にちようび','にゅうがく','ねだん','ねつ','ねる','のど','のぼる','のみもの','のむ','のんで','は','はいる','はしる','はじめる','はたらく','はっせい','はっぴょう','はつばい','はな','はなし','はなす','はは','はやい','はんかち','はんだん','ばあい','ばしょ','ばす','ばん','ばんごはん','ぱん','ひくい','ひこうき','ひと','ひなん','ひま','ひる','ひるごはん','ひろい','びょういん','びょうき','びーる','ふあん','ふく','ふべん','ふり','ふるい','ふんいき','ぶちょう','ぶっか','へいじつ','へや','べんきょう','べんきょうする','べんり','ぺん','ほうこく','ほうほう','ほうりつ','ほし','ほしい','ほてる','ほとんど','ほん','ほんと','ほんとう','ぼうし','まいしゅう','まいつき','まいとし','まいにち','まえ','まがる','ますます','まずい','また','まだ','まち','まつ','まど','まにあう','みえる','みじかい','みず','みち','みつける','みみ','みる','みんな','むかし','むずかしい','め','めがね','もう','もくてき','もくひょう','もくようび','もちろん','もっと','もつ','もの','もり','もんだい','やきゅう','やくそく','やさい','やさしい','やすむ','やすもう','やっと','やっぱ','やっぱり','やはり','やばい','やま','やめ','やめたい','やめる','ゆうがた','ゆうめい','ゆき','ゆめ','よい','ようす','ようふく','ようやく','よてい','よむ','よやく','よる','よろこぶ','よろしく','よわい','らいげつ','らいねん','らじお','りゆう','りょうしん','りょうり','りょこう','れんしゅう','わかい','わかる','わかれる','わすれる','わたし','わたしたち','わたる','わらう','わるい','はやく','おわり','ちえん','こんかい','ろっかげつ','のみ','かいぎ','どういう','はなせる','でかけよう','やけに','やまだ','はしって','はしった','なれて','ほんとに','せんたくもの','ふられて','きゅうに','そと','おと','こうしん','さつえい','へんしゅう','たまる','にもつ','どうが','みせ','せんたくき','つぎ','まんが','よんで','そふと','はやめ','やすい','くずし','ぱんく','やすんだ','どうき','まちがえ','かみのけ','ため','やって','ほうそう','いかが','おか','はなします','せんたくし','きざみ','ふとうこう','せいろん','たしょう','ざんまい','どうとく','きょういく','ふやす','にゅうじょう','けんそん','たんご','かいがん','よとう','せんきょ','れっしゃ','にたいして','にかんして','にもとづいて','をつうじて','にしたがって','におうじて','にむけて','にそって','については',
+    // 疑問詞＋か（不定代名詞）。素の どこ/なに/だれ/いつ だけが
+    // COMMON_READINGS にあり「＋か」形が無かったため、分割した方が
+    // ボーナスを稼げるという非対称が生じ、後続の か が珍しい名詞に
+    // 吸われていた: どこかいこう→どこ|かいこう→どこ邂逅、
+    // だれかきた→だれ|かきた→誰掻立。
+    // いつか は「五日」と本質的に曖昧(いつかまた会おう vs 五月五日)なため
+    // 意図的に除外する。強スパン化すると 五日また会おう になってしまう。
+    'どこか','なにか','だれか','どれか','どちらか',
     // Common compound nouns the segmenter otherwise splits into a common short
     // word + a cheap particle-like tail (ひる+ね, くつ+した, ほん+だ+な,
     // はんそ+で, ながそ+で, はつもう+で). Giving the whole reading the common
@@ -31643,6 +31790,29 @@ export class KanaKanjiConverter {
     // (暮れ, 屍体/死体/etc.) — see appendRegisteredWords/boostCommonWords above
     // for the same problem at the dictionary-ordering level.
     'くれ': true, 'したい': true, 'した': true, 'し': true,
+    // 受身の助動詞語幹「され」。「なり」(上記) と同じ homograph 衝突で、
+    // 大規模辞書側の珍しい固有名詞「佐連」に毎回負けていた。され自体は
+    // 辞書に一語として無いため、更新されました→更新佐連ました のように
+    // され+接尾 の全形が崩れる（されました/されて/されず/されなかった/
+    // されたら/されません/されます/されれば）。サ変名詞＋受身は日常語なので
+    // 影響が大きい。かな固定にすれば され+ました 等が素直に連結する。
+    'され': true,
+    // 「〜したい」の活用形。したい/したくない は既にかな固定されているが、
+    // 同じ語形の残りが漏れており 支度(したく)・買った(かった) という別語に
+    // 化けていた（変更したくて→変更支度て、予約したかった→予約した買った）。
+    // 2文字の「したく」自体は名詞「支度」が正当なので入れず、助動詞用法しか
+    // あり得ない長いスパンだけを対象にする。
+    'したくて': true, 'したかった': true, 'したくなる': true, 'したくなった': true,
+    // 「〜しやすい」は既に強スパン扱いだが連用形の しやすく が漏れていて
+    // し+安く に割れていた（操作しやすく→操作し安く）。
+    'しやすく': true,
+    // 授受の補助動詞「〜てもらう」。現代の標準的な書き方はかなで、漢字の
+    // 「貰」は常用漢字表にも無い。評価してもらえて→評価して貰えて のように
+    // 漢字化すると露骨に読みにくくなる。もらった/もらって は既に正しく
+    // かなで出ていたが、もらえ系だけが漏れていた。
+    'もらう': true, 'もらえる': true, 'もらえ': true, 'もらえた': true,
+    'もらえて': true, 'もらえない': true, 'もらえます': true, 'もらえれば': true,
+    'もらいたい': true, 'もらおう': true,
     'しまった': true, 'しまって': true,
     // しまう(finish/end up doing) conjugates as …てしまい before another verb
     // (忘れてしまい謝った), same family as しまった/しまって above which were
@@ -31796,6 +31966,30 @@ export class KanaKanjiConverter {
     if (entry[candidate] !== undefined || Object.keys(entry).length < 5) {
       entry[candidate] = (entry[candidate] ?? 0) + 1;
     }
+  }
+
+  // Erase a learned reading→surface record. Used when the user deletes a
+  // candidate: the suppression list stops it being displayed, but the learned
+  // count also has to go, or it would keep re-ranking a candidate that is no
+  // longer there and keep feeding PredictiveConversion (which completes
+  // straight out of this store, bypassing the candidate list entirely).
+  // Rebuilds rather than using `delete`, matching the rest of this file.
+  static forgetChoice(kana: string, candidate: string): void {
+    const entry = KanaKanjiConverter.learned[kana];
+    if (entry === undefined || entry[candidate] === undefined) { return; }
+    const next: Record<string, number> = {};
+    for (const k of Object.keys(entry)) {
+      if (k !== candidate) { next[k] = entry[k]; }
+    }
+    if (Object.keys(next).length > 0) {
+      KanaKanjiConverter.learned[kana] = next;
+      return;
+    }
+    const remaining: Record<string, Record<string, number>> = {};
+    for (const r of Object.keys(KanaKanjiConverter.learned)) {
+      if (r !== kana) { remaining[r] = KanaKanjiConverter.learned[r]; }
+    }
+    KanaKanjiConverter.learned = remaining;
   }
 
   // Per-segment ("文節") learning for the ordinary whole-sentence commit path.
@@ -32233,8 +32427,73 @@ export class KanaKanjiConverter {
   // dictionary entry). Pulled out so every join goes through the same
   // grammar special-cases (てきた/てきて, あい/すいの様態, COLLOCATION_HINTS)
   // instead of two copies drifting apart.
+  // reading -> the CONTEXT_HINTS keys that start with it, built once on first
+  // use. Without it, applyInSentenceHints would scan all ~98 keys for every
+  // segment of every join, and joinSegs runs on each keystroke of a composing
+  // string; with it the overwhelmingly common "this reading has no hint" case
+  // costs a single Map lookup.
+  private static hintsByReading: Map<string, string[]> | undefined = undefined;
+
+  private static hintKeysFor(reading: string): string[] | undefined {
+    let index = KanaKanjiConverter.hintsByReading;
+    if (index === undefined) {
+      index = new Map<string, string[]>();
+      for (const key of Object.keys(CONTEXT_HINTS)) {
+        const sep = key.indexOf('|');
+        if (sep <= 0) { continue; }
+        const reading0 = key.slice(0, sep);
+        const list = index.get(reading0);
+        if (list === undefined) { index.set(reading0, [key]); } else { list.push(key); }
+      }
+      KanaKanjiConverter.hintsByReading = index;
+    }
+    return index.get(reading);
+  }
+
+  // Resolve a segment's homophone using the REST OF THE SAME SENTENCE as
+  // context, with the same curated CONTEXT_HINTS table the cross-sentence
+  // reranker uses (see its application in the candidate builder, which scores
+  // against the committed-text buffer).
+  //
+  // That buffer is empty while the first sentence is being typed, so for
+  // one-shot conversion -- the normal case -- the whole 98-entry table did
+  // nothing, even when the deciding word was sitting right there in the same
+  // phrase: 今年の夏は例年よりあつい kept 熱い despite 夏, and 冷房がきいて
+  // いなくてあつい kept 熱い despite 冷房. Both are literally listed as
+  // triggers for あつい|暑い.
+  //
+  // Only swaps to a surface lookup() actually offers for that reading, and
+  // never touches a segment that was deliberately kept as kana (a function
+  // word, or one of the grammar special-cases above), so this can only pick a
+  // different homophone -- never introduce a kanji where the join decided
+  // kana belongs.
+  private applyInSentenceHints(segs: string[], surfaces: string[]): void {
+    for (let i = 0; i < segs.length; i++) {
+      if (surfaces[i] === segs[i]) { continue; }
+      const keys = KanaKanjiConverter.hintKeysFor(segs[i]);
+      if (keys === undefined) { continue; }
+      let context = '';
+      for (let j = 0; j < surfaces.length; j++) {
+        if (j !== i) { context += surfaces[j]; }
+      }
+      if (context.length === 0) { continue; }
+      for (const key of keys) {
+        const surface = key.slice(key.indexOf('|') + 1);
+        if (surface === surfaces[i]) { break; }
+        let hit = false;
+        for (const trigger of CONTEXT_HINTS[key]) {
+          if (context.indexOf(trigger) >= 0) { hit = true; break; }
+        }
+        if (!hit) { continue; }
+        if (this.lookup(segs[i], true).indexOf(surface) < 0) { continue; }
+        surfaces[i] = surface;
+        break;
+      }
+    }
+  }
+
   private joinSegs(segs: string[]): string | null {
-    let joined = '';
+    const surfaces: string[] = [];
     let allRecognized = true;
     for (let idx = 0; idx < segs.length; idx++) {
       const seg = segs[idx];
@@ -32305,7 +32564,12 @@ export class KanaKanjiConverter {
       // sentence-initially, so a やすい directly glued onto a non-particle
       // segment with no particle between them essentially never means
       // "cheap" in real text.
-      if (seg === 'やすい' && idx > 0 &&
+      // The same reasoning holds for every inflection of that auxiliary
+      // (やすく/やすくなった/やすかった…), which used to fall straight through
+      // to 安く/安かった: 疲れやすくなった came out 疲れ安くなった. The guard is
+      // unchanged, so a genuine 安い still wins wherever it is properly marked
+      // (服が安くなった -- prev is が, a case particle, so this never fires).
+      if (KanaKanjiConverter.YASUI_AUX_FORMS.has(seg) && idx > 0 &&
           !KanaKanjiConverter.CASE_PARTICLES.has(segs[idx - 1]) &&
           !KanaKanjiConverter.FW_CLASS_MAP[segs[idx - 1]]) {
         best = seg;
@@ -32397,8 +32661,11 @@ export class KanaKanjiConverter {
       // phrase would be nonsense like "()よ". Abandon the join so the plain
       // hiragana leads instead.
       if (KanaKanjiConverter.isSymbolOnly(best)) { return null; }
-      joined += best;
+      surfaces.push(best);
     }
+    // Homophones the rest of this same sentence can settle (夏…→暑い).
+    this.applyInSentenceHints(segs, surfaces);
+    const joined = surfaces.join('');
     // Previously there was a short-circuit here returning `joined` whenever it
     // contained any kanji, on the theory that kanji presence implied a trustworthy
     // join. It didn't: almost every join contains kanji from at least one
@@ -33348,10 +33615,10 @@ export class KanaKanjiConverter {
     }
     // やすい directly after another segment: see joinSegs' matching special
     // case for why.
-    if (kana === 'やすい' && prevSeg !== undefined &&
+    if (KanaKanjiConverter.YASUI_AUX_FORMS.has(kana) && prevSeg !== undefined &&
         !KanaKanjiConverter.CASE_PARTICLES.has(prevSeg) &&
         !KanaKanjiConverter.FW_CLASS_MAP[prevSeg]) {
-      return 'やすい';
+      return kana;
     }
     // てきた/てきて/き(ちゃ...): see joinSegs' matching special case for why.
     if (prevSeg !== undefined && prevSeg.length > 1 && /[てで]$/.test(prevSeg) &&
@@ -33836,6 +34103,35 @@ export class KanaKanjiConverter {
   // is a reasonable starting point.
   private static readonly MOZC_SINGLE_CONTENT_PENALTY = 2500;
 
+  // 「〜やすい」(easy to ~) 補助形容詞の活用形。動詞連用形に直接くっつく
+  // 用法だけを対象にしたいので、使う側で「直前が格助詞でない」ガードを
+  // かける (joinSegs / autoConvert の同じ条件を参照)。
+  private static readonly YASUI_AUX_FORMS: Set<string> = new Set<string>([
+    'やすい', 'やすく', 'やすくて', 'やすかった', 'やすくない',
+    'やすくなった', 'やすくなる', 'やすければ', 'やすさ',
+  ]);
+
+  // 可能形「〜できる」の活用形。サ変名詞の直後では、この語形は毎回
+  // で(格助詞) + き… の分割に競り負ける: で は極めて安い助詞で、続く き…
+  // には 来る/着る という常用の内容語読みがあるため、合計コストが
+  // できます 一語より安くなってしまう。実害は大きく、
+  //   予約できました    → 予約で来ました
+  //   接続できなかった  → 接続で来なかった
+  //   インストールできない → インストールで着ない
+  // のように、サ変名詞＋可能形という日本語で最も頻出する構文の一つが
+  // 軒並み壊れる。語形自体はすべて辞書にあり単独では正しく変換される
+  // ので、必要なのは分割を防ぐことだけ。
+  //
+  // できた/できて だけは以前から下の個別リストに入っていたが、同じ理由で
+  // 失敗する残りの活用形が漏れていた。1語ずつ足すのではなくパラダイム
+  // 単位でまとめて扱う。辞書に無い語形(できず等)は DP のスパン採用条件
+  // (inDict) で弾かれるので、ここに含まれていても無害。
+  private static readonly DEKIRU_FORMS: Set<string> = new Set<string>([
+    'できる', 'できます', 'できました', 'できません', 'できませんでした',
+    'できない', 'できなかった', 'できた', 'できて', 'できれば', 'できたら',
+    'できず', 'できなくて', 'できなければ', 'できたり',
+  ]);
+
   // Returns [nodeCost, leftMacroClass, rightMacroClass] for a kana segment.
   // FW_CLASS_MAP / FUNCTION_WORDS are checked FIRST — grammar rules take priority
   // over any corpus statistics to ensure correct POS class for function words.
@@ -33872,13 +34168,16 @@ export class KanaKanjiConverter {
         sub === 'しふと' || sub === 'もらいながら' || sub === 'どうが' ||
         sub === 'きたのくには' || sub === 'はいしん' || sub === 'うえて' ||
         sub === 'ほかの' || sub === 'やすいもの' || sub === 'もでるを' ||
-        sub === 'できた' || sub === 'できて' || sub === 'かくかてい' ||
+        sub === 'かくかてい' ||
         sub === 'てまえに' || sub === 'すりへって' || sub === 'そこが' ||
         sub === 'すりへっていないか' || sub === 'かみに' || sub === 'はやめに' ||
         sub === 'とばなかった' || sub === 'くもが' || sub === 'はいきした' ||
         sub === 'みとおしを' || sub === 'かわを' || sub === 'そこを' ||
         sub === 'たばねてとめた' || sub === 'かわいて' || sub === 'ごにん' ||
         sub === 'ごほん' || sub === 'したくない' || sub === 'めんどくさすぎ') {
+      return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
+    }
+    if (KanaKanjiConverter.DEKIRU_FORMS.has(sub)) {
       return [KanaKanjiConverter.VN_DEFAULT - 6500, KanaKanjiConverter.VC_NOUN, KanaKanjiConverter.VC_NOUN];
     }
     if (KanaKanjiConverter.FUNCTION_WORDS[sub]) {

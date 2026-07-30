@@ -287,6 +287,7 @@ export struct FlickKeyboardView {
           placement: Placement.Top,
           enableArrow: true,
           popupColor: kbTheme(this.isDark).specialBg,
+          backgroundBlurStyle: BlurStyle.NONE,
           radius: 14,
           mask: false,
         })
@@ -365,6 +366,7 @@ export struct FlickKeyboardView {
           placement: Placement.Top,
           enableArrow: true,
           popupColor: kbTheme(this.isDark).specialBg,
+          backgroundBlurStyle: BlurStyle.NONE,
           radius: 14,
           mask: false,
         })

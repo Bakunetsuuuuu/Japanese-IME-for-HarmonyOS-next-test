@@ -186,6 +186,7 @@ export struct KeyboardView {
         placement: Placement.Top,
         enableArrow: true,
         popupColor: kbTheme(this.isDark).specialBg,
+        backgroundBlurStyle: BlurStyle.NONE,
         radius: 14,
         mask: false,
       })
@@ -271,6 +272,7 @@ export struct KeyboardView {
         placement: Placement.Top,
         enableArrow: true,
         popupColor: kbTheme(this.isDark).specialBg,
+        backgroundBlurStyle: BlurStyle.NONE,
         radius: 14,
         mask: false,
       })
