@@ -22,9 +22,6 @@ let _inputStartRegistered = false;
 let _dictLoaded = false;
 const USE_DICT_JSON: boolean = true;
 
-// 貼り付けチップを次の語の予測より優先する時間。
-const CLIP_PRIORITY_MS: number = 60000;
-
 @Entry
 @Component
 struct KeyboardPage {
@@ -44,29 +41,11 @@ struct KeyboardPage {
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
-  @StorageLink('clipboardSeenAt') clipboardSeenAt: number = 0;
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
   @StorageLink('convEnd') convEnd: number = 0;
-
-  // コピー直後の一定時間だけ、貼り付けチップを次の語の予測より前に出す。
-  //
-  // 候補バーの1行は「変換候補 / 次の語の予測 / 貼り付けチップ」で取り合いになる。
-  // 以前は予測が無条件に先だったが、確定直後はほぼ必ず予測が出るので、
-  // 貼り付けチップは実質いつまでも表示されず、キーボードからの貼り付けが
-  // できない状態になっていた。
-  //
-  // かといってチップを常に優先すると、貼らずに放置されたクリップボードが
-  // 次の語の予測を永久に潰してしまう(チップは貼るか、クリップボードの中身が
-  // 変わるまで消えない)。そこで「新しい内容として現れてから
-  // CLIP_PRIORITY_MS の間だけ優先」にした。期限切れ後も、予測が無いときは
-  // これまでどおりチップが出る。
-  private clipboardChipHasPriority(): boolean {
-    if (this.clipboardPreview.length === 0 || this.clipboardSeenAt === 0) { return false; }
-    return Date.now() - this.clipboardSeenAt < CLIP_PRIORITY_MS;
-  }
 
   aboutToAppear(): void {
     if (!_dictLoaded && USE_DICT_JSON) {
@@ -223,11 +202,15 @@ struct KeyboardPage {
                       showExpand: true
                     })
                   } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
-                    this.predictions.length > 0 && !this.clipboardChipHasPriority()) {
-                    // Idle right after a commit: offer the likely next words to tap.
-                    PredictionBar({ predictions: this.predictions })
-                  } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
                     this.clipboardPreview.length > 0) {
+                    // 未貼り付けのクリップボードがある限り、次の語の予測より先に出す。
+                    // チップは貼るか、クリップボードの中身が変わるまで消えない
+                    // (dismissedClipSig)ので、「まだ貼っていないコピーが1件ある」
+                    // 状態と 1:1 に対応する。
+                    //
+                    // 以前は予測がこの枝より先にあり、確定直後はほぼ必ず予測が
+                    // 出るため、貼り付けチップに一度も到達しなかった。
+                    //
                     // Gboard-style: centered paste suggestion when nothing is composing,
                     // rather than left-aligned like an actual conversion candidate.
                     Text(this.clipboardPreview)
@@ -263,6 +246,10 @@ struct KeyboardPage {
                           });
                         }
                       })
+                  } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
+                    this.predictions.length > 0) {
+                    // Idle right after a commit: offer the likely next words to tap.
+                    PredictionBar({ predictions: this.predictions })
                   }
                 }
                 .width('100%')
