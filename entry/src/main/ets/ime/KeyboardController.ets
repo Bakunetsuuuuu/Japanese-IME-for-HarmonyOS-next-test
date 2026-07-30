@@ -1244,7 +1244,19 @@ export class InputHandler {
     return '';
   }
 
+  // 候補バーの1行は「変換候補 / 次の語の予測 / 貼り付けチップ」で取り合いに
+  // なる。コピー直後は貼り付けチップを優先したいが、貼らないまま放置された
+  // クリップボードにいつまでも1行を占有させると次の語の予測が出せなくなる。
+  // そこで「いつ新しい内容として現れたか」を持たせ、一定時間だけ優先する。
+  // 期限切れ後も、予測が無いときはこれまでどおりチップが出る。
+  private static lastPreviewSig: string = '';
+
   private static setClipboardPreviewState(preview: string, isImage: boolean, isFile: boolean, uri: string): void {
+    const sig = InputHandler.clipSig(preview.length > 0 && !isImage && !isFile ? preview : '', uri, isImage);
+    if (sig !== InputHandler.lastPreviewSig) {
+      InputHandler.lastPreviewSig = sig;
+      AppStorage.setOrCreate('clipboardSeenAt', sig.length > 0 ? Date.now() : 0);
+    }
     AppStorage.setOrCreate('clipboardPreview', preview);
     AppStorage.setOrCreate('clipboardIsImage', isImage);
     AppStorage.setOrCreate('clipboardIsFile', isFile);
