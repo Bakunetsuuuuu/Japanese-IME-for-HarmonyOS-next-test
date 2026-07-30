@@ -324,21 +324,21 @@ def conj_godan_ru(r_stem: str, k_stem: str) -> dict:
 VERBS = [
     # ichidan - eru
     ('たべ',     '食べ',     conj_ichidan),
-    ('おし',     '教え',     conj_ichidan),  # 教える
+    ('おしえ',   '教え',     conj_ichidan),  # 教える
     ('うけ',     '受け',     conj_ichidan),
-    ('おぼ',     '覚え',     conj_ichidan),  # 覚える
+    ('おぼえ',   '覚え',     conj_ichidan),  # 覚える
     ('かんが',   '考え',     conj_ichidan),
     ('き',       '決め',     conj_ichidan),  # 決める
     ('みとめ',   '認め',     conj_ichidan),
     ('もとめ',   '求め',     conj_ichidan),
     ('しらべ',   '調べ',     conj_ichidan),
     ('くらべ',   '比べ',     conj_ichidan),
-    ('かぞ',     '数え',     conj_ichidan),  # 数える
+    ('かぞえ',   '数え',     conj_ichidan),  # 数える
     ('つたえ',   '伝え',     conj_ichidan),
     ('すす',     '進め',     conj_ichidan),  # 進める
     ('まとめ',   'まとめ',   conj_ichidan),  # ひらがなのまま
     ('かかえ',   '抱え',     conj_ichidan),
-    ('そな',     '備え',     conj_ichidan),  # 備える
+    ('そなえ',   '備え',     conj_ichidan),  # 備える
     ('かまえ',   '構え',     conj_ichidan),
     ('かえ',     '変え',     conj_ichidan),  # 変える (not 帰る)
     ('あた',     '与え',     conj_ichidan),  # 与える (あたえ)
@@ -355,7 +355,7 @@ VERBS = [
     ('さだめ',   '定め',     conj_ichidan),
     ('うめ',     '埋め',     conj_ichidan),
     ('あつめ',   '集め',     conj_ichidan),
-    ('ためめ',   '貯め',     conj_ichidan),
+    ('ため',     '貯め',     conj_ichidan),
     ('きわめ',   '極め',     conj_ichidan),
     ('なめ',     '舐め',     conj_ichidan),
     ('たのしめ', '楽しめ',   conj_ichidan),
@@ -372,10 +372,8 @@ VERBS = [
     ('いき',     '生き',     conj_ichidan),
     ('あき',     '飽き',     conj_ichidan),
     ('おり',     '降り',     conj_ichidan),  # 降りる (not 折る)
-    ('ねぼ',     '寝坊し',   conj_ichidan),  # not ideal but keep simple
     ('しんじ',   '信じ',     conj_ichidan),
-    ('あつかい', '扱い',     conj_ichidan),  # 扱いる not right; skip
-    ('つづき',   '続き',     conj_ichidan),  # 続きる not right; skip
+    ('あつか',   '扱',       conj_godan_u),   # 扱う
     # godan-u
     ('うた',     '歌',       conj_godan_u),
     ('むか',     '向か',     conj_godan_u),  # 向かう: 活用が生成されておらず
@@ -393,7 +391,7 @@ VERBS = [
     ('まよ',     '迷',       conj_godan_u),
     ('あらそ',   '争',       conj_godan_u),
     ('もら',     'もら',     conj_godan_u),  # もらう
-    ('さわ',     '触',       conj_godan_u),  # 触る → actually godan-ru
+    ('さわ',     '触',       conj_godan_ru),  # 触る
     ('したが',   '従',       conj_godan_u),
     ('ともな',   '伴',       conj_godan_u),
     ('おこな',   '行',       conj_godan_u),  # 行う
@@ -401,11 +399,10 @@ VERBS = [
     # godan-ku
     ('か',       '書',       conj_godan_ku),
     ('き',       '聞',       conj_godan_ku),  # 聞く
-    ('あるい',   '歩',       conj_godan_ku),  # wrong - 歩く is ある-く not あるい-く
+    ('ある',     '歩',       conj_godan_ku),  # 歩く
     ('はたら',   '働',       conj_godan_ku),
     ('つづ',     '続',       conj_godan_ku),  # 続く (not 続ける)
-    ('むす',     '結',       conj_godan_ku),  # 結ぶ actually, skip
-    ('もうし',   '申し込',   conj_godan_ku),  # 申し込む actually
+    ('もうしこ', '申し込',   conj_godan_mu),  # 申し込む
     ('うご',     '動',       conj_godan_ku),  # 動く
     ('とど',     '届',       conj_godan_ku),  # 届く
     ('や',       '焼',       conj_godan_ku),  # 焼く
@@ -415,14 +412,13 @@ VERBS = [
     ('お',       '置',       conj_godan_ku),  # 置く
     ('かが',     '輝',       conj_godan_ku),  # 輝く
     ('ひら',     '開',       conj_godan_ku),  # 開く (ひらく)
-    ('なびい',   '靡',       conj_godan_ku),  # skip
     # godan-gu
     ('およ',     '泳',       conj_godan_gu),
     ('かせ',     '稼',       conj_godan_gu),  # 稼ぐ
     ('さわ',     '騒',       conj_godan_gu),  # 騒ぐ
     ('いそ',     '急',       conj_godan_gu),  # 急ぐ
     ('ぬ',       '脱',       conj_godan_gu),  # 脱ぐ → r_stem=ぬ?? 脱ぐ=ぬぐ
-    ('ころ',     '転',       conj_godan_gu),  # 転がる actually... skip
+    ('ころ',     '転',       conj_godan_bu),  # 転ぶ
     # godan-su
     ('はな',     '話',       conj_godan_su),
     ('か',       '貸',       conj_godan_su),  # 貸す
@@ -459,7 +455,6 @@ VERBS = [
     ('あそ',     '遊',       conj_godan_bu),
     ('むす',     '結',       conj_godan_bu),  # 結ぶ
     ('よろこ',   '喜',       conj_godan_bu),
-    ('すす',     '進',       conj_godan_bu),  # 進む → actually godan-mu
     # godan-mu
     ('よ',       '読',       conj_godan_mu),  # 読む
     ('の',       '飲',       conj_godan_mu),
@@ -468,9 +463,9 @@ VERBS = [
     ('なや',     '悩',       conj_godan_mu),  # 悩む
     ('たの',     '頼',       conj_godan_mu),  # 頼む
     ('ふく',     '含',       conj_godan_mu),  # 含む
-    ('なか',     '泣',       conj_godan_mu),  # wait - 泣く is godan-ku
-    ('えが',     '描',       conj_godan_mu),  # 描む? No. 描く → godan-ku
-    ('ふさ',     '塞',       conj_godan_mu),  # 塞ぐ → actually godan-gu
+    ('な',       '泣',       conj_godan_ku),  # 泣く
+    ('えが',     '描',       conj_godan_ku),  # 描く (えがく)
+    ('ふさ',     '塞',       conj_godan_gu),  # 塞ぐ
     ('いど',     '挑',       conj_godan_mu),  # 挑む
     ('この',     '好',       conj_godan_mu),  # 好む
     ('さい',     '済',       conj_godan_mu),  # 済む
@@ -495,29 +490,23 @@ VERBS = [
     ('わた',     '渡',       conj_godan_ru),  # 渡る
     ('くば',     '配',       conj_godan_ru),  # 配る
     ('あつま',   '集ま',     conj_godan_ru),  # 集まる
-    ('きわ',     '終わ',     conj_godan_ru),  # skip dup
     ('のぼ',     '上',       conj_godan_ru),  # 上る
     ('さが',     '下が',     conj_godan_ru),  # 下がる
     ('あが',     '上が',     conj_godan_ru),  # 上がる
     ('とお',     '通',       conj_godan_ru),  # 通る
     ('まわ',     '回',       conj_godan_ru),  # 回る
-    ('かな',     '変わ',     conj_godan_ru),  # skip
     ('かわ',     '変わ',     conj_godan_ru),  # 変わる
     ('きま',     '決ま',     conj_godan_ru),  # 決まる
     ('はじま',   '始ま',     conj_godan_ru),  # 始まる
-    ('なおな',   '直な',     conj_godan_ru),  # skip
-    ('うまくい', 'うまくい', conj_godan_ru),  # うまくいく actually...
-    ('つた',     '伝わ',     conj_godan_ru),  # 伝わる
+    ('うまくい', 'うまくい', conj_godan_ku),  # うまくいく
+    ('つたわ',   '伝わ',     conj_godan_ru),  # 伝わる
     ('おこ',     '起こ',     conj_godan_ru),  # 起こる
     ('めぐ',     '巡',       conj_godan_ru),  # 巡る
     ('まも',     '守',       conj_godan_ru),  # 守る
-    ('きか',     '利か',     conj_godan_ru),  # 利かる? no. skip
     ('かか',     '係わ',     conj_godan_ru),  # 係わる
-    ('つた',     '伝わ',     conj_godan_ru),  # 伝わる (dup)
     ('はか',     '計',       conj_godan_ru),  # 計る
-    ('はは',     '捗',       conj_godan_ru),  # 捗る → はかど-る
-    ('まつ',     '待つ',     conj_godan_tsu), # dup
-    ('なっ',     '担',       conj_godan_ru),  # 担う actually
+    ('はかど',   '捗',       conj_godan_ru),  # 捗る
+    ('にな',     '担',       conj_godan_u),   # 担う
 ]
 
 # ─────────────────────────────────────────────────────────────
