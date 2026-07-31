@@ -1669,13 +1669,30 @@ export class InputHandler {
 
     // 自動区切り変更: a candidate from a differently-segmented parse of the
     // same reading (へんかんせいど's single whole-compound entry 変換精度 vs the
-    // へんかん+せいど split's 返還制度). Demoted below the per-segment
-    // alternatives above: its boundary-detour search occasionally yields a
-    // linguistically odd reparse (先生似合う for せんせいにあう), so it's a
-    // lower-priority alternative, not the second candidate.
+    // へんかん+せいど split's 返還制度).
+    //
+    // 区切りが違う候補が「先頭よりかなが少ない」= 先頭がかなのまま残した所を
+    // 漢字にできているなら、候補1に入れる。はいじんじゃ は 廃人じゃ(かな2文字)
+    // に対し 廃神社(かな0文字)で、区切りを直せば全部漢字になる型。以前はこれが
+    // 同音語(癈人じゃ/俳人じゃ/配陣じゃ)の下、5番目に埋もれていた。
+    //
+    // かなの数が減らないものは今までどおり下に置く。区切りを変えただけで
+    // 漢字の当て方が変わらない候補は、単なる別表記と大差なく、しかも
+    // 境界の迂回探索は時々 贅金を修める(ぜいきんをおさめる)や 先生似合う
+    // (せんせいにあう)のような妙な再解釈を出す。上げると本当に欲しい
+    // 税金を納める が押し下げられる(実測: 候補4→5)。
     const altSeg = this.kanjiConverter.findAlternateSegmentation(target);
     if (altSeg !== null && !candidates.includes(altSeg)) {
-      candidates.splice(insertAt, 0, altSeg);
+      const kanaCount = (t: string): number => {
+        let n = 0;
+        for (let i = 0; i < t.length; i++) {
+          const c = t.charCodeAt(i);
+          if (c >= 0x3041 && c <= 0x309F) { n++; }
+        }
+        return n;
+      };
+      const lifts = candidates.length > 0 && kanaCount(altSeg) < kanaCount(candidates[0]);
+      candidates.splice(lifts ? 1 : insertAt, 0, altSeg);
     }
 
     // General learned-context rerank: if the user has actually written one of
