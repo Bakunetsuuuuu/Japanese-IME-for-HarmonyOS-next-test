@@ -103,6 +103,10 @@ struct InputLogPage {
   // 拡張プロセスが自己申告したパス (LK_DIAG 記録より)。読み手側の実パスと
   // 突き合わせるためのもの。
   @State writerPaths: string = '(記録なし)';
+  // 拡張プロセスが起動した回数(diag 記録の数)。ここが入力のたびに増えるなら、
+  // 拡張は入力欄ごとに作り直されている = デバウンス待ちの保存が消える環境。
+  @State writerStarts: number = 0;
+  private probeGen: number = 0;
 
   private stores: ProbeStore[] = [
     { label: '削除した候補', store: 'shunti_suppressed', key: 'v1' },
@@ -154,7 +158,9 @@ struct InputLogPage {
     this.total = InputLog.countLines(raw);
     this.bytes = InputLog.sizeBytes(d);
     const diag = this.entries.filter((e: InputLogEntry) => e.k === LK_DIAG);
-    this.writerPaths = diag.length > 0 ? diag[0].x.split(' ').join('\n') : '(記録なし)';
+    const paths = diag.filter((e: InputLogEntry) => e.x.indexOf('log=') === 0);
+    this.writerStarts = paths.length;
+    this.writerPaths = paths.length > 0 ? paths[0].x.split(' ').join('\n') : '(記録なし)';
     this.runProbes();
   }
 
@@ -163,33 +169,48 @@ struct InputLogPage {
   // 読み取り側が一律 try/catch で空を返していたせい。
   private runProbes(): void {
     const ctx = getContext(this);
-    const out: ProbeResult[] = [];
-    out.push({
-      label: '本体アプリ(読み手)',
-      detail: `log=${this.dir()}\nfiles=${(ctx as common.UIAbilityContext).filesDir}\n`
-        + `prefs=${(ctx as common.UIAbilityContext).preferencesDir}`,
-      ok: true,
-    });
-    out.push({ label: 'IME拡張(書き手)', detail: this.writerPaths, ok: this.writerPaths !== '(記録なし)' });
-    this.probes = out;
-    for (const s of this.stores) {
+    // 世代番号。ここを見ずに this.probes へ concat していたら、前回の呼び出しの
+    // 未解決 Promise が新しい配列に後から積まれて、画面を開き直すたび行が増え、
+    // 「診断」を押すと減る、という挙動になっていた。
+    this.probeGen++;
+    const gen = this.probeGen;
+    const head: ProbeResult[] = [
+      {
+        label: '本体アプリ(読み手)',
+        detail: `log=${this.dir()}\nfiles=${(ctx as common.UIAbilityContext).filesDir}\n`
+          + `prefs=${(ctx as common.UIAbilityContext).preferencesDir}`,
+        ok: true,
+      },
+      {
+        label: `IME拡張(書き手) 起動 ${this.writerStarts} 回`,
+        detail: this.writerPaths,
+        ok: this.writerPaths !== '(記録なし)',
+      },
+    ];
+    this.probes = head;
+    // 5本まとめて解決させて一度に入れ替える。1本ずつ concat すると上の競合が起きる。
+    const jobs: Promise<ProbeResult>[] = this.stores.map((s: ProbeStore) =>
       dataPreferences.getPreferences(ctx, s.store)
         .then((prefs: dataPreferences.Preferences) => prefs.get(s.key, ''))
         .then((v: dataPreferences.ValueType) => {
-          const text = String(v);
-          const n = text.length;
-          this.probes = this.probes.concat([{
+          const n = String(v).length;
+          const r: ProbeResult = {
             label: s.label,
             detail: n === 0 ? '空 (このストアには何も書かれていない)' : `${n} バイト`,
             ok: n > 0,
-          }]);
+          };
+          return r;
         })
         .catch((e: Error) => {
-          this.probes = this.probes.concat([{
+          const r: ProbeResult = {
             label: s.label, detail: '読み取り失敗: ' + JSON.stringify(e), ok: false,
-          }]);
-        });
-    }
+          };
+          return r;
+        }));
+    Promise.all(jobs).then((rows: ProbeResult[]) => {
+      if (gen !== this.probeGen) { return; }   // もっと新しい診断が走っている
+      this.probes = head.concat(rows);
+    });
   }
 
   private visible(): InputLogEntry[] {
