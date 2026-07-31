@@ -388,6 +388,14 @@ VERBS = [
     ('てつだ',   '手伝',     conj_godan_u),
     ('にな',     '担',       conj_godan_u),  # 担う
     ('はら',     '払',       conj_godan_u),  # 払う
+    ('く',       '食',       conj_godan_u),   # 食う (くった/くわない/くいます が
+                                              # 辞書に一つも無く、くった→久田(姓)
+                                              # になっていた)
+    ('やと',     '雇',       conj_godan_u),   # 雇う
+    ('うしな',   '失',       conj_godan_u),   # 失う
+    ('すく',     '救',       conj_godan_u),   # 救う
+    ('わら',     '笑',       conj_godan_u),   # 笑う
+    ('あら',     '洗',       conj_godan_u),   # 洗う
     ('まよ',     '迷',       conj_godan_u),
     ('あらそ',   '争',       conj_godan_u),
     ('もら',     'もら',     conj_godan_u),  # もらう
@@ -432,6 +440,9 @@ VERBS = [
     ('さが',     '探',       conj_godan_su),  # 探す
     ('はな',     '放',       conj_godan_su),  # 放す
     ('ころ',     '殺',       conj_godan_su),  # 殺す
+    ('ため',     '試',       conj_godan_su),  # 試す
+    ('のこ',     '残',       conj_godan_su),  # 残す
+    ('わた',     '渡',       conj_godan_su),  # 渡す
     ('かえ',     '返',       conj_godan_su),  # 返す
     ('もた',     '持た',     conj_godan_su),  # 持たす? → skip
     ('こ',       '越',       conj_godan_su),  # 越す (こす)
