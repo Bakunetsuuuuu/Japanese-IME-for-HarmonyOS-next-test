@@ -204,6 +204,12 @@ export class InputHandler {
   private unknownWordPrefs: dataPreferences.Preferences | undefined = undefined;
   private unknownWordSaveTimer: number = -1;
   private suppressedPrefs: dataPreferences.Preferences | undefined = undefined;
+  // 前回の書き込み以降に中身が変わったか。変化が無いのに閉じるたび4本
+  // 書きに行かないため (flushPendingSaves のコメント参照)。
+  private learningDirty: boolean = false;
+  private nextWordDirty: boolean = false;
+  private unknownWordDirty: boolean = false;
+  private suppressedDirty: boolean = false;
   private suppressedSaveTimer: number = -1;
   // The last (up to) two committed words, at word granularity, used as the
   // 1- and 2-word context for next-word prediction/learning (see
@@ -595,48 +601,97 @@ export class InputHandler {
     }
   }
 
+  // 学習系の保存はどれもデバウンスされている。打鍵のたびに数万件の JSON を
+  // 書き出すわけにいかないので、それ自体は正しい。問題は「予約したまま消える」
+  // 経路が塞がれていなかったこと。
+  //
+  //   入力 -> 2秒後に書く予約 -> キーボードが閉じる/拡張が落とされる
+  //        -> タイマーごと消える -> 一度も書かれない
+  //
+  // IME拡張は入力欄を離れるたびに落とされうるので、これは例外ケースではなく
+  // 通常の経路だった。学習も削除した候補もメモリ上では効くため、使っている間は
+  // 正常に見えて、次の起動には何も残っていない ── 「削除した候補」がずっと空
+  // だったのも、5つのストアが揃って空だったのもこれ。
+  // 対処は flushPendingSaves()。セッション終了時と onDestroy で必ず呼ぶ。
+  //
+  // dirty フラグは、変化が無いのに閉じるたび4本書きに行かないためのもの。
+
+  private writeLearning(): void {
+    if (!this.learningDirty) { return; }
+    const prefs = this.learningPrefs;
+    if (!prefs) { return; }
+    this.learningDirty = false;
+    prefs.put('v1', JSON.stringify(KanaKanjiConverter.getLearned()))
+      .then(() => prefs.flush())
+      .catch((e: Error) => { InputLog.recordInit('shunti_learning(保存)', e); }); // [DEBUG-LOG]
+  }
+
   private saveLearning(): void {
+    this.learningDirty = true;
     clearTimeout(this.learningSaveTimer);
-    this.learningSaveTimer = setTimeout(() => {
-      const prefs = this.learningPrefs;
-      if (!prefs) { return; }
-      prefs.put('v1', JSON.stringify(KanaKanjiConverter.getLearned()))
-        .then(() => prefs.flush())
-        .catch((_e: Error) => {});
-    }, 2000);
+    this.learningSaveTimer = setTimeout(() => { this.writeLearning(); }, 2000);
+  }
+
+  private writeNextWord(): void {
+    if (!this.nextWordDirty) { return; }
+    const prefs = this.nextWordPrefs;
+    if (!prefs) { return; }
+    this.nextWordDirty = false;
+    prefs.put('v1', JSON.stringify(NextWordPredictor.getLearned()))
+      .then(() => prefs.flush())
+      .catch((e: Error) => { InputLog.recordInit('shunti_nextword(保存)', e); }); // [DEBUG-LOG]
   }
 
   private saveNextWord(): void {
+    this.nextWordDirty = true;
     clearTimeout(this.nextWordSaveTimer);
-    this.nextWordSaveTimer = setTimeout(() => {
-      const prefs = this.nextWordPrefs;
-      if (!prefs) { return; }
-      prefs.put('v1', JSON.stringify(NextWordPredictor.getLearned()))
-        .then(() => prefs.flush())
-        .catch((_e: Error) => {});
-    }, 2000);
+    this.nextWordSaveTimer = setTimeout(() => { this.writeNextWord(); }, 2000);
+  }
+
+  private writeUnknownWords(): void {
+    if (!this.unknownWordDirty) { return; }
+    const prefs = this.unknownWordPrefs;
+    if (!prefs) { return; }
+    this.unknownWordDirty = false;
+    prefs.put('v1', JSON.stringify(UnknownWordLearner.getLearned()))
+      .then(() => prefs.flush())
+      .catch((e: Error) => { InputLog.recordInit('shunti_unknown(保存)', e); }); // [DEBUG-LOG]
   }
 
   private saveUnknownWords(): void {
+    this.unknownWordDirty = true;
     clearTimeout(this.unknownWordSaveTimer);
-    this.unknownWordSaveTimer = setTimeout(() => {
-      const prefs = this.unknownWordPrefs;
-      if (!prefs) { return; }
-      prefs.put('v1', JSON.stringify(UnknownWordLearner.getLearned()))
-        .then(() => prefs.flush())
-        .catch((_e: Error) => {});
-    }, 2000);
+    this.unknownWordSaveTimer = setTimeout(() => { this.writeUnknownWords(); }, 2000);
+  }
+
+  private writeSuppressed(): void {
+    if (!this.suppressedDirty) { return; }
+    const prefs = this.suppressedPrefs;
+    if (!prefs) { return; }
+    this.suppressedDirty = false;
+    prefs.put(SUPPRESSED_KEY, JSON.stringify(SuppressedCandidates.getSuppressed()))
+      .then(() => prefs.flush())
+      .catch((e: Error) => { InputLog.recordInit('shunti_suppressed(保存)', e); }); // [DEBUG-LOG]
   }
 
   private saveSuppressed(): void {
+    this.suppressedDirty = true;
     clearTimeout(this.suppressedSaveTimer);
-    this.suppressedSaveTimer = setTimeout(() => {
-      const prefs = this.suppressedPrefs;
-      if (!prefs) { return; }
-      prefs.put(SUPPRESSED_KEY, JSON.stringify(SuppressedCandidates.getSuppressed()))
-        .then(() => prefs.flush())
-        .catch((_e: Error) => {});
-    }, 500);
+    this.suppressedSaveTimer = setTimeout(() => { this.writeSuppressed(); }, 500);
+  }
+
+  // 予約されている保存を今すぐ全部書く。入力欄を離れるとき(onInputStop)と
+  // 拡張が終了するとき(onDestroy)に呼ぶ。デバウンス待ちのまま消える経路を
+  // 塞ぐのが目的なので、ここを外すと上のコメントの壊れ方に戻る。
+  flushPendingSaves(): void {
+    clearTimeout(this.learningSaveTimer);
+    clearTimeout(this.nextWordSaveTimer);
+    clearTimeout(this.unknownWordSaveTimer);
+    clearTimeout(this.suppressedSaveTimer);
+    this.writeLearning();
+    this.writeNextWord();
+    this.writeUnknownWords();
+    this.writeSuppressed();
   }
 
   // Re-read the deletion list from disk. The main app's 削除した候補 screen is a
@@ -921,6 +976,10 @@ export class InputHandler {
     // the next app/text box doesn't inherit this one's context.
     KanaKanjiConverter.clearContext();
     this.endUnknownWordRun();
+    // 入力欄を離れた = この拡張プロセスがこの先落とされうる。デバウンス待ちの
+    // 保存をここで確定させないと、タイマーごと消えて一度も書かれない
+    // (flushPendingSaves のコメント参照)。
+    this.flushPendingSaves();
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('convEnd', 0);
   }
@@ -2136,6 +2195,8 @@ export class KeyboardController {
   }
 
   onDestroy(): void {
+    // 予約中の学習・削除候補の保存を確定させてから畳む。
+    this.inputHandle.flushPendingSaves();
     InputLog.flush(); // [DEBUG-LOG] 未書き出しの記録を落とさない
     this.unregisterListeners();
     if (this.panel) {
