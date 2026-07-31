@@ -7,8 +7,9 @@ import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
-import { JP_FONT_FAMILY } from '../components/JpFont';
+import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
 import { kbTheme } from '../components/Theme';
+import { DEBUG_INPUT_LOG } from '../ime/InputLog'; // [DEBUG-LOG]
 
 const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
@@ -98,6 +99,10 @@ struct Index {
   }
 
   aboutToAppear(): void {
+    // Must happen here, not in EntryAbility -- see registerJpFont's comment.
+    // aboutToAppear runs before this page's first build, so the very first
+    // Text already measures with the Japanese font.
+    registerJpFont(this.getUIContext());
     this.reload();
     this.checkConsent();
     this.onPendingWebViewUrlChanged();
@@ -385,6 +390,19 @@ struct Index {
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).accent)
             .onClick(() => { this.confirmFullReset = false; this.showRepair = true; })
+          // [DEBUG-LOG] 入力ログ画面への入口。DEBUG_INPUT_LOG が false のとき、
+          // またはこのブロックを消したときに丸ごと消える。
+          if (DEBUG_INPUT_LOG) { // [DEBUG-LOG]
+            Text('  ·  ') // [DEBUG-LOG]
+              .fontFamily(JP_FONT_FAMILY) // [DEBUG-LOG]
+              .fontSize(12) // [DEBUG-LOG]
+              .fontColor(kbTheme(this.isDark).textSecondary) // [DEBUG-LOG]
+            Text('入力ログ') // [DEBUG-LOG]
+              .fontFamily(JP_FONT_FAMILY) // [DEBUG-LOG]
+              .fontSize(12) // [DEBUG-LOG]
+              .fontColor('#DC2626') // [DEBUG-LOG]
+              .onClick(() => { router.pushUrl({ url: 'pages/InputLogPage' }); }) // [DEBUG-LOG]
+          } // [DEBUG-LOG]
         }
         .width('100%')
         .padding({ top: 12, bottom: 16 })

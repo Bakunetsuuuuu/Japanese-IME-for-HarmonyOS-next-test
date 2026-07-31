@@ -68,8 +68,14 @@ function main() {
     if (kIdx < 0 && cIdx < 0) insertAt = candidates.length;
     else if (kIdx < 0) insertAt = cIdx; else if (cIdx < 0) insertAt = kIdx; else insertAt = Math.min(kIdx, cIdx);
     for (const a of alts) { if (!candidates.includes(a)) { candidates.splice(insertAt, 0, a); insertAt++; } }
+    // 区切り違いの候補は、先頭よりかなが少ないとき(区切りを直すと漢字に
+    // できるとき)だけ候補1に入れる。KeyboardController と同じ規則。
     const altSeg = conv.findAlternateSegmentation(composing);
-    if (altSeg !== null && !candidates.includes(altSeg)) candidates.splice(insertAt, 0, altSeg);
+    if (altSeg !== null && !candidates.includes(altSeg)) {
+      const kanaCount = (t) => (t.match(/[\u3041-\u309F]/g) || []).length;
+      const lifts = candidates.length > 0 && kanaCount(altSeg) < kanaCount(candidates[0]);
+      candidates.splice(lifts ? 1 : insertAt, 0, altSeg);
+    }
     return candidates;
   };
 
@@ -137,6 +143,9 @@ function main() {
     // the intended sense as a reachable alternative.
     { reading: 'ぜいきんをおさめる', want: '税金を納める' },
     { reading: 'やくいんがかわる', want: '役員が代わる' },
+    // 区切り違いの候補(自動区切り変更)は候補1に出す。はいじんじゃ は
+    // 廃人じゃ の同音語が先に並んで 廃神社 が5番目に埋もれていた。
+    { reading: 'はいじんじゃ', want: '廃神社' },
   ];
 
   let pass = 0;

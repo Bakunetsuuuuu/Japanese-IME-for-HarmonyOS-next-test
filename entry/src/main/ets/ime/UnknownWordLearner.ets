@@ -61,7 +61,16 @@ interface Ranked {
   count: number;
 }
 
+// [DEBUG-LOG] Notified when a run is judged to be an unknown word. Injected as
+// a callback rather than imported so this module keeps its zero-dependency,
+// independently-testable shape (tools/ime-eval/run_unknownword.js compiles it
+// on its own) -- and so removing the debug build's collection means deleting
+// the two [DEBUG-LOG] lines here, nothing else.
+export type LearnedWordFn = (reading: string, surface: string) => void; // [DEBUG-LOG]
+
 export class UnknownWordLearner {
+  static onLearn: LearnedWordFn | undefined = undefined; // [DEBUG-LOG]
+
   // reading -> (surface -> times assembled)
   private static counts: Record<string, Record<string, number>> = {};
 
@@ -134,6 +143,7 @@ export class UnknownWordLearner {
     if (!UnknownWordLearner.isAllHiragana(reading)) { return; }
     if (!UnknownWordLearner.isContentOnly(surface)) { return; }
     if (isKnown(reading, surface)) { return; }
+    if (UnknownWordLearner.onLearn !== undefined) { UnknownWordLearner.onLearn(reading, surface); } // [DEBUG-LOG]
     UnknownWordLearner.bump(reading, surface);
   }
 

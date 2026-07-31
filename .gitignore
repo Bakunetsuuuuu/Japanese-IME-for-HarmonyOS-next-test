@@ -1,3 +1,9 @@
 # Claude Code local tooling state (e.g. background-agent worktrees) --
 # never part of the project itself.
 .claude/
+
+# 開発ビルドの入力ログ (ime/InputLog.ets)。実際に打った文がそのまま入るので、
+# private リポジトリであってもコミットしない -- clone・バックアップ・
+# コラボレータに渡り、git 履歴からは消せない。
+*.jsonl
+debug_input_log*

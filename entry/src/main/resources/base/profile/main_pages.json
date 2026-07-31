@@ -6,6 +6,7 @@
     "pages/PrivacyPolicy",
     "pages/WebViewPage",
     "pages/DictionaryEditPage",
-    "pages/SuppressedList"
+    "pages/SuppressedList",
+    "pages/InputLogPage"
   ]
 }

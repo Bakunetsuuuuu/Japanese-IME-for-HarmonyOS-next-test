@@ -1,7 +1,6 @@
 import { UIAbility } from '@kit.AbilityKit';
 import type { Want, AbilityConstant } from '@kit.AbilityKit';
 import type { window } from '@kit.ArkUI';
-import { registerJpFont } from '../components/JpFont';
 import { isDarkFromConfiguration, isDarkFromResourceManager } from '../ime/SettingsStore';
 
 // Stashes a "please open this URL in the in-app browser" request (see
@@ -64,7 +63,9 @@ export default class EntryAbility extends UIAbility {
   }
 
   onWindowStageCreate(windowStage: window.WindowStage): void {
-    registerJpFont();
+    // The Japanese font is registered by Index.aboutToAppear, not here: at
+    // this point loadContent hasn't run and there is no UI instance to
+    // register into (see components/JpFont.ets).
     windowStage.loadContent('pages/Index', (err) => {
       if (err.code) {
         console.error('shuntiIME loadContent failed', JSON.stringify(err));

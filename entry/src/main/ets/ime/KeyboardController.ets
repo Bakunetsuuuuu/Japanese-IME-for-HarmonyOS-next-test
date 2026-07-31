@@ -20,7 +20,7 @@ import { SuppressedCandidates, SUPPRESSED_STORE, SUPPRESSED_KEY } from './Suppre
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
 import { EmojiSuggest } from './EmojiSuggest';
-import { registerJpFont } from '../components/JpFont';
+import { InputLog } from './InputLog'; // [DEBUG-LOG]
 
 interface InputMethodSubtype {
   id: string;
@@ -230,6 +230,8 @@ export class InputHandler {
   setContext(ctx: InputMethodExtensionContext): void {
     if (this.imeContext !== undefined) { return; }
     this.imeContext = ctx;
+    InputLog.setFilesDir(ctx.filesDir); // [DEBUG-LOG]
+    UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_learning')
       .then((prefs: dataPreferences.Preferences) => {
         this.learningPrefs = prefs;
@@ -644,6 +646,7 @@ export class InputHandler {
       : this.conversionTarget();
     if (reading.length === 0 || surface.length === 0) { return ''; }
     if (!SuppressedCandidates.suppress(reading, surface)) { return ''; }
+    InputLog.recordDeleteCandidate(reading, surface, index); // [DEBUG-LOG]
     KanaKanjiConverter.forgetChoice(reading, surface);
     UnknownWordLearner.forget(reading, surface);
     this.saveSuppressed();
@@ -838,6 +841,13 @@ export class InputHandler {
   ): void {
     this.kbController = kbCtrl;
     this.inputClient = client;
+    // [DEBUG-LOG] Collection is paused until this field's attributes arrive, so
+    // a password field is never logged even for the few ms before the async
+    // answer lands.
+    InputLog.beginField(); // [DEBUG-LOG]
+    client.getEditorAttribute() // [DEBUG-LOG]
+      .then((attr: inputMethodEngine.EditorAttribute) => { InputLog.setFieldPattern(attr.inputPattern); }) // [DEBUG-LOG]
+      .catch((_e: Error) => { InputLog.setFieldPattern(0); }); // [DEBUG-LOG]
     this.converter.reset();
     this.reloadUserDict();
     this.reloadSettings();
@@ -860,6 +870,7 @@ export class InputHandler {
   }
 
   onInputStop(): void {
+    InputLog.beginField(); // [DEBUG-LOG] flushes, then pauses until the next field is known
     this.kbController = undefined;
     this.inputClient = undefined;
     this.converter.reset();
@@ -1051,6 +1062,7 @@ export class InputHandler {
     const pending = this.converter.flushPending();
     const all = composing + pending;
     if (all.length > 0) { this.insertText(all); }
+    InputLog.recordRaw(composing, all); // [DEBUG-LOG]
     // Committing as raw kana is not a conversion, so it closes any word the
     // user was assembling rather than extending it.
     this.endUnknownWordRun();
@@ -1118,8 +1130,9 @@ export class InputHandler {
         this.saveLearning();
         this.observeUnknownWord(reading, text);
       }
-      this.insertText(text);
-      KanaKanjiConverter.addContext(text);
+      InputLog.recordCommit(reading, text, index, candidates.length); // [DEBUG-LOG]
+      this.insertText(text + tail);
+      KanaKanjiConverter.addContext(text + tail);
       const words = this.committedWords(text);
       this.pushPredictions(words);
       this.finishCommitWithTail(tail);
@@ -1200,8 +1213,9 @@ export class InputHandler {
         this.saveLearning();
         this.observeUnknownWord(reading, chosen);
       }
-      this.insertText(chosen);
-      KanaKanjiConverter.addContext(chosen);
+      InputLog.recordCommit(reading, chosen, idx, candidates.length); // [DEBUG-LOG]
+      this.insertText(chosen + tail);
+      KanaKanjiConverter.addContext(chosen + tail);
       const words = this.committedWords(chosen);
       this.pushPredictions(words);
       this.finishCommitWithTail(tail);
@@ -1454,6 +1468,7 @@ export class InputHandler {
   // sequential undo (undoLastDeletion).
   private recordDeletedChar(ch: string): void {
     if (ch.length === 0) { return; }
+    InputLog.recordDeleteChar(ch, AppStorage.get<string>('inputState') ?? InputState.IDLE); // [DEBUG-LOG]
     const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
     const next = [ch, ...history].slice(0, InputHandler.MAX_DELETED_CHAR_HISTORY);
     AppStorage.setOrCreate('deletedCharHistory', next);
@@ -1472,6 +1487,7 @@ export class InputHandler {
     const ch = history[0];
     AppStorage.setOrCreate('deletedCharHistory', history.slice(1));
     if (ch.length === 0) { return; }
+    InputLog.recordUndo(ch); // [DEBUG-LOG]
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.IDLE) {
       this.insertText(ch);
@@ -1694,13 +1710,30 @@ export class InputHandler {
 
     // 自動区切り変更: a candidate from a differently-segmented parse of the
     // same reading (へんかんせいど's single whole-compound entry 変換精度 vs the
-    // へんかん+せいど split's 返還制度). Demoted below the per-segment
-    // alternatives above: its boundary-detour search occasionally yields a
-    // linguistically odd reparse (先生似合う for せんせいにあう), so it's a
-    // lower-priority alternative, not the second candidate.
+    // へんかん+せいど split's 返還制度).
+    //
+    // 区切りが違う候補が「先頭よりかなが少ない」= 先頭がかなのまま残した所を
+    // 漢字にできているなら、候補1に入れる。はいじんじゃ は 廃人じゃ(かな2文字)
+    // に対し 廃神社(かな0文字)で、区切りを直せば全部漢字になる型。以前はこれが
+    // 同音語(癈人じゃ/俳人じゃ/配陣じゃ)の下、5番目に埋もれていた。
+    //
+    // かなの数が減らないものは今までどおり下に置く。区切りを変えただけで
+    // 漢字の当て方が変わらない候補は、単なる別表記と大差なく、しかも
+    // 境界の迂回探索は時々 贅金を修める(ぜいきんをおさめる)や 先生似合う
+    // (せんせいにあう)のような妙な再解釈を出す。上げると本当に欲しい
+    // 税金を納める が押し下げられる(実測: 候補4→5)。
     const altSeg = this.kanjiConverter.findAlternateSegmentation(target);
     if (altSeg !== null && !candidates.includes(altSeg)) {
-      candidates.splice(insertAt, 0, altSeg);
+      const kanaCount = (t: string): number => {
+        let n = 0;
+        for (let i = 0; i < t.length; i++) {
+          const c = t.charCodeAt(i);
+          if (c >= 0x3041 && c <= 0x309F) { n++; }
+        }
+        return n;
+      };
+      const lifts = candidates.length > 0 && kanaCount(altSeg) < kanaCount(candidates[0]);
+      candidates.splice(lifts ? 1 : insertAt, 0, altSeg);
     }
 
     // General learned-context rerank: if the user has actually written one of
@@ -1795,6 +1828,7 @@ export class InputHandler {
       if (this.conversionEnd > 1) {
         this.conversionEnd--;
         AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        InputLog.recordRange(composing, this.conversionEnd); // [DEBUG-LOG]
         this.updateCandidates();
       }
     } else {
@@ -1812,6 +1846,7 @@ export class InputHandler {
       if (this.conversionEnd > 0 && this.conversionEnd < composing.length) {
         this.conversionEnd++;
         AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        InputLog.recordRange(composing, this.conversionEnd); // [DEBUG-LOG]
         this.updateCandidates();
       } else if (this.conversionEnd === 0) {
         // Already at full length, no change needed
@@ -1863,6 +1898,7 @@ export class InputHandler {
     if (composing.length === 0) { return; }
     this.bSegs = this.kanjiConverter.segment(composing);
     this.bChosen = this.bSegs.map((seg: string, i: number) => this.kanjiConverter.autoConvert(seg, this.bSegs[i + 1], this.bSegs[i - 1]));
+    InputLog.recordBunsetsu(composing, this.bSegs); // [DEBUG-LOG]
     this.bCur = 0;
     this.updateBunsetsuStorage();
   }
@@ -1895,6 +1931,7 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     if (index < candidates.length) {
       KanaKanjiConverter.recordChoice(this.bSegs[this.bCur], candidates[index]);
+      InputLog.recordBunsetsuPick(this.bSegs[this.bCur], candidates[index], index, candidates.length); // [DEBUG-LOG]
       this.bChosen[this.bCur] = candidates[index];
     }
     // Advance to next segment if available
@@ -2035,7 +2072,9 @@ export class KeyboardController {
   }
 
   onCreate(): void {
-    registerJpFont();
+    // The Japanese font is registered by KeyboardPage.aboutToAppear, not here:
+    // initPanel/setUiContent hasn't run yet, so there is no UI instance to
+    // register into (see components/JpFont.ets).
     this.inputHandle.setContext(this.context);
     this.applyColorMode();
     this.initPanel();
@@ -2064,6 +2103,7 @@ export class KeyboardController {
   }
 
   onDestroy(): void {
+    InputLog.flush(); // [DEBUG-LOG] 未書き出しの記録を落とさない
     this.unregisterListeners();
     if (this.panel) {
       IMEAbility.destroyPanel(this.panel);
