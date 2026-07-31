@@ -20,7 +20,6 @@ import { SuppressedCandidates, SUPPRESSED_STORE, SUPPRESSED_KEY } from './Suppre
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
 import { EmojiSuggest } from './EmojiSuggest';
-import { registerJpFont } from '../components/JpFont';
 import { InputLog } from './InputLog'; // [DEBUG-LOG]
 
 interface InputMethodSubtype {
@@ -2048,7 +2047,9 @@ export class KeyboardController {
   }
 
   onCreate(): void {
-    registerJpFont();
+    // The Japanese font is registered by KeyboardPage.aboutToAppear, not here:
+    // initPanel/setUiContent hasn't run yet, so there is no UI instance to
+    // register into (see components/JpFont.ets).
     this.inputHandle.setContext(this.context);
     this.applyColorMode();
     this.initPanel();

@@ -16,7 +16,7 @@ import { ExpandedCandidateView } from '../components/ExpandedCandidateView';
 import { SettingsBar } from '../components/SettingsBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
-import { JP_FONT_FAMILY } from '../components/JpFont';
+import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
 
 let _inputStartRegistered = false;
 let _dictLoaded = false;
@@ -48,6 +48,10 @@ struct KeyboardPage {
   @StorageLink('convEnd') convEnd: number = 0;
 
   aboutToAppear(): void {
+    // The IME extension is its own process/UI root, so it needs its own
+    // registration -- and it has to happen from inside the UI, not from
+    // KeyboardController.onCreate (see registerJpFont's comment).
+    registerJpFont(this.getUIContext());
     if (!_dictLoaded && USE_DICT_JSON) {
       _dictLoaded = true;
       getContext(this).resourceManager.getRawFileContent('dict.json')

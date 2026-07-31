@@ -7,7 +7,7 @@ import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
-import { JP_FONT_FAMILY } from '../components/JpFont';
+import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
 import { kbTheme } from '../components/Theme';
 import { DEBUG_INPUT_LOG } from '../ime/InputLog'; // [DEBUG-LOG]
 
@@ -99,6 +99,10 @@ struct Index {
   }
 
   aboutToAppear(): void {
+    // Must happen here, not in EntryAbility -- see registerJpFont's comment.
+    // aboutToAppear runs before this page's first build, so the very first
+    // Text already measures with the Japanese font.
+    registerJpFont(this.getUIContext());
     this.reload();
     this.checkConsent();
     this.onPendingWebViewUrlChanged();
