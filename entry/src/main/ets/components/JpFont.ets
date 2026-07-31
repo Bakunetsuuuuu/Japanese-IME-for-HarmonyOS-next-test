@@ -5,9 +5,21 @@ import { font, UIContext } from '@kit.ArkUI';
 // makes Han-unified kanji render with Simplified Chinese glyph shapes even
 // though the text is Japanese. Bundling and registering an explicit Japanese
 // font is the only fix; there's no system font-family name to switch to
-// instead. Subset to exactly the characters this app's dictionaries/UI can
-// ever output (see tools/ for how NotoSansJP-Regular.ttf was generated) to
-// keep the bundled font small.
+// instead.
+//
+// The bundled file is a static wght=400 instance of Noto Sans JP, ~4MB, and it
+// does NOT get smaller -- measured, not assumed (tools/build_jp_font.py):
+//
+//   font covers          11,058 chars
+//     of which used      11,057      <- exactly one glyph is droppable
+//   app can output       14,987      <- the font is already the short side
+//
+// 2,763 kanji the dictionaries can produce aren't in it at all and fall back to
+// the system font. glyf is 94.6% of the file, with zero hinting bytes and zero
+// composite glyphs, so there is no redundancy to squeeze either: 4MB is close
+// to the floor for full-coverage Japanese. Only one weight is bundled for the
+// same reason -- a Bold face costs another ~4MB to buy nothing but the
+// difference from synthetic bold, which is not a price an IME should pay.
 export const JP_FONT_FAMILY = 'NotoSansJP';
 
 let registered = false;
