@@ -8,8 +8,7 @@
 //
 // IME拡張は本体アプリと別プロセスなので、ここでは InputHandler を経由せず
 // ログファイルを直接読む(SuppressedList.ets が shunti_suppressed を直接読むのと
-// 同じ理由)。場所はアプリ単位の filesDir で、書き手と読み手で必ず一致する
-// (dir() のコメント参照)。
+// 同じ理由)。場所は dir() 参照。
 //
 // 拡張プロセスは書き出しを 4件 / 800ms でまとめているので、直前の変換が
 // まだ出ていないことがある。ページに戻るたび読み直す(onPageShow)ほか、
@@ -72,6 +71,7 @@ function kindStyle(k: string): KindStyle {
   if (k === LK_DELCHAR) { return { label: '文字削除', color: '#DC2626' }; }
   if (k === LK_UNDO) { return { label: '取消', color: '#059669' }; }
   if (k === LK_FIELD) { return { label: '入力欄', color: '#6B7280' }; }
+  if (k === LK_DIAG) { return { label: '診断', color: '#B45309' }; }
   return { label: k, color: '#6B7280' };
 }
 
@@ -135,13 +135,15 @@ struct InputLogPage {
     this.reload();
   }
 
-  // 必ずアプリ単位の filesDir を使う。ability ごとの context.filesDir は
-  // モジュール単位のディレクトリで、IME拡張と本体で一致する「はず」だが、
-  // そこを仮定すると外れたときに「拡張は書いているのに本体からは空に見える」
-  // という切り分けの難しい壊れ方をする。書き手 (KeyboardController) も
-  // getApplicationContext().filesDir を渡している。
+  // アプリ単位の filesDir を優先する。ability ごとの context.filesDir は
+  // モジュール単位で、IME拡張と本体で一致する「はず」だが、そこを仮定すると
+  // 外れたときに「拡張は書いているのに本体からは空に見える」という切り分けの
+  // 難しい壊れ方をする。
   private dir(): string {
-    return (getContext(this) as common.UIAbilityContext).getApplicationContext().filesDir;
+    const ctx = getContext(this) as common.UIAbilityContext;
+    // 拡張側は アプリ単位を優先しつつ、取れなければモジュール単位に落ちる。
+    // 片方しか見ないと、落ちた場合に「空」としか見えないので両方見る。
+    return InputLog.findDir([ctx.getApplicationContext().filesDir, ctx.filesDir]);
   }
 
   private reload(): void {
@@ -164,7 +166,8 @@ struct InputLogPage {
     const out: ProbeResult[] = [];
     out.push({
       label: '本体アプリ(読み手)',
-      detail: `files=${(ctx as common.UIAbilityContext).filesDir}\nprefs=${(ctx as common.UIAbilityContext).preferencesDir}`,
+      detail: `log=${this.dir()}\nfiles=${(ctx as common.UIAbilityContext).filesDir}\n`
+        + `prefs=${(ctx as common.UIAbilityContext).preferencesDir}`,
       ok: true,
     });
     out.push({ label: 'IME拡張(書き手)', detail: this.writerPaths, ok: this.writerPaths !== '(記録なし)' });
@@ -422,7 +425,8 @@ struct InputLogPage {
                     .fontColor(kbTheme(this.isDark).textPrimary)
                   // 区切り位置・変換範囲はここが本体なので、確定系と違って
                   // x をそのまま出す。
-                  if (e.x.length > 0 && (e.k === LK_BUNSETSU || e.k === LK_RANGE || e.k === LK_DELCHAR || e.k === LK_FIELD)) {
+                  if (e.x.length > 0 && (e.k === LK_BUNSETSU || e.k === LK_RANGE || e.k === LK_DELCHAR ||
+                      e.k === LK_FIELD || e.k === LK_DIAG)) {
                     Text(e.x)
                       .fontFamily(JP_FONT_FAMILY)
                       .fontSize(11)
