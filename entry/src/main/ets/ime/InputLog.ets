@@ -120,17 +120,40 @@ export class InputLog {
   private static pending: InputLogEntry[] = [];
   private static pendingDropped: number = 0;
 
-  // 収集先ディレクトリを渡す。IME拡張と本体アプリは別プロセスなので、
-  // 両方から呼ばれる(拡張=書き込み, 本体=閲覧/書き出し)。
-  //
-  // 渡すのは必ず context.getApplicationContext().filesDir。ability ごとの
-  // context.filesDir はモジュール単位のディレクトリで、拡張と本体で一致する
-  // 「はず」だが、そこを仮定すると外れたときに「拡張は書いているのに本体からは
-  // 空に見える」という切り分けの難しい壊れ方をする。アプリ単位の filesDir なら
-  // 同一バンドルの全 ability で必ず同じ場所を指す。
+  // 収集先ディレクトリを直接指定する(閲覧側や試験用)。書き込み側は
+  // setWritableDir を使うこと ── パスが取れることと書けることは別なので。
   static setFilesDir(dir: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
     InputLog.filesDir = (dir === undefined || dir === null) ? '' : dir;
+  }
+
+  // 候補を順に「実際に開いて書けるか」試し、最初に成功したものを使う。
+  //
+  // 最初はアプリ単位の filesDir (/data/storage/el2/base/files) を無条件に
+  // 使っていた。パス文字列は取れるので一見成功するが、拡張プロセスの
+  // サンドボックスがそこに書けるとは限らない。そして flush() の
+  // fs.openSync 失敗は握り潰されるので、ファイルが1つも作られないまま
+  // 「ログ0件」としか見えなかった。書けるかどうかは仮定せず、実際に開いて
+  // 確かめる。
+  //
+  // 順番はモジュール単位を先にする。拡張が確実に自分のものとして持っている
+  // ディレクトリだから。読み手 (findDir) は両方見るので、どちらに落ちても届く。
+  static setWritableDir(dirs: string[]): string {
+    if (!DEBUG_INPUT_LOG) { return ''; }
+    for (const d of dirs) {
+      if (d === undefined || d === null || d.length === 0) { continue; }
+      try {
+        const file = fs.openSync(d + '/' + INPUT_LOG_FILE,
+          fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.APPEND);
+        fs.closeSync(file);
+        InputLog.filesDir = d;
+        return d;
+      } catch (_e) {
+        // 次の候補へ
+      }
+    }
+    InputLog.filesDir = '';
+    return '';
   }
 
   static path(): string {
@@ -180,10 +203,26 @@ export class InputLog {
   // のどれであっても、画面上は同じ「空」にしかならない。
   // 書き手の実パスをログに残しておけば、読み手側の実パスと突き合わせるだけで
   // (b) が一発で分かり、この記録自体が読めなければ (a) だと分かる。
-  static recordPaths(logDir: string, filesDir: string, prefsDir: string): void {
+  static recordPaths(source: string, logDir: string, filesDir: string, prefsDir: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
     InputLog.write(LK_DIAG, '', '', -1, 0,
-      `log=${logDir} files=${filesDir} prefs=${prefsDir}`);
+      `log=${logDir} 起動元=${source} files=${filesDir} prefs=${prefsDir}`);
+  }
+
+  // パネル(KeyboardPage)からの保険。
+  //
+  // 本来の初期化は KeyboardController.setContext -> setupInputLog だが、
+  // 「起動0回」= その経路が最後まで走っていない、という状態が実機で出た。
+  // パネルの aboutToAppear は描画されている以上必ず走るので、そこからも
+  // 初期化できるようにしておく。既に初期化済みなら何もしない。
+  // どちらの経路で立ったかは 起動元= として記録に残るので、次に見たときに
+  // setContext が走っているかどうかがそのまま分かる。
+  static ensureFromPanel(filesDir: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    if (InputLog.filesDir.length > 0) { return; }
+    const used = InputLog.setWritableDir([filesDir]);
+    InputLog.recordPaths('panel(setContext未到達)',
+      used.length > 0 ? used : '書き込めるディレクトリ無し', filesDir, '');
   }
 
   // 拡張プロセスの初期化に失敗した。永続化ストアが1つでも開けないと、

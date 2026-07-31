@@ -320,16 +320,21 @@ export class InputHandler {
   // 末尾に移し、全体を try で囲い、パス取得にも代替を用意した。
   private setupInputLog(ctx: InputMethodExtensionContext): void { // [DEBUG-LOG]
     try { // [DEBUG-LOG]
-      // アプリ単位の filesDir を優先(本体アプリと必ず同じ場所)。取れない場合は
-      // モジュール単位に落とし、どちらを使ったかを記録に残す。
-      let dir = ''; // [DEBUG-LOG]
-      let level = 'app'; // [DEBUG-LOG]
-      try { // [DEBUG-LOG]
-        dir = ctx.getApplicationContext().filesDir; // [DEBUG-LOG]
-      } catch (_e) { // [DEBUG-LOG]
-        dir = ctx.filesDir; // [DEBUG-LOG]
-        level = 'module(getApplicationContext失敗)'; // [DEBUG-LOG]
-      } // [DEBUG-LOG]
+      // 書き込み先は「実際に開けたところ」を使う。パス文字列が取れることと
+      // 拡張プロセスがそこに書けることは別なので、仮定せず試す。
+      // モジュール単位 -> アプリ単位の順。読み手は両方見る (InputLog.findDir)。 // [DEBUG-LOG]
+      let appDir = ''; // [DEBUG-LOG]
+      try { appDir = ctx.getApplicationContext().filesDir; } catch (_e) { appDir = ''; } // [DEBUG-LOG]
+      const used = InputLog.setWritableDir([ctx.filesDir, appDir]); // [DEBUG-LOG]
+      console.info('shuntiIME InputLog dir=' + used + ' (module=' + ctx.filesDir + ' app=' + appDir + ')'); // [DEBUG-LOG]
+      InputLog.recordPaths('setContext', // [DEBUG-LOG]
+        used.length > 0 ? used : '書き込めるディレクトリ無し', // [DEBUG-LOG]
+        ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
+      UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
+    } catch (e) { // [DEBUG-LOG]
+      console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
+    } // [DEBUG-LOG]
+  } // [DEBUG-LOG]
       InputLog.setFilesDir(dir); // [DEBUG-LOG]
       InputLog.recordPaths(`${level} ${dir}`, ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
       UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]

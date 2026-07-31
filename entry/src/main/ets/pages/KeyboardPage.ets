@@ -17,6 +17,7 @@ import { SettingsBar } from '../components/SettingsBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
 import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
+import { InputLog } from '../ime/InputLog'; // [DEBUG-LOG]
 
 let _inputStartRegistered = false;
 let _dictLoaded = false;
@@ -52,6 +53,10 @@ struct KeyboardPage {
     // registration -- and it has to happen from inside the UI, not from
     // KeyboardController.onCreate (see registerJpFont's comment).
     registerJpFont(this.getUIContext());
+    // [DEBUG-LOG] 収集の初期化の保険。本来は KeyboardController.setContext から
+    // 立つが、そこが走っていない実機状態が出たため、確実に走るこの場所からも
+    // 立てる。既に立っていれば何もしない (InputLog.ensureFromPanel 参照)。 // [DEBUG-LOG]
+    InputLog.ensureFromPanel(getContext(this).filesDir); // [DEBUG-LOG]
     if (!_dictLoaded && USE_DICT_JSON) {
       _dictLoaded = true;
       getContext(this).resourceManager.getRawFileContent('dict.json')
