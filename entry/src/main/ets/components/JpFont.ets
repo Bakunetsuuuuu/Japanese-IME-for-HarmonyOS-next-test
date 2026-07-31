@@ -7,19 +7,21 @@ import { font, UIContext } from '@kit.ArkUI';
 // font is the only fix; there's no system font-family name to switch to
 // instead.
 //
-// The bundled file is a static wght=400 instance of Noto Sans JP, ~4MB, and it
-// does NOT get smaller -- measured, not assumed (tools/build_jp_font.py):
+// The bundled file is a static wght=400 instance of Noto Sans JP, cut down to
+// the characters this app can actually display -- rebuild it with
+// tools/build_jp_font.py, which derives that set from the UI strings and the
+// dictionaries rather than guessing.
 //
-//   font covers          11,058 chars
-//     of which used      11,057      <- exactly one glyph is droppable
-//   app can output       14,987      <- the font is already the short side
+// The set is derived rather than hand-picked because the hand-picked one was
+// wrong: the file bundled before dropped ⏎ ⇧ ← → (this keyboard's own key
+// labels), ①〜⑳ ○ △ ★ ♪ ≦ (the 記号 panel's ① and ◇ tabs), 半角カタカナ (its
+// [全] tab), 元号合字, Greek, and the JIS X 0213 level 3/4 kanji (𠮷 𠮟 𩸽 𥝱)
+// plus the compatibility ideographs used for old name forms. All of those fell
+// back to the system font -- and for the kanji that means Simplified Chinese
+// glyph shapes, i.e. the exact failure this font is bundled to prevent.
 //
-// 2,763 kanji the dictionaries can produce aren't in it at all and fall back to
-// the system font. glyf is 94.6% of the file, with zero hinting bytes and zero
-// composite glyphs, so there is no redundancy to squeeze either: 4MB is close
-// to the floor for full-coverage Japanese. Only one weight is bundled for the
-// same reason -- a Bold face costs another ~4MB to buy nothing but the
-// difference from synthetic bold, which is not a price an IME should pay.
+// Only one weight is bundled: a Bold face costs another ~4MB to buy nothing but
+// the difference from synthetic bold, which is not a price an IME should pay.
 export const JP_FONT_FAMILY = 'NotoSansJP';
 
 let registered = false;
