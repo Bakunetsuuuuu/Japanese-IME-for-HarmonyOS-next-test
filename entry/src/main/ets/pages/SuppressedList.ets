@@ -32,6 +32,9 @@ struct SuppressedList {
   // Restoring everything at once throws away deletions the user may have built
   // up deliberately, so the header action asks a second time before doing it.
   @State confirmRestoreAll: boolean = false;
+  // 0件のとき「本当に0件」か「読めていない」かを画面で区別するため。
+  @State loadError: string = '';
+  @State prefsDir: string = '';
   private map: Record<string, string[]> = {};
 
   aboutToAppear(): void {
@@ -39,16 +42,24 @@ struct SuppressedList {
   }
 
   private reload(): void {
+    this.prefsDir = getContext(this).preferencesDir;
     SuppressedCandidates.load(getContext(this), true)
       .then((map: Record<string, string[]>) => {
         this.map = map;
+        this.loadError = SuppressedCandidates.lastError;
         this.rebuildRows();
       })
       .catch((err: Error) => {
         console.error('shuntiIME SuppressedList.reload failed', JSON.stringify(err));
         this.map = {};
+        this.loadError = JSON.stringify(err);
         this.rebuildRows();
       });
+  }
+
+  // キーボードで削除してから戻ってきたときに古い内容のままにならないように。
+  onPageShow(): void {
+    this.reload();
   }
 
   private rebuildRows(): void {
@@ -152,7 +163,10 @@ struct SuppressedList {
         .margin({ left: 16, right: 16, top: 10, bottom: 10 })
 
       if (this.visibleRows().length === 0) {
-        Column() {
+        // 読み取りに失敗したときも「ありません」と出していたので、ストアが
+        // 読めていないのか本当に0件なのかが画面から区別できなかった。
+        // 失敗した理由と、読みに行った実際の場所を出す。
+        Column({ space: 10 }) {
           Text(this.rows.length === 0
             ? '削除した候補はありません\n変換候補を長押しすると削除できます'
             : '一致する候補が見つかりません')
@@ -160,9 +174,18 @@ struct SuppressedList {
             .fontSize(13)
             .fontColor(kbTheme(this.isDark).textSecondary)
             .textAlign(TextAlign.Center)
+          if (this.rows.length === 0) {
+            Text(this.loadError.length > 0
+              ? `読み取りに失敗しました:\n${this.loadError}\n保存先: ${this.prefsDir}`
+              : `保存先: ${this.prefsDir}\n（キーボードで削除しても0件のままなら、\nキーボード側の保存がここに届いていません）`)
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(10)
+              .fontColor(this.loadError.length > 0 ? '#DC2626' : kbTheme(this.isDark).textSecondary)
+              .textAlign(TextAlign.Center)
+          }
         }
         .width('100%')
-        .padding({ top: 64 })
+        .padding({ top: 64, left: 20, right: 20 })
       } else {
         // An always-visible 戻す button rather than the dictionary list's
         // swipe-to-reveal: restoring is the only thing this screen is for, so

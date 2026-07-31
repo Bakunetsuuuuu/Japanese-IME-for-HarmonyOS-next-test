@@ -18,14 +18,30 @@
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
 import pasteboard from '@ohos.pasteboard';
+import dataPreferences from '@ohos.data.preferences';
 import { JP_FONT_FAMILY } from '../components/JpFont';
 import { kbTheme } from '../components/Theme';
 import {
   InputLog, InputLogEntry, INPUT_LOG_FILE,
   LK_COMMIT, LK_RAW, LK_RANGE, LK_BUNSETSU, LK_BSEG,
-  LK_DELCAND, LK_UNKNOWN, LK_DELCHAR, LK_UNDO, LK_FIELD,
+  LK_DELCAND, LK_UNKNOWN, LK_DELCHAR, LK_UNDO, LK_FIELD, LK_DIAG,
   LF_KATAKANA, LF_ALNUM, LF_KANA
 } from '../ime/InputLog';
+
+// IME拡張プロセスだけが書き込むストア。本体アプリからこれらが1つも読めなければ、
+// 問題は入力ログ固有ではなく「拡張が書いたものが本体に届いていない」ことになる
+// (「削除した候補」が空なのも同じ原因、という切り分けができる)。
+interface ProbeStore {
+  label: string;
+  store: string;
+  key: string;
+}
+
+interface ProbeResult {
+  label: string;
+  detail: string;
+  ok: boolean;
+}
 
 const CARD_RADIUS = 16;
 
@@ -82,6 +98,19 @@ struct InputLogPage {
   @State filter: string = '';
   // 消去は取り返しがつかないので二段階にする(SuppressedList の「すべて戻す」と同じ)。
   @State confirmClear: boolean = false;
+  @State showDiag: boolean = false;
+  @State probes: ProbeResult[] = [];
+  // 拡張プロセスが自己申告したパス (LK_DIAG 記録より)。読み手側の実パスと
+  // 突き合わせるためのもの。
+  @State writerPaths: string = '(記録なし)';
+
+  private stores: ProbeStore[] = [
+    { label: '削除した候補', store: 'shunti_suppressed', key: 'v1' },
+    { label: '変換学習', store: 'shunti_learning', key: 'v1' },
+    { label: '次の語の学習', store: 'shunti_nextword', key: 'v1' },
+    { label: '未知語学習', store: 'shunti_unknown', key: 'v1' },
+    { label: '記号の使用頻度', store: 'shunti_symbol_freq', key: 'v1' },
+  ];
   // 絞り込みチップ。'' は「すべて」。ArkTS では interface のオブジェクトリテラル
   // 配列をトップレベル const に置けないので、クラスメンバ初期化子で持つ。
   private filters: KindFilter[] = [
@@ -122,6 +151,42 @@ struct InputLogPage {
     this.entries = InputLog.parse(raw, VIEW_LIMIT);
     this.total = InputLog.countLines(raw);
     this.bytes = InputLog.sizeBytes(d);
+    const diag = this.entries.filter((e: InputLogEntry) => e.k === LK_DIAG);
+    this.writerPaths = diag.length > 0 ? diag[0].x.split(' ').join('\n') : '(記録なし)';
+    this.runProbes();
+  }
+
+  // 拡張プロセスだけが書き込むストアを片っ端から読んでみる。例外は握り潰さず
+  // そのまま表示する ── 全部空に見える画面から原因を当てられなかったのは、
+  // 読み取り側が一律 try/catch で空を返していたせい。
+  private runProbes(): void {
+    const ctx = getContext(this);
+    const out: ProbeResult[] = [];
+    out.push({
+      label: '本体アプリ(読み手)',
+      detail: `files=${(ctx as common.UIAbilityContext).filesDir}\nprefs=${(ctx as common.UIAbilityContext).preferencesDir}`,
+      ok: true,
+    });
+    out.push({ label: 'IME拡張(書き手)', detail: this.writerPaths, ok: this.writerPaths !== '(記録なし)' });
+    this.probes = out;
+    for (const s of this.stores) {
+      dataPreferences.getPreferences(ctx, s.store)
+        .then((prefs: dataPreferences.Preferences) => prefs.get(s.key, ''))
+        .then((v: dataPreferences.ValueType) => {
+          const text = String(v);
+          const n = text.length;
+          this.probes = this.probes.concat([{
+            label: s.label,
+            detail: n === 0 ? '空 (このストアには何も書かれていない)' : `${n} バイト`,
+            ok: n > 0,
+          }]);
+        })
+        .catch((e: Error) => {
+          this.probes = this.probes.concat([{
+            label: s.label, detail: '読み取り失敗: ' + JSON.stringify(e), ok: false,
+          }]);
+        });
+    }
   }
 
   private visible(): InputLogEntry[] {
@@ -211,6 +276,17 @@ struct InputLogPage {
         .layoutWeight(1)
         .onClick(() => { this.reload(); })
 
+        Text('診断')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(kbTheme(this.isDark).accent)
+          .backgroundColor(kbTheme(this.isDark).funcBg)
+          .borderRadius(14)
+          .padding({ left: 12, right: 12, top: 7, bottom: 7 })
+          .margin({ right: 8 })
+          .onClick(() => { this.showDiag = !this.showDiag; this.runProbes(); })
+
         Text('JSONLをコピー')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
@@ -224,6 +300,48 @@ struct InputLogPage {
       .width('100%')
       .padding({ left: 16, right: 16, top: 12, bottom: 10 })
       .alignItems(VerticalAlign.Center)
+
+      // ── 診断 ──────────────────────────────────────────────────
+      // 「削除した候補」も「入力ログ」も、拡張が書いたものを本体が読む構造で、
+      // どちらの読み取りも例外を握り潰して空を返す。だから画面からは
+      // 「書けていない」「書き先と読み先が違う」「そもそも記録が無い」の
+      // どれなのか区別できなかった。ここはその3つを直接見分けるためにある。
+      //   ・書き手と読み手のパスが違う      -> 保存先の不一致
+      //   ・拡張(書き手)が「記録なし」       -> 拡張がこのファイルに書けていない
+      //   ・どのストアも空                  -> 拡張の書き込み自体が届いていない
+      //   ・削除した候補だけ空              -> 削除の保存パスの問題
+      if (this.showDiag || this.total === 0) {
+        Column({ space: 6 }) {
+          ForEach(this.probes, (p: ProbeResult) => {
+            Row({ space: 8 }) {
+              Text(p.ok ? '●' : '○')
+                .fontSize(11)
+                .fontColor(p.ok ? '#059669' : '#DC2626')
+              Column({ space: 1 }) {
+                Text(p.label)
+                  .fontFamily(JP_FONT_FAMILY)
+                  .fontSize(11)
+                  .fontWeight(FontWeight.Medium)
+                  .fontColor(kbTheme(this.isDark).textPrimary)
+                Text(p.detail)
+                  .fontFamily(JP_FONT_FAMILY)
+                  .fontSize(10)
+                  .fontColor(kbTheme(this.isDark).textSecondary)
+              }
+              .alignItems(HorizontalAlign.Start)
+              .layoutWeight(1)
+            }
+            .width('100%')
+            .alignItems(VerticalAlign.Top)
+          }, (p: ProbeResult, i: number) => `${p.label}-${i}`)
+        }
+        .width('100%')
+        .padding(12)
+        .margin({ left: 16, right: 16, bottom: 10 })
+        .backgroundColor(kbTheme(this.isDark).cardBg)
+        .borderRadius(12)
+        .alignItems(HorizontalAlign.Start)
+      }
 
       // ── Kind filter ───────────────────────────────────────────
       Scroll() {
@@ -264,8 +382,7 @@ struct InputLogPage {
           if (this.total === 0) {
             Text(`保存先: ${this.dir()}/${INPUT_LOG_FILE}\n` +
               `ファイル: ${this.bytes > 0 ? 'あり' : 'なし'}\n` +
-              'ここに「入力欄」の記録すら出ない場合は、キーボード側が\n' +
-              'このパスに書けていません（収集が動いていない/別パス）')
+              '上の診断で、拡張が書いたストアが1つでも読めているかを見てください')
               .fontFamily(JP_FONT_FAMILY)
               .fontSize(10)
               .fontColor(kbTheme(this.isDark).textSecondary)

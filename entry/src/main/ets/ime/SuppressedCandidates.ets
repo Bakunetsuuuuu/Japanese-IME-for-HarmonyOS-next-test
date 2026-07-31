@@ -108,6 +108,12 @@ export class SuppressedCandidates {
     return out;
   }
 
+  // Why a read failure was empty, or '' when the last read succeeded. The
+  // screen showed a bare "削除した候補はありません" for every outcome -- store
+  // unreadable, wrong path, genuinely nothing deleted -- which made "I can't
+  // see my deleted candidates" impossible to tell apart from "there are none".
+  static lastError: string = '';
+
   // Read the deletion list fresh from disk. forceReload drops the in-process
   // cache so writes made by the other process (app ⇄ IME) are picked up --
   // same contract as UserDictStore.load.
@@ -115,6 +121,7 @@ export class SuppressedCandidates {
     context: ESObject,
     forceReload: boolean = false
   ): Promise<Record<string, string[]>> {
+    SuppressedCandidates.lastError = '';
     try {
       if (forceReload) {
         await dataPreferences.removePreferencesFromCache(context, SUPPRESSED_STORE);
@@ -132,7 +139,8 @@ export class SuppressedCandidates {
         }
       }
       return clean;
-    } catch (_e) {
+    } catch (e) {
+      SuppressedCandidates.lastError = JSON.stringify(e);
       return {};
     }
   }
