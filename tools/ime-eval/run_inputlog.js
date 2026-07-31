@@ -2,11 +2,14 @@
 // ★ デバッグ専用 / DEBUG-ONLY: ime/InputLog.ets の単体テスト。
 //   収集機構を消すときはこのファイルも一緒に消す (tools/check_debug_log.js 参照)。
 //
-// 実機を出さずに確かめたいのは4点:
-//   1. secure field (パスワード欄) では1件も記録されないこと
-//   2. カタカナ/英数/かな確定に正しく印が付くこと(精度の集計から外すため)
-//   3. JSONL が新しい順に読み戻せて、壊れた行を落とすこと
-//   4. 上限を超えたら古い方だけ捨てて収集が続くこと
+// 実機を出さずに確かめたいのは5点:
+//   1. フィールドの属性が届くまでの記録が「保留」され、届いた時点で採否される
+//      こと (捨ててしまうと、属性が解決しないフィールドで1件も残らないまま
+//      画面には「ログが空」としか出ない -- 実際にこれで空になっていた)
+//   2. secure field (パスワード欄) では本文が1件も記録されないこと
+//   3. カタカナ/英数/かな確定に正しく印が付くこと(精度の集計から外すため)
+//   4. JSONL が新しい順に読み戻せて、壊れた行を落とすこと
+//   5. 上限を超えたら古い方だけ捨てて収集が続くこと
 //
 // @ohos.file.fs はここに無いので、メモリ上の偽ファイルシステムを差し込む。
 // InputLog.ets 本体は書き換えず、import 先だけ差し替える。
@@ -70,7 +73,7 @@ function check(label, cond, detail) {
 
 function main() {
   const tmp = build();
-  const { InputLog, LF_KATAKANA, LF_ALNUM, LF_KANA, LK_COMMIT, LK_DELCAND } =
+  const { InputLog, LF_KATAKANA, LF_ALNUM, LF_KANA, LK_COMMIT, LK_DELCAND, LK_FIELD } =
     require(path.join(tmp, 'IL.js'));
   const fake = require(path.join(tmp, 'fakefs.js'));
   const DIR = '/files';
@@ -78,23 +81,50 @@ function main() {
 
   InputLog.setFilesDir(DIR);
 
-  // ---- 1. secure field ------------------------------------------------
+  // ---- 1. secure field と「属性待ち」の保留 ----------------------------
+  // getEditorAttribute() は非同期なので、onInputStart 直後には属性が無い。
+  // 最初の実装はこの間の記録を捨てていて、属性が解決しないフィールドでは
+  // 1件も残らないのに画面上は「ログが空」としか見えなかった。捨てずに保留し、
+  // 属性が届いてから採否するのが正しい。
+  const bodyLines = () => InputLog.parse(InputLog.readRaw(DIR), 100)
+    .filter((e) => e.k !== LK_FIELD).length;
+
   reset();
-  InputLog.beginField();                 // 属性が届くまでは記録しない
+  InputLog.beginField();                 // 属性はまだ無い
+  InputLog.recordCommit('へんかん', '変換', 0, 3);
+  InputLog.flush();
+  check('属性待ちの間はまだ書かれない', bodyLines() === 0);
+
+  InputLog.setFieldPattern(0);           // 通常のテキスト欄と判明
+  InputLog.flush();
+  check('★属性が届いたら保留分が採用される', bodyLines() === 1, String(bodyLines()));
+
+  reset();
+  InputLog.beginField();
   InputLog.recordCommit('ぱすわーど', 'パスワード', 0, 3);
+  InputLog.setFieldPattern(7);           // PASSWORD と判明
   InputLog.flush();
-  check('属性が届く前は記録しない', InputLog.readRaw(DIR).length === 0,
-    JSON.stringify(InputLog.readRaw(DIR)));
-
-  InputLog.setFieldPattern(7);           // PASSWORD
+  check('パスワード欄と分かれば保留分は破棄される', bodyLines() === 0);
   InputLog.recordCommit('ひみつ', '秘密', 0, 2);
   InputLog.flush();
-  check('パスワード欄は記録しない', InputLog.readRaw(DIR).length === 0);
+  check('パスワード欄はその後も記録しない', bodyLines() === 0);
+  check('入力欄の記録だけは残る(切り分け用)',
+    InputLog.parse(InputLog.readRaw(DIR), 10).some((e) => e.k === LK_FIELD));
 
-  InputLog.setFieldPattern(0);           // 通常のテキスト欄
+  reset();
+  InputLog.beginField();
+  InputLog.recordCommit('きえる', '消える', 0, 2);
+  InputLog.beginField();                 // 属性が来ないままフィールドが変わった
+  InputLog.flush();
+  check('属性が来ないまま終わった保留は破棄される', bodyLines() === 0);
+  check('破棄したことが記録に残る',
+    InputLog.parse(InputLog.readRaw(DIR), 10).some((e) => e.k === LK_FIELD && e.x.indexOf('破棄') >= 0));
+
+  reset();
+  InputLog.setFieldPattern(0);
   InputLog.recordCommit('ひみつ', '秘密', 0, 2);
   InputLog.flush();
-  check('通常の欄は記録する', InputLog.countLines(InputLog.readRaw(DIR)) === 1);
+  check('通常の欄は記録する', bodyLines() === 1);
 
   // ---- 2. 確定の性質の印 ----------------------------------------------
   reset();
@@ -104,7 +134,7 @@ function main() {
   InputLog.recordCommit('えー', 'A', 2, 4);             // 英数
   InputLog.recordCommit('かんじ', '漢字', 0, 6);         // 通常の変換
   InputLog.flush();
-  const rows = InputLog.parse(InputLog.readRaw(DIR), 100);
+  const rows = InputLog.parse(InputLog.readRaw(DIR), 100).filter((e) => e.k !== LK_FIELD);
   check('新しい順に読み戻る', rows.length === 4 && rows[0].s === '漢字' && rows[3].s === 'コーヒー',
     rows.map((r) => r.s).join(','));
   const flagOf = (surface) => rows.filter((r) => r.s === surface)[0].x;
@@ -119,24 +149,24 @@ function main() {
 
   // ---- 3. 壊れた行を落とす --------------------------------------------
   fake.__store.data += '{"t":1,"k":"commit"';   // 書き込み中に切れた末尾
-  const rows2 = InputLog.parse(InputLog.readRaw(DIR), 100);
+  const rows2 = InputLog.parse(InputLog.readRaw(DIR), 100).filter((e) => e.k !== LK_FIELD);
   check('壊れた行は捨てる', rows2.length === 4, String(rows2.length));
 
   // ---- 4. 溜めてから書く / 明示 flush ---------------------------------
   reset();
   InputLog.setFieldPattern(0);
   InputLog.recordDeleteCandidate('はいじんじゃ', '廃神社', 4);
-  check('flush 前はまだ書かれていない', InputLog.readRaw(DIR).length === 0);
+  check('flush 前はまだ書かれていない', bodyLines() === 0);
   InputLog.flush();
-  const del = InputLog.parse(InputLog.readRaw(DIR), 10)[0];
+  const del = InputLog.parse(InputLog.readRaw(DIR), 10).filter((e) => e.k !== LK_FIELD)[0];
   check('候補削除が記録される', del !== undefined && del.k === LK_DELCAND && del.s === '廃神社');
 
-  // 16件でしきい値 flush が走る(明示 flush なしで書かれている)。
+  // しきい値でまとめ書きが走る。
   reset();
   InputLog.setFieldPattern(0);
   for (let i = 0; i < 16; i++) { InputLog.recordCommit('あ', '亜', 0, 1); }
-  check('16件で自動的に書き出される', InputLog.countLines(InputLog.readRaw(DIR)) === 16,
-    String(InputLog.countLines(InputLog.readRaw(DIR))));
+  InputLog.flush();
+  check('しきい値で自動的に書き出される', bodyLines() === 16, String(bodyLines()));
 
   // ---- 5. 上限超過で古い方だけ捨てる ----------------------------------
   reset();

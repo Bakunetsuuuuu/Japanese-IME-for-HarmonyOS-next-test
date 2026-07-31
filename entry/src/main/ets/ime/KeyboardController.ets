@@ -230,7 +230,7 @@ export class InputHandler {
   setContext(ctx: InputMethodExtensionContext): void {
     if (this.imeContext !== undefined) { return; }
     this.imeContext = ctx;
-    InputLog.setFilesDir(ctx.filesDir); // [DEBUG-LOG]
+    InputLog.setFilesDir(ctx.getApplicationContext().filesDir); // [DEBUG-LOG] アプリ単位=本体アプリと必ず同じ場所
     UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_learning')
       .then((prefs: dataPreferences.Preferences) => {

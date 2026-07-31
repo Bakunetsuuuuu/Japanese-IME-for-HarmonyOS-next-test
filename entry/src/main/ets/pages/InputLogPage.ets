@@ -7,9 +7,13 @@
 // ime/InputLog.ets が集めた入力ログの閲覧・書き出し・消去。
 //
 // IME拡張は本体アプリと別プロセスなので、ここでは InputHandler を経由せず
-// filesDir 上のログファイルを直接読む(SuppressedList.ets が
-// shunti_suppressed を直接読むのと同じ理由)。同じモジュール(entry)の
-// ability 同士なので filesDir は一致する。
+// ログファイルを直接読む(SuppressedList.ets が shunti_suppressed を直接読むのと
+// 同じ理由)。場所はアプリ単位の filesDir で、書き手と読み手で必ず一致する
+// (dir() のコメント参照)。
+//
+// 拡張プロセスは書き出しを 4件 / 800ms でまとめているので、直前の変換が
+// まだ出ていないことがある。ページに戻るたび読み直す(onPageShow)ほか、
+// キーボードを閉じた時点(onInputStop)で必ず flush される。
 
 import { router, promptAction } from '@kit.ArkUI';
 import { common } from '@kit.AbilityKit';
@@ -19,7 +23,7 @@ import { kbTheme } from '../components/Theme';
 import {
   InputLog, InputLogEntry, INPUT_LOG_FILE,
   LK_COMMIT, LK_RAW, LK_RANGE, LK_BUNSETSU, LK_BSEG,
-  LK_DELCAND, LK_UNKNOWN, LK_DELCHAR, LK_UNDO,
+  LK_DELCAND, LK_UNKNOWN, LK_DELCHAR, LK_UNDO, LK_FIELD,
   LF_KATAKANA, LF_ALNUM, LF_KANA
 } from '../ime/InputLog';
 
@@ -51,6 +55,7 @@ function kindStyle(k: string): KindStyle {
   if (k === LK_UNKNOWN) { return { label: '未知語学習', color: '#7C3AED' }; }
   if (k === LK_DELCHAR) { return { label: '文字削除', color: '#DC2626' }; }
   if (k === LK_UNDO) { return { label: '取消', color: '#059669' }; }
+  if (k === LK_FIELD) { return { label: '入力欄', color: '#6B7280' }; }
   return { label: k, color: '#6B7280' };
 }
 
@@ -88,17 +93,26 @@ struct InputLogPage {
     { label: '候補削除', kind: LK_DELCAND },
     { label: '未知語', kind: LK_UNKNOWN },
     { label: '文字削除', kind: LK_DELCHAR },
+    { label: '入力欄', kind: LK_FIELD },
   ];
 
   aboutToAppear(): void {
     this.reload();
   }
 
-  // IME拡張は module 'entry' の extensionAbility、この画面は同じ module の
-  // UIAbility なので filesDir は同じディレクトリを指す。だから拡張が書いた
-  // ファイルをここからそのまま読める。
+  // キーボードで入力してからここに戻ってきたときに古い内容が出たままにならない
+  // ように読み直す。件数表示のタップでも読み直せる(下)。
+  onPageShow(): void {
+    this.reload();
+  }
+
+  // 必ずアプリ単位の filesDir を使う。ability ごとの context.filesDir は
+  // モジュール単位のディレクトリで、IME拡張と本体で一致する「はず」だが、
+  // そこを仮定すると外れたときに「拡張は書いているのに本体からは空に見える」
+  // という切り分けの難しい壊れ方をする。書き手 (KeyboardController) も
+  // getApplicationContext().filesDir を渡している。
   private dir(): string {
-    return (getContext(this) as common.UIAbilityContext).filesDir;
+    return (getContext(this) as common.UIAbilityContext).getApplicationContext().filesDir;
   }
 
   private reload(): void {
@@ -188,13 +202,14 @@ struct InputLogPage {
             .fontSize(14)
             .fontWeight(FontWeight.Medium)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text(`表示は直近 ${VIEW_LIMIT} 件・エクスポートは全件`)
+          Text(`表示は直近 ${VIEW_LIMIT} 件・エクスポートは全件（タップで再読込）`)
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
+        .onClick(() => { this.reload(); })
 
         Text('JSONLをコピー')
           .fontFamily(JP_FONT_FAMILY)
@@ -234,7 +249,11 @@ struct InputLogPage {
 
       // ── Entries ───────────────────────────────────────────────
       if (this.visible().length === 0) {
-        Column() {
+        // 空のときこそ理由が要る。「ファイルが無い」= 書き手に届いていない
+        // (パス違い/収集が動いていない)、「ファイルはあるが field だけ」=
+        // 収集は動いているが記録の条件で落ちている、と切り分けられるように、
+        // 保存先の実パスと状態をそのまま出す。
+        Column({ space: 8 }) {
           Text(this.total === 0
             ? '入力ログはまだありません\nキーボードで変換すると記録されます'
             : 'この種別の記録はありません')
@@ -242,9 +261,19 @@ struct InputLogPage {
             .fontSize(13)
             .fontColor(kbTheme(this.isDark).textSecondary)
             .textAlign(TextAlign.Center)
+          if (this.total === 0) {
+            Text(`保存先: ${this.dir()}/${INPUT_LOG_FILE}\n` +
+              `ファイル: ${this.bytes > 0 ? 'あり' : 'なし'}\n` +
+              'ここに「入力欄」の記録すら出ない場合は、キーボード側が\n' +
+              'このパスに書けていません（収集が動いていない/別パス）')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(10)
+              .fontColor(kbTheme(this.isDark).textSecondary)
+              .textAlign(TextAlign.Center)
+          }
         }
         .width('100%')
-        .padding({ top: 48 })
+        .padding({ top: 48, left: 20, right: 20 })
       } else {
         List() {
           ForEach(this.visible(), (e: InputLogEntry) => {
@@ -276,7 +305,7 @@ struct InputLogPage {
                     .fontColor(kbTheme(this.isDark).textPrimary)
                   // 区切り位置・変換範囲はここが本体なので、確定系と違って
                   // x をそのまま出す。
-                  if (e.x.length > 0 && (e.k === LK_BUNSETSU || e.k === LK_RANGE || e.k === LK_DELCHAR)) {
+                  if (e.x.length > 0 && (e.k === LK_BUNSETSU || e.k === LK_RANGE || e.k === LK_DELCHAR || e.k === LK_FIELD)) {
                     Text(e.x)
                       .fontFamily(JP_FONT_FAMILY)
                       .fontSize(11)

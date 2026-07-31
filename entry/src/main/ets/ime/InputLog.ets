@@ -61,6 +61,7 @@ export const LK_DELCAND: string = 'delcand';    // 候補を削除した(長押�
 export const LK_UNKNOWN: string = 'unknown';    // 未知語として学習された
 export const LK_DELCHAR: string = 'delchar';    // 文字を消した(⌫)
 export const LK_UNDO: string = 'undo';          // 取消で消した文字を戻した
+export const LK_FIELD: string = 'field';        // 入力欄が変わった(診断用・本文なし)
 
 // 確定の性質を表す補助タグ (entry.x に入る)。
 export const LF_KATAKANA: string = 'kata';      // 読みのカタカナ形をそのまま確定
@@ -75,8 +76,16 @@ const SECURE_PATTERNS: number[] = [7, 8, 9, 11];
 
 // メモリに溜めてからまとめて書く。確定のたびに open/write/close すると
 // 打鍵の応答に乗ってくるため。どちらか早い方で flush する。
-const FLUSH_AT: number = 16;
-const FLUSH_MS: number = 1500;
+//
+// 書き出しは「確定」単位で走るのであって打鍵単位ではない(1秒に1回あるかどうか)。
+// 溜めすぎると拡張プロセスが onDestroy を経ずに落とされたときの取りこぼしが
+// 増えるだけなので、間隔は短めに取る。
+const FLUSH_AT: number = 4;
+const FLUSH_MS: number = 800;
+
+// 属性が届くまでの保留の上限。ここに溜まり続けるのは属性が来ていない異常時
+// だけなので、小さくてよい。
+const MAX_PENDING: number = 64;
 
 // ログ本体の上限。超えたら古い方を半分捨てて書き直す(消えるのは古い行だけで、
 // 収集が止まることはない)。1レコード ~90B なので 2MB でおよそ 2万件。
@@ -98,13 +107,26 @@ export class InputLog {
   private static buffer: InputLogEntry[] = [];
   private static filesDir: string = '';
   private static timer: number = -1;
-  // 現在のテキストフィールドが secure かどうか。onInputStart で更新する。
-  // 判定が届くまでは記録しない側に倒す ⇒ 初期値 true にはせず、
-  // 「フィールドが変わった時点で一旦 true、属性が取れたら反映」とする。
+  // 現在のテキストフィールドが secure か。
   private static secureField: boolean = false;
+  // フィールドの属性がまだ届いていない。getEditorAttribute() は非同期なので、
+  // onInputStart 直後から属性が返るまでの間はどちらとも言えない期間がある。
+  private static fieldPending: boolean = false;
+  // その期間の記録の置き場。ここが最初の実装のバグで、属性が届くまでの記録を
+  // 単に捨てていた ⇒ getEditorAttribute() が解決しないフィールドでは
+  // 「1件も記録されない」が、画面上は「ログが空」としか見えなかった。
+  // 捨てずに保留し、属性が届いた時点で secure なら破棄・そうでなければ採用する。
+  private static pending: InputLogEntry[] = [];
+  private static pendingDropped: number = 0;
 
   // 収集先ディレクトリを渡す。IME拡張と本体アプリは別プロセスなので、
   // 両方から呼ばれる(拡張=書き込み, 本体=閲覧/書き出し)。
+  //
+  // 渡すのは必ず context.getApplicationContext().filesDir。ability ごとの
+  // context.filesDir はモジュール単位のディレクトリで、拡張と本体で一致する
+  // 「はず」だが、そこを仮定すると外れたときに「拡張は書いているのに本体からは
+  // 空に見える」という切り分けの難しい壊れ方をする。アプリ単位の filesDir なら
+  // 同一バンドルの全 ability で必ず同じ場所を指す。
   static setFilesDir(dir: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
     InputLog.filesDir = (dir === undefined || dir === null) ? '' : dir;
@@ -114,16 +136,37 @@ export class InputLog {
     return InputLog.filesDir + '/' + INPUT_LOG_FILE;
   }
 
-  // フィールドが変わった。属性が取れるまでは記録を止める。
+  // フィールドが変わった。属性が届くまでの記録は保留にする。
   static beginField(): void {
     if (!DEBUG_INPUT_LOG) { return; }
+    // 前のフィールドの属性が最後まで来なかった場合、保留分は判断できないので
+    // 捨てる(secure かもしれないため)。ただし黙って捨てず、件数を記録に残す。
+    // 「収集は動いているが属性が取れていない」が画面から分かるようにするため。
+    if (InputLog.pending.length > 0) {
+      InputLog.pendingDropped += InputLog.pending.length;
+      InputLog.pending = [];
+      InputLog.write(LK_FIELD, '', '', -1, 0, `属性が届かず破棄 ${InputLog.pendingDropped}件`);
+    }
     InputLog.flush();
-    InputLog.secureField = true;
+    InputLog.fieldPending = true;
+    InputLog.secureField = false;
   }
 
+  // フィールドの属性が届いた。保留分をここで採否する。
   static setFieldPattern(pattern: number): void {
     if (!DEBUG_INPUT_LOG) { return; }
     InputLog.secureField = SECURE_PATTERNS.indexOf(pattern) >= 0;
+    InputLog.fieldPending = false;
+    const held = InputLog.pending;
+    InputLog.pending = [];
+    if (!InputLog.secureField) {
+      for (const e of held) { InputLog.buffer.push(e); }
+    }
+    // フィールドが始まったこと自体を1件残す。本文は入れない(secure でも安全)。
+    // これがあると「ログが空」のとき、パスが違うのか(=この記録も無い)、
+    // 収集の条件で落ちているのか(=この記録だけある)が一目で切り分けられる。
+    InputLog.write(LK_FIELD, '', '', -1, 0,
+      `pattern=${pattern}${InputLog.secureField ? ' (secure: 記録しない)' : ''}`);
   }
 
   // ---- 記録 API (呼び出し側は必ず行末に // [DEBUG-LOG] を付ける) ----------
@@ -192,6 +235,12 @@ export class InputLog {
     if (InputLog.secureField) { return; }
     if (InputLog.filesDir.length === 0) { return; }
     const e: InputLogEntry = { t: Date.now(), k: k, r: r, s: s, i: i, n: n, x: x };
+    // 属性待ちの間は保留に積む(捨てない)。上限を超えたら古い方から落とす。
+    if (InputLog.fieldPending) {
+      InputLog.pending.push(e);
+      if (InputLog.pending.length > MAX_PENDING) { InputLog.pending.shift(); }
+      return;
+    }
     InputLog.buffer.push(e);
     if (InputLog.buffer.length >= FLUSH_AT) {
       InputLog.flush();
@@ -199,6 +248,14 @@ export class InputLog {
     }
     clearTimeout(InputLog.timer);
     InputLog.timer = setTimeout(() => { InputLog.flush(); }, FLUSH_MS);
+  }
+
+  // 保留を経由せず必ず書く。フィールドの開始など、本文を含まない診断用の記録に
+  // だけ使う(secure かどうかに関わらず残したいもの)。
+  private static write(k: string, r: string, s: string, i: number, n: number, x: string): void {
+    if (InputLog.filesDir.length === 0) { return; }
+    InputLog.buffer.push({ t: Date.now(), k: k, r: r, s: s, i: i, n: n, x: x });
+    InputLog.flush();
   }
 
   // 溜めた分を追記する。フィールドを離れるときにも呼ぶ(取りこぼし防止)。
