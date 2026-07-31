@@ -231,6 +231,9 @@ export class InputHandler {
     if (this.imeContext !== undefined) { return; }
     this.imeContext = ctx;
     InputLog.setFilesDir(ctx.getApplicationContext().filesDir); // [DEBUG-LOG] アプリ単位=本体アプリと必ず同じ場所
+    // [DEBUG-LOG] 拡張が実際に使っているパスをログに残す。本体アプリ側の
+    // 診断表示がこれと自分のパスを突き合わせる (InputLog.recordPaths 参照)。 // [DEBUG-LOG]
+    InputLog.recordPaths(ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
     UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_learning')
       .then((prefs: dataPreferences.Preferences) => {

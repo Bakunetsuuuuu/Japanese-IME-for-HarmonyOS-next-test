@@ -62,6 +62,7 @@ export const LK_UNKNOWN: string = 'unknown';    // 未知語として学習さ�
 export const LK_DELCHAR: string = 'delchar';    // 文字を消した(⌫)
 export const LK_UNDO: string = 'undo';          // 取消で消した文字を戻した
 export const LK_FIELD: string = 'field';        // 入力欄が変わった(診断用・本文なし)
+export const LK_DIAG: string = 'diag';          // 拡張プロセスの自己申告(診断用・本文なし)
 
 // 確定の性質を表す補助タグ (entry.x に入る)。
 export const LF_KATAKANA: string = 'kata';      // 読みのカタカナ形をそのまま確定
@@ -167,6 +168,21 @@ export class InputLog {
     // 収集の条件で落ちているのか(=この記録だけある)が一目で切り分けられる。
     InputLog.write(LK_FIELD, '', '', -1, 0,
       `pattern=${pattern}${InputLog.secureField ? ' (secure: 記録しない)' : ''}`);
+  }
+
+  // IME拡張が起動した。拡張プロセスが「自分はどこに書いているつもりか」を
+  // 1件残す。
+  //
+  // 「削除した候補」も「入力ログ」も、拡張が書いたものを本体アプリが読む構造で、
+  // どちらの読み取りも例外を握り潰して空を返す。つまり
+  //   (a) 拡張が書けていない / (b) 書き先と読み先が違う / (c) そもそも記録が
+  //   作られていない
+  // のどれであっても、画面上は同じ「空」にしかならない。
+  // 書き手の実パスをログに残しておけば、読み手側の実パスと突き合わせるだけで
+  // (b) が一発で分かり、この記録自体が読めなければ (a) だと分かる。
+  static recordPaths(filesDir: string, prefsDir: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.write(LK_DIAG, '', '', -1, 0, `files=${filesDir} prefs=${prefsDir}`);
   }
 
   // ---- 記録 API (呼び出し側は必ず行末に // [DEBUG-LOG] を付ける) ----------
