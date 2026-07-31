@@ -180,9 +180,20 @@ export class InputLog {
   // のどれであっても、画面上は同じ「空」にしかならない。
   // 書き手の実パスをログに残しておけば、読み手側の実パスと突き合わせるだけで
   // (b) が一発で分かり、この記録自体が読めなければ (a) だと分かる。
-  static recordPaths(filesDir: string, prefsDir: string): void {
+  static recordPaths(logDir: string, filesDir: string, prefsDir: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
-    InputLog.write(LK_DIAG, '', '', -1, 0, `files=${filesDir} prefs=${prefsDir}`);
+    InputLog.write(LK_DIAG, '', '', -1, 0,
+      `log=${logDir} files=${filesDir} prefs=${prefsDir}`);
+  }
+
+  // 拡張プロセスの初期化に失敗した。永続化ストアが1つでも開けないと、
+  // saveLearning/saveSuppressed 等が `if (!prefs) return` で黙って何もしなく
+  // なる ── キーボードは普通に動くのに保存だけが全部死ぬ。理由をここに残す。
+  // (この経路は preferences に依存しないので、preferences 自体が壊れていても
+  //  記録が残る。それがこの記録の存在理由)
+  static recordInit(store: string, e: ESObject): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.write(LK_DIAG, '', store, -1, 0, '初期化に失敗: ' + JSON.stringify(e));
   }
 
   // ---- 記録 API (呼び出し側は必ず行末に // [DEBUG-LOG] を付ける) ----------
@@ -330,6 +341,17 @@ export class InputLog {
     } catch (_e) {
       return '';
     }
+  }
+
+  // 候補のディレクトリを順に見て、最初に見つかったものを返す。
+  // 拡張側は アプリ単位の filesDir を優先しつつ、取れなければモジュール単位に
+  // 落ちる。読み手が片方しか見ないと、落ちた場合に「空」に見えてしまう。
+  static findDir(dirs: string[]): string {
+    if (!DEBUG_INPUT_LOG) { return dirs.length > 0 ? dirs[0] : ''; }
+    for (const d of dirs) {
+      if (d.length > 0 && InputLog.sizeBytes(d) > 0) { return d; }
+    }
+    return dirs.length > 0 ? dirs[0] : '';
   }
 
   // 新しい順に最大 limit 件。壊れた行(書き込み中に切れた末尾など)は捨てる。

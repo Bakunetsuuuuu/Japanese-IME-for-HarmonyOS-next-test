@@ -227,14 +227,16 @@ export class InputHandler {
     return InputHandler._instance;
   }
 
+  // 拡張プロセスの永続化の初期化。ここが1つの同期ブロックなので、途中で例外が
+  // 出ると以降の getPreferences が全部走らず、learningPrefs 等が undefined の
+  // まま残る。そうなると saveLearning/saveSuppressed 等は `if (!prefs) return`
+  // で黙って何もしなくなり、キーボード自体は動くのに保存だけが全部死ぬ ──
+  // 画面からは「全部空」としか見えない。
+  // だから、ここに本質的でない処理を足さないこと。収集用の初期化は最後に
+  // setupInputLog() として切り出してある(それ自体も try で囲ってある)。
   setContext(ctx: InputMethodExtensionContext): void {
     if (this.imeContext !== undefined) { return; }
     this.imeContext = ctx;
-    InputLog.setFilesDir(ctx.getApplicationContext().filesDir); // [DEBUG-LOG] アプリ単位=本体アプリと必ず同じ場所
-    // [DEBUG-LOG] 拡張が実際に使っているパスをログに残す。本体アプリ側の
-    // 診断表示がこれと自分のパスを突き合わせる (InputLog.recordPaths 参照)。 // [DEBUG-LOG]
-    InputLog.recordPaths(ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
-    UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_learning')
       .then((prefs: dataPreferences.Preferences) => {
         this.learningPrefs = prefs;
@@ -246,7 +248,7 @@ export class InputHandler {
           KanaKanjiConverter.setLearned(data);
         } catch (_e) {}
       })
-      .catch((_e: Error) => {});
+      .catch((e: Error) => { InputLog.recordInit('shunti_learning', e); }); // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_nextword')
       .then((prefs: dataPreferences.Preferences) => {
         this.nextWordPrefs = prefs;
@@ -261,7 +263,7 @@ export class InputHandler {
           NextWordPredictor.setLearned(data);
         } catch (_e) {}
       })
-      .catch((_e: Error) => {});
+      .catch((e: Error) => { InputLog.recordInit('shunti_nextword', e); }); // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_unknownword')
       .then((prefs: dataPreferences.Preferences) => {
         this.unknownWordPrefs = prefs;
@@ -273,7 +275,7 @@ export class InputHandler {
           UnknownWordLearner.setLearned(data);
         } catch (_e) {}
       })
-      .catch((_e: Error) => {});
+      .catch((e: Error) => { InputLog.recordInit('shunti_unknown', e); }); // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, SUPPRESSED_STORE)
       .then((prefs: dataPreferences.Preferences) => {
         this.suppressedPrefs = prefs;
@@ -285,7 +287,7 @@ export class InputHandler {
           SuppressedCandidates.setSuppressed(data);
         } catch (_e) {}
       })
-      .catch((_e: Error) => {});
+      .catch((e: Error) => { InputLog.recordInit('shunti_suppressed', e); }); // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_symbol_freq')
       .then((prefs: dataPreferences.Preferences) => {
         this.symbolPrefs = prefs;
@@ -297,10 +299,38 @@ export class InputHandler {
           InputHandler.publishFrequentSymbols();
         } catch (_e) {}
       })
-      .catch((_e: Error) => {});
+      .catch((e: Error) => { InputLog.recordInit('shunti_symbol_freq', e); }); // [DEBUG-LOG]
     this.reloadUserDict();
     this.reloadSettings();
+    this.setupInputLog(ctx); // [DEBUG-LOG] 必ず最後。上の初期化を壊さないため
   }
+
+  // [DEBUG-LOG] 収集の初期化。
+  //
+  // これを setContext の先頭に置き、しかも ctx.getApplicationContext() という
+  // 新しい API 依存をそこに足していた。あの位置で例外が出ると以降の
+  // getPreferences が1つも走らず、学習も削除候補も黙って保存されなくなる。
+  // デバッグ用の機能を、本体の永続化より前に立ててはいけない。
+  // 末尾に移し、全体を try で囲い、パス取得にも代替を用意した。
+  private setupInputLog(ctx: InputMethodExtensionContext): void { // [DEBUG-LOG]
+    try { // [DEBUG-LOG]
+      // アプリ単位の filesDir を優先(本体アプリと必ず同じ場所)。取れない場合は
+      // モジュール単位に落とし、どちらを使ったかを記録に残す。
+      let dir = ''; // [DEBUG-LOG]
+      let level = 'app'; // [DEBUG-LOG]
+      try { // [DEBUG-LOG]
+        dir = ctx.getApplicationContext().filesDir; // [DEBUG-LOG]
+      } catch (_e) { // [DEBUG-LOG]
+        dir = ctx.filesDir; // [DEBUG-LOG]
+        level = 'module(getApplicationContext失敗)'; // [DEBUG-LOG]
+      } // [DEBUG-LOG]
+      InputLog.setFilesDir(dir); // [DEBUG-LOG]
+      InputLog.recordPaths(`${level} ${dir}`, ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
+      UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
+    } catch (e) { // [DEBUG-LOG]
+      console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
+    } // [DEBUG-LOG]
+  } // [DEBUG-LOG]
 
   // Called whenever the user taps a symbol in SymbolView, so its "recent" tab
   // can be ranked by what this user actually reaches for instead of a fixed
