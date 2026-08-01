@@ -56,6 +56,11 @@ export struct FlickKeyboardView {
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
+  // 数字パッドが有効だと「あA」キーは 日本語→アルファベット→数字 の3段階に
+  // なるので、ラベルも切り替わる順に並べる (あA1 / A1あ / 1あA)。
+  // 半角の A/1 は ひらがな と字形の大きさが厳密には揃わないが、
+  // 全角にすると見た目が野暮ったくなるため半角のままにしている。
+  @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
 
   @State activeRow: number = -1;
   @State activeCol: number = -1;
@@ -310,7 +315,9 @@ export struct FlickKeyboardView {
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
         })
     } else {
-      Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
+      Text(this.numericPadEnabled
+        ? (this.inputMode === InputMode.HIRAGANA ? 'あA1' : 'A1あ')
+        : (this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ'))
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(12).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
@@ -435,13 +442,20 @@ export struct FlickKeyboardView {
           this.handleTouch(e, rowIdx, colIdx, key);
         })
     } else {
+      // 上・中・下の3帯。各帯は必ず中央揃えのコンテナで包む。
+      // Text に height だけ与えると帯の中で上寄りに描かれ、中心文字との間隔が
+      // 上下で食い違って「文字がずれている」ように見える。
       Column({ space: 0 }) {
-        Text(key.up !== undefined ? this.toMode(key.up) : ' ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(11)
-          .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
-          .width('100%').height('28%')
-          .textAlign(TextAlign.Center)
+        Row() {
+          Text(key.up !== undefined ? this.toMode(key.up) : ' ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%').height('26%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
 
         Row({ space: 0 }) {
           Text(key.left !== undefined ? this.toMode(key.left) : ' ')
@@ -464,13 +478,18 @@ export struct FlickKeyboardView {
             .width('25%').textAlign(TextAlign.Center)
         }
         .width('100%').height('44%')
+        .alignItems(VerticalAlign.Center)
 
-        Text(key.down !== undefined ? this.toMode(key.down) : ' ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(11)
-          .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
-          .width('100%').height('28%')
-          .textAlign(TextAlign.Center)
+        Row() {
+          Text(key.down !== undefined ? this.toMode(key.down) : ' ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%').height('30%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
       }
       .width(this.flickKeyWidthVp)
       .height('100%')

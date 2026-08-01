@@ -9,7 +9,7 @@ import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter, MozcMatrixData } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
-import type { UserPosEntry } from './ConjugationEngine';
+import type { UserPosEntry, PosKind, VerbGroup } from './ConjugationEngine';
 import { buildUserExpansion } from './ConjugationEngine';
 import { SettingsStore, KeyboardSettings, isDarkFromConfiguration, isDarkFromResourceManager } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
@@ -20,6 +20,7 @@ import { SuppressedCandidates, SUPPRESSED_STORE, SUPPRESSED_KEY } from './Suppre
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
 import { EmojiSuggest } from './EmojiSuggest';
+import { AppMaintenance } from './AppMaintenance';
 import { InputLog } from './InputLog'; // [DEBUG-LOG]
 
 interface InputMethodSubtype {
@@ -209,6 +210,11 @@ export class InputHandler {
   private learningDirty: boolean = false;
   private nextWordDirty: boolean = false;
   private unknownWordDirty: boolean = false;
+  // 登録したそのままのユーザー辞書 (活用展開する前)。設定パネルの一覧用。
+  private userDictRaw: Record<string, string[]> = {};
+  // 辞書の自由入力中に、確定文字の送り先を切り替えるための印。
+  // '' = ホストアプリ / 'yomi' | 'word' = パネル内のその欄。
+  private captureTarget: string = '';
   private suppressedDirty: boolean = false;
   private suppressedSaveTimer: number = -1;
   // The last (up to) two committed words, at word granularity, used as the
@@ -322,21 +328,28 @@ export class InputHandler {
     try { // [DEBUG-LOG]
       // 書き込み先は「実際に開けたところ」を使う。パス文字列が取れることと
       // 拡張プロセスがそこに書けることは別なので、仮定せず試す。
-      // モジュール単位 -> アプリ単位の順。読み手は両方見る (InputLog.findDir)。 // [DEBUG-LOG]
+      //
+      // ★ 重要: この経路で書いたログは、本体アプリの InputLogPage からは読めない。
+      //
+      // キーボードは :inputMethod という別プロセスで動いており、実機で確認した
+      // ところ、拡張のサンドボックスは本体アプリのそれと別実体だった。
+      // 根拠: 拡張は shunti_settings の保存に成功している (flush 完了後に出る
+      // "saveConversionEngine ok" が出る) のに、本体アプリ側から見える
+      // preferences には shunti_settings が存在しない。一方で本体アプリが書く
+      // shunti_userdict はそこに存在し、更新時刻も書いた瞬間に動く。
+      // モジュール単位・アプリ単位のどちらを使っても結果は同じだった。
+      //
+      // よってディレクトリの選び方では解決しない。プロセスを跨ぐには
+      // dataGroupIds + context.getGroupDir() のような別の仕組みが要る。
+      // ここでアプリ単位を先に試しているのは読み手と順序を揃えてあるだけで、
+      // 「共有されるから」ではない。 // [DEBUG-LOG]
       let appDir = ''; // [DEBUG-LOG]
       try { appDir = ctx.getApplicationContext().filesDir; } catch (_e) { appDir = ''; } // [DEBUG-LOG]
-      const used = InputLog.setWritableDir([ctx.filesDir, appDir]); // [DEBUG-LOG]
+      const used = InputLog.setWritableDir([appDir, ctx.filesDir]); // [DEBUG-LOG]
       console.info('shuntiIME InputLog dir=' + used + ' (module=' + ctx.filesDir + ' app=' + appDir + ')'); // [DEBUG-LOG]
       InputLog.recordPaths('setContext', // [DEBUG-LOG]
         used.length > 0 ? used : '書き込めるディレクトリ無し', // [DEBUG-LOG]
         ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
-      UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
-    } catch (e) { // [DEBUG-LOG]
-      console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
-    } // [DEBUG-LOG]
-  } // [DEBUG-LOG]
-      InputLog.setFilesDir(dir); // [DEBUG-LOG]
-      InputLog.recordPaths(`${level} ${dir}`, ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
       UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
     } catch (e) { // [DEBUG-LOG]
       console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
@@ -398,6 +411,15 @@ export class InputHandler {
       // recurred on every restart until the store was wiped (a
       // "reinstall-only" crash). On any failure, fall back to no user
       // dictionary rather than crashing — the keyboard still works.
+      // [DEBUG-LOG] 拡張が本体アプリの書いた辞書を読めているかの切り分け用。
+      // ここが 0件 なら本体アプリ→拡張の受け渡し自体が届いていない。
+      // 件数が出るのに変換に出ないなら、原因は展開/候補側にある。
+      // 件数だけ。読みや単語そのものは hilog に出さない (端末の共有ログに
+      // ユーザーの登録内容が残るため)。
+      console.info('shuntiIME reloadUserDict loaded',
+        JSON.stringify({ dict: Object.keys(results[0]).length, pos: Object.keys(results[1]).length })); // [DEBUG-LOG]
+      // 設定パネルの「登録済み」一覧が出す元データ (展開前の生の登録内容)。
+      this.userDictRaw = results[0];
       try {
         const expansion = buildUserExpansion(results[0], results[1]);
         KanaKanjiConverter.setUserDict(expansion.dict);
@@ -667,6 +689,358 @@ export class InputHandler {
     this.unknownWordDirty = true;
     clearTimeout(this.unknownWordSaveTimer);
     this.unknownWordSaveTimer = setTimeout(() => { this.writeUnknownWords(); }, 2000);
+  }
+
+  // ---- 辞書登録 (キーボード内で完結させるための API) ----------------------
+  //
+  // 本体アプリの辞書画面から登録した語は、キーボードには一切届かない。
+  // 入力方式の拡張は別プロセスかつ別サンドボックスで動いており、本体アプリが
+  // 書いた preferences を拡張から読むと空になる (実機で確認済み: 本体側には
+  // 160B の shunti_userdict があるのに、拡張の reloadUserDict は 0 件)。
+  // プラットフォーム側の共有手段 (dataGroupIds + getGroupDir) は応用市場での
+  // 発行が前提で、このアカウントでは開放されていない。
+  // よって登録も一覧も、変換を行っているこの拡張プロセス側で完結させる。
+  //
+  // 登録候補は UnknownWordLearner が既に持っている「ユーザーが組み立てたが
+  // 辞書に無い語」をそのまま使う。読みと表記を手で打ち直させる必要が無く、
+  // パネル内に自由入力欄を作らずに済む。
+
+  // 登録候補 (組み立てられた未知語) を出現回数の多い順に。
+  // 文字列1本 "よみ\t表記\t回数" で返すのは、ArkTS の @StorageLink に
+  // 構造体配列を載せると更新検知が効きにくいため。
+  getUnknownWordSuggestions(): string[] {
+    const counts = UnknownWordLearner.getLearned();
+    const rows: string[] = [];
+    for (const reading of Object.keys(counts)) {
+      const entry = counts[reading];
+      for (const surface of Object.keys(entry)) {
+        rows.push(`${reading}\t${surface}\t${entry[surface]}`);
+      }
+    }
+    rows.sort((a: string, b: string) => {
+      const ca = Number.parseInt(a.split('\t')[2], 10);
+      const cb = Number.parseInt(b.split('\t')[2], 10);
+      return cb - ca;
+    });
+    return rows;
+  }
+
+  // 登録済みユーザー辞書を "よみ\t表記" で。変換器に渡すのは活用展開後の辞書
+  // なので、一覧には reloadUserDict が控えておいた「登録したそのままの内容」を使う。
+  getUserDictRows(): string[] {
+    const dict = this.userDictRaw;
+    const rows: string[] = [];
+    for (const reading of Object.keys(dict)) {
+      for (const surface of dict[reading]) { rows.push(`${reading}\t${surface}`); }
+    }
+    rows.sort();
+    return rows;
+  }
+
+  // AppStorage 経由で UI に配る。パネルは @StorageLink でこれを見る。
+  publishDictRows(): void {
+    AppStorage.setOrCreate('dictSuggestions', this.getUnknownWordSuggestions());
+    AppStorage.setOrCreate('dictRegistered', this.getUserDictRows());
+  }
+
+  // 1件を本登録する。拡張自身の preferences に書くので、次の reloadUserDict で
+  // そのまま変換に反映される。登録済みの語は未知語リストから外す。
+  // 品詞つきで登録する。品詞は活用展開 (ConjugationEngine.buildUserExpansion) を
+  // 駆動するので、動詞や形容詞は指定しないと「〜ます」「〜た」等で引けない。
+  // pos が 'noun' のときは UserPosStore 側で保存しない (既定扱い)。
+  registerUserWordWithPos(reading: string, surface: string, pos: string, group: string): void {
+    if (!this.imeContext) { return; }
+    if (pos === 'noun') {
+      this.registerUserWord(reading, surface);
+      return;
+    }
+    const ctx = this.imeContext;
+    const entry: UserPosEntry = group.length > 0
+      ? { pos: pos as PosKind, group: group as VerbGroup }
+      : { pos: pos as PosKind };
+    UserPosStore.load(ctx, true)
+      .then((map: Record<string, UserPosEntry>) => {
+        const next = UserPosStore.set(map, reading, surface, entry);
+        return UserPosStore.save(ctx, next);
+      })
+      .then(() => { this.registerUserWord(reading, surface); })
+      .catch((e: ESObject) => {
+        console.error('shuntiIME registerUserWordWithPos failed', JSON.stringify(e));
+        // 品詞が保存できなくても、語そのものは登録しておく。
+        this.registerUserWord(reading, surface);
+      });
+  }
+
+  registerUserWord(reading: string, surface: string): void {
+    if (!this.imeContext) {
+      console.error('shuntiIME registerUserWord: imeContext なし');
+      return;
+    }
+    if (reading.length === 0 || surface.length === 0) { return; }
+    const ctx = this.imeContext;
+    UserDictStore.load(ctx, true)
+      .then((dict: Record<string, string[]>) => {
+        const next: Record<string, string[]> = {};
+        for (const k of Object.keys(dict)) { next[k] = dict[k]; }
+        const cur = next[reading];
+        if (cur === undefined) {
+          next[reading] = [surface];
+        } else if (cur.indexOf(surface) < 0) {
+          const merged: string[] = [surface];
+          for (const w of cur) { merged.push(w); }
+          next[reading] = merged;
+        }
+        return UserDictStore.save(ctx, next).then(() => next);
+      })
+      .then((next: Record<string, string[]>) => {
+        // 一覧は保存できた内容から直接作る。reloadUserDict の完了を待って
+        // タイマーで配り直す形にしていたが、間に合わないと登録直後の一覧が
+        // 古いままになり「登録できていない」ように見える。
+        this.userDictRaw = next;
+        UnknownWordLearner.forget(reading, surface);
+        this.saveUnknownWords();
+        this.publishDictRows();
+        // 変換への反映 (活用展開) は別途。こちらは表示に影響しない。
+        this.reloadUserDict();
+        console.info('shuntiIME registerUserWord ok', reading + '→' + surface,
+          '登録数=' + String(Object.keys(next).length));
+      })
+      .catch((e: ESObject) => { console.error('shuntiIME registerUserWord failed', JSON.stringify(e)); });
+  }
+
+  // ---- 自由入力 (任意の読み・単語を手で入れる) --------------------------
+  //
+  // '' = 通常 (確定文字はホストアプリへ) / 'yomi' | 'word' = その欄へ。
+  // 実際の振り分けは insertText と handleBackspace で行う。
+
+  // 設定パネルはキーボードの代わりに全面を占有するため、その中に入力欄を置いても
+  // 打つキーが無い。登録欄はキーボードを残したまま候補バーの位置に出す
+  // (DictEditBar)。ここではそのモードに入り、設定パネルを畳んで、最初の欄を
+  // 掴むところまでを行う。
+  beginDictEdit(): void {
+    this.clearDictEdit();
+    AppStorage.setOrCreate('keyboardSubMode', 'kana');
+    AppStorage.setOrCreate('dictEditMode', true);
+    this.startCapture('yomi');
+  }
+
+  endDictEdit(): void {
+    this.stopCapture();
+    AppStorage.setOrCreate('dictEditMode', false);
+    this.clearDictEdit();
+  }
+
+  startCapture(target: string): void {
+    // 入力途中の変換状態を持ち越すと、欄を切り替えた瞬間に前の欄の続きが
+    // 入ってしまう。切り替えのたびに畳む。
+    this.resetComposition();
+    this.captureTarget = target;
+    AppStorage.setOrCreate('dictCaptureTarget', target);
+  }
+
+  stopCapture(): void {
+    this.resetComposition();
+    this.captureTarget = '';
+    AppStorage.setOrCreate('dictCaptureTarget', '');
+  }
+
+  private appendCaptured(text: string): void {
+    const key = this.captureTarget === 'yomi' ? 'dictEditYomi' : 'dictEditWord';
+    const cur = AppStorage.get<string>(key) ?? '';
+    AppStorage.setOrCreate(key, cur + text);
+  }
+
+  private backspaceCaptured(): void {
+    const key = this.captureTarget === 'yomi' ? 'dictEditYomi' : 'dictEditWord';
+    const cur = AppStorage.get<string>(key) ?? '';
+    if (cur.length > 0) { AppStorage.setOrCreate(key, cur.slice(0, cur.length - 1)); }
+  }
+
+  clearDictEdit(): void {
+    AppStorage.setOrCreate('dictEditYomi', '');
+    AppStorage.setOrCreate('dictEditWord', '');
+    AppStorage.setOrCreate('dictEditPos', 'noun');
+    AppStorage.setOrCreate('dictEditVerbGroup', '');
+  }
+
+  // 自由入力の内容を登録する。読みがひらがな以外だと変換で引けないので弾く。
+  // 戻り値は画面に出すメッセージ (空なら成功)。
+  commitDictEdit(): string {
+    const yomi = AppStorage.get<string>('dictEditYomi') ?? '';
+    const word = AppStorage.get<string>('dictEditWord') ?? '';
+    if (yomi.length === 0 || word.length === 0) { return 'よみと単語の両方を入れてください'; }
+    for (let i = 0; i < yomi.length; i++) {
+      const c = yomi.charCodeAt(i);
+      const hira = c >= 0x3041 && c <= 0x309f;
+      const choon = c === 0x30fc;
+      if (!hira && !choon) { return 'よみはひらがなで入れてください'; }
+    }
+    const pos = AppStorage.get<string>('dictEditPos') ?? 'noun';
+    // 動詞で読みが「る」で終わる場合、五段と一段が字面で区別できない
+    // (detectGodanRow のコメント参照)。活用を出し分けるため種別が要る。
+    const group = AppStorage.get<string>('dictEditVerbGroup') ?? '';
+    if (pos === 'verb' && yomi.endsWith('る') && group.length === 0) {
+      return '動詞の種類(五段/一段)を選んでください';
+    }
+    this.registerUserWordWithPos(yomi, word, pos, pos === 'verb' ? group : '');
+    this.clearDictEdit();
+    return '';
+  }
+
+  // ---- 削除した候補の一覧・復元 -----------------------------------------
+  //
+  // 候補の長押し削除は拡張プロセス側で完結しているのに、一覧と復元は本体アプリの
+  // 画面にしか無かった。両者はサンドボックスが別なので、アプリからは常に空にしか
+  // 見えず「消したら二度と戻せない」状態だった。書いている側で見せる。
+
+  publishSuppressedRows(): void {
+    const map = SuppressedCandidates.getSuppressed();
+    const rows: string[] = [];
+    for (const reading of Object.keys(map)) {
+      for (const surface of map[reading]) { rows.push(`${reading}\t${surface}`); }
+    }
+    rows.sort();
+    AppStorage.setOrCreate('suppressedRows', rows);
+  }
+
+  restoreSuppressedWord(reading: string, surface: string): void {
+    const next = SuppressedCandidates.restore(
+      SuppressedCandidates.getSuppressed(), reading, surface);
+    SuppressedCandidates.setSuppressed(next);
+    this.saveSuppressed();
+    this.publishSuppressedRows();
+    // 削除で候補から外れていた語をその場で戻す。
+    this.updateCandidates();
+  }
+
+  clearAllSuppressed(): void {
+    SuppressedCandidates.clear();
+    this.saveSuppressed();
+    this.publishSuppressedRows();
+    this.updateCandidates();
+  }
+
+  // ---- 修復・リセット ---------------------------------------------------
+  //
+  // 本体アプリの「修復」は本体アプリ側のストアを消すだけで、キーボードの学習・
+  // 設定・辞書には一切届かない (別サンドボックス)。壊れた状態からの復旧手段が
+  // 実質機能していなかったので、こちらにも用意する。
+
+  resetLearningData(): void {
+    if (!this.imeContext) { return; }
+    AppMaintenance.resetLearning(this.imeContext)
+      .then(() => {
+        KanaKanjiConverter.setLearned({});
+        NextWordPredictor.setLearned({});
+        InputHandler.symbolFreq = {};
+        InputHandler.publishFrequentSymbols();
+        UnknownWordLearner.setLearned({});
+        this.publishDictRows();
+        console.info('shuntiIME resetLearningData ok');
+      })
+      .catch((e: ESObject) => { console.error('shuntiIME resetLearningData failed', JSON.stringify(e)); });
+  }
+
+  resetAllData(): void {
+    if (!this.imeContext) { return; }
+    AppMaintenance.resetAll(this.imeContext)
+      .then(() => {
+        KanaKanjiConverter.setLearned({});
+        NextWordPredictor.setLearned({});
+        InputHandler.symbolFreq = {};
+        InputHandler.publishFrequentSymbols();
+        UnknownWordLearner.setLearned({});
+        SuppressedCandidates.clear();
+        this.userDictRaw = {};
+        KanaKanjiConverter.setUserDict({});
+        KanaKanjiConverter.setUserClassMap({});
+        this.publishDictRows();
+        this.publishSuppressedRows();
+        console.info('shuntiIME resetAllData ok');
+      })
+      .catch((e: ESObject) => { console.error('shuntiIME resetAllData failed', JSON.stringify(e)); });
+  }
+
+  // ---- 入力ログの閲覧 (デバッグ専用) ------------------------------------ // [DEBUG-LOG]
+  //
+  // 本体アプリの InputLogPage からは読めない。ログを書いているのは拡張プロセスで、
+  // 本体アプリとはサンドボックスが別だから (registerUserWord のコメント参照)。
+  // 収集した内容を見るには、書いた側であるここで読むしかない。
+
+  publishInputLogRows(): void { // [DEBUG-LOG]
+    const dir = InputLog.writerDir();
+    if (dir.length === 0) {
+      AppStorage.setOrCreate('inputLogSummary', '収集先が未設定です(初期化に失敗)');
+      AppStorage.setOrCreate('inputLogRows', [] as string[]);
+      return;
+    }
+    const raw = InputLog.readRaw(dir);
+    const total = InputLog.countLines(raw);
+    const bytes = InputLog.sizeBytes(dir);
+    AppStorage.setOrCreate('inputLogSummary', `${total}件 / ${Math.round(bytes / 1024)}KB`);
+    // デバッグ専用。精度改善のために後から眺めるものなので、表示が重くなることより
+    // 「必要な行が切り捨てられていない」ことを優先して上限を大きく取る。
+    const entries = InputLog.parse(raw, 20000);
+    const rows: string[] = [];
+    for (const e of entries) {
+      // 種別・読み・確定した表記・何番目の候補か。詳細は書き出しで見る。
+      const pick = e.i >= 0 ? ` [${e.i + 1}/${e.n}]` : '';
+      rows.push(`${e.k}\t${e.r}\t${e.s}${pick}\t${e.x}`);
+    }
+    AppStorage.setOrCreate('inputLogRows', rows);
+  }
+
+  // 全文をクリップボードへ。端末上で読むには量が多いので、取り出して使う。
+  exportInputLog(): void { // [DEBUG-LOG]
+    const dir = InputLog.writerDir();
+    const raw = dir.length > 0 ? InputLog.readRaw(dir) : '';
+    if (raw.length === 0) { return; }
+    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, raw);
+    pasteboard.getSystemPasteboard().setData(data)
+      .catch((e: ESObject) => { console.error('shuntiIME exportInputLog failed', JSON.stringify(e)); });
+  }
+
+  clearInputLog(): void { // [DEBUG-LOG]
+    const dir = InputLog.writerDir();
+    if (dir.length > 0) { InputLog.clear(dir); }
+    this.publishInputLogRows();
+  }
+
+  // 登録候補をすべて消す。削除を考慮していなかった頃の壊れた対応が大量に
+  // 溜まっているため、1件ずつ消さずに済む手段を用意する。
+  clearUnknownWords(): void {
+    UnknownWordLearner.setLearned({});
+    this.saveUnknownWords();
+    this.publishDictRows();
+  }
+
+  // 登録済みの1件を消す。
+  removeUserWord(reading: string, surface: string): void {
+    if (!this.imeContext) { return; }
+    const ctx = this.imeContext;
+    UserDictStore.load(ctx, true)
+      .then((dict: Record<string, string[]>) => {
+        const next: Record<string, string[]> = {};
+        for (const k of Object.keys(dict)) {
+          if (k !== reading) { next[k] = dict[k]; continue; }
+          const kept = dict[k].filter((w: string) => w !== surface);
+          if (kept.length > 0) { next[k] = kept; }
+        }
+        return UserDictStore.save(ctx, next).then(() => next);
+      })
+      .then((next: Record<string, string[]>) => {
+        this.userDictRaw = next;
+        this.publishDictRows();
+        this.reloadUserDict();
+      })
+      .catch((e: ESObject) => { console.error('shuntiIME removeUserWord failed', JSON.stringify(e)); });
+  }
+
+  // 登録候補から外す (辞書には入れない)。
+  dismissUnknownWord(reading: string, surface: string): void {
+    UnknownWordLearner.forget(reading, surface);
+    this.saveUnknownWords();
+    this.publishDictRows();
   }
 
   private writeSuppressed(): void {
@@ -1071,13 +1445,18 @@ export class InputHandler {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
 
     if (state === InputState.IDLE) {
+      // 自由入力中はパネル内の欄から1文字消す (insertText と対になる出口)。
+      if (this.captureTarget.length > 0) {
+        this.backspaceCaptured();
+        return;
+      }
       const deleted = this.insertedBuffer.pop() ?? '';
       if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
       this.inputClient?.deleteForward(1);
-      // Backspacing the okurigana off a just-committed word (かける→翔ける→翔)
-      // is one of the two ways users hand-build a word the dictionary lacks --
-      // shorten the learner's view of the run to match what's left on screen.
-      UnknownWordLearner.truncate();
+      // 削除が入ったら組み立て中の run は捨てる。以前は truncate() で表記の
+      // 末尾だけを削っていたが、読みは削られないので対応が壊れる
+      // (abandonRun のコメント参照)。
+      UnknownWordLearner.abandonRun();
       // The committed word the next-word strip was keyed on is being edited
       // away -- retire the strip so a now-stale prediction can't be tapped.
       if (this.recentWords.length > 0) {
@@ -2150,6 +2529,16 @@ export class InputHandler {
   }
 
   insertText(text: string): void {
+    // 辞書の自由入力中は、確定した文字をホストアプリではなくパネル内の欄に送る。
+    //
+    // キーボードのパネルに TextInput を置いても、キーボード自身が入力対象に
+    // なるため通常の経路では文字を入れられない。一方で「確定した文字が外に出る
+    // 唯一の出口」はこの insertText なので、ここだけ差し替えれば、ローマ字入力・
+    // かな漢字変換・候補選択といった仕組みはそのまま使える。
+    if (this.captureTarget.length > 0) {
+      this.appendCaptured(text);
+      return;
+    }
     // Brackets used to auto-place the caret between the pair (「|」), but no
     // caret-move primitive worked reliably across the editors this IME runs in
     // -- moveCursor was a no-op on some, and the absolute-index selectByRange

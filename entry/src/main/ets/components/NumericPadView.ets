@@ -61,6 +61,11 @@ export struct NumericPadView {
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
+  // 数字パッドが有効だと「あA」キーは 日本語→アルファベット→数字 の3段階に
+  // なるので、ラベルも切り替わる順に並べる (あA1 / A1あ / 1あA)。
+  // 半角の A/1 は ひらがな と字形の大きさが厳密には揃わないが、
+  // 全角にすると見た目が野暮ったくなるため半角のままにしている。
+  @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @StorageLink('isLandscape') isLandscape: boolean = false;
 
   @State activeRow: number = -1;
@@ -216,13 +221,19 @@ export struct NumericPadView {
         .borderRadius(14).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((e: TouchEvent) => { this.handleTouch(e, rowIdx, colIdx, key); })
     } else {
+      // 上・中・下の3帯。各帯は必ず中央揃えのコンテナで包む
+      // (FlickKeyboardView.KeyCell と同じ理由)。
       Column({ space: 0 }) {
-        Text(key.up ?? ' ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(11)
-          .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
-          .width('100%').height('28%')
-          .textAlign(TextAlign.Center)
+        Row() {
+          Text(key.up ?? ' ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%').height('26%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
 
         Row({ space: 0 }) {
           Text(key.left ?? ' ')
@@ -245,13 +256,18 @@ export struct NumericPadView {
             .width('25%').textAlign(TextAlign.Center)
         }
         .width('100%').height('44%')
+        .alignItems(VerticalAlign.Center)
 
-        Text(key.down ?? ' ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(11)
-          .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
-          .width('100%').height('28%')
-          .textAlign(TextAlign.Center)
+        Row() {
+          Text(key.down ?? ' ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%').height('30%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
       }
       .width(this.flickKeyWidthVp)
       .height('100%')
@@ -299,7 +315,7 @@ export struct NumericPadView {
       // 「あA」キーに差し替える(数字パッドへは「あA」キーのサイクルからのみ入る
       // ため、抜けるときは常に日本語(ひらがな)へ戻す -- 入る前のinputModeが何で
       // あってもループが一貫した状態に着地するようにする)。
-      Text('あA')
+      Text(this.numericPadEnabled ? '1あA' : 'あA')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')

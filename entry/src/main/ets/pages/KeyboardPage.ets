@@ -14,6 +14,7 @@ import { NumericPadView } from '../components/NumericPadView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
 import { ExpandedCandidateView } from '../components/ExpandedCandidateView';
 import { SettingsBar } from '../components/SettingsBar';
+import { DictEditBar } from '../components/DictEditBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
 import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
@@ -37,6 +38,8 @@ struct KeyboardPage {
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   @StorageLink('keyboardSubMode') keyboardSubMode: string = 'kana';
+  // 辞書の登録欄をキーボードの上に出しているか (DictEditBar 参照)。
+  @StorageLink('dictEditMode') dictEditMode: boolean = false;
   @StorageLink('bunsetsuTexts') bunsetsuTexts: string[] = [];
   @StorageLink('bunsetsuRaw') bunsetsuRaw: string[] = [];
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
@@ -56,7 +59,10 @@ struct KeyboardPage {
     // [DEBUG-LOG] 収集の初期化の保険。本来は KeyboardController.setContext から
     // 立つが、そこが走っていない実機状態が出たため、確実に走るこの場所からも
     // 立てる。既に立っていれば何もしない (InputLog.ensureFromPanel 参照)。 // [DEBUG-LOG]
-    InputLog.ensureFromPanel(getContext(this).filesDir); // [DEBUG-LOG]
+    // アプリ単位 -> モジュール単位の順。setupInputLog と揃えること。 // [DEBUG-LOG]
+    let panelAppDir = ''; // [DEBUG-LOG]
+    try { panelAppDir = (getContext(this) as ESObject).getApplicationContext().filesDir as string; } catch (_e) { panelAppDir = ''; } // [DEBUG-LOG]
+    InputLog.ensureFromPanel([panelAppDir, getContext(this).filesDir]); // [DEBUG-LOG]
     if (!_dictLoaded && USE_DICT_JSON) {
       _dictLoaded = true;
       getContext(this).resourceManager.getRawFileContent('dict.json')
@@ -133,6 +139,11 @@ struct KeyboardPage {
         } else if (this.keyboardSubMode === 'settings') {
           SettingsBar()
         } else {
+          // 辞書の登録欄。キーボードは下にそのまま残す (全面を占有する設定
+          // パネル内では打つキーが無く入力できないため、ここに出している)。
+          if (this.dictEditMode) {
+            DictEditBar()
+          }
           // Preview bar
           if (this.inputState === InputState.BUNSETSU) {
             // Two-row preview: segment chips on top, candidates below

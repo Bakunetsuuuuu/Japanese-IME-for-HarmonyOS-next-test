@@ -71,10 +71,6 @@ struct Index {
   // registered, instead of opening a card form in the in-app browser.
   @StorageLink('pendingShareUrl') @Watch('onPendingShareUrlChanged') pendingShareUrl: string = '';
 
-  // Hidden access to the developer dictionary: 7 quick taps on the title.
-  private titleTapCount: number = 0;
-  private titleTapLast: number = 0;
-
   private onPendingWebViewUrlChanged(): void {
     if (this.pendingWebViewUrl.length === 0) { return; }
     const url = this.pendingWebViewUrl;
@@ -159,16 +155,10 @@ struct Index {
     ctx.terminateSelf();
   }
 
-  private onTitleTap(): void {
-    const now = Date.now();
-    // Reset the run if taps are more than 1.5s apart.
-    this.titleTapCount = (now - this.titleTapLast <= 1500) ? this.titleTapCount + 1 : 1;
-    this.titleTapLast = now;
-    if (this.titleTapCount >= 7) {
-      this.titleTapCount = 0;
-      router.pushUrl({ url: 'pages/DevDict' });
-    }
-  }
+  // 開発者辞書 (タイトル7回タップで開く隠し画面) は削除した。
+  // アプリ側のストアに書いても変換には一切効いていなかった (キーボードは同梱の
+  // global_dict.json を読む) 上、実入力から辞書を直すのはキーボード内の
+  // デバッグ用入力ログで賄えるようになったため。
 
   private reload(): void {
     Promise.all([
@@ -265,7 +255,6 @@ struct Index {
             .fontColor(kbTheme(this.isDark).textPrimary)
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
-            .onClick(() => { this.onTitleTap(); })
           Row() {
             Text('＋')
               .fontFamily(JP_FONT_FAMILY)
@@ -377,7 +366,7 @@ struct Index {
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).textSecondary)
-          Text('v1.5.0')
+          Text('v1.5.1')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).textSecondary)

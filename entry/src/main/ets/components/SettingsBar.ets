@@ -9,6 +9,10 @@ import { JP_FONT_FAMILY } from './JpFont';
 const CARD_RADIUS = 16;
 const TRACK_RADIUS = 11;
 const PILL_RADIUS = 8;
+// 削除系の操作に使う赤 (本体アプリ側 pages/Index.ets と同じ値)。
+const DELETE_RED = '#E5484D';
+// 全消去に必要な連打回数。誤操作で到達しない回数にしてある。
+const RESET_ALL_TAPS = 5;
 const SELECTED_SHADOW: ShadowOptions = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
 const NO_SHADOW: ShadowOptions = { radius: 0, color: 'transparent' };
 
@@ -29,6 +33,30 @@ export struct SettingsBar {
   @StorageLink('conversionEngine') conversionEngine: string = 'custom';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @State showHistory: boolean = false;
+  @State showDict: boolean = false;
+  // ユーザー辞書の中の下位画面。'' = 入口のメニュー / 'suggest' = 登録候補 /
+  // 'registered' = 登録済み。どちらも件数が多くなるので画面を分けている。
+  @State dictSub: string = '';
+  // ユーザー辞書はキーボード側で完結させる (本体アプリの辞書画面から登録しても
+  // 拡張には届かない ── InputHandler.registerUserWord のコメント参照)。
+  // "よみ\t表記\t回数" / "よみ\t表記" の文字列配列。構造体配列だと @StorageLink の
+  // 更新検知が効きにくいため。
+  @StorageLink('dictSuggestions') dictSuggestions: string[] = [];
+  @StorageLink('dictRegistered') dictRegistered: string[] = [];
+  // 候補の長押しで削除した語 ("よみ	表記")。
+  @StorageLink('suppressedRows') suppressedRows: string[] = [];
+  // 自由入力の欄の中身と、いまどちらの欄に打鍵が入るか。
+  @StorageLink('dictEditYomi') dictEditYomi: string = '';
+  @StorageLink('dictEditWord') dictEditWord: string = '';
+  @StorageLink('dictCaptureTarget') dictCaptureTarget: string = '';
+  // 学習リセットは2回押しで確認する。
+  @State confirmResetLearning: boolean = false;
+  // 全消去は RESET_ALL_TAPS 回の連打を要求する。手が止まると0に戻す。
+  @State resetAllTaps: number = 0;
+  private resetAllTimer: number = -1;
+  @State showLog: boolean = false; // [DEBUG-LOG]
+  @StorageLink('inputLogSummary') inputLogSummary: string = ''; // [DEBUG-LOG]
+  @StorageLink('inputLogRows') inputLogRows: string[] = []; // [DEBUG-LOG]
 
   // Re-read the system clipboard whenever the settings panel opens, so the
   // クリップボード履歴 count/list is current -- a copy made in the host app
@@ -39,8 +67,13 @@ export struct SettingsBar {
   }
 
   private close(): void {
+    // 自由入力を掴んだままパネルを閉じると、以降ホストアプリに文字が入らなく
+    // なる。抜ける経路では必ず解除する。
+    InputHandler.getInstance().stopCapture();
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
     this.showHistory = false;
+    this.showDict = false;
+    this.dictSub = '';
   }
 
   // Opening the クリップボード履歴 view re-reads the clipboard first, so the
@@ -50,25 +83,54 @@ export struct SettingsBar {
     this.showHistory = true;
   }
 
+  // 開くたびに最新を配り直す。登録候補は打つたびに増えるので、
+  // 開いた瞬間の内容で作らないと古いままになる。
+  private openDict(): void {
+    InputHandler.getInstance().publishDictRows();
+    this.dictSub = '';
+    this.showDict = true;
+  }
+
+  private openLog(): void { // [DEBUG-LOG]
+    InputHandler.getInstance().publishInputLogRows();
+    this.showLog = true;
+  }
+
   build() {
     Column({ space: 0 }) {
       // ── Header: symmetric 56px gutters so the title stays centered
       // regardless of which side has a control (design tokens). ──
       Row() {
         Row() {
-          if (this.showHistory) {
+          if (this.showHistory || this.showDict || this.showLog) {
             Text('‹ 戻る')
               .fontFamily(JP_FONT_FAMILY)
               .fontSize(14)
               .fontWeight(FontWeight.Medium)
               .fontColor(kbTheme(this.isDark).accent)
-              .onClick(() => { this.showHistory = false; })
+              .onClick(() => {
+                InputHandler.getInstance().stopCapture();
+                // 辞書の下位画面にいるときは、まず辞書の入口へ戻る。
+                if (this.showDict && this.dictSub.length > 0) {
+                  this.dictSub = '';
+                  return;
+                }
+                this.showHistory = false;
+                this.showDict = false;
+                this.showLog = false; // [DEBUG-LOG]
+              })
           }
         }
         .width(56)
         .justifyContent(FlexAlign.Start)
 
-        Text(this.showHistory ? 'クリップボード履歴' : '設定')
+        Text(this.showHistory
+          ? 'クリップボード履歴'
+          : (this.showDict
+            ? (this.dictSub === 'suggest' ? '登録候補'
+              : (this.dictSub === 'registered' ? '登録済み'
+                : (this.dictSub === 'suppressed' ? '削除した候補' : 'ユーザー辞書')))
+            : (this.showLog ? '入力ログ' : '設定')))
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(15)
           .fontWeight(FontWeight.Bold)
@@ -85,7 +147,7 @@ export struct SettingsBar {
               .onClick(() => {
                 InputHandler.getInstance().clearClipboardHistory();
               })
-          } else {
+          } else if (!this.showDict && !this.showLog) {
             Text('✕')
               .fontFamily(JP_FONT_FAMILY)
               .fontSize(13)
@@ -112,6 +174,16 @@ export struct SettingsBar {
         Column() {
           if (this.showHistory) {
             this.HistoryView()
+          } else if (this.showDict && this.dictSub === 'suggest') {
+            this.DictSuggestView()
+          } else if (this.showDict && this.dictSub === 'registered') {
+            this.DictRegisteredView()
+          } else if (this.showDict && this.dictSub === 'suppressed') {
+            this.SuppressedView()
+          } else if (this.showDict) {
+            this.DictView()
+          } else if (this.showLog) {
+            this.LogView() // [DEBUG-LOG]
           } else {
             this.MenuView()
           }
@@ -173,6 +245,54 @@ export struct SettingsBar {
       .width('100%')
       .padding({ top: 14, bottom: 14 })
       .onClick(() => { this.openHistory(); })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
+    this.SectionLabel('辞書')
+    Column() {
+      Row() {
+        Column({ space: 2 }) {
+          Text('ユーザー辞書')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('打った語をここから登録できます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => { this.openDict(); })
+
+      // [DEBUG-LOG] リリース前に削除する。収集した内容は本体アプリからは
+      // 読めない (サンドボックスが別) ので、書いた側であるここから見る。
+      Divider().color(kbTheme(this.isDark).divider)
+      Row() {
+        Text('入力ログ(デバッグ)')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => { this.openLog(); })
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
@@ -418,6 +538,80 @@ export struct SettingsBar {
     .padding({ left: 14, right: 14 })
     .margin({ bottom: 22 })
 
+    // 本体アプリの「修復」はアプリ側のストアしか消せず、キーボードの学習・設定・
+    // 辞書には届かない (別サンドボックス)。復旧手段はここに置く。
+    this.SectionLabel('修復')
+    Column() {
+      Row() {
+        Column({ space: 2 }) {
+          Text(this.confirmResetLearning ? 'もう一度押すとリセットします' : '学習をリセット')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('変換の学習・次単語予測・記号の履歴を消します')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => {
+        // 1回目は確認、2回目で実行。
+        if (!this.confirmResetLearning) {
+          this.confirmResetLearning = true;
+          return;
+        }
+        this.confirmResetLearning = false;
+        InputHandler.getInstance().resetLearningData();
+        promptAction.showToast({ message: '学習をリセットしました' });
+      })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Column({ space: 2 }) {
+          Text(this.resetAllTaps > 0
+            ? `あと${RESET_ALL_TAPS - this.resetAllTaps}回押すと全消去します`
+            : 'すべてリセット')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(DELETE_RED)
+            .width('100%')
+          Text(`${RESET_ALL_TAPS}回連続で押すと実行。学習に加えユーザー辞書・削除した候補・設定も消えます`)
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      // 全消去は取り返しがつかないので、意図しないと成立しない操作にする。
+      // 2回押しでは続けて押せば起きうるし、長押しも持ち替えの拍子に成立しうる。
+      // 5回連打を要求し、残り回数を出して「今これを消そうとしている」と分かる
+      // ようにする。手が止まれば (2.5秒) カウントは0に戻る。
+      .onClick(() => {
+        clearTimeout(this.resetAllTimer);
+        this.resetAllTaps += 1;
+        if (this.resetAllTaps >= RESET_ALL_TAPS) {
+          this.resetAllTaps = 0;
+          InputHandler.getInstance().resetAllData();
+          promptAction.showToast({ message: 'すべてリセットしました' });
+          return;
+        }
+        this.resetAllTimer = setTimeout(() => { this.resetAllTaps = 0; }, 2500);
+      })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
     this.SectionLabel('その他')
     Column() {
       Row() {
@@ -578,6 +772,381 @@ export struct SettingsBar {
       .borderRadius(CARD_RADIUS)
       .padding({ left: 14, right: 14 })
       .divider({ strokeWidth: 1, color: kbTheme(this.isDark).divider })
+    }
+  }
+
+  // ユーザー辞書。上段が「登録候補」(打った語のうち辞書に無いものを
+  // UnknownWordLearner が拾ったもの)、下段が「登録済み」。
+  // 読みと表記を手で打ち直させないので、パネル内に文字入力欄が要らない。
+  // ユーザー辞書の入口。「登録候補」と「登録済み」はどちらも件数が多くなるので、
+  // 1画面に積まず、それぞれ別画面に開く。
+  @Builder DictView() {
+    Column() {
+      Row() {
+        Column({ space: 2 }) {
+          Text('任意の語を登録')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('この画面を閉じて、キーボードの上に入力欄を出します')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => {
+        this.showDict = false;
+        InputHandler.getInstance().beginDictEdit();
+      })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Text('登録候補')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Row({ space: 6 }) {
+          Text(String(this.dictSuggestions.length))
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+          Text('›')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(15)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => { this.dictSub = 'suggest'; })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Text('登録済み')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Row({ space: 6 }) {
+          Text(String(this.dictRegistered.length))
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+          Text('›')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(15)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => { this.dictSub = 'registered'; })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      // 候補の長押し削除で消した語。復元もここで行う。
+      Row() {
+        Text('削除した候補')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Row({ space: 6 }) {
+          Text(String(this.suppressedRows.length))
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+          Text('›')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(15)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => {
+        InputHandler.getInstance().publishSuppressedRows();
+        this.dictSub = 'suppressed';
+      })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+  }
+
+  // 登録候補 (打った語のうち辞書に無いものを UnknownWordLearner が拾ったもの)。
+  @Builder DictSuggestView() {
+    // 見出しと操作を横に並べる箇所では SectionLabel を使わない。
+    // あれは width('100%') なので、Row に入れると右の操作を画面外へ押し出す。
+    Row() {
+      Text('打った語のうち辞書に無いもの')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontWeight(FontWeight.Bold)
+        .letterSpacing(0.6)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .padding({ left: 4 })
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.dictSuggestions.length > 0) {
+        Text('すべて消去')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12)
+          .fontColor(DELETE_RED)
+          .padding({ left: 8 })
+          .onClick(() => { InputHandler.getInstance().clearUnknownWords(); })
+      }
+    }
+    .width('100%')
+    .padding({ bottom: 8 })
+    .alignItems(VerticalAlign.Center)
+
+    if (this.dictSuggestions.length === 0) {
+      Text('候補はありません\n変換できない語を打って確定すると、ここに出ます')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .padding({ top: 20, bottom: 20 })
+        .margin({ bottom: 22 })
+    } else {
+      Column() {
+        ForEach(this.dictSuggestions, (row: string) => {
+          Row({ space: 8 }) {
+            Column({ space: 2 }) {
+              Text(row.split('\t')[1])
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(kbTheme(this.isDark).textPrimary)
+                .width('100%')
+              Text(row.split('\t')[0])
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(11)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .width('100%')
+            }
+            .layoutWeight(1)
+            Text('登録')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(kbTheme(this.isDark).onAccent)
+              .backgroundColor(kbTheme(this.isDark).accent)
+              .borderRadius(8)
+              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .onClick(() => {
+                const p = row.split('\t');
+                InputHandler.getInstance().registerUserWord(p[0], p[1]);
+                promptAction.showToast({ message: `${p[1]} を登録しました` });
+              })
+            Text('✕')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(13)
+              .width(28).height(28)
+              .textAlign(TextAlign.Center)
+              .fontColor(kbTheme(this.isDark).textSecondary)
+              .onClick(() => {
+                const p = row.split('\t');
+                InputHandler.getInstance().dismissUnknownWord(p[0], p[1]);
+              })
+          }
+          .width('100%')
+          .padding({ top: 10, bottom: 10 })
+        }, (row: string) => row)
+      }
+      .backgroundColor(kbTheme(this.isDark).cardBg)
+      .borderRadius(CARD_RADIUS)
+      .padding({ left: 14, right: 14 })
+    }
+  }
+
+  // 候補の長押しで削除した語。ここから元に戻せる。
+  @Builder SuppressedView() {
+    Row() {
+      Text('変換候補から消した語')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontWeight(FontWeight.Bold)
+        .letterSpacing(0.6)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .padding({ left: 4 })
+        .layoutWeight(1)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+      if (this.suppressedRows.length > 0) {
+        Text('すべて戻す')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12)
+          .fontColor(kbTheme(this.isDark).accent)
+          .padding({ left: 8 })
+          .onClick(() => { InputHandler.getInstance().clearAllSuppressed(); })
+      }
+    }
+    .width('100%')
+    .padding({ bottom: 8 })
+    .alignItems(VerticalAlign.Center)
+
+    if (this.suppressedRows.length === 0) {
+      Text('ありません\n候補を長押しして削除すると、ここに出ます')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .padding({ top: 20, bottom: 20 })
+    } else {
+      Column() {
+        ForEach(this.suppressedRows, (row: string) => {
+          Row({ space: 8 }) {
+            Column({ space: 2 }) {
+              Text(row.split('\t')[1])
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15)
+                .fontColor(kbTheme(this.isDark).textPrimary)
+                .width('100%')
+              Text(row.split('\t')[0])
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(11)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .width('100%')
+            }
+            .layoutWeight(1)
+            Text('戻す')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(13)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(kbTheme(this.isDark).onAccent)
+              .backgroundColor(kbTheme(this.isDark).accent)
+              .borderRadius(8)
+              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .onClick(() => {
+                const p = row.split('\t');
+                InputHandler.getInstance().restoreSuppressedWord(p[0], p[1]);
+              })
+          }
+          .width('100%')
+          .padding({ top: 10, bottom: 10 })
+        }, (row: string) => row)
+      }
+      .backgroundColor(kbTheme(this.isDark).cardBg)
+      .borderRadius(CARD_RADIUS)
+      .padding({ left: 14, right: 14 })
+    }
+  }
+
+  // 登録済みのユーザー辞書。
+  @Builder DictRegisteredView() {
+    if (this.dictRegistered.length === 0) {
+      Text('まだありません')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .padding({ top: 20, bottom: 20 })
+    } else {
+      Column() {
+        ForEach(this.dictRegistered, (row: string) => {
+          Row({ space: 8 }) {
+            Column({ space: 2 }) {
+              Text(row.split('\t')[1])
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15)
+                .fontColor(kbTheme(this.isDark).textPrimary)
+                .width('100%')
+              Text(row.split('\t')[0])
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(11)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .width('100%')
+            }
+            .layoutWeight(1)
+            Text('削除')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(13)
+              .fontColor(DELETE_RED)
+              .padding({ left: 10, right: 4, top: 7, bottom: 7 })
+              .onClick(() => {
+                const p = row.split('\t');
+                InputHandler.getInstance().removeUserWord(p[0], p[1]);
+              })
+          }
+          .width('100%')
+          .padding({ top: 10, bottom: 10 })
+        }, (row: string) => row)
+      }
+      .backgroundColor(kbTheme(this.isDark).cardBg)
+      .borderRadius(CARD_RADIUS)
+      .padding({ left: 14, right: 14 })
+    }
+  }
+
+  // [DEBUG-LOG] 収集した入力ログの閲覧。リリース前にこの Builder ごと削除する。
+  @Builder LogView() {
+    Row({ space: 8 }) {
+      Text(this.inputLogSummary.length > 0 ? this.inputLogSummary : '—')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .layoutWeight(1)
+      Text('コピー')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontColor(kbTheme(this.isDark).accent)
+        .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+        .onClick(() => {
+          InputHandler.getInstance().exportInputLog();
+          promptAction.showToast({ message: 'クリップボードにコピーしました' });
+        })
+      Text('消去')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontColor(DELETE_RED)
+        .padding({ left: 8, right: 8, top: 6, bottom: 6 })
+        .onClick(() => { InputHandler.getInstance().clearInputLog(); })
+    }
+    .width('100%')
+    .padding({ bottom: 10 })
+
+    if (this.inputLogRows.length === 0) {
+      Text('記録がありません')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(12)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .width('100%')
+        .textAlign(TextAlign.Center)
+        .padding({ top: 32, bottom: 32 })
+    } else {
+      Column() {
+        ForEach(this.inputLogRows, (row: string, index: number) => {
+          Text(row.split('\t').join('  '))
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .maxLines(2)
+            .textOverflow({ overflow: TextOverflow.Ellipsis })
+            .width('100%')
+            .padding({ top: 7, bottom: 7 })
+        }, (row: string, index: number) => `${index}-${row}`)
+      }
+      .backgroundColor(kbTheme(this.isDark).cardBg)
+      .borderRadius(CARD_RADIUS)
+      .padding({ left: 12, right: 12 })
     }
   }
 }

@@ -231,6 +231,18 @@ export class UnknownWordLearner {
     return true;
   }
 
+  // 組み立て途中の run を、学習せずに捨てる。
+  //
+  // 削除が入った時点で「打った読み」と「画面に残っている表記」の対応が失われる。
+  // truncate() は表記の末尾を1文字削るだけで読みには触らないので、例えば
+  // 「〜して」まで打って「して」を消すと、読みには して が残ったまま表記だけが
+  // 漢字になり、読み=〜して 表記=漢字 という実在しない対応が学習されてしまう
+  // (実機で大量に発生していた)。どこまでの読みが消えた表記に対応するかは
+  // 復元できないため、推測せず run ごと捨てる。
+  static abandonRun(): void {
+    UnknownWordLearner.clearRun();
+  }
+
   // Explicit run boundary (sentence end, field change, non-conversion commit).
   static endRun(isKnown: KnownWordFn): void {
     UnknownWordLearner.settleTail(isKnown);

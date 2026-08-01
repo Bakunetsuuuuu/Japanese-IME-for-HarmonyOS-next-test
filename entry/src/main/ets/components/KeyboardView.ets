@@ -37,6 +37,11 @@ export struct KeyboardView {
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
   @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
   @StorageLink('isDark') isDark: boolean = false;
+  // 数字パッドが有効だと「あA」キーは 日本語→アルファベット→数字 の3段階に
+  // なるので、ラベルも切り替わる順に並べる (あA1 / A1あ / 1あA)。
+  // 半角の A/1 は ひらがな と字形の大きさが厳密には揃わないが、
+  // 全角にすると見た目が野暮ったくなるため半角のままにしている。
+  @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
 
   private getHandler(): InputHandler {
     return InputHandler.getInstance();
@@ -297,7 +302,9 @@ export struct KeyboardView {
   }
 
   @Builder ModeKey() {
-    Text(this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ')
+    Text(this.numericPadEnabled
+      ? (this.inputMode === InputMode.HIRAGANA ? 'あA1' : 'A1あ')
+      : (this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ'))
       .fontFamily(JP_FONT_FAMILY)
       .fontSize(13)
       .textAlign(TextAlign.Center)

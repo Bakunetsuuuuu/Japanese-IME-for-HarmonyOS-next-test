@@ -160,6 +160,13 @@ export class InputLog {
     return InputLog.filesDir + '/' + INPUT_LOG_FILE;
   }
 
+  // 書き手 (拡張プロセス) が実際に使っているディレクトリ。
+  // 本体アプリから読む経路はサンドボックスが別で成立しないため、閲覧も
+  // 拡張側で行う。そのときの読み出し先がここ。
+  static writerDir(): string {
+    return InputLog.filesDir;
+  }
+
   // フィールドが変わった。属性が届くまでの記録は保留にする。
   static beginField(): void {
     if (!DEBUG_INPUT_LOG) { return; }
@@ -217,12 +224,15 @@ export class InputLog {
   // 初期化できるようにしておく。既に初期化済みなら何もしない。
   // どちらの経路で立ったかは 起動元= として記録に残るので、次に見たときに
   // setContext が走っているかどうかがそのまま分かる。
-  static ensureFromPanel(filesDir: string): void {
+  // dirs は setupInputLog と同じ順 (アプリ単位 -> モジュール単位) で渡すこと。
+  // 順序がずれると、この保険が通ったときだけ本体アプリから読めない場所に
+  // 書く、という再現しにくい状態になる。
+  static ensureFromPanel(dirs: string[]): void {
     if (!DEBUG_INPUT_LOG) { return; }
     if (InputLog.filesDir.length > 0) { return; }
-    const used = InputLog.setWritableDir([filesDir]);
+    const used = InputLog.setWritableDir(dirs);
     InputLog.recordPaths('panel(setContext未到達)',
-      used.length > 0 ? used : '書き込めるディレクトリ無し', filesDir, '');
+      used.length > 0 ? used : '書き込めるディレクトリ無し', dirs.join(' / '), '');
   }
 
   // 拡張プロセスの初期化に失敗した。永続化ストアが1つでも開けないと、

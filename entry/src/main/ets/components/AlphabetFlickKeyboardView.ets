@@ -53,6 +53,11 @@ export struct AlphabetFlickKeyboardView {
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
+  // 数字パッドが有効だと「あA」キーは 日本語→アルファベット→数字 の3段階に
+  // なるので、ラベルも切り替わる順に並べる (あA1 / A1あ / 1あA)。
+  // 半角の A/1 は ひらがな と字形の大きさが厳密には揃わないが、
+  // 全角にすると見た目が野暮ったくなるため半角のままにしている。
+  @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
 
   @State activeRow: number = -1;
   @State activeCol: number = -1;
@@ -287,7 +292,7 @@ export struct AlphabetFlickKeyboardView {
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
         })
     } else {
-      Text('あA')
+      Text(this.numericPadEnabled ? 'A1あ' : 'あA')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(12).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
@@ -410,13 +415,20 @@ export struct AlphabetFlickKeyboardView {
           this.handleTouch(e, rowIdx, colIdx, key);
         })
     } else {
+      // 上・中・下の3帯。各帯は必ず中央揃えのコンテナで包む
+      // (FlickKeyboardView.KeyCell と同じ理由 ── Text に height だけ与えると
+      //  帯の中で上寄りになり、文字がずれて見える)。
       Column({ space: 0 }) {
-        Text(key.up !== undefined ? key.up : ' ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(11)
-          .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
-          .width('100%').height('28%')
-          .textAlign(TextAlign.Center)
+        Row() {
+          Text(key.up !== undefined ? key.up : ' ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%').height('26%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
 
         Row({ space: 0 }) {
           Text(key.left !== undefined ? key.left : ' ')
@@ -439,13 +451,18 @@ export struct AlphabetFlickKeyboardView {
             .width('25%').textAlign(TextAlign.Center)
         }
         .width('100%').height('44%')
+        .alignItems(VerticalAlign.Center)
 
-        Text(key.down !== undefined ? key.down : ' ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(11)
-          .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
-          .width('100%').height('28%')
-          .textAlign(TextAlign.Center)
+        Row() {
+          Text(key.down !== undefined ? key.down : ' ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
+            .textAlign(TextAlign.Center)
+        }
+        .width('100%').height('30%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
       }
       .width(this.flickKeyWidthVp)
       .height('100%')
