@@ -16,8 +16,8 @@
 //
 //    1. node tools/check_debug_log.js     … 収集地点を全部列挙する
 //    2. `// [DEBUG-LOG]` の付いた行を全て削除する
-//    3. このファイルと pages/InputLogPage.ets を削除する
-//    4. main_pages.json から "pages/InputLogPage" を削除する
+//    3. このファイルを削除する
+//    4. SettingsBar の入力ログ画面 (LogView / openLog) を削除する
 //    5. node tools/check_debug_log.js     … 0 件になったことを確認する
 //
 //  とりあえず無効化だけしたい場合は下の DEBUG_INPUT_LOG を false にする。

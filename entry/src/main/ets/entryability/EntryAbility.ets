@@ -36,7 +36,7 @@ export default class EntryAbility extends UIAbility {
   }
 
   // Resolves the live OS color mode into AppStorage('isDark'), which every
-  // main-app page (Index/DevDict/PrivacyPolicy/WebViewPage) reads via
+  // main-app page (Index/PrivacyPolicy/WebViewPage) reads via
   // @StorageLink instead of each independently calling
   // display.getDefaultDisplaySync() on its own in aboutToAppear (which
   // never updated again after that first read, and read the wrong field

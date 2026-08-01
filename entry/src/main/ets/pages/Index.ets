@@ -1,58 +1,39 @@
-import { UserDictStore } from '../ime/UserDictStore';
-import { UserPosStore } from '../ime/UserPosStore';
-import type { UserPosEntry } from '../ime/ConjugationEngine';
-import { AppMaintenance } from '../ime/AppMaintenance';
-import { router, promptAction } from '@kit.ArkUI';
+import { router } from '@kit.ArkUI';
 import dataPreferences from '@ohos.data.preferences';
 import { common, abilityAccessCtrl, Permissions, PermissionRequestResult } from '@kit.AbilityKit';
 import { systemShare } from '@kit.ShareKit';
 import { uniformTypeDescriptor as utd } from '@kit.ArkData';
 import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
 import { kbTheme } from '../components/Theme';
-import { DEBUG_INPUT_LOG } from '../ime/InputLog'; // [DEBUG-LOG]
 
 const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
 const CARD_RADIUS = 16;
-const DELETE_RED = '#E5484D';
 
-// A top-level Record<string,string> object literal with actual entries
-// doesn't compile under ArkTS's stricter object-literal typing (unlike a
-// class-member initializer, or an empty {} -- see ConjugationEngine.ets's
-// GODAN_BUILDERS for the same issue with function values); a Map sidesteps it.
-const POS_LABELS: Map<string, string> = new Map<string, string>([
-  ['verb', '動詞'], ['adjective', '形容詞'], ['person', '人名'], ['place', '地名'],
-]);
-
-interface DictRow {
-  yomi: string;
-  word: string;
-  posLabel: string;
-}
-
-// User-dictionary list screen (design_handoff_ime_redesign/README_dictionary.md
-// "1. 一覧画面"). Registration/editing moved to its own page
-// (DictionaryEditPage.ets, "2. 追加・編集画面") reached via the header's ＋
-// button or tapping a row -- this used to be a single combined screen with
-// an inline add-only form and no way to edit an existing entry's text.
-// Each row's 品詞 (part-of-speech) subtitle comes from UserPosStore -- see
-// DictionaryEditPage's 品詞 picker and ConjugationEngine.ets for how it
-// drives real conjugation/segmentation behaviour, not just a display tag.
+// 本体アプリの画面。
+//
+// かつてはここにユーザー辞書の一覧・登録、削除した候補、修復、入力ログが
+// あったが、すべてキーボード側 (設定パネル) に移してこの画面からは撤去した。
+//
+// 理由: 入力方式の拡張は本体アプリと別プロセスかつ別サンドボックスで動いており、
+// 両者はデータを一切共有できない。実機で確認したところ、本体アプリが書いた
+// shunti_userdict は拡張から 0 件にしか見えず、逆に拡張が保存に成功した
+// shunti_settings は本体アプリから存在しない。つまりこの画面で辞書を登録しても
+// 変換には一生効かず、消した候補も入力ログも常に空にしか見えなかった。
+// プラットフォーム側の共有手段 (dataGroupIds + getGroupDir) は応用市場での
+// 発行が前提で、AGC に登録導線が無く使えない。
+// 動かない画面を残すと「登録したのに効かない」を再生産するだけなので消した。
+//
+// この画面に残っている仕事は3つ:
+//   1. 初回のプライバシー同意
+//   2. READ_PASTEBOARD の要求 ── user_grant 権限は画面を持つ UIAbility から
+//      しか要求できず、拡張自身では出せない。この画面が存在する主目的。
+//   3. キーボードからの「URLを開く」「共有する」の受け口 (EntryAbility 経由)
 @Entry
 @Component
 struct Index {
-  @State dict: Record<string, string[]> = {};
-  @State posMap: Record<string, UserPosEntry> = {};
-  @State rows: DictRow[] = [];
-  @State searchQuery: string = '';
   // First-launch privacy consent gate. true = block UI until the user agrees.
   @State showConsent: boolean = false;
-  // Repair sheet (footer "修復" link): recover from a corrupt-state crash
-  // without reinstalling. confirmFullReset gates the destructive option
-  // behind a second tap.
-  @State showRepair: boolean = false;
-  @State confirmFullReset: boolean = false;
-  @State repairBusy: boolean = false;
   // Set by EntryAbility.applyColorMode (OS color mode only -- no manual
   // override, see git history if that's ever wanted again).
   @StorageLink('isDark') isDark: boolean = false;
@@ -99,16 +80,9 @@ struct Index {
     // aboutToAppear runs before this page's first build, so the very first
     // Text already measures with the Japanese font.
     registerJpFont(this.getUIContext());
-    this.reload();
     this.checkConsent();
     this.onPendingWebViewUrlChanged();
     this.onPendingShareUrlChanged();
-  }
-
-  // Refresh the list when coming back from DictionaryEditPage (add/edit/
-  // delete all happen there now, not inline on this page).
-  onPageShow(): void {
-    this.reload();
   }
 
   private checkConsent(): void {
@@ -138,7 +112,7 @@ struct Index {
   // suggestion in the candidate bar (see KeyboardController.refreshClipboardPreview).
   // ohos.permission.READ_PASTEBOARD is user_grant and can only be requested
   // from a UIAbility with a window — the InputMethodExtAbility itself can't
-  // prompt for it, so this app's own settings screen is the only place to ask.
+  // prompt for it, so this app's own screen is the only place to ask.
   // Safe to call unconditionally: it resolves immediately if already granted.
   private requestClipboardPermission(): void {
     const permissions: Array<Permissions> = ['ohos.permission.READ_PASTEBOARD'];
@@ -155,119 +129,17 @@ struct Index {
     ctx.terminateSelf();
   }
 
-  // 開発者辞書 (タイトル7回タップで開く隠し画面) は削除した。
-  // アプリ側のストアに書いても変換には一切効いていなかった (キーボードは同梱の
-  // global_dict.json を読む) 上、実入力から辞書を直すのはキーボード内の
-  // デバッグ用入力ログで賄えるようになったため。
-
-  private reload(): void {
-    Promise.all([
-      UserDictStore.load(getContext(this), true),
-      UserPosStore.load(getContext(this), true),
-    ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
-      this.dict = results[0];
-      this.posMap = results[1];
-      this.rebuildRows();
-    }).catch((err: Error) => {
-      // The main app is the recovery surface (it hosts the repair option),
-      // so it must render even if the stores are unreadable -- show an
-      // empty list rather than letting an unhandled rejection take it down.
-      console.error('shuntiIME Index.reload failed', JSON.stringify(err));
-      this.dict = {};
-      this.posMap = {};
-      this.rebuildRows();
-    });
-  }
-
-  private rebuildRows(): void {
-    const list: DictRow[] = [];
-    const keys = Object.keys(this.dict).sort();
-    for (const yomi of keys) {
-      for (const word of this.dict[yomi]) {
-        const entry = UserPosStore.get(this.posMap, yomi, word);
-        const posLabel = entry ? (POS_LABELS.get(entry.pos) ?? '') : '';
-        list.push({ yomi: yomi, word: word, posLabel: posLabel });
-      }
-    }
-    this.rows = list;
-  }
-
-  private visibleRows(): DictRow[] {
-    const q = this.searchQuery.trim().toLowerCase();
-    if (q.length === 0) { return this.rows; }
-    return this.rows.filter((r: DictRow) => r.word.toLowerCase().includes(q) || r.yomi.toLowerCase().includes(q));
-  }
-
-  private openEditor(row?: DictRow): void {
-    router.pushUrl({
-      url: 'pages/DictionaryEditPage',
-      params: { yomi: row?.yomi ?? '', word: row?.word ?? '' },
-    });
-  }
-
-  // Delete a single reading→word entry straight from the list (swipe-left
-  // reveal). The same delete existed before only buried at the bottom of the
-  // edit screen (DictionaryEditPage's "この単語を削除"), which users couldn't
-  // find; deleting inline here is the standard mobile pattern. Persists to
-  // disk (same save path as edit/add) so the keyboard extension picks it up
-  // on its next reloadUserDict.
-  private deleteRow(row: DictRow): void {
-    const ctx = getContext(this);
-    Promise.all([
-      UserDictStore.load(ctx, true),
-      UserPosStore.load(ctx, true),
-    ]).then((results: [Record<string, string[]>, Record<string, UserPosEntry>]) => {
-      const dict = UserDictStore.remove(results[0], row.yomi, row.word);
-      const posMap = UserPosStore.remove(results[1], row.yomi, row.word);
-      return Promise.all([
-        UserDictStore.save(ctx, dict),
-        UserPosStore.save(ctx, posMap),
-      ]);
-    }).then(() => {
-      promptAction.showToast({ message: `「${row.word}」を削除しました` });
-      this.reload();
-    }).catch((err: Error) => console.error('shuntiIME deleteRow failed', JSON.stringify(err)));
-  }
-
-  @Builder DeleteButton(row: DictRow) {
-    Text('削除')
-      .fontFamily(JP_FONT_FAMILY)
-      .fontSize(14)
-      .fontWeight(FontWeight.Medium)
-      .fontColor('#FFFFFF')
-      .textAlign(TextAlign.Center)
-      .width(76)
-      .height('100%')
-      .backgroundColor(DELETE_RED)
-      .onClick(() => { this.deleteRow(row); })
-  }
-
   build() {
     Stack() {
       Column() {
-        // ── Header: symmetric 56px gutters so the title stays centered ──
         Row() {
-          Row().width(56)
-          Text('ユーザー辞書')
+          Text('shunti Japanese IME')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(16)
             .fontWeight(FontWeight.Bold)
             .fontColor(kbTheme(this.isDark).textPrimary)
             .layoutWeight(1)
             .textAlign(TextAlign.Center)
-          Row() {
-            Text('＋')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(17)
-              .textAlign(TextAlign.Center)
-              .width(28).height(28)
-              .fontColor(kbTheme(this.isDark).accent)
-              .backgroundColor(kbTheme(this.isDark).funcBg)
-              .borderRadius(14)
-              .onClick(() => { this.openEditor(); })
-          }
-          .width(56)
-          .justifyContent(FlexAlign.End)
         }
         .width('100%')
         .height(52)
@@ -275,88 +147,63 @@ struct Index {
         .alignItems(VerticalAlign.Center)
         .border({ width: { bottom: 1 }, color: kbTheme(this.isDark).divider })
 
-        // ── Search bar ──────────────────────────────────────────
-        TextInput({ placeholder: '単語・読みで検索', text: $$this.searchQuery })
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .height(38)
-          .backgroundColor(kbTheme(this.isDark).funcBg)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .placeholderColor(kbTheme(this.isDark).textSecondary)
-          .borderRadius(11)
-          .margin({ left: 16, right: 16, top: 10, bottom: 10 })
-
-        // ── 登録済み一覧 ─────────────────────────────────────
-        if (this.visibleRows().length === 0) {
-          Column() {
-            Text(this.rows.length === 0
-              ? '登録された単語がありません\n右上の＋から追加できます'
-              : '一致する単語が見つかりません')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(13)
-              .fontColor(kbTheme(this.isDark).textSecondary)
-              .textAlign(TextAlign.Center)
-          }
-          .width('100%')
-          .padding({ top: 64 })
-        } else {
-          // Swipe a row left to reveal 削除 (see DeleteButton/deleteRow) --
-          // a List (not the old Scroll+Column) is what enables swipeAction.
-          List() {
-            ForEach(this.visibleRows(), (row: DictRow) => {
-              ListItem() {
-                Row() {
-                  Column({ space: 2 }) {
-                    Text(row.word)
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(15)
-                      .fontWeight(FontWeight.Medium)
-                      .fontColor(kbTheme(this.isDark).textPrimary)
-                    Text(row.posLabel.length > 0 ? `${row.yomi} ・ ${row.posLabel}` : row.yomi)
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(12)
-                      .fontColor(kbTheme(this.isDark).textSecondary)
-                  }
-                  .alignItems(HorizontalAlign.Start)
-                  .layoutWeight(1)
-
-                  Text('›')
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(15)
-                    .fontColor(kbTheme(this.isDark).textSecondary)
-                }
+        Scroll() {
+          Column({ space: 14 }) {
+            // 辞書も設定もキーボード内にある。ここで探させないよう明示する。
+            Column({ space: 8 }) {
+              Text('設定・ユーザー辞書はキーボード内にあります')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
-                .padding({ left: 14, right: 14, top: 13, bottom: 13 })
-                .backgroundColor(kbTheme(this.isDark).cardBg)
-                .onClick(() => { this.openEditor(row); })
-              }
-              .swipeAction({ end: this.DeleteButton(row) })
-            }, (row: DictRow) => row.yomi + '' + row.word)
+              Text('キーボードを表示して、候補バー右側の「設定」を開いてください。\n\n' +
+                   '・ユーザー辞書の登録と削除\n' +
+                   '・削除した変換候補の確認と復元\n' +
+                   '・キーボードのレイアウトや変換エンジンの設定\n' +
+                   '・学習のリセット\n\n' +
+                   'これらはすべてキーボードの設定画面にあります。')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(13)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .lineHeight(21)
+                .width('100%')
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor(kbTheme(this.isDark).cardBg)
+            .borderRadius(CARD_RADIUS)
+
+            Column({ space: 8 }) {
+              Text('キーボードが使えないときは')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(15)
+                .fontWeight(FontWeight.Bold)
+                .fontColor(kbTheme(this.isDark).textPrimary)
+                .width('100%')
+              Text('端末の「設定 → 一般 → キーボードと入力方法」から ' +
+                   'shunti Japanese IME を有効にして、入力欄で地球儀アイコンから切り替えてください。')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(13)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .lineHeight(21)
+                .width('100%')
+            }
+            .width('100%')
+            .padding(16)
+            .backgroundColor(kbTheme(this.isDark).cardBg)
+            .borderRadius(CARD_RADIUS)
           }
           .width('100%')
-          .layoutWeight(1)
-          .backgroundColor(kbTheme(this.isDark).cardBg)
-          .borderRadius(CARD_RADIUS)
-          .clip(true)
-          .margin({ left: 16, right: 16 })
-          .divider({ strokeWidth: 1, color: kbTheme(this.isDark).divider })
+          .padding(16)
         }
+        .width('100%')
+        .layoutWeight(1)
+        .align(Alignment.Top)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
 
-        // Footer. Flex-wrapped: these secondary-screen links no longer fit on
-        // one line on narrow displays now that 削除した候補 is among them.
         Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-          // Entry point for candidates deleted by long-pressing them on the
-          // keyboard -- the only place those deletions can be reviewed and
-          // undone (see pages/SuppressedList.ets).
-          Text('削除した候補')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).accent)
-            .onClick(() => { router.pushUrl({ url: 'pages/SuppressedList' }); })
-          Text('  ·  ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).textSecondary)
           Text('プライバシーポリシー')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
@@ -366,32 +213,10 @@ struct Index {
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).textSecondary)
-          Text('v1.5.1')
+          Text('v1.5.2')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).textSecondary)
-          Text('  ·  ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-          Text('修復')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).accent)
-            .onClick(() => { this.confirmFullReset = false; this.showRepair = true; })
-          // [DEBUG-LOG] 入力ログ画面への入口。DEBUG_INPUT_LOG が false のとき、
-          // またはこのブロックを消したときに丸ごと消える。
-          if (DEBUG_INPUT_LOG) { // [DEBUG-LOG]
-            Text('  ·  ') // [DEBUG-LOG]
-              .fontFamily(JP_FONT_FAMILY) // [DEBUG-LOG]
-              .fontSize(12) // [DEBUG-LOG]
-              .fontColor(kbTheme(this.isDark).textSecondary) // [DEBUG-LOG]
-            Text('入力ログ') // [DEBUG-LOG]
-              .fontFamily(JP_FONT_FAMILY) // [DEBUG-LOG]
-              .fontSize(12) // [DEBUG-LOG]
-              .fontColor('#DC2626') // [DEBUG-LOG]
-              .onClick(() => { router.pushUrl({ url: 'pages/InputLogPage' }); }) // [DEBUG-LOG]
-          } // [DEBUG-LOG]
         }
         .width('100%')
         .padding({ top: 12, bottom: 16 })
@@ -403,121 +228,9 @@ struct Index {
       if (this.showConsent) {
         this.ConsentOverlay()
       }
-      if (this.showRepair) {
-        this.RepairOverlay()
-      }
     }
     .width('100%')
     .height('100%')
-  }
-
-  private doResetLearning(): void {
-    if (this.repairBusy) { return; }
-    this.repairBusy = true;
-    AppMaintenance.resetLearning(getContext(this)).then(() => {
-      this.repairBusy = false;
-      this.showRepair = false;
-      promptAction.showToast({ message: '変換学習・入力履歴をリセットしました' });
-    });
-  }
-
-  private doResetAll(): void {
-    if (this.repairBusy) { return; }
-    this.repairBusy = true;
-    AppMaintenance.resetAll(getContext(this)).then(() => {
-      // Reflect the wipe in the list immediately.
-      this.dict = {};
-      this.posMap = {};
-      this.rows = [];
-      this.repairBusy = false;
-      this.showRepair = false;
-      this.confirmFullReset = false;
-      promptAction.showToast({ message: 'アプリのデータを初期化しました。キーボードを一度閉じて開き直してください' });
-    });
-  }
-
-  @Builder RepairOverlay() {
-    Column() {
-      Column({ space: 14 }) {
-        Text('困ったときの修復')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(18)
-          .fontWeight(FontWeight.Bold)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-
-        Text('アプリやキーボードの動作がおかしいとき、保存データをリセットして回復できます。再インストールせずに直せる場合があります。')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-          .lineHeight(22)
-          .width('100%')
-
-        // ── Safe reset: keeps registered words ──
-        Column({ space: 3 }) {
-          Text('変換学習・入力履歴をリセット')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(15)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .width('100%')
-          Text('登録した単語は残ります')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .width('100%')
-        }
-        .width('100%')
-        .backgroundColor(kbTheme(this.isDark).funcBg)
-        .borderRadius(10)
-        .padding({ left: 14, right: 14, top: 12, bottom: 12 })
-        .onClick(() => { this.doResetLearning(); })
-
-        Divider().color(kbTheme(this.isDark).divider)
-
-        // ── Full reset: destructive, second-tap gated ──
-        if (!this.confirmFullReset) {
-          Text('アプリのデータをすべて初期化…')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(DELETE_RED)
-            .width('100%')
-            .textAlign(TextAlign.Center)
-            .padding({ top: 4, bottom: 4 })
-            .onClick(() => { this.confirmFullReset = true; })
-        } else {
-          Text('登録単語・設定を含むすべての保存データを削除します。この操作は取り消せません。')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(13)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .lineHeight(20)
-            .width('100%')
-          Button('すべて削除して初期化する')
-            .fontFamily(JP_FONT_FAMILY)
-            .width('100%')
-            .height(46)
-            .fontSize(15)
-            .fontColor(Color.White)
-            .backgroundColor(DELETE_RED)
-            .onClick(() => { this.doResetAll(); })
-        }
-
-        Text('閉じる')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-          .padding({ top: 2 })
-          .onClick(() => { this.showRepair = false; this.confirmFullReset = false; })
-      }
-      .width('86%')
-      .padding(24)
-      .backgroundColor(kbTheme(this.isDark).cardBg)
-      .borderRadius(CARD_RADIUS)
-    }
-    .width('100%')
-    .height('100%')
-    .justifyContent(FlexAlign.Center)
-    .alignItems(HorizontalAlign.Center)
-    .backgroundColor('#99000000')
   }
 
   @Builder ConsentOverlay() {

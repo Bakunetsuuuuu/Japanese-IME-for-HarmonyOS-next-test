@@ -3,9 +3,6 @@
     "pages/KeyboardPage",
     "pages/Index",
     "pages/PrivacyPolicy",
-    "pages/WebViewPage",
-    "pages/DictionaryEditPage",
-    "pages/SuppressedList",
-    "pages/InputLogPage"
+    "pages/WebViewPage"
   ]
 }

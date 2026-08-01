@@ -7,7 +7,7 @@ import type { UserPosEntry } from './ConjugationEngine';
 // import it from there directly.
 //
 // Per-entry 品詞 (part-of-speech) metadata for the user dictionary, keyed the
-// same way DictionaryEditPage already identifies an entry (yomi + word).
+// same way the keyboard's registration identifies an entry (yomi + word).
 // Kept as its own @ohos.data.preferences store (not folded into
 // UserDictStore's Record<よみ, 単語[]>) so the base yomi→word format the
 // keyboard extension has always read stays untouched -- this store is purely

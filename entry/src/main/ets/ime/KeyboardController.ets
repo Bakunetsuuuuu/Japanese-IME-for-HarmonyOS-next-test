@@ -329,7 +329,7 @@ export class InputHandler {
       // 書き込み先は「実際に開けたところ」を使う。パス文字列が取れることと
       // 拡張プロセスがそこに書けることは別なので、仮定せず試す。
       //
-      // ★ 重要: この経路で書いたログは、本体アプリの InputLogPage からは読めない。
+      // ★ 重要: このログは本体アプリからは読めない (別サンドボックス)。
       //
       // キーボードは :inputMethod という別プロセスで動いており、実機で確認した
       // ところ、拡張のサンドボックスは本体アプリのそれと別実体だった。
@@ -392,7 +392,7 @@ export class InputHandler {
   }
 
   // Reload the user dictionary from disk (picks up words added in the main
-  // app), plus its 品詞 metadata (DictionaryEditPage's POS picker) --
+  // app), plus its 品詞 metadata (DictEditBar's POS chips) --
   // expanded into conjugated forms + connection-matrix class overrides via
   // ConjugationEngine before handing off to KanaKanjiConverter, so a verb/
   // adjective/person/place entry gets real segmentation behaviour instead of
@@ -963,7 +963,7 @@ export class InputHandler {
 
   // ---- 入力ログの閲覧 (デバッグ専用) ------------------------------------ // [DEBUG-LOG]
   //
-  // 本体アプリの InputLogPage からは読めない。ログを書いているのは拡張プロセスで、
+  // 本体アプリからは読めない。ログを書いているのは拡張プロセスで、
   // 本体アプリとはサンドボックスが別だから (registerUserWord のコメント参照)。
   // 収集した内容を見るには、書いた側であるここで読むしかない。
 
@@ -2637,7 +2637,7 @@ export class KeyboardController {
   }
 
   // Developer-curated dictionary bundled as rawfile/global_dict.json.
-  // Edited via the hidden DevDict screen, exported, and committed to the repo;
+  // Bundled with the app and committed to the repo (the old DevDict editor is gone);
   // applies to all users from the next patch. Highest conversion priority.
   private loadGlobalDictionary(): void {
     this.context.resourceManager.getRawFileContent('global_dict.json')

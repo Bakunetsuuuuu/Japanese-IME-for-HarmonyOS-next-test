@@ -1,5 +1,5 @@
 // Runtime conjugation/classification engine for user-dictionary POS support
-// (DictionaryEditPage's 品詞 picker). Ported from tools/build_inline_dict.py's
+// (キーボード設定内 DictEditBar の品詞チップ). Ported from tools/build_inline_dict.py's
 // conj_ichidan/conj_godan_*/classify_verb_right_class, which built the
 // built-in VERB_CLASS table baked into KanaKanjiConverter.ets. This module
 // does the same thing at runtime, scoped to whatever the user just typed in
@@ -34,7 +34,7 @@ export const N_PROPER_L = 5; // 地名
 // Detects the godan row from a dictionary-form reading's final kana. る is
 // deliberately excluded: godan-る (帰る) and ichidan (食べる) both end in る,
 // so that case is ambiguous from spelling alone and the caller must ask the
-// user (see DictionaryEditPage's 五段/一段 picker).
+// user (see DictEditBar's 五段/一段 chips).
 export function detectGodanRow(lastKana: string): GodanRow | undefined {
   const map: Record<string, GodanRow> = {
     'う': 'u', 'く': 'ku', 'ぐ': 'gu', 'す': 'su', 'つ': 'tsu',
@@ -275,7 +275,7 @@ function mergeReading(dict: Record<string, string[]>, reading: string, cands: st
 }
 
 // Expands the base user dictionary (yomi→word, exactly what the user typed
-// into DictionaryEditPage and what Index.ets's list shows) into the
+// into DictEditBar and what the keyboard's 登録済み list shows) into the
 // candidate map + connection-matrix class map the keyboard extension
 // actually loads: every verb/adjective entry additionally contributes its
 // conjugated forms (たべる→食べる also yields たべなかった→食べなかった etc.),

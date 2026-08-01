@@ -36135,7 +36135,7 @@ export class KanaKanjiConverter {
     // from VERB_CLASS falls through unchanged to the existing noun-default
     // path, so this only touches readings that used to be misclassified as
     // nouns.
-    // User-registered verb/adjective/person/place words (DictionaryEditPage's
+    // User-registered verb/adjective/person/place words (DictEditBar's
     // 品詞 picker, see ConjugationEngine.ets) get the same treatment as the
     // built-in VERB_CLASS table -- checked second so a collision with a
     // built-in reading keeps the built-in's (already-tuned) class.
