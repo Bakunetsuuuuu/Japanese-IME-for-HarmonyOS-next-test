@@ -320,16 +320,21 @@ export class InputHandler {
   // 末尾に移し、全体を try で囲い、パス取得にも代替を用意した。
   private setupInputLog(ctx: InputMethodExtensionContext): void { // [DEBUG-LOG]
     try { // [DEBUG-LOG]
-      // アプリ単位の filesDir を優先(本体アプリと必ず同じ場所)。取れない場合は
-      // モジュール単位に落とし、どちらを使ったかを記録に残す。
-      let dir = ''; // [DEBUG-LOG]
-      let level = 'app'; // [DEBUG-LOG]
-      try { // [DEBUG-LOG]
-        dir = ctx.getApplicationContext().filesDir; // [DEBUG-LOG]
-      } catch (_e) { // [DEBUG-LOG]
-        dir = ctx.filesDir; // [DEBUG-LOG]
-        level = 'module(getApplicationContext失敗)'; // [DEBUG-LOG]
-      } // [DEBUG-LOG]
+      // 書き込み先は「実際に開けたところ」を使う。パス文字列が取れることと
+      // 拡張プロセスがそこに書けることは別なので、仮定せず試す。
+      // モジュール単位 -> アプリ単位の順。読み手は両方見る (InputLog.findDir)。 // [DEBUG-LOG]
+      let appDir = ''; // [DEBUG-LOG]
+      try { appDir = ctx.getApplicationContext().filesDir; } catch (_e) { appDir = ''; } // [DEBUG-LOG]
+      const used = InputLog.setWritableDir([ctx.filesDir, appDir]); // [DEBUG-LOG]
+      console.info('shuntiIME InputLog dir=' + used + ' (module=' + ctx.filesDir + ' app=' + appDir + ')'); // [DEBUG-LOG]
+      InputLog.recordPaths('setContext', // [DEBUG-LOG]
+        used.length > 0 ? used : '書き込めるディレクトリ無し', // [DEBUG-LOG]
+        ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
+      UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
+    } catch (e) { // [DEBUG-LOG]
+      console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
+    } // [DEBUG-LOG]
+  } // [DEBUG-LOG]
       InputLog.setFilesDir(dir); // [DEBUG-LOG]
       InputLog.recordPaths(`${level} ${dir}`, ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
       UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
@@ -1165,38 +1170,13 @@ export class InputHandler {
   // set to a point before the end of the composing text), only that prefix was
   // converted into `candidates`; everything after it stays as typed kana.
   // Returns [convertedReading, kanaTail] so a commit learns the correct
-  // reading→surface (the prefix only) and still emits the untouched tail
-  // instead of silently dropping it. With no range adjustment the tail is empty
-  // and the reading is the whole composing text -- identical to before.
+  // reading→surface (the prefix only) and knows what is left to keep composing
+  // (see continueWithTail). With no range adjustment the tail is empty and the
+  // reading is the whole composing text -- identical to before.
   private splitAtConversionEnd(composing: string): [string, string] {
     const end = (this.conversionEnd > 0 && this.conversionEnd < composing.length)
       ? this.conversionEnd : composing.length;
     return [composing.slice(0, end), composing.slice(end)];
-  }
-
-  // Shared tail-continuation for commitCandidate/commitTopCandidate: when the
-  // conversion range was shrunk (see splitAtConversionEnd), the untouched
-  // tail re-enters COMPOSING instead of being inserted as literal kana, so
-  // the user can keep converting it. Reinitializes the same fields
-  // handleDirectKana does when starting a fresh composing text from scratch
-  // (conversionEnd set to the tail's own length, pendingRomaji/
-  // lastDeletedChar/restoreStack cleared). An empty tail means the whole
-  // composing text was committed, so it falls back to the ordinary full reset.
-  private finishCommitWithTail(tail: string): void {
-    if (tail.length === 0) {
-      this.resetComposition();
-      return;
-    }
-    this.converter.reset();
-    this.lastAlignment = undefined;
-    this.conversionEnd = tail.length;
-    this.lastDeletedChar = '';
-    this.restoreStack = [];
-    AppStorage.setOrCreate('composingText', tail);
-    AppStorage.setOrCreate('pendingRomaji', '');
-    AppStorage.setOrCreate('convEnd', tail.length);
-    AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-    this.updateCandidates();
   }
 
   commitCandidate(index: number): void {
@@ -1223,11 +1203,18 @@ export class InputHandler {
         this.observeUnknownWord(reading, text);
       }
       InputLog.recordCommit(reading, text, index, candidates.length); // [DEBUG-LOG]
-      this.insertText(text + tail);
-      KanaKanjiConverter.addContext(text + tail);
+      this.insertText(text);
+      KanaKanjiConverter.addContext(text);
       const words = this.committedWords(text);
+      // 残りがあるなら、それはまだ変換していない入力。確定させずに composing に
+      // 戻して続けて変換できるようにする (continueWithTail のコメント参照)。
+      if (tail.length > 0) {
+        this.pushPredictions(words);
+        this.continueWithTail(tail);
+        return;
+      }
+      this.resetComposition();
       this.pushPredictions(words);
-      this.finishCommitWithTail(tail);
       return;
     }
     this.resetComposition();
@@ -1306,11 +1293,16 @@ export class InputHandler {
         this.observeUnknownWord(reading, chosen);
       }
       InputLog.recordCommit(reading, chosen, idx, candidates.length); // [DEBUG-LOG]
-      this.insertText(chosen + tail);
-      KanaKanjiConverter.addContext(chosen + tail);
+      this.insertText(chosen);
+      KanaKanjiConverter.addContext(chosen);
       const words = this.committedWords(chosen);
+      if (tail.length > 0) {
+        this.pushPredictions(words);
+        this.continueWithTail(tail);
+        return;
+      }
+      this.resetComposition();
       this.pushPredictions(words);
-      this.finishCommitWithTail(tail);
       return;
     }
     this.commitPending();
@@ -1322,6 +1314,39 @@ export class InputHandler {
     const all = composing + pending;
     if (all.length > 0) { this.insertText(all); }
     this.resetComposition();
+  }
+
+  // 変換範囲を縮めて確定したときの「残り」を、続けて変換できる状態にする。
+  //
+  // 「かくていされる」を「かくてい」までで変換して確定したとき、残りの「される」
+  // はまだ変換していない入力であって、確定した文字列ではない。それを
+  // insertText(text + tail) で一緒に送り出していたので、
+  //   ・画面の変換保留欄には「される」が残って見える
+  //   ・しかし実際にはかなのまま確定済みで、もう変換できない
+  // という食い違いが起きていた。文節ごとに変換していく操作そのものが
+  // 成立していない状態で、範囲を縮める機能の存在意義が無くなっていた。
+  //
+  // 確定するのは変換した部分だけにして、残りは composing に戻す。
+  // resetComposition と違って composingText を空にせず、変換範囲も残りの
+  // 長さに張り直してから候補を出し直す。
+  private continueWithTail(tail: string): void {
+    this.converter.reset();
+    this.bSegs = [];
+    this.bChosen = [];
+    this.bCur = 0;
+    this.lastDeletedChar = '';
+    this.restoreStack = [];
+    this.conversionEnd = tail.length;
+    AppStorage.setOrCreate('composingText', tail);
+    AppStorage.setOrCreate('pendingRomaji', '');
+    AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
+    AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
+    AppStorage.setOrCreate('bunsetsuDisplay', '');
+    AppStorage.setOrCreate('bunsetsuCurrent', 0);
+    AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    AppStorage.setOrCreate('convEnd', this.conversionEnd);
+    AppStorage.setOrCreate('selectedCandidateIndex', 0);
+    this.updateCandidates();
   }
 
   private resetComposition(): void {
