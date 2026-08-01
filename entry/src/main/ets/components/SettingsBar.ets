@@ -2,6 +2,7 @@ import { InputHandler } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from './JpFont';
+import { DEBUG_INPUT_LOG } from '../ime/InputLog'; // [DEBUG-LOG]
 
 // Segmented-control / card metrics (design tokens: settings cards 16px,
 // segmented-control track 10-11px / inner pill 8px, selected option gets a
@@ -278,21 +279,26 @@ export struct SettingsBar {
 
       // [DEBUG-LOG] リリース前に削除する。収集した内容は本体アプリからは
       // 読めない (サンドボックスが別) ので、書いた側であるここから見る。
-      Divider().color(kbTheme(this.isDark).divider)
-      Row() {
-        Text('入力ログ(デバッグ)')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .layoutWeight(1)
-        Text('›')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-      }
-      .width('100%')
-      .padding({ top: 14, bottom: 14 })
-      .onClick(() => { this.openLog(); })
+      // DEBUG_INPUT_LOG が false のときは入口ごと消える (InputLog.ets の
+      // 「とりあえず無効化だけしたい場合」がそう振る舞うと書いてあるのに、
+      // ここにガードが無く項目だけ残っていた)。
+      if (DEBUG_INPUT_LOG) { // [DEBUG-LOG]
+        Divider().color(kbTheme(this.isDark).divider) // [DEBUG-LOG]
+        Row() { // [DEBUG-LOG]
+          Text('入力ログ(デバッグ)') // [DEBUG-LOG]
+            .fontFamily(JP_FONT_FAMILY) // [DEBUG-LOG]
+            .fontSize(14) // [DEBUG-LOG]
+            .fontColor(kbTheme(this.isDark).textPrimary) // [DEBUG-LOG]
+            .layoutWeight(1) // [DEBUG-LOG]
+          Text('›') // [DEBUG-LOG]
+            .fontFamily(JP_FONT_FAMILY) // [DEBUG-LOG]
+            .fontSize(15) // [DEBUG-LOG]
+            .fontColor(kbTheme(this.isDark).textSecondary) // [DEBUG-LOG]
+        } // [DEBUG-LOG]
+        .width('100%') // [DEBUG-LOG]
+        .padding({ top: 14, bottom: 14 }) // [DEBUG-LOG]
+        .onClick(() => { this.openLog(); }) // [DEBUG-LOG]
+      } // [DEBUG-LOG]
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
