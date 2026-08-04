@@ -569,6 +569,66 @@ Running total on the blind corpus: **54.9% -> 57.1% (+8 sentences, 0
 regressions)**, track A flat at 44.6%, `corpus_test11` +1 and the other
 in-house corpora unchanged.
 
+### Character n-gram rescoring, measured and rejected (2026-08)
+
+Track B's segmentation is already right; what it gets wrong is *which*
+homophone. Measured on the blind corpus, holding its segmentation fixed and
+choosing surfaces freely:
+
+| reachable by choosing surfaces | sentences |
+| --- | --- |
+| top 1 per segment | 217 / 350 (62.0%) |
+| top 3 per segment | 286 / 350 (81.7%) |
+| all candidates | 318 / 350 (90.9%) |
+| **actually produced** | **200 / 350 (57.1%)** |
+
+So ~24 points sit inside the top 3 candidates of each segment, and mozc's POS
+bigram cannot reach them: 髪を乾かす and 神を乾かす are both 名詞+を+動詞.
+
+`build_char_lm.py` + `pack_char_lm.py` build a character n-gram model
+(order 4, stupid backoff) over Japanese Wikipedia -- deliberately *not*
+Tatoeba, which is where `tools/blind-eval` draws from; training on the
+benchmark's own source would make its numbers meaningless. The rescorer runs
+inside the lattice, not per segment: candidate senses keep their mozc word
+cost, connection cost, single-char content penalty and EOS cost, with
+`- λ · logP_LM` added. λ was tuned on the in-house corpora (Tatoeba-free) and
+the blind corpus read once.
+
+Result, blind corpus, baseline 200/350:
+
+| model size (tsv) | blind |
+| --- | --- |
+| 2.6MB | 202 |
+| 9.1MB | 203 |
+| 38.2MB | 205 |
+| 52.8MB | 204 |
+
+**Not shipped.** +0.6 to +1.4 points for several MB and a lattice rescorer is
+a bad trade in a keyboard whose binding constraint is load time, and it is
+under 5% of the headroom it was aimed at. The diagnosis says more data will
+not rescue it either: on the sentences it still gets wrong, the LM scores the
+*wrong* string higher than the gold 33 times against 11 -- the feature is
+weak, not underweighted. Encyclopedic character context is the wrong signal
+for everyday sentences.
+
+What would actually be needed, in rough order of value per byte: the IME's
+own per-user learning (already built, converges on the user's vocabulary); a
+word-level model over (surface, POS) trained on a *conversational* corpus,
+which needs a morphological analyzer over the training text; failing that, a
+better-matched corpus than Wikipedia. The scripts are kept so this does not
+get re-attempted from scratch.
+
+Two implementation traps worth recording, both of which made the prototype
+silently produce nonsense before being found:
+
+- `0 * -Infinity` is `NaN`. With λ=0 the LM term must be skipped, not
+  multiplied out, or every path cost becomes NaN and the beam returns
+  arbitrary strings (it scored 4/106 before this was traced).
+- Candidate senses must **not** be deduplicated by surface. が exists as
+  接続助詞 (332) and 格助詞 (369), both cost 0, and only the latter may follow
+  a noun. Keeping "the cheapest sense per surface" drops the one the lattice
+  needs and collapses the whole reconstruction.
+
 ## Considered, not yet done
 
 - **SudachiDict's own connection-cost matrix** — see the "SudachiDict
