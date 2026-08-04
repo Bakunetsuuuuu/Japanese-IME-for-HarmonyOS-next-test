@@ -133,7 +133,7 @@ struct Index {
     Stack() {
       Column() {
         Row() {
-          Text('shunti Japanese IME')
+          Text($r('app.string.home_title'))
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(16)
             .fontWeight(FontWeight.Bold)
@@ -151,18 +151,13 @@ struct Index {
           Column({ space: 14 }) {
             // 辞書も設定もキーボード内にある。ここで探させないよう明示する。
             Column({ space: 8 }) {
-              Text('設定・ユーザー辞書はキーボード内にあります')
+              Text($r('app.string.home_where_title'))
                 .fontFamily(JP_FONT_FAMILY)
                 .fontSize(15)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
-              Text('キーボードを表示して、候補バー右側の「設定」を開いてください。\n\n' +
-                   '・ユーザー辞書の登録と削除\n' +
-                   '・削除した変換候補の確認と復元\n' +
-                   '・キーボードのレイアウトや変換エンジンの設定\n' +
-                   '・学習のリセット\n\n' +
-                   'これらはすべてキーボードの設定画面にあります。')
+              Text($r('app.string.home_where_body'))
                 .fontFamily(JP_FONT_FAMILY)
                 .fontSize(13)
                 .fontColor(kbTheme(this.isDark).textSecondary)
@@ -175,14 +170,13 @@ struct Index {
             .borderRadius(CARD_RADIUS)
 
             Column({ space: 8 }) {
-              Text('キーボードが使えないときは')
+              Text($r('app.string.home_enable_title'))
                 .fontFamily(JP_FONT_FAMILY)
                 .fontSize(15)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
-              Text('端末の「設定 → 一般 → キーボードと入力方法」から ' +
-                   'shunti Japanese IME を有効にして、入力欄で地球儀アイコンから切り替えてください。')
+              Text($r('app.string.home_enable_body'))
                 .fontFamily(JP_FONT_FAMILY)
                 .fontSize(13)
                 .fontColor(kbTheme(this.isDark).textSecondary)
@@ -204,7 +198,7 @@ struct Index {
         .edgeEffect(EdgeEffect.Spring)
 
         Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-          Text('プライバシーポリシー')
+          Text($r('app.string.privacy_policy'))
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontColor(kbTheme(this.isDark).accent)
@@ -236,30 +230,27 @@ struct Index {
   @Builder ConsentOverlay() {
     Column() {
       Column({ space: 14 }) {
-        Text('プライバシーポリシーへの同意')
+        Text($r('app.string.consent_title'))
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(18)
           .fontWeight(FontWeight.Bold)
           .fontColor(kbTheme(this.isDark).textPrimary)
 
-        Text('shunti Japanese IME をご利用いただく前に、プライバシーポリシーをお読みください。\n\n' +
-             '・入力内容・変換履歴はすべて端末内でのみ処理されます\n' +
-             '・外部サーバーへの送信は一切行いません\n' +
-             '・分析ツールや広告 SDK は使用していません')
+        Text($r('app.string.consent_body'))
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .lineHeight(22)
           .width('100%')
 
-        Text('プライバシーポリシー全文を読む')
+        Text($r('app.string.consent_read_full'))
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
           .fontColor(kbTheme(this.isDark).accent)
           .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
           .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
 
-        Button('同意して始める')
+        Button($r('app.string.consent_accept'))
           .fontFamily(JP_FONT_FAMILY)
           .width('100%')
           .height(46)
@@ -267,7 +258,7 @@ struct Index {
           .backgroundColor(kbTheme(this.isDark).accent)
           .onClick(() => { this.acceptConsent(); })
 
-        Text('同意しない（アプリを終了）')
+        Text($r('app.string.consent_decline'))
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(13)
           .fontColor(kbTheme(this.isDark).textSecondary)

@@ -1,0 +1,92 @@
+{
+  "string": [
+    {
+      "name": "entry_desc",
+      "value": "支持九宫格与QWERTY的日语输入法。搭载高精度Viterbi假名汉字转换、转换学习和用户词典。"
+    },
+    {
+      "name": "app_name",
+      "value": "shunti 日语输入法"
+    },
+    {
+      "name": "entry_ability_desc",
+      "value": "日语输入法的设置与隐私政策"
+    },
+    {
+      "name": "extension_label",
+      "value": "shunti 日语输入法"
+    },
+    {
+      "name": "extension_desc",
+      "value": "支持九宫格与QWERTY的日语输入法（IME）。搭载高精度Viterbi假名汉字转换。"
+    },
+    {
+      "name": "subtype_hiragana",
+      "value": "日语（平假名）"
+    },
+    {
+      "name": "subtype_katakana",
+      "value": "片假名"
+    },
+    {
+      "name": "subtype_alphanumeric",
+      "value": "英文数字"
+    },
+    {
+      "name": "clipboard_permission_reason",
+      "value": "用于在候选栏中显示已复制的内容，点击即可粘贴"
+    },
+    {
+      "name": "internet_permission_reason",
+      "value": "用于在应用内显示 GitHub 仓库页面"
+    },
+    {
+      "name": "home_title",
+      "value": "shunti 日语输入法"
+    },
+    {
+      "name": "home_where_title",
+      "value": "设置和用户词典都在键盘内"
+    },
+    {
+      "name": "home_where_body",
+      "value": "请调出键盘，点击候选栏右侧的「设置」。\n\n・用户词典的登记与删除\n・已删除候选的查看与恢复\n・键盘布局与转换引擎的设置\n・清除学习记录\n\n以上功能全部位于键盘的设置界面中。"
+    },
+    {
+      "name": "home_enable_title",
+      "value": "键盘无法使用时"
+    },
+    {
+      "name": "home_enable_body",
+      "value": "请在系统「设置 → 通用 → 键盘与输入法」中启用 shunti 日语输入法，然后在输入框中通过地球图标切换。"
+    },
+    {
+      "name": "privacy_policy",
+      "value": "隐私政策"
+    },
+    {
+      "name": "consent_title",
+      "value": "同意隐私政策"
+    },
+    {
+      "name": "consent_body",
+      "value": "使用 shunti 日语输入法之前，请阅读隐私政策。\n\n・输入内容与转换记录全部仅在本机处理\n・不会向任何外部服务器发送\n・不使用分析工具或广告 SDK"
+    },
+    {
+      "name": "consent_read_full",
+      "value": "阅读隐私政策全文"
+    },
+    {
+      "name": "consent_accept",
+      "value": "同意并开始"
+    },
+    {
+      "name": "consent_decline",
+      "value": "不同意（退出应用）"
+    },
+    {
+      "name": "vibrate_permission_reason",
+      "value": "用于在按键时让设备短暂振动"
+    }
+  ]
+}

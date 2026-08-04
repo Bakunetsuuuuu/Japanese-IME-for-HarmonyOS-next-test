@@ -1,0 +1,92 @@
+{
+  "string": [
+    {
+      "name": "entry_desc",
+      "value": "Japanese input method with flick and QWERTY layouts. High-accuracy Viterbi kana-kanji conversion, conversion learning and a user dictionary."
+    },
+    {
+      "name": "app_name",
+      "value": "shunti Japanese IME"
+    },
+    {
+      "name": "entry_ability_desc",
+      "value": "Settings and privacy policy for the Japanese input method"
+    },
+    {
+      "name": "extension_label",
+      "value": "shunti Japanese IME"
+    },
+    {
+      "name": "extension_desc",
+      "value": "Japanese input method (IME) with flick and QWERTY layouts. High-accuracy Viterbi kana-kanji conversion."
+    },
+    {
+      "name": "subtype_hiragana",
+      "value": "Japanese (Hiragana)"
+    },
+    {
+      "name": "subtype_katakana",
+      "value": "Katakana"
+    },
+    {
+      "name": "subtype_alphanumeric",
+      "value": "Alphanumeric"
+    },
+    {
+      "name": "clipboard_permission_reason",
+      "value": "To show copied text in the candidate bar so it can be pasted with a tap"
+    },
+    {
+      "name": "internet_permission_reason",
+      "value": "To show the GitHub repository page inside the app"
+    },
+    {
+      "name": "home_title",
+      "value": "shunti Japanese IME"
+    },
+    {
+      "name": "home_where_title",
+      "value": "Settings and user dictionary are inside the keyboard"
+    },
+    {
+      "name": "home_where_body",
+      "value": "Bring up the keyboard and open \"Settings\" at the right of the candidate bar.\n\n- Add and remove user dictionary entries\n- Review and restore deleted candidates\n- Keyboard layout and conversion engine\n- Reset learning\n\nAll of these live in the keyboard's settings screen."
+    },
+    {
+      "name": "home_enable_title",
+      "value": "If the keyboard is not available"
+    },
+    {
+      "name": "home_enable_body",
+      "value": "Enable shunti Japanese IME in System Settings > General > Keyboard & input method, then switch to it with the globe icon in a text field."
+    },
+    {
+      "name": "privacy_policy",
+      "value": "Privacy policy"
+    },
+    {
+      "name": "consent_title",
+      "value": "Privacy policy consent"
+    },
+    {
+      "name": "consent_body",
+      "value": "Please read the privacy policy before using shunti Japanese IME.\n\n- All input and conversion history is processed only on this device\n- Nothing is ever sent to an external server\n- No analytics or advertising SDKs are used"
+    },
+    {
+      "name": "consent_read_full",
+      "value": "Read the full privacy policy"
+    },
+    {
+      "name": "consent_accept",
+      "value": "Agree and start"
+    },
+    {
+      "name": "consent_decline",
+      "value": "Decline (exit the app)"
+    },
+    {
+      "name": "vibrate_permission_reason",
+      "value": "To make the device vibrate briefly when a key is pressed"
+    }
+  ]
+}
