@@ -2810,7 +2810,12 @@ export class KeyboardController {
       .then((all: Uint8Array[]) => {
         apply(all[0], all[1], toU32(all[2]), all[3], all[4], toU32(all[5]), toU32(all[6]));
       })
-      .catch((_e: Error) => { /* 読めなければ内蔵の静的辞書だけで動く */ });
+      .catch((e: Error) => {
+        // 黙って落とさない。辞書が読めていない状態は変換品質が静かに下がる
+        // だけで表からは見えず、実際 KeyboardPage 側の重複ロードが
+        // dict.json 削除後に無言で死んでいた。
+        console.error('shuntiIME packed dict load failed: ' + name, JSON.stringify(e));
+      });
   }
 
   private loadDictionary(): void {
