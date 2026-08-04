@@ -511,6 +511,54 @@ attempts tried and never beat plain mozc with. Flagging the *pattern* here
 (not a per-sentence fix) so a future attempt has a documented starting
 point instead of re-discovering these from scratch.
 
+### The missing EOS column, and the katakana-id twins (2026-08)
+
+Two structural defects found by reading track B's *actual* losses on
+`tools/blind-eval` rather than by tuning. Both are data-shape problems, not
+model weakness, and fixing them moved track B on the blind corpus for the
+first time: **54.9% -> 55.7% (+3 sentences, 0 regressions)**, track A
+unchanged at 44.6%, in-house corpora unchanged.
+
+**1. The EOS term was always zero.** `segment()`'s track-B DP charges the
+final word an edge cost into EOS via `matrix[cls][0]`, on the (stated)
+assumption that mozc's BOS and EOS share raw id 0. BOS does; EOS does not
+carry costs. In mozc's own `connection_single_column.txt`:
+
+| | non-zero |
+| --- | --- |
+| row 0 (BOS -> x) | 2671 / 2672 |
+| column 0 (x -> EOS) | **0 / 2672** |
+
+So the term evaluated to 0 for every class and the DP had no sentence-final
+signal whatsoever -- exactly the omission the code comment says it exists to
+prevent. `build_eos_costs.py` substitutes the 記号,句点 columns, which *are*
+populated: what a word may precede before a 。 is what it may end a sentence
+with. 助動詞 279, 名詞,一般 2405, 助詞,格助詞 12882 -- mozc's own numbers,
+nothing invented. Stored as `eosCosts` in `mozc_matrix.json`.
+
+**2. Katakana and hiragana spellings of one closed-class word are different
+POS ids.** IPADIC encodes the written form in the id itself:
+
+    172  助動詞,*,*,*,特殊・デス,基本形,です   surface です  cost 40
+    178  助動詞,*,*,*,特殊・デス,基本形,デス   surface デス  cost  0
+
+The matrix cannot separate them -- the 助詞,格助詞「の」 row holds 217
+distinct values across 2,673 columns and both ids land in the same bucket
+(`M[の][です] == M[の][デス] == 12882`) -- so the 40-unit word-cost gap
+decided, and every hiragana sentence ending in です produced デス.
+`HIRA_MARGIN` in `build_mozc_engine.py` was written for exactly this but only
+compares *within* one (leftId, rightId) group, and these two are in different
+groups by construction. `fix_kana_register.py` drops the katakana-id sense
+when a twin hiragana id has a sense for the same reading **whose surface is
+the reading itself** -- the condition that keeps デカール/デフェンス and the
+rest of the loanwords mozc files under 助詞「デ」 ids alive. 77 senses across
+77 readings.
+
+Known and not addressed: mid-sentence spans like あるん -> アルン,
+ないん -> ナイン (mozc has 名詞,一般 entries for those readings, and they beat
+ある+ん / ない+ん). That is a span-length/segmentation issue, not a register
+one.
+
 ## Considered, not yet done
 
 - **SudachiDict's own connection-cost matrix** — see the "SudachiDict
@@ -559,6 +607,13 @@ point instead of re-discovering these from scratch.
   augmentation as `build_jmdict_augment.py`, sourced from SudachiDict
   instead. Must run after `build_mozc_engine.py`. See "SudachiDict
   vocabulary augmentation" above.
+- `fix_kana_register.py` — drops katakana-id senses of words normally
+  written in kana (です/ございます/だけ...). Reads the `*.json.source`
+  intermediates, writes `mozc_dict.json`/`mozc_costs.json` for
+  `convert_to_binary.py`. See "The missing EOS column..." above.
+- `build_eos_costs.py` — derives a per-class word→EOS cost from the 記号,句点
+  columns and stores it as `eosCosts` in `mozc_matrix.json`, because mozc's
+  matrix has no EOS column at all. Same section.
 - `pack_strings.py` — repacks the three string tables from JSON into the
   shipped `.blob`/`.len`/`.base`/`.srt` binaries. Reads
   `packed_src/*.json`, writes into `rawfile/`. Run after any rebuild that

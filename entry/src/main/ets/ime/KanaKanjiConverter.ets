@@ -32541,6 +32541,10 @@ export interface MozcMatrixData {
   // The N*N connection matrix itself is no longer part of this JSON header --
   // it ships as a flat uint16 binary (mozc_matrix.bin) passed to loadMozcEngine
   // separately. See build_mozc_engine.py's write_outputs.
+  // 各クラスの「文末に立つ」コスト。mozc の接続行列には EOS 列が無い
+  // (列0は全ゼロ) ため、句点「。」の前に立てるかどうかを代わりに使う。
+  // tools/mozc_data/build_eos_costs.py が書く。
+  eosCosts?: number[];
 }
 
 // One grammatical sense a reading can take (see tools/mozc_data/
@@ -33415,6 +33419,9 @@ export class KanaKanjiConverter {
   private static mozcMatrix: Uint16Array = new Uint16Array(0);
   private static mozcMatrixSize: number = 0;
   private static mozcBosClass: number = 0;
+  // build_eos_costs.py が導出した、クラスごとの文末コスト。空なら従来どおり
+  // matrix[cls][bos] を使う (どの道ゼロなので EOS 項が効かないだけ)。
+  private static mozcEosCosts: number[] = [];
   private static mozcUnknownClass: number = 0;
   private static mozcNounGeneralClass: number = -1;
   private static mozcKanjiNumberClass: number = -1;
@@ -33647,6 +33654,7 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.mozcMatrix = matrixCells;
     KanaKanjiConverter.mozcMatrixSize = matrixData.size;
     KanaKanjiConverter.mozcBosClass = matrixData.bosClass;
+    KanaKanjiConverter.mozcEosCosts = matrixData.eosCosts ?? [];
     KanaKanjiConverter.mozcUnknownClass = matrixData.unknownClass;
     KanaKanjiConverter.mozcNounGeneralClass = matrixData.nounGeneralClass ?? -1;
     KanaKanjiConverter.mozcKanjiNumberClass = matrixData.kanjiNumberClass ?? -1;
@@ -36991,8 +36999,13 @@ export class KanaKanjiConverter {
       // an unreachable position had under the old scalar (INF) version.
       let bestFinalClass = -1;
       let bestFinalCost = INF;
+      const eos = KanaKanjiConverter.mozcEosCosts;
       states[n].forEach((state: MozcDpState, cls: number) => {
-        const total = state.cost + this.getEdgeCost(cls, bosClass);
+        // mozc の接続行列は EOS 列を持たない (列0は全ゼロ)。文末形を選ぶ
+        // 信号がここには無いので、句点の前に立てるかどうかから導出した
+        // eosCosts を使う -- build_eos_costs.py の説明を参照。
+        const total = state.cost
+          + (eos.length > cls ? eos[cls] : this.getEdgeCost(cls, bosClass));
         if (total < bestFinalCost) { bestFinalCost = total; bestFinalClass = cls; }
       });
       if (bestFinalClass >= 0) {
