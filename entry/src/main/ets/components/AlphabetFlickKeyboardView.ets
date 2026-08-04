@@ -162,6 +162,7 @@ export struct AlphabetFlickKeyboardView {
       return;
     }
     if (e.type === TouchType.Down) {
+      this.h().hapticTick();
       const t = e.touches[0];
       this.touchStartX = t.x;
       this.touchStartY = t.y;

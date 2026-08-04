@@ -33,6 +33,9 @@ export struct SettingsBar {
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   @StorageLink('conversionEngine') conversionEngine: string = 'custom';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
+  @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
+  // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。
+  @StorageLink('hapticUnavailable') hapticUnavailable: boolean = false;
   @State showHistory: boolean = false;
   @State showDict: boolean = false;
   // ユーザー辞書の中の下位画面。'' = 入口のメニュー / 'suggest' = 登録候補 /
@@ -380,6 +383,36 @@ export struct SettingsBar {
         .backgroundColor(kbTheme(this.isDark).funcBg)
         .borderRadius(TRACK_RADIUS)
         .padding(3)
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      // 打鍵の手応え。既定はオフ (勝手に振動すると煩わしいため)。
+      // オンにした瞬間に一度鳴らして、効きが分かるようにしている。
+      Row() {
+        Column({ space: 2 }) {
+          Text('キー入力時の振動')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text(this.hapticUnavailable
+            ? 'この端末では利用できません（OSがキーボードからの振動を許可していません）'
+            : 'キーを押したときに短く振動します')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.hapticEnabled })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setHapticEnabled(isOn);
+          })
       }
       .width('100%')
       .padding({ top: 13, bottom: 13 })

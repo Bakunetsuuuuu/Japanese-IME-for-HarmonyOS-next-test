@@ -5,6 +5,8 @@ import display from '@ohos.display';
 import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
+import vibrator from '@ohos.vibrator';
+import systemVibrator from '@system.vibrator';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter, MozcMatrixData } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
@@ -452,6 +454,8 @@ export class InputHandler {
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
         AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
         AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
+        AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
+        this.hapticEnabled = s.hapticEnabled;
         this.applyConversionEngine(s.conversionEngine);
       });
   }
@@ -590,6 +594,105 @@ export class InputHandler {
   // to be open would strand the user on a panel cycleInputMode's あA key can
   // no longer reach -- fall back to kana so the setting and the panel
   // actually on screen never disagree.
+  // ---- 打鍵時の振動 -------------------------------------------------------
+  //
+  // 設定はキーボード側で持つ (本体アプリとはデータを共有できないため)。
+  // 実際に振動させるかは毎回 AppStorage を読まず、この場に控えた値で判断する。
+  // 打鍵ごとに走る経路なので、余計な読み出しを挟まない。
+  private hapticEnabled: boolean = false;
+
+  setHapticEnabled(enabled: boolean): void {
+    this.hapticEnabled = enabled;
+    AppStorage.setOrCreate('hapticEnabled', enabled);
+    if (this.imeContext) {
+      SettingsStore.saveHapticEnabled(this.imeContext, enabled);
+    }
+    // 切り替えた手応えとして一度鳴らす。オンにしたことがその場で分かる。
+    // ここで方式の判定も走る。
+    if (enabled) { this.hapticMode = 0; this.hapticTick(); }
+  }
+
+  // 振動の鳴らし方。最初の1回で試して決める。
+  //   0 = 未判定 / 1 = プリセット効果 / 2 = 時間指定 / 3 = 旧FA系 / -1 = 鳴らせない
+  //
+  // 現状のHarmonyOSでは、この経路はまず通らない。入力方式の拡張プロセスは
+  // SELinux上 input_isolate_hap (デバッグ版は input_isolate_debug_hap)
+  // というドメインで動き、そこから振動サービスへの接続が明示的に禁じられている。
+  //
+  //   allow { normal_hap_attr -input_isolate_attr }
+  //         sa_miscdevice_service:samgr_class { get };
+  //
+  // 実機のログにも avc: denied { get } ... sa_miscdevice_service が出て、
+  // startVibration は 14600101 (Device operation failed) で返る。
+  // 権限 (VIBRATE) は付与済みで、同じ端末でも本体アプリからは鳴る。つまり
+  // 権限でも端末差でもなく、プロセスの種別による遮断であり、アプリ側では
+  // 解決できない (リリース版でも同じドメイン属性なので配信しても変わらない)。
+  //
+  // OSが方針を変えれば以下がそのまま動くため、実装は残してある。
+  private hapticMode: number = 0;
+
+  private probeHaptic(): void {
+    AppStorage.setOrCreate('hapticUnavailable', false);
+    // 1) プリセット効果。端末が用意している「カチッ」を借りる方式。
+    vibrator.startVibration({ type: 'preset', effectId: 'haptic.clock.timer', count: 1 },
+      { id: 0, usage: 'physicalFeedback' })
+      .then(() => { this.hapticMode = 1; })
+      .catch((_e1: ESObject) => {
+        // 2) 時間指定 + usage:'touch'。物理フィードバック扱いを避ける。
+        vibrator.startVibration({ type: 'time', duration: 30 }, { id: 0, usage: 'touch' })
+          .then(() => { this.hapticMode = 2; })
+          .catch((_e2: ESObject) => {
+            // 3) 旧FAモデル系の @system.vibrator。@ohos.vibrator とは別経路で、
+            //    こちらだけ通る端末がありうるので最後に試す。
+            try {
+              systemVibrator.vibrate({
+                mode: 'short',
+                success: () => { this.hapticMode = 3; },
+                fail: () => { this.markHapticUnavailable(); },
+              });
+              return;
+            } catch (_e3) {
+              this.markHapticUnavailable();
+              return;
+            }
+          });
+      });
+  }
+
+  // どの方式でも鳴らせなかった。
+  //
+  // 効かない設定を残しても混乱させるだけなので、自動でオフに戻して
+  // 「この端末では使えない」と示せるようにする。
+  private markHapticUnavailable(): void {
+    this.hapticMode = -1;
+    this.hapticEnabled = false;
+    AppStorage.setOrCreate('hapticEnabled', false);
+    AppStorage.setOrCreate('hapticUnavailable', true);
+    if (this.imeContext) { SettingsStore.saveHapticEnabled(this.imeContext, false); }
+  }
+
+  // キーを押した瞬間に呼ぶ。判定済みの方式で鳴らす。
+  // 鳴らせないと分かっている端末では何もしない (毎回失敗を投げても無駄なので)。
+  hapticTick(): void {
+    if (!this.hapticEnabled) { return; }
+    if (this.hapticMode === -1) { return; }
+    if (this.hapticMode === 0) { this.probeHaptic(); return; }
+    if (this.hapticMode === 3) {
+      try { systemVibrator.vibrate({ mode: 'short', success: () => {} }); } catch (_e) {}
+      return;
+    }
+    const effect: ESObject = this.hapticMode === 1
+      ? { type: 'preset', effectId: 'haptic.clock.timer', count: 1 }
+      : { type: 'time', duration: 30 };
+    const usage: string = this.hapticMode === 1 ? 'physicalFeedback' : 'touch';
+    try {
+      vibrator.startVibration(effect as ESObject, { id: 0, usage: usage } as ESObject)
+        .catch((_e: ESObject) => {});
+    } catch (_e) {
+      // 非対応端末。鳴らないだけで害は無い。
+    }
+  }
+
   setNumericPadEnabled(enabled: boolean): void {
     AppStorage.setOrCreate('numericPadEnabled', enabled);
     if (!enabled && AppStorage.get<string>('keyboardSubMode') === 'numeric') {

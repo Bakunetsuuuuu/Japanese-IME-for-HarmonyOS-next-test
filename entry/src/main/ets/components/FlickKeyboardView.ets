@@ -193,6 +193,7 @@ export struct FlickKeyboardView {
 
   private handleTouch(e: TouchEvent, row: number, col: number, key: FlickKeyDef): void {
     if (e.type === TouchType.Down) {
+      this.h().hapticTick();
       const t = e.touches[0];
       this.touchStartX = t.x;
       this.touchStartY = t.y;

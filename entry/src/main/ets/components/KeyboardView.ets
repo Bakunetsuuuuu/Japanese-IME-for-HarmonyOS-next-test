@@ -161,6 +161,7 @@ export struct KeyboardView {
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
+        this.getHandler().hapticTick();
         const key = (this.isShift || this.isCapsLock) ? value.toUpperCase() : value;
         this.getHandler().handleKeyPress(key);
         if (this.isShift && !this.isCapsLock) {
@@ -211,6 +212,7 @@ export struct KeyboardView {
         )
       )
       .onClick(() => {
+        this.getHandler().hapticTick();
         if (this.isCapsLock) {
           this.isCapsLock = false;
           this.isShift = false;
@@ -234,6 +236,7 @@ export struct KeyboardView {
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onTouch((event: TouchEvent) => {
+        if (event.type === TouchType.Down) { this.getHandler().hapticTick(); }
         if (event.type === TouchType.Down) {
           this.startBsRepeat();
         } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
@@ -254,6 +257,7 @@ export struct KeyboardView {
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
+        this.getHandler().hapticTick();
         this.getHandler().handleBunsetsu();
       })
   }
@@ -297,6 +301,7 @@ export struct KeyboardView {
         )
       )
       .onClick(() => {
+        this.getHandler().hapticTick();
         this.getHandler().handleSpaceKey();
       })
   }
@@ -315,6 +320,7 @@ export struct KeyboardView {
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
+        this.getHandler().hapticTick();
         this.getHandler().commitRaw();
         this.getHandler().cycleInputMode();
       })
@@ -347,6 +353,7 @@ export struct KeyboardView {
       .borderRadius(KEY_RADIUS)
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
+        this.getHandler().hapticTick();
         this.getHandler().handleEnterKey();
       })
   }

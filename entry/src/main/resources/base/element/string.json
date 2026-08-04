@@ -1,14 +1,92 @@
 {
   "string": [
-    { "name": "entry_desc",          "value": "フリック／QWERTYに対応した日本語入力メソッド。高精度Viterbiかな漢字変換、変換学習、ユーザー辞書登録機能を搭載。" },
-    { "name": "app_name",            "value": "shunti Japanese IME" },
-    { "name": "entry_ability_desc",  "value": "ユーザー辞書の管理（読み・単語の登録・削除）" },
-    { "name": "extension_label",     "value": "shunti Japanese IME" },
-    { "name": "extension_desc",      "value": "フリック・QWERTY対応の日本語入力メソッド（IME）。高精度Viterbiかな漢字変換搭載。" },
-    { "name": "subtype_hiragana",    "value": "日本語（ひらがな）" },
-    { "name": "subtype_katakana",    "value": "カタカナ" },
-    { "name": "subtype_alphanumeric","value": "英数字" },
-    { "name": "clipboard_permission_reason", "value": "コピーした内容を変換候補バーに表示し、タップで貼り付けできるようにするため" },
-    { "name": "internet_permission_reason", "value": "アプリ内でGitHubリポジトリのページを表示するため" }
+    {
+      "name": "entry_desc",
+      "value": "フリック／QWERTYに対応した日本語入力メソッド。高精度Viterbiかな漢字変換、変換学習、ユーザー辞書登録機能を搭載。"
+    },
+    {
+      "name": "app_name",
+      "value": "shunti Japanese IME"
+    },
+    {
+      "name": "entry_ability_desc",
+      "value": "日本語入力メソッドの設定とプライバシーポリシー"
+    },
+    {
+      "name": "extension_label",
+      "value": "shunti Japanese IME"
+    },
+    {
+      "name": "extension_desc",
+      "value": "フリック・QWERTY対応の日本語入力メソッド（IME）。高精度Viterbiかな漢字変換搭載。"
+    },
+    {
+      "name": "subtype_hiragana",
+      "value": "日本語（ひらがな）"
+    },
+    {
+      "name": "subtype_katakana",
+      "value": "カタカナ"
+    },
+    {
+      "name": "subtype_alphanumeric",
+      "value": "英数字"
+    },
+    {
+      "name": "clipboard_permission_reason",
+      "value": "コピーした内容を変換候補バーに表示し、タップで貼り付けできるようにするため"
+    },
+    {
+      "name": "internet_permission_reason",
+      "value": "アプリ内でGitHubリポジトリのページを表示するため"
+    },
+    {
+      "name": "home_title",
+      "value": "shunti Japanese IME"
+    },
+    {
+      "name": "home_where_title",
+      "value": "設定・ユーザー辞書はキーボード内にあります"
+    },
+    {
+      "name": "home_where_body",
+      "value": "キーボードを表示して、候補バー右側の「設定」を開いてください。\n\n・ユーザー辞書の登録と削除\n・削除した変換候補の確認と復元\n・キーボードのレイアウトや変換エンジンの設定\n・学習のリセット\n\nこれらはすべてキーボードの設定画面にあります。"
+    },
+    {
+      "name": "home_enable_title",
+      "value": "キーボードが使えないときは"
+    },
+    {
+      "name": "home_enable_body",
+      "value": "端末の「設定 → 一般 → キーボードと入力方法」から shunti Japanese IME を有効にして、入力欄で地球儀アイコンから切り替えてください。"
+    },
+    {
+      "name": "privacy_policy",
+      "value": "プライバシーポリシー"
+    },
+    {
+      "name": "consent_title",
+      "value": "プライバシーポリシーへの同意"
+    },
+    {
+      "name": "consent_body",
+      "value": "shunti Japanese IME をご利用いただく前に、プライバシーポリシーをお読みください。\n\n・入力内容・変換履歴はすべて端末内でのみ処理されます\n・外部サーバーへの送信は一切行いません\n・分析ツールや広告 SDK は使用していません"
+    },
+    {
+      "name": "consent_read_full",
+      "value": "プライバシーポリシー全文を読む"
+    },
+    {
+      "name": "consent_accept",
+      "value": "同意して始める"
+    },
+    {
+      "name": "consent_decline",
+      "value": "同意しない（アプリを終了）"
+    },
+    {
+      "name": "vibrate_permission_reason",
+      "value": "キーを押したときに端末を短く振動させるため"
+    }
   ]
 }

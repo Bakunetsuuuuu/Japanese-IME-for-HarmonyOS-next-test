@@ -21,6 +21,8 @@ export interface KeyboardSettings {
   // and KeyboardView.ets/FlickKeyboardView.ets's ModeKey/LeftKey. Off by
   // default: most users reach digits fine from QWERTY/the number row.
   numericPadEnabled: boolean;
+  // キーを押したときに短く振動させるか。
+  hapticEnabled: boolean;
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -30,6 +32,7 @@ const DEFAULTS: KeyboardSettings = {
   oneHandedSide: 'right',
   conversionEngine: 'custom',
   numericPadEnabled: false,
+  hapticEnabled: false,
 };
 
 export class SettingsStore {
@@ -52,6 +55,7 @@ export class SettingsStore {
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
       const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
       const numericPad = await prefs.get('numericPadEnabled', DEFAULTS.numericPadEnabled);
+      const haptic = await prefs.get('hapticEnabled', DEFAULTS.hapticEnabled);
       console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, forceReload }));
       return {
         kanaKeyboardLayout: String(kanaLayout),
@@ -60,6 +64,7 @@ export class SettingsStore {
         oneHandedSide: String(side),
         conversionEngine: String(engine),
         numericPadEnabled: numericPad === true,
+        hapticEnabled: haptic === true,
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
@@ -70,6 +75,7 @@ export class SettingsStore {
         oneHandedSide: DEFAULTS.oneHandedSide,
         conversionEngine: DEFAULTS.conversionEngine,
         numericPadEnabled: DEFAULTS.numericPadEnabled,
+        hapticEnabled: DEFAULTS.hapticEnabled,
       };
     }
   }
@@ -120,6 +126,14 @@ export class SettingsStore {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('numericPadEnabled', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveHapticEnabled(context: common.Context, enabled: boolean): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('hapticEnabled', enabled);
       await prefs.flush();
     } catch (_e) {}
   }
