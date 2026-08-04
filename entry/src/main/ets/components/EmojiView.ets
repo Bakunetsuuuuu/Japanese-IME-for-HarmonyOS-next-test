@@ -99,26 +99,48 @@ const EMOJI_CATEGORIES: string[][][] = [
 // and emoji panels never shifts the keyboard's total height.
 const GRID_AREA_H = 252;
 const GRID_ROW_GAP = 4;
-// Bounded dynamic row height (see SymbolView.ets for the full rationale).
-// Every emoji category has exactly 8 rows, and the previous fixed 36px row
-// height (8*36 + 7*2 = 302px) overflowed the 252px grid area by 50px,
-// silently forcing a scroll to reach the bottom row on every tab — this
-// formula sizes rows to actually fit instead.
-const GRID_ROW_MAX = 48;
-const GRID_ROW_MIN = 24;
+// 連続スクロールになったので、行を領域に押し込む必要がなくなった。
+// 以前は全8行を 252px に収めるため行高を計算で縮めていた。
+const GRID_ROW_H = 44;
 
-function gridRowHeight(numRows: number): number {
-  if (numRows <= 0) { return GRID_ROW_MAX; }
-  const gaps = GRID_ROW_GAP * (numRows - 1);
-  const raw = Math.floor((GRID_AREA_H - gaps) / numRows);
-  return Math.max(GRID_ROW_MIN, Math.min(GRID_ROW_MAX, raw));
+// 全カテゴリを1本に繋いだ行の列。カテゴリごとにタブを切り替えるのではなく、
+// 下へスクロールすれば全部の絵文字が続けて出る形にするため。
+interface EmojiRow {
+  cat: number;
+  items: string[];
 }
+
+function buildRows(): EmojiRow[] {
+  const rows: EmojiRow[] = [];
+  for (let c = 0; c < EMOJI_CATEGORIES.length; c++) {
+    for (const items of EMOJI_CATEGORIES[c]) {
+      rows.push({ cat: c, items: items });
+    }
+  }
+  return rows;
+}
+
+// 各カテゴリが始まる行番号。タブを押したときの飛び先。
+function buildCatStart(): number[] {
+  const starts: number[] = [];
+  let n = 0;
+  for (let c = 0; c < EMOJI_CATEGORIES.length; c++) {
+    starts.push(n);
+    n += EMOJI_CATEGORIES[c].length;
+  }
+  return starts;
+}
+
+const EMOJI_ROWS: EmojiRow[] = buildRows();
+const CAT_START: number[] = buildCatStart();
 
 @Component
 export struct EmojiView {
   @StorageLink('symKeyWidthVp') symKeyWidthVp: number = 46;
   @StorageLink('isDark') isDark: boolean = false;
   @State currentTab: number = 0;
+  // タブ押下でその位置へ飛ばすため、リストの位置を握っておく。
+  private scroller: Scroller = new Scroller();
 
   private h(): InputHandler { return InputHandler.getInstance(); }
 
@@ -147,7 +169,11 @@ export struct EmojiView {
             .width(34).height(32)
             .backgroundColor(this.currentTab === i ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
             .borderRadius(12)
-            .onClick(() => { this.currentTab = i; })
+            .onClick(() => {
+              this.currentTab = i;
+              // 押したカテゴリの先頭行へ飛ぶ。切り替えではなく移動。
+              this.scroller.scrollToIndex(CAT_START[i]);
+            })
         }, (i: number) => String(i))
       }
       .width('100%')
@@ -155,19 +181,19 @@ export struct EmojiView {
       .padding({ left: 4, right: 4, top: 4 })
       .alignItems(VerticalAlign.Center)
 
-      // ── Emoji grid: row height fills the fixed grid budget (capped, and
-      // guaranteed to fit all 8 rows — see gridRowHeight above). ──
-      Column({ space: GRID_ROW_GAP }) {
-        ForEach([0, 1, 2, 3, 4, 5, 6, 7], (rowIdx: number) => {
-          if (rowIdx < EMOJI_CATEGORIES[this.currentTab].length) {
+      // ── 絵文字。全カテゴリが1本に繋がっていて、下へスクロールすれば
+      //    最後まで出る。どのカテゴリを見ているかはタブ側が追従する。 ──
+      List({ scroller: this.scroller, space: GRID_ROW_GAP }) {
+        ForEach(EMOJI_ROWS, (row: EmojiRow, idx: number) => {
+          ListItem() {
             Row({ space: 4 }) {
-              ForEach(EMOJI_CATEGORIES[this.currentTab][rowIdx], (emoji: string) => {
+              ForEach(row.items, (emoji: string) => {
                 Text(emoji)
                   .fontFamily(JP_FONT_FAMILY)
                   .fontSize(20)
                   .textAlign(TextAlign.Center)
                   .width(this.symKeyWidthVp)
-                  .height(gridRowHeight(EMOJI_CATEGORIES[this.currentTab].length))
+                  .height(GRID_ROW_H)
                   .backgroundColor(kbTheme(this.isDark).keyBg)
                   .borderRadius(10)
                   .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
@@ -175,16 +201,24 @@ export struct EmojiView {
                     this.h().commitTopCandidate();
                     this.h().insertText(emoji);
                   })
-              }, (emoji: string) => 'e' + String(this.currentTab) + emoji)
+              }, (emoji: string) => 'e' + emoji)
             }
             .width('100%')
             .justifyContent(FlexAlign.Center)
           }
-        }, (rowIdx: number) => String(rowIdx))
+        }, (row: EmojiRow, idx: number) => 'r' + String(idx))
       }
       .width('100%')
       .height(GRID_AREA_H)
-      .justifyContent(FlexAlign.Center)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
+      // 先頭に見えている行のカテゴリへタブを合わせる。指で送っている間も
+      // 現在地が分かるようにするため。
+      .onScrollIndex((first: number) => {
+        if (first < 0 || first >= EMOJI_ROWS.length) { return; }
+        const c = EMOJI_ROWS[first].cat;
+        if (c !== this.currentTab) { this.currentTab = c; }
+      })
 
       // ── Bottom row ────────────────────────────────────────────
       Row({ space: 0 }) {
