@@ -36,7 +36,7 @@ const FLICK_GRID: FlickKeyDef[][] = [
   ],
   [
     { center: 'ま', up: 'む', right: 'め', down: 'も', left: 'み' },
-    { center: 'や', up: 'ゆ', down: 'よ' },
+    { center: 'や', up: 'ゆ', left: '（', right: '）', down: 'よ' },
     { center: 'ら', up: 'る', right: 'れ', down: 'ろ', left: 'り' },
   ],
   [
