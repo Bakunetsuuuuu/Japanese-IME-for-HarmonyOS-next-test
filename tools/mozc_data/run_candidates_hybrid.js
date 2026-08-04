@@ -59,8 +59,8 @@ const HYBRID_MIN = 21;
 function main() {
   const show = process.argv.includes('--show');
   const { KanaKanjiConverter } = require(build());
-  KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(RAW, 'dict.json'), 'utf-8')));
-  KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(RAW, 'global_dict.json'), 'utf-8')));
+  KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/dict_src/dict.json'), 'utf-8')));
+  KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/dict_src/global_dict.json'), 'utf-8')));
   KanaKanjiConverter.initConnectionMatrix();
   KanaKanjiConverter.loadMozcEngine(...loadMozcArgs());
   const conv = new KanaKanjiConverter();

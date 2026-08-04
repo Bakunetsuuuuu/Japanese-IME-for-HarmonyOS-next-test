@@ -32591,6 +32591,10 @@ interface MozcDpState {
 // 全体のごく一部なので、起動時の復号は 0 件で済む。
 const MOZC_STR_BLOCK = 32;
 
+// 復号済み文字列を控えるブロックの大きさ。1ブロック 4096 件 = 32KB 程度で、
+// 触れたブロックだけ確保する (MozcStrTable.cache の説明を参照)。
+const MOZC_CACHE_BLOCK = 4096;
+
 // loadMozcEngine に渡す一式。引数を 15 個並べる代わりの入れ物で、
 // 中身はすべて tools/mozc_data/pack_strings.py / convert_to_binary.py の出力。
 export interface MozcPackedTables {
@@ -32685,7 +32689,11 @@ export class MozcStrTable {
   // UTF-8 バイト順に並べた番号の列 (読みの表だけが持つ)。これがあるので
   // Map を作らずに二分探索で読みを引ける。
   private sorted: Uint32Array = new Uint32Array(0);
-  private cache: (string | undefined)[] = [];
+  // 復号済み文字列の控え。全件ぶんを一度に確保すると、1件も復号していなくても
+  // 296万スロット (3表合計) = 約24MB のポインタ領域を取ってしまう。廉価端末では
+  // これがそのまま無駄なので、4096件ごとのブロックに分けて、触れたブロックだけ
+  // 確保する。索引は2段になるが、どちらも配列添字なので打鍵ごとの経路でも軽い。
+  private cache: ((string | undefined)[] | undefined)[] = [];
 
   load(blob: Uint8Array, lens: Uint8Array, base: Uint32Array,
       sorted: Uint32Array): void {
@@ -32693,7 +32701,8 @@ export class MozcStrTable {
     this.lens = lens;
     this.base = base;
     this.sorted = sorted;
-    this.cache = new Array<string | undefined>(lens.length);
+    this.cache = new Array<(string | undefined)[] | undefined>(
+      ((lens.length + MOZC_CACHE_BLOCK - 1) / MOZC_CACHE_BLOCK) | 0);
   }
 
   get count(): number {
@@ -32708,10 +32717,17 @@ export class MozcStrTable {
   }
 
   get(i: number): string {
-    const hit = this.cache[i];
-    if (hit !== undefined) { return hit; }
+    const b = (i / MOZC_CACHE_BLOCK) | 0;
+    let block = this.cache[b];
+    if (block !== undefined) {
+      const hit = block[i % MOZC_CACHE_BLOCK];
+      if (hit !== undefined) { return hit; }
+    } else {
+      block = new Array<string | undefined>(MOZC_CACHE_BLOCK);
+      this.cache[b] = block;
+    }
     const s = mozcDecodeUtf8(this.blob, this.startOf(i), this.lens[i]);
-    this.cache[i] = s;
+    block[i % MOZC_CACHE_BLOCK] = s;
     return s;
   }
 
@@ -32735,14 +32751,17 @@ export class MozcStrTable {
   }
 
   // 見つからなければ -1。
+  // sorted が空の表は「中身が既に UTF-8 バイト順で並んでいる」とみなして、
+  // 番号そのものを順位として二分探索する (並べ替え表を持たずに済む)。
   indexOf(key: string): number {
     const nlen = mozcEncodeUtf8(key);
     if (nlen < 0) { return -1; }
+    const presorted = this.sorted.length === 0;
     let lo = 0;
-    let hi = this.sorted.length - 1;
+    let hi = (presorted ? this.lens.length : this.sorted.length) - 1;
     while (lo <= hi) {
       const mid = (lo + hi) >> 1;
-      const idx = this.sorted[mid];
+      const idx = presorted ? mid : this.sorted[mid];
       const c = this.compareScratch(idx, nlen);
       if (c === 0) { return idx; }
       if (c < 0) { lo = mid + 1; } else { hi = mid - 1; }
@@ -32752,6 +32771,55 @@ export class MozcStrTable {
 
   has(key: string): boolean {
     return this.indexOf(key) >= 0;
+  }
+}
+
+// 読み -> 表記一覧 の辞書。中身は同じで、持ち方が2通りある。
+//
+//   JSON:  Record<読み, 表記[]>  評価ハーネス(tools/)がそのまま渡す
+//   パック: MozcStrTable 2本 + 索引  実機が読む
+//
+// なぜ2通り要るか。実機で測ったところ、dict.json 4.7MB + global_dict.json
+// 11.6MB を JSON.parse した状態は **ArkTS ヒープで約144MB** を占めていた
+// (mozc のデータ全部より重い)。キー 383,383 個と文字列 594,173 個を JS
+// オブジェクトとして持てばそうなる。mozc 側と同じパック形式に移せば同じ中身が
+// 型付き配列 10MB 程度に収まり、文字列は触れた分だけ復号される。
+// 中身は1バイトも変えない -- 持ち方だけの話。
+// tools/pack_dicts.py が書き、KeyboardController が読む。
+export class PackedDict {
+  private rec: Record<string, string[]> | undefined = undefined;
+  private keys: MozcStrTable = new MozcStrTable();
+  private vals: MozcStrTable = new MozcStrTable();
+  private idx: Uint32Array = new Uint32Array(0);
+
+  setRecord(rec: Record<string, string[]>): void {
+    this.rec = rec;
+  }
+
+  setPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
+      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array,
+      idx: Uint32Array): void {
+    this.rec = undefined;
+    // キーは書き出し時点で UTF-8 バイト順に並んでいるので、並べ替え表は要らない。
+    this.keys.load(keyBlob, keyLens, keyBase, new Uint32Array(0));
+    this.vals.load(valBlob, valLens, valBase, new Uint32Array(0));
+    this.idx = idx;
+  }
+
+  get(key: string): string[] | undefined {
+    const rec = this.rec;
+    if (rec !== undefined) { return rec[key]; }
+    if (this.idx.length === 0) { return undefined; }
+    const i = this.keys.indexOf(key);
+    if (i < 0) { return undefined; }
+    return this.vals.slice(this.idx[i], this.idx[i + 1]);
+  }
+
+  // get() は表記一覧を組み立てるので、有無を見るだけならこちらを使う。
+  has(key: string): boolean {
+    const rec = this.rec;
+    if (rec !== undefined) { return rec[key] !== undefined; }
+    return this.idx.length !== 0 && this.keys.indexOf(key) >= 0;
   }
 }
 
@@ -33329,7 +33397,7 @@ export class KanaKanjiConverter {
     // ranks first. しんどい itself already defaults to kana correctly; only
     // the bare stem (used before すぎる/すぎて) needed the same override.
     'しんど':'しんど'};
-  private static supplementaryDict: Record<string, string[]> = {};
+  private static supplementaryDict: PackedDict = new PackedDict();
   private static learned: Record<string, Record<string, number>> = {};
   private static userDict: Record<string, string[]> = {};
   // [leftClass, rightClass] overrides for user-dictionary readings, keyed the
@@ -33340,7 +33408,7 @@ export class KanaKanjiConverter {
   // verb/adjective entries.
   private static userClassMap: Record<string, number[]> = {};
   // Developer-curated dictionary bundled as rawfile/global_dict.json. Highest priority.
-  private static globalDict: Record<string, string[]> = {};
+  private static globalDict: PackedDict = new PackedDict();
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
   // No external file dependency — rules ported from tools/gen_matrix_default.py.
   private static connectionMatrix: number[][] = [];
@@ -33606,7 +33674,13 @@ export class KanaKanjiConverter {
   };
 
   static loadDictionary(dict: Record<string, string[]>): void {
-    KanaKanjiConverter.supplementaryDict = dict;
+    KanaKanjiConverter.supplementaryDict.setRecord(dict);
+  }
+
+  static loadDictionaryPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
+      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
+    KanaKanjiConverter.supplementaryDict.setPacked(keyBlob, keyLens, keyBase,
+      valBlob, valLens, valBase, idx);
   }
 
   static setUserDict(dict: Record<string, string[]>): void {
@@ -33618,7 +33692,13 @@ export class KanaKanjiConverter {
   }
 
   static setGlobalDict(dict: Record<string, string[]>): void {
-    KanaKanjiConverter.globalDict = dict;
+    KanaKanjiConverter.globalDict.setRecord(dict);
+  }
+
+  static setGlobalDictPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
+      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
+    KanaKanjiConverter.globalDict.setPacked(keyBlob, keyLens, keyBase,
+      valBlob, valLens, valBase, idx);
   }
 
   // Build and store the connection matrix from inline grammar rules (no JSON file needed).
@@ -34402,9 +34482,9 @@ export class KanaKanjiConverter {
     let allRecognized = true;
     for (let idx = 0; idx < segs.length; idx++) {
       const seg = segs[idx];
-      const g = KanaKanjiConverter.globalDict[seg];
+      const g = KanaKanjiConverter.globalDict.get(seg);
       const e = DICTIONARY[seg];
-      const s = KanaKanjiConverter.supplementaryDict[seg];
+      const s = KanaKanjiConverter.supplementaryDict.get(seg);
       const fw = KanaKanjiConverter.FUNCTION_WORDS[seg];
       const hasDictHit = !!((g && g.length > 0) || (e && e.length > 0) || (s && s.length > 0));
       if (!hasDictHit && !fw) { allRecognized = false; }
@@ -34982,9 +35062,9 @@ export class KanaKanjiConverter {
     }
 
     const entry = DICTIONARY[kana];
-    const ext = KanaKanjiConverter.supplementaryDict[kana];
+    const ext = KanaKanjiConverter.supplementaryDict.get(kana);
     const user = KanaKanjiConverter.userDict[kana];
-    const global = KanaKanjiConverter.globalDict[kana];
+    const global = KanaKanjiConverter.globalDict.get(kana);
     const kata = KanaKanjiConverter.toKatakana(kana);
     let cands: string[];
 
@@ -35947,9 +36027,9 @@ export class KanaKanjiConverter {
       return KanaKanjiConverter.mozcReadings.has(sub) || !!KanaKanjiConverter.userDict[sub];
     }
     if (KanaKanjiConverter.NEVER_SPAN.has(sub)) { return false; }
-    return !!(KanaKanjiConverter.globalDict[sub]
+    return !!(KanaKanjiConverter.globalDict.has(sub)
       || KanaKanjiConverter.userDict[sub]
-      || KanaKanjiConverter.supplementaryDict[sub]
+      || KanaKanjiConverter.supplementaryDict.has(sub)
       || DICTIONARY[sub]
       || KanaKanjiConverter.FW_CLASS_MAP[sub] !== undefined
       || KanaKanjiConverter.FUNCTION_WORDS[sub]);
@@ -36033,9 +36113,9 @@ export class KanaKanjiConverter {
       return KanaKanjiConverter.mozcReadings.has(reading);
     }
     return !!(DICTIONARY[reading]
-      || KanaKanjiConverter.globalDict[reading]
+      || KanaKanjiConverter.globalDict.has(reading)
       || KanaKanjiConverter.userDict[reading]
-      || KanaKanjiConverter.supplementaryDict[reading]);
+      || KanaKanjiConverter.supplementaryDict.has(reading));
   }
 
   // Returns true for kana that cannot start a Japanese word/morpheme.

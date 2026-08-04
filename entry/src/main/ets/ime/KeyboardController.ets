@@ -2787,16 +2787,39 @@ export class KeyboardController {
     }
   }
 
+  // 独自辞書 (dict.json / global_dict.json) はパック済みバイナリで読む。
+  //
+  // JSON.parse した状態は実機で ArkTS ヒープ約144MB を占めていた -- mozc の
+  // データ全部より重い。読み383,383件と表記594,173個をJSオブジェクトとして
+  // 持てばそうなる。中身は一切変えず、mozc の表と同じ形式 (blob + 長さ +
+  // ブロック基準、触れた文字列だけ復号) に移してある。
+  // 書き出しは tools/pack_dicts.py、等価性の検証は tools/verify_dicts.js。
+  private loadPackedDict(name: string,
+      apply: (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array,
+              vb: Uint8Array, vl: Uint8Array, vbase: Uint32Array,
+              idx: Uint32Array) => void): void {
+    const rm = this.context.resourceManager;
+    const toU32 = (d: Uint8Array): Uint32Array =>
+      new Uint32Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+    const names: string[] = [
+      name + '.keys.blob', name + '.keys.len', name + '.keys.base',
+      name + '.vals.blob', name + '.vals.len', name + '.vals.base',
+      name + '.idx.bin',
+    ];
+    Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
+      .then((all: Uint8Array[]) => {
+        apply(all[0], all[1], toU32(all[2]), all[3], all[4], toU32(all[5]), toU32(all[6]));
+      })
+      .catch((_e: Error) => { /* 読めなければ内蔵の静的辞書だけで動く */ });
+  }
+
   private loadDictionary(): void {
     if (!USE_DICT_JSON) { return; }
-    this.context.resourceManager.getRawFileContent('dict.json')
-      .then((data: Uint8Array) => {
-        const decoder = new util.TextDecoder('utf-8');
-        const text = decoder.decode(data);
-        const dict = JSON.parse(text) as Record<string, string[]>;
-        KanaKanjiConverter.loadDictionary(dict);
-      })
-      .catch((_e: Error) => { /* fall back to inline static dict */ });
+    this.loadPackedDict('dict',
+      (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
+       vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
+        KanaKanjiConverter.loadDictionaryPacked(kb, kl, kbase, vb, vl, vbase, idx);
+      });
   }
 
   // Build the Viterbi connection matrix from inline grammar rules (no external file).
@@ -2808,14 +2831,11 @@ export class KeyboardController {
   // Bundled with the app and committed to the repo (the old DevDict editor is gone);
   // applies to all users from the next patch. Highest conversion priority.
   private loadGlobalDictionary(): void {
-    this.context.resourceManager.getRawFileContent('global_dict.json')
-      .then((data: Uint8Array) => {
-        const decoder = new util.TextDecoder('utf-8');
-        const text = decoder.decode(data);
-        const dict = JSON.parse(text) as Record<string, string[]>;
-        KanaKanjiConverter.setGlobalDict(dict);
-      })
-      .catch((_e: Error) => { /* no global dict bundled yet */ });
+    this.loadPackedDict('global_dict',
+      (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
+       vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
+        KanaKanjiConverter.setGlobalDictPacked(kb, kl, kbase, vb, vl, vbase, idx);
+      });
   }
 
   private computeKeyWidths(dis: display.Display): void {

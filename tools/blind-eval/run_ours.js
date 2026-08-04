@@ -10,8 +10,8 @@ if(typeof Bun==='undefined'){
   kkcPath=path.join(tmp,'KKC.js');
 }
 const {KanaKanjiConverter}=require(kkcPath);
-KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(RAW,'dict.json'),'utf-8')));
-KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(RAW,'global_dict.json'),'utf-8')));
+KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(ROOT,'tools/dict_src/dict.json'),'utf-8')));
+KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(ROOT,'tools/dict_src/global_dict.json'),'utf-8')));
 KanaKanjiConverter.initConnectionMatrix();
 // Every per-reading mozc structure ships pre-flattened at build time (see
 // tools/mozc_data/convert_to_binary.py); loadMozcArgs reads the files and

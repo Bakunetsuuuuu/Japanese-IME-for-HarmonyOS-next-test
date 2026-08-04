@@ -17,8 +17,8 @@
 const fs = require('fs'), path = require('path'), os = require('os');
 const { execFileSync } = require('child_process');
 const ROOT = path.resolve(__dirname, '..', '..');
-const DICT = path.join(ROOT, 'entry/src/main/resources/rawfile/dict.json');
-const GDICT = path.join(ROOT, 'entry/src/main/resources/rawfile/global_dict.json');
+const DICT = path.join(ROOT, 'tools/dict_src/dict.json');
+const GDICT = path.join(ROOT, 'tools/dict_src/global_dict.json');
 
 function buildFrom(srcText) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'swj-'));

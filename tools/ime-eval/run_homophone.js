@@ -51,8 +51,8 @@ function main() {
     process.exit(1);
   }
   const { KanaKanjiConverter } = require(build());
-  KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(ROOT, 'entry/src/main/resources/rawfile/dict.json'), 'utf-8')));
-  KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(ROOT, 'entry/src/main/resources/rawfile/global_dict.json'), 'utf-8')));
+  KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/dict_src/dict.json'), 'utf-8')));
+  KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/dict_src/global_dict.json'), 'utf-8')));
   KanaKanjiConverter.initConnectionMatrix();
   const conv = new KanaKanjiConverter();
 

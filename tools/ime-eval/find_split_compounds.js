@@ -19,8 +19,8 @@ const ts=path.join(tmp,'KKC.ts');
 fs.writeFileSync(ts,'// @ts-nocheck\n'+fs.readFileSync(path.join(ROOT,'entry/src/main/ets/ime/KanaKanjiConverter.ets'),'utf-8'));
 execFileSync('npx',['tsc','--target','ES2020','--module','CommonJS','--skipLibCheck',ts],{stdio:'inherit'});
 const {KanaKanjiConverter}=require(path.join(tmp,'KKC.js'));
-KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(ROOT,'entry/src/main/resources/rawfile/dict.json'),'utf-8')));
-KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(ROOT,'entry/src/main/resources/rawfile/global_dict.json'),'utf-8')));
+KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(ROOT,'tools/dict_src/dict.json'),'utf-8')));
+KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(ROOT,'tools/dict_src/global_dict.json'),'utf-8')));
 KanaKanjiConverter.initConnectionMatrix();
 const conv=new KanaKanjiConverter();
 
