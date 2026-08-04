@@ -708,12 +708,22 @@ export class InputHandler {
   // 登録候補 (組み立てられた未知語) を出現回数の多い順に。
   // 文字列1本 "よみ\t表記\t回数" で返すのは、ArkTS の @StorageLink に
   // 構造体配列を載せると更新検知が効きにくいため。
+  // 1回しか組み立てられていないものは出さない。
+  //
+  // 連続して打った2語は、1語を組み立てた場合と構造上まったく区別できない。
+  // 実際「丸一日」と「本山」を続けて打っただけで「丸一日本山」が候補に上がって
+  // いた。判定で弾くことはできない (春+知 のような本当に登録したい組み立ても
+  // 同じ形になる) ので、回数で見る。偶然の隣接は繰り返されないが、実際に使う
+  // 語は何度も組み立て直すことになる。
+  private static readonly SUGGEST_MIN_COUNT = 2;
+
   getUnknownWordSuggestions(): string[] {
     const counts = UnknownWordLearner.getLearned();
     const rows: string[] = [];
     for (const reading of Object.keys(counts)) {
       const entry = counts[reading];
       for (const surface of Object.keys(entry)) {
+        if (entry[surface] < InputHandler.SUGGEST_MIN_COUNT) { continue; }
         rows.push(`${reading}\t${surface}\t${entry[surface]}`);
       }
     }
@@ -909,6 +919,12 @@ export class InputHandler {
     SuppressedCandidates.setSuppressed(next);
     this.saveSuppressed();
     this.publishSuppressedRows();
+    // 内蔵辞書で作れない語は、抑制を解いただけでは戻らない。自分で登録して
+    // 消した語がこれにあたる (削除時に登録からも外しているため)。
+    // 作れないと分かったときだけ登録し直す。
+    if (this.kanjiConverter.lookup(reading).indexOf(surface) < 0) {
+      this.registerUserWord(reading, surface);
+    }
     // 削除で候補から外れていた語をその場で戻す。
     this.updateCandidates();
   }
@@ -1015,6 +1031,10 @@ export class InputHandler {
   }
 
   // 登録済みの1件を消す。
+  //
+  // 辞書から外すだけでなく「削除した候補」にも入れる。外しただけだと、同じ語が
+  // 内蔵辞書にもあった場合に変換へ出続けて「消したのに出る」ことになるし、
+  // 消した記録がどこにも残らないので戻す手段が無くなる。
   removeUserWord(reading: string, surface: string): void {
     if (!this.imeContext) { return; }
     const ctx = this.imeContext;
@@ -1030,10 +1050,33 @@ export class InputHandler {
       })
       .then((next: Record<string, string[]>) => {
         this.userDictRaw = next;
+        if (SuppressedCandidates.suppress(reading, surface)) {
+          this.saveSuppressed();
+          this.publishSuppressedRows();
+        }
         this.publishDictRows();
         this.reloadUserDict();
       })
       .catch((e: ESObject) => { console.error('shuntiIME removeUserWord failed', JSON.stringify(e)); });
+  }
+
+  // 候補の長押し削除で消した語が自分の登録語だったら、登録からも外す。
+  // 抑制だけして登録に残すと、「登録済み」に一生変換に出ない語が並んでしまう。
+  private unregisterIfUserWord(reading: string, surface: string): void {
+    const cur = this.userDictRaw[reading];
+    if (cur === undefined || cur.indexOf(surface) < 0) { return; }
+    if (!this.imeContext) { return; }
+    const ctx = this.imeContext;
+    const next: Record<string, string[]> = {};
+    for (const k of Object.keys(this.userDictRaw)) {
+      if (k !== reading) { next[k] = this.userDictRaw[k]; continue; }
+      const kept = this.userDictRaw[k].filter((w: string) => w !== surface);
+      if (kept.length > 0) { next[k] = kept; }
+    }
+    this.userDictRaw = next;
+    UserDictStore.save(ctx, next)
+      .then(() => { this.publishDictRows(); })
+      .catch((e: ESObject) => { console.error('shuntiIME unregisterIfUserWord failed', JSON.stringify(e)); });
   }
 
   // 登録候補から外す (辞書には入れない)。
@@ -1113,9 +1156,11 @@ export class InputHandler {
       : this.conversionTarget();
     if (reading.length === 0 || surface.length === 0) { return ''; }
     if (!SuppressedCandidates.suppress(reading, surface)) { return ''; }
-    InputLog.recordDeleteCandidate(reading, surface, index); // [DEBUG-LOG]
+    InputLog.recordDeleteCandidate(reading, surface, index, candidates.length); // [DEBUG-LOG]
     KanaKanjiConverter.forgetChoice(reading, surface);
     UnknownWordLearner.forget(reading, surface);
+    // 自分で登録した語を消した場合は登録からも外す (両方の一覧の辻褄を合わせる)。
+    this.unregisterIfUserWord(reading, surface);
     this.saveSuppressed();
     this.saveLearning();
     this.saveUnknownWords();
@@ -2197,6 +2242,18 @@ export class InputHandler {
     else if (kIdx < 0) { insertAt = cIdx; }
     else if (cIdx < 0) { insertAt = kIdx; }
     else { insertAt = kIdx < cIdx ? kIdx : cIdx; }
+    // ただし候補0が辞書の実ヒットなら、その上には入れない。
+    //
+    // 上の「カタカナ形はゴミ」という前提は、外来語では成り立たない。
+    // さみっと の候補は [サミット, さみっと] で、カタカナ形がそのまま辞書の
+    // 正解なのに fallback と見なされ、insertAt が 0 になっていた。結果、
+    // さ充っと / さ三と / さミッと が サミット より上に挿し込まれ、実機の
+    // 入力ログでは サミット が7番目まで沈んでいた (こすぷれ→コスプレ も同じ)。
+    // 辞書に載っていない外来語すべてで起きる。
+    // 候補0が「打ったかなそのもの」でないなら実ヒットなので、位置0は明け渡さない。
+    if (insertAt === 0 && candidates.length > 0 && candidates[0] !== target) {
+      insertAt = 1;
+    }
     for (const a of alts) {
       if (!candidates.includes(a)) {
         candidates.splice(insertAt, 0, a);

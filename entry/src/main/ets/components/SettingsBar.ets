@@ -940,7 +940,7 @@ export struct SettingsBar {
                 .fontWeight(FontWeight.Medium)
                 .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
-              Text(row.split('\t')[0])
+              Text(`${row.split('\t')[0]}   組み立て ${row.split('\t')[2]}回`)
                 .fontFamily(JP_FONT_FAMILY)
                 .fontSize(11)
                 .fontColor(kbTheme(this.isDark).textSecondary)

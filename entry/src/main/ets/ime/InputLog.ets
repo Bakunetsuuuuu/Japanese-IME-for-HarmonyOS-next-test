@@ -88,6 +88,10 @@ const FLUSH_MS: number = 800;
 // だけなので、小さくてよい。
 const MAX_PENDING: number = 64;
 
+// 同じフィールド属性の記録を抑える間隔。フィールドを開き直したとき
+// (これは残したい) より短く、二重発火 (1〜2ms) より十分長く取る。
+const FIELD_DEDUPE_MS: number = 1000;
+
 // ログ本体の上限。超えたら古い方を半分捨てて書き直す(消えるのは古い行だけで、
 // 収集が止まることはない)。1レコード ~90B なので 2MB でおよそ 2万件。
 const MAX_BYTES: number = 2 * 1024 * 1024;
@@ -119,6 +123,9 @@ export class InputLog {
   // 捨てずに保留し、属性が届いた時点で secure なら破棄・そうでなければ採用する。
   private static pending: InputLogEntry[] = [];
   private static pendingDropped: number = 0;
+  // 直前に記録したフィールド属性と、その時刻。二重記録を抑えるために持つ。
+  private static lastFieldPattern: number = -9999;
+  private static lastFieldAt: number = 0;
 
   // 収集先ディレクトリを直接指定する(閲覧側や試験用)。書き込み側は
   // setWritableDir を使うこと ── パスが取れることと書けることは別なので。
@@ -186,6 +193,10 @@ export class InputLog {
   // フィールドの属性が届いた。保留分をここで採否する。
   static setFieldPattern(pattern: number): void {
     if (!DEBUG_INPUT_LOG) { return; }
+    const prevPattern = InputLog.lastFieldPattern;
+    const prevAt = InputLog.lastFieldAt;
+    InputLog.lastFieldPattern = pattern;
+    InputLog.lastFieldAt = Date.now();
     InputLog.secureField = SECURE_PATTERNS.indexOf(pattern) >= 0;
     InputLog.fieldPending = false;
     const held = InputLog.pending;
@@ -196,6 +207,11 @@ export class InputLog {
     // フィールドが始まったこと自体を1件残す。本文は入れない(secure でも安全)。
     // これがあると「ログが空」のとき、パスが違うのか(=この記録も無い)、
     // 収集の条件で落ちているのか(=この記録だけある)が一目で切り分けられる。
+    // 同じ属性が短時間に続けて届いたら記録しない。onInputStart が二重に
+    // 走る端末があり、まったく同じ field レコードが1〜2ミリ秒差で2件ずつ
+    // 残っていた。数日分のログの半分がこれで埋まり、上限に達したときに
+    // 肝心の変換記録を押し出していた。
+    if (pattern === prevPattern && InputLog.lastFieldAt - prevAt < FIELD_DEDUPE_MS) { return; }
     InputLog.write(LK_FIELD, '', '', -1, 0,
       `pattern=${pattern}${InputLog.secureField ? ' (secure: 記録しない)' : ''}`);
   }
@@ -256,6 +272,9 @@ export class InputLog {
   // 変換せずかなのまま確定した(無変換キー / pending の吐き出し)。
   static recordRaw(reading: string, surface: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
+    // 中身が無い確定は記録しない。読むものが何も無いのに行だけ増え、
+    // 上限 (MAX_BYTES) に達したとき本物の記録を押し出す。
+    if (reading.length === 0 && surface.length === 0) { return; }
     InputLog.push(LK_RAW, reading, surface, -1, 0, '');
   }
 
@@ -281,9 +300,9 @@ export class InputLog {
   }
 
   // 候補を削除した(長押し→削除)。「出てはいけない候補」の直接の証拠になる。
-  static recordDeleteCandidate(reading: string, surface: string, index: number): void {
+  static recordDeleteCandidate(reading: string, surface: string, index: number, total: number): void {
     if (!DEBUG_INPUT_LOG) { return; }
-    InputLog.push(LK_DELCAND, reading, surface, index, 0, '');
+    InputLog.push(LK_DELCAND, reading, surface, index, total, '');
   }
 
   // 未知語として学習された(辞書に無い語を手で組み立てた)。
