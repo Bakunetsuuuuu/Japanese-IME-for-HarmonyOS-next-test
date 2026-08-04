@@ -37099,7 +37099,16 @@ export class KanaKanjiConverter {
     const mergedHints: (string | undefined)[] = [];
     for (let k = 0; k < segs.length; k++) {
       const seg = segs[k];
-      const isProtectedNContraction = seg[0] === 'ん' && seg.length > 1;
+      // 単独の「ん」も、mozc エンジンでは畳み込まない。ん は語頭に立てない
+      // という理由でここに来るが、それは「他の語の一部」であることを意味しない
+      // -- んです/んだ の ん は助動詞そのもので、mozc の辞書にも助動詞として
+      // 入っている。畳み込むと DP が選んだ語義ごと捨てられ、ある|ん|です が
+      // あるん|です になって、名詞「アルン」しか候補が無くなっていた
+      // (ここに軽い痛みがアルンです)。DP は分割側 (9367) が結合側 (11731) より
+      // 安いと正しく判断できているので、その判断を消さないだけでよい。
+      // track A は 1 文字の ん を語として扱わないので、従来どおり畳み込む。
+      const isProtectedNContraction = seg[0] === 'ん'
+        && (seg.length > 1 || (isMozc && segHints[k] !== undefined));
       if (merged.length > 0 && KanaKanjiConverter.isNoStarter(seg[0]) && !isProtectedNContraction) {
         merged[merged.length - 1] += seg;
         mergedHints[mergedHints.length - 1] = undefined;

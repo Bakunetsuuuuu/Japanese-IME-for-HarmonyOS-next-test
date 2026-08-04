@@ -554,10 +554,20 @@ the reading itself** -- the condition that keeps デカール/デフェンス an
 rest of the loanwords mozc files under 助詞「デ」 ids alive. 77 senses across
 77 readings.
 
-Known and not addressed: mid-sentence spans like あるん -> アルン,
-ないん -> ナイン (mozc has 名詞,一般 entries for those readings, and they beat
-ある+ん / ない+ん). That is a span-length/segmentation issue, not a register
-one.
+**3. A single 「ん」 was being folded into the previous segment.** The DP was
+right all along -- it splits ある|ん|です and prices that at 9367 against
+あるん's 11731 -- but `segment()`'s post-DP merge folds any segment starting
+with a non-word-start kana into its predecessor, and that includes a bare ん.
+The merged span carries no hint, so `lookup('あるん')` fell back to mozc's
+名詞,一般 entry アルン. The merge already exempts 2+-char ん-initial segments
+on the grounds that ん cannot start a word; a lone ん is not glue either, it
+is the 助動詞 of んです/んだ and mozc lists it as one. Now exempt under the
+mozc engine whenever the DP gave that span a sense. Track A is unchanged (it
+does not treat a lone ん as a word).
+
+Running total on the blind corpus: **54.9% -> 57.1% (+8 sentences, 0
+regressions)**, track A flat at 44.6%, `corpus_test11` +1 and the other
+in-house corpora unchanged.
 
 ## Considered, not yet done
 
