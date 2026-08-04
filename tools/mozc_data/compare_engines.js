@@ -28,6 +28,10 @@ function build() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cmpeng-'));
   const tsPath = path.join(tmp, 'KKC.ts');
   fs.writeFileSync(tsPath, '// @ts-nocheck\n' + fs.readFileSync(SRC, 'utf-8'));
+  // bun で走らせた場合は TypeScript をそのまま require できるので tsc を
+  // 挟まない (tsc の入っていない環境でも動かせる):
+  //   bun tools/mozc_data/compare_engines.js
+  if (typeof Bun !== 'undefined') { return tsPath; }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
     '--skipLibCheck', tsPath], { stdio: 'inherit' });
   return path.join(tmp, 'KKC.js');

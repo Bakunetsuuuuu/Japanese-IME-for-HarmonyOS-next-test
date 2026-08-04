@@ -66,6 +66,39 @@ JSON directly on-device peaked past the IME extension's memory budget and
 crashed it). `tools/mozc_data/load_mozc.js` is the Node-side equivalent
 loader, used by `compare_engines.js`/the eval harness.
 
+`convert_to_binary.py`'s three *string* outputs (`mozc_readings.json` /
+`mozc_dict_surfaces.json` / `mozc_costs_surfaces.json`) are no longer shipped
+as JSON either: `pack_strings.py` repacks them into `.blob`/`.len`/`.base`
+(+`.srt` for readings) and those are what ship. The JSON originals moved to
+`tools/mozc_data/packed_src/` -- anything left under `rawfile/` is packed
+into the HAP whether the app reads it or not, and nothing reads them at
+runtime any more. Re-run `pack_strings.py` after any rebuild that changes
+those three files, then `verify_packed.js`.
+
+Why: the JSON was cheap to *read* and expensive to *parse*. Measured
+on-device, per stage, loading the mozc engine took 1990ms:
+
+| stage | time |
+| --- | --- |
+| file reads (76MB, every file) | 139ms |
+| `JSON.parse` of the three string tables | 1456ms |
+| building `Map<reading, index>` (746k) | 395ms |
+
+93% of it was making the JS engine materialise 746k+ string objects and a
+hash map, none of which is needed until a reading is actually looked up. The
+packed form is read as bytes, strings are decoded lazily on first access, and
+readings are found by binary-searching `.srt` against the raw UTF-8 in the
+blob instead of through a `Map`. Same measurement after: **117ms** (106ms
+reads + 11ms assembly), and the packed files are 2.45MB *smaller* than the
+JSON they replace. See `MozcStrTable` in `KanaKanjiConverter.ets` for the
+layout and `pack_strings.py`'s docstring for why lengths are uint8 with a
+per-32-entry base rather than a uint32 offset per string.
+
+This is a format change only, and is held to that: `verify_packed.js` checks
+every one of the 2,960,934 entries against the JSON, plus `indexOf()`
+round-tripping on all 745,964 readings and negative lookups. Run it after
+`pack_strings.py`.
+
 **"Full spec" mode**: `MAX_COST`/`MAX_CANDIDATES_PER_READING`/
 `MAX_SENSES_PER_READING` in `build_mozc_engine.py` were relaxed to mozc's
 own true observed maximums (no reading dropped by cost, every candidate
@@ -526,6 +559,14 @@ point instead of re-discovering these from scratch.
   augmentation as `build_jmdict_augment.py`, sourced from SudachiDict
   instead. Must run after `build_mozc_engine.py`. See "SudachiDict
   vocabulary augmentation" above.
+- `pack_strings.py` — repacks the three string tables from JSON into the
+  shipped `.blob`/`.len`/`.base`/`.srt` binaries. Reads
+  `packed_src/*.json`, writes into `rawfile/`. Run after any rebuild that
+  changes those tables. See "On-device format" above.
+- `verify_packed.js` — proves `pack_strings.py`'s output is entry-for-entry
+  identical to the JSON it replaced (`bun tools/mozc_data/verify_packed.js`).
+- `packed_src/` — the JSON originals of the three string tables, kept out of
+  `rawfile/` so they aren't packed into the HAP.
 - `compare_engines.js` — side-by-side custom-vs-mozc scoring against any
   `tools/ime-eval/` corpus file (`corpus_test10.js` by default). Not a
   regression gate like `tools/ime-eval/regress.js` — track B isn't expected
