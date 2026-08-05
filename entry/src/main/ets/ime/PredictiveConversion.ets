@@ -130,7 +130,11 @@ export class PredictiveConversion {
   // count) then curated common words, deduped by surface, capped. `learned` is
   // the conversion learning store (KanaKanjiConverter.getLearned()); passed in
   // rather than imported to keep this module dependency-free and unit-testable.
-  static predict(prefix: string, learned: Record<string, Record<string, number>>): string[] {
+  // dictHits は辞書由来の前方一致 (KanaKanjiConverter.prefixCompletions)。
+  // 引数で受け取るのは、このモジュールを依存なしに保つという元の方針のまま
+  // 辞書を使えるようにするため。
+  static predict(prefix: string, learned: Record<string, Record<string, number>>,
+      dictHits?: string[]): string[] {
     if (prefix.length < MIN_PREFIX) { return []; }
     const out: string[] = [];
     const seen = new Set<string>();
@@ -164,6 +168,15 @@ export class PredictiveConversion {
     for (const c of CURATED) {
       if (out.length >= MAX_COMPLETIONS) { break; }
       if (c.reading.length > prefix.length && c.reading.startsWith(prefix)) { push(c.surface); }
+    }
+
+    // 3. 辞書全体からの前方一致。学習も手書き表も外した語を拾う担当で、
+    //    ここを足すまで予測変換は辞書を一切見ていなかった。
+    if (dictHits !== undefined) {
+      for (const d of dictHits) {
+        if (out.length >= MAX_COMPLETIONS) { break; }
+        push(d);
+      }
     }
     return out;
   }

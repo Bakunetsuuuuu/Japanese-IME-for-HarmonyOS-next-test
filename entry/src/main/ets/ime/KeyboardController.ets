@@ -1760,7 +1760,8 @@ export class InputHandler {
   // date/time value -- and so must bypass reading→surface conversion learning
   // (かいし→会社 or きょう→"2026年7月23日" would both be wrong to learn).
   private isNonLearningCandidate(composing: string, text: string): boolean {
-    if (PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned()).indexOf(text) >= 0) {
+    if (PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned(),
+        KanaKanjiConverter.prefixCompletions(composing, PREDICT_DICT_HITS)).indexOf(text) >= 0) {
       return true;
     }
     if (DateTimePredictor.predict(composing, new Date()).indexOf(text) >= 0) {
@@ -2443,7 +2444,8 @@ export class InputHandler {
     }
 
     // Common-word prefix completions (かいし→会社), after any date/time values.
-    const completions = PredictiveConversion.predict(target, KanaKanjiConverter.getLearned());
+    const completions = PredictiveConversion.predict(target, KanaKanjiConverter.getLearned(),
+      KanaKanjiConverter.prefixCompletions(target, PREDICT_DICT_HITS));
     for (const c of completions) {
       if (!candidates.includes(c)) { candidates.splice(insAt, 0, c); insAt++; }
     }
@@ -2733,6 +2735,11 @@ export class InputHandler {
 // ---------- KeyboardController ----------
 
 const USE_DICT_JSON: boolean = true;
+
+// 予測変換に渡す辞書由来の前方一致の件数。PredictiveConversion 側は学習・
+// 手書き表を先に詰めてから残り枠にこれを入れるので、実際に表に出るのは
+// MAX_COMPLETIONS まで。多めに渡して選ばせる。
+const PREDICT_DICT_HITS = 8;
 
 export class KeyboardController {
   private panel: inputMethodEngine.Panel | undefined;

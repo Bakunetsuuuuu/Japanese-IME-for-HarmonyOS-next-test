@@ -32772,6 +32772,49 @@ export class MozcStrTable {
   has(key: string): boolean {
     return this.indexOf(key) >= 0;
   }
+
+  // MOZC_ENC_SCRATCH の先頭 nlen バイトを「前置き」として比べる。
+  // 項目がそれで始まっていれば 0、辞書順で手前なら負、後ろなら正。
+  private comparePrefix(i: number, nlen: number): number {
+    const start = this.startOf(i);
+    const len = this.lens[i];
+    const n = len < nlen ? len : nlen;
+    for (let k = 0; k < n; k++) {
+      const d = this.blob[start + k] - MOZC_ENC_SCRATCH[k];
+      if (d !== 0) { return d; }
+    }
+    return len >= nlen ? 0 : -1;
+  }
+
+  private rankToIndex(r: number): number {
+    return this.sorted.length === 0 ? r : this.sorted[r];
+  }
+
+  // prefix で始まる項目の実体番号を、最大 limit 件。並びは UTF-8 バイト順
+  // (= 読みの五十音順に近い) で、頻度の判断は呼び出し側に任せる。
+  // 表がバイト順に整列しているので、二分探索で開始位置を出して前方に舐める
+  // だけで済む -- パック形式にしたことで、辞書全体の前方一致検索が
+  // 打鍵ごとに回せる程度に安くなった。
+  prefixIndices(prefix: string, limit: number): number[] {
+    const out: number[] = [];
+    const nlen = mozcEncodeUtf8(prefix);
+    if (nlen <= 0) { return out; }
+    const count = this.sorted.length === 0 ? this.lens.length : this.sorted.length;
+    let lo = 0;
+    let hi = count - 1;
+    let first = count;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (this.comparePrefix(this.rankToIndex(mid), nlen) >= 0) { first = mid; hi = mid - 1; }
+      else { lo = mid + 1; }
+    }
+    for (let r = first; r < count && out.length < limit; r++) {
+      const idx = this.rankToIndex(r);
+      if (this.comparePrefix(idx, nlen) !== 0) { break; }
+      out.push(idx);
+    }
+    return out;
+  }
 }
 
 // 読み -> 表記一覧 の辞書。中身は同じで、持ち方が2通りある。
@@ -32813,6 +32856,32 @@ export class PackedDict {
     const i = this.keys.indexOf(key);
     if (i < 0) { return undefined; }
     return this.vals.slice(this.idx[i], this.idx[i + 1]);
+  }
+
+  // prefix で始まる読み (prefix 自身より長いもの) の代表表記を最大 limit 件。
+  // 予測変換の材料。Record 版は走査になるので、実機では必ずパック版を使う。
+  completions(prefix: string, limit: number): string[] {
+    const out: string[] = [];
+    const rec = this.rec;
+    if (rec !== undefined) {
+      for (const k of Object.keys(rec)) {
+        if (out.length >= limit) { break; }
+        if (k.length > prefix.length && k.startsWith(prefix)) {
+          const v = rec[k];
+          if (v !== undefined && v.length > 0) { out.push(v[0]); }
+        }
+      }
+      return out;
+    }
+    if (this.idx.length === 0) { return out; }
+    const idxs = this.keys.prefixIndices(prefix, limit * 3);
+    for (const i of idxs) {
+      if (out.length >= limit) { break; }
+      if (this.keys.get(i).length <= prefix.length) { continue; }
+      const start = this.idx[i];
+      if (this.idx[i + 1] > start) { out.push(this.vals.get(start)); }
+    }
+    return out;
   }
 
   // get() は表記一覧を組み立てるので、有無を見るだけならこちらを使う。
@@ -33750,6 +33819,57 @@ export class KanaKanjiConverter {
     const start = KanaKanjiConverter.mozcDictIndex[idx];
     const end = KanaKanjiConverter.mozcDictIndex[idx + 1];
     return KanaKanjiConverter.mozcDictSurfaces.slice(start, end);
+  }
+
+  // 予測変換の材料: prefix で始まる読みの表記を、良さそうな順に。
+  //
+  // これまで予測変換は学習履歴と手書きテーブルしか見ておらず、38万件の
+  // 独自辞書も74万件の mozc 辞書も使っていなかった (節約打鍵 5.3%)。
+  // パック形式は UTF-8 バイト順に整列しているので、前方一致は二分探索 +
+  // 前方走査で済み、打鍵ごとに回しても安い。
+  //
+  // 優先順は 開発者辞書 -> 補助辞書 -> mozc。前2つはこの企画で選んだ語なので
+  // そのまま信用し、mozc 側は語義コスト (低いほど一般的) に「まだ打って
+  // いないかな1文字あたりの割増」を足して並べる。長い語を当てるほど得だが、
+  // 遠い語ほど当たりにくいため。
+  private static readonly PREDICT_EXTRA_KANA_COST = 600;
+
+  static prefixCompletions(prefix: string, limit: number): string[] {
+    const out: string[] = [];
+    const seen = new Set<string>();
+    const push = (surface: string): void => {
+      if (surface.length > 0 && !seen.has(surface) && out.length < limit) {
+        seen.add(surface);
+        out.push(surface);
+      }
+    };
+    for (const x of KanaKanjiConverter.globalDict.completions(prefix, limit)) { push(x); }
+    for (const x of KanaKanjiConverter.supplementaryDict.completions(prefix, limit)) { push(x); }
+    if (out.length < limit && KanaKanjiConverter.isMozcLoaded()) {
+      const idxs = KanaKanjiConverter.mozcReadings.prefixIndices(prefix, limit * 8);
+      const scored: MozcSense[] = [];
+      for (const i of idxs) {
+        const reading = KanaKanjiConverter.mozcReadings.get(i);
+        if (reading.length <= prefix.length) { continue; }
+        const s0 = KanaKanjiConverter.mozcCostIndex[i];
+        const e0 = KanaKanjiConverter.mozcCostIndex[i + 1];
+        if (e0 <= s0) { continue; }
+        let best = 0x7fffffff;
+        let bestSurface = '';
+        for (let k = s0; k < e0; k++) {
+          const c = KanaKanjiConverter.mozcCostCostArr[k];
+          if (c < best) { best = c; bestSurface = KanaKanjiConverter.mozcCostSurfaceArr.get(k); }
+        }
+        if (bestSurface.length === 0) { continue; }
+        scored.push({
+          cost: best + KanaKanjiConverter.PREDICT_EXTRA_KANA_COST * (reading.length - prefix.length),
+          leftClass: 0, rightClass: 0, surface: bestSurface,
+        });
+      }
+      scored.sort((a: MozcSense, b: MozcSense) => a.cost - b.cost);
+      for (const x of scored) { push(x.surface); }
+    }
+    return out;
   }
 
   static isMozcLoaded(): boolean {
