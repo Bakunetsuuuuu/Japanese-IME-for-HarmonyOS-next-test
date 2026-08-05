@@ -36,7 +36,7 @@ const FLICK_GRID: FlickKeyDef[][] = [
   ],
   [
     { center: 'ま', up: 'む', right: 'め', down: 'も', left: 'み' },
-    { center: 'や', up: 'ゆ', down: 'よ' },
+    { center: 'や', up: 'ゆ', left: '（', right: '）', down: 'よ' },
     { center: 'ら', up: 'る', right: 'れ', down: 'ろ', left: 'り' },
   ],
   [
@@ -267,6 +267,7 @@ export struct FlickKeyboardView {
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
+          this.h().hapticTick();
           this.h().undoLastDeletion();
         })
     } else if (rowIdx === 1) {
@@ -277,7 +278,10 @@ export struct FlickKeyboardView {
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
-          if (event.type === TouchType.Down) { this.startCurRepeat('left'); }
+          if (event.type === TouchType.Down) {
+            this.h().hapticTick();
+            this.startCurRepeat('left');
+          }
           else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
         })
     } else if (rowIdx === 2) {
@@ -313,6 +317,7 @@ export struct FlickKeyboardView {
           )
         )
         .onClick(() => {
+          this.h().hapticTick();
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
         })
     } else {
@@ -325,6 +330,7 @@ export struct FlickKeyboardView {
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
+          this.h().hapticTick();
           this.h().commitTopCandidate();
           this.h().cycleInputMode();
         })
@@ -342,6 +348,7 @@ export struct FlickKeyboardView {
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
           if (event.type === TouchType.Down) {
+            this.h().hapticTick();
             this.startBsRepeat();
           } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
             this.stopBsRepeat();
@@ -355,7 +362,10 @@ export struct FlickKeyboardView {
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
-          if (event.type === TouchType.Down) { this.startCurRepeat('right'); }
+          if (event.type === TouchType.Down) {
+            this.h().hapticTick();
+            this.startCurRepeat('right');
+          }
           else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
         })
     } else if (rowIdx === 2) {
@@ -394,6 +404,7 @@ export struct FlickKeyboardView {
           )
         )
         .onClick(() => {
+          this.h().hapticTick();
           const st = AppStorage.get<string>('inputState') ?? 'IDLE';
           if (st === 'COMPOSING') {
             this.h().handleBunsetsu();
@@ -409,6 +420,7 @@ export struct FlickKeyboardView {
         .backgroundColor(kbTheme(this.isDark).accent).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
+          this.h().hapticTick();
           const st = AppStorage.get<string>('inputState') ?? 'IDLE';
           if (st === 'BUNSETSU') {
             this.h().commitBunsetsu();

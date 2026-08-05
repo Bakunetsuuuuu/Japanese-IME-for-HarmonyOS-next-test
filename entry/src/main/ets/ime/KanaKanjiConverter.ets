@@ -33960,6 +33960,24 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.learned = remaining;
   }
 
+  private static readonly BRACKET_DICT: Record<string, string[]> = {
+    '（': ['（）', '（', '「」', '『』', '【】', '〖〗', '〔〕', '〈〉', '《》'],
+    '）': ['）', '（）', '」', '』', '】', '〗', '〕', '〉', '》'],
+  };
+
+  static isBracketChar(c: string): boolean {
+    return c.length === 1 && KanaKanjiConverter.BRACKET_DICT[c] !== undefined;
+  }
+
+  static lookupBracket(kana: string): string[] | null {
+    if (kana.length === 0) { return null; }
+    const first = kana[0];
+    const entry = KanaKanjiConverter.BRACKET_DICT[first];
+    if (entry === undefined) { return null; }
+    const result: string[] = [...entry];
+    if (!result.includes(kana)) { result.push(kana); }
+    return result;
+  }
   // Per-segment ("文節") learning for the ordinary whole-sentence commit path.
   // Committing a multi-segment candidate used to record only the entire
   // reading→surface pair (recordChoice(wholeReading, wholeSurface)), a key

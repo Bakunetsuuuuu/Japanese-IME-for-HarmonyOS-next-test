@@ -6,7 +6,7 @@ import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
 import vibrator from '@ohos.vibrator';
-import systemVibrator from '@system.vibrator';
+
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
@@ -650,19 +650,7 @@ export class InputHandler {
         vibrator.startVibration({ type: 'time', duration: 30 }, { id: 0, usage: 'touch' })
           .then(() => { this.hapticMode = 2; })
           .catch((_e2: ESObject) => {
-            // 3) 旧FAモデル系の @system.vibrator。@ohos.vibrator とは別経路で、
-            //    こちらだけ通る端末がありうるので最後に試す。
-            try {
-              systemVibrator.vibrate({
-                mode: 'short',
-                success: () => { this.hapticMode = 3; },
-                fail: () => { this.markHapticUnavailable(); },
-              });
-              return;
-            } catch (_e3) {
-              this.markHapticUnavailable();
-              return;
-            }
+            this.markHapticUnavailable();
           });
       });
   }
@@ -685,10 +673,6 @@ export class InputHandler {
     if (!this.hapticEnabled) { return; }
     if (this.hapticMode === -1) { return; }
     if (this.hapticMode === 0) { this.probeHaptic(); return; }
-    if (this.hapticMode === 3) {
-      try { systemVibrator.vibrate({ mode: 'short', success: () => {} }); } catch (_e) {}
-      return;
-    }
     const effect: ESObject = this.hapticMode === 1
       ? { type: 'preset', effectId: 'haptic.clock.timer', count: 1 }
       : { type: 'time', duration: 30 };
