@@ -36405,6 +36405,29 @@ export class KanaKanjiConverter {
   // same 0-9000ish scale as track A's, so the same order-of-magnitude value
   // is a reasonable starting point.
   private static readonly MOZC_SINGLE_CONTENT_PENALTY = 2500;
+  // 助詞を飲み込んだカタカナ語に課す罰則 (segment() の使用箇所を参照)。
+  // 「その語義を消す」に近い大きさにしてある -- 語+助詞 の読みを1語の
+  // カタカナとして出すのが正しい場面は、ひらがな入力では実質存在しない。
+  private static readonly MOZC_PARTICLE_ABSORB_PENALTY = 10000;
+  // は/を/へ だけ。外来語の末尾に来ないかなを選んである。
+  // と/の/が も助詞だが、トマト・テスト・リクエスト・プレゼント・
+  // ヨーグルト・ポケット・ピアノ・マンガ・ヨガ… と本物のカタカナ語が
+  // 大量に該当してしまい、実測でも改善8件に対し悪化6件が全部「と」だった。
+  // 「助詞を除いた頭が辞書にある」だけでは守り切れない (とまと→とま、
+  // てすと→てす もmozcの辞書には入っている)。
+  private static readonly ABSORBABLE_PARTICLES: Set<string> =
+    new Set(['は', 'を', 'へ']);
+
+  // 表記が読みのカタカナ化そのもので、末尾が助詞で、助詞を除いた部分が
+  // 2かな以上かつそれ自体が辞書にある場合だけ true。
+  private static isParticleAbsorbingKatakana(reading: string, surface: string): boolean {
+    if (surface !== KanaKanjiConverter.toKatakana(reading)) { return false; }
+    const last = reading.charAt(reading.length - 1);
+    if (!KanaKanjiConverter.ABSORBABLE_PARTICLES.has(last)) { return false; }
+    const head = reading.slice(0, reading.length - 1);
+    if (head.length < 2) { return false; }
+    return KanaKanjiConverter.mozcReadings.has(head);
+  }
 
   // 「に＋内容語」に割られて壊れる複合助詞（連語）。getWordInfo でまとめて
   // 割り引く。ここに載せるのは、割った側の読みが実在の内容語になってしまい
@@ -37189,6 +37212,21 @@ export class KanaKanjiConverter {
             let singlePenalty = 0;
             if (len === 1 && KanaKanjiConverter.mozcContentClassMask[cand.leftClass] === 1) {
               singlePenalty = KanaKanjiConverter.MOZC_SINGLE_CONTENT_PENALTY;
+            }
+            // 助詞を飲み込んだカタカナ語の抑制。
+            //
+            // mozc の辞書にはローマ字表記由来の 名詞,一般 が大量にあり、
+            // 「とむは」「じょんは」「はめ」のように 語+助詞 の読みがそのまま
+            // 1語として入っている。表記はその読みのカタカナ化そのものなので、
+            // ひらがなで打った文の途中に出ると トムハ / ジョンハ / 祖母ハメ に
+            // なる。実際に盲検コーパスでこの形の誤りが出ている。
+            //
+            // 判定は「表記が読みのカタカナ化そのもの」かつ「末尾が助詞」かつ
+            // 「助詞を除いた部分が2かな以上でそれ自体が辞書にある」。最後の
+            // 条件が本物のカタカナ語を守る -- ヨガ(よが)は よ が1かななので
+            // 対象外、オメガ(おめが)も おめ が辞書に無いので残る。
+            if (len >= 3 && KanaKanjiConverter.isParticleAbsorbingKatakana(sub, cand.surface)) {
+              singlePenalty += KanaKanjiConverter.MOZC_PARTICLE_ABSORB_PENALTY;
             }
             const nextStates = states[i + len];
             states[i].forEach((state: MozcDpState, prevClass: number) => {
