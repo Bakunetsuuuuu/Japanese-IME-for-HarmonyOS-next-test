@@ -36409,6 +36409,8 @@ export class KanaKanjiConverter {
   // 「その語義を消す」に近い大きさにしてある -- 語+助詞 の読みを1語の
   // カタカナとして出すのが正しい場面は、ひらがな入力では実質存在しない。
   private static readonly MOZC_PARTICLE_ABSORB_PENALTY = 10000;
+  // 内容語の直後に来る「は」始まりスパンへの罰則 (segment() の使用箇所を参照)。
+  private static readonly MOZC_WA_SWALLOW_PENALTY = 2000;
   // は/を/へ だけ。外来語の末尾に来ないかなを選んである。
   // と/の/が も助詞だが、トマト・テスト・リクエスト・プレゼント・
   // ヨーグルト・ポケット・ピアノ・マンガ・ヨガ… と本物のカタカナ語が
@@ -37230,7 +37232,20 @@ export class KanaKanjiConverter {
             }
             const nextStates = states[i + len];
             states[i].forEach((state: MozcDpState, prevClass: number) => {
-              const total = state.cost + cand.cost + singlePenalty + this.getEdgeCost(prevClass, cand.leftClass);
+              // 「は」の飲み込み防止。track A の topicPenalty と同じ考えで、
+              // 内容語の直後に「は」で始まる2かな以上のスパンが来たときだけ
+              // 課す。名詞のあとの「は」はほぼ係助詞なのに、DP は 名詞+助詞 の
+              // 2ノードより1ノードを安く見るので、そのままだと
+              //   そぼ|は|め   -> そぼ|はめ   (祖母ハメが見えません)
+              //   いす|は|き   -> いす|はき   (この椅子破棄でできている)
+              //   とむ|は|こなぐすり -> とむ|はこ|ぐすり (富む箱薬)
+              // のように助詞が後続語に吸われる。track A 側には元からこの項が
+              // あり、track B の DP にだけ無かった。
+              const waPenalty = (len > 1 && sub.charCodeAt(0) === 0x306F
+                && KanaKanjiConverter.mozcContentClassMask[prevClass] === 1)
+                ? KanaKanjiConverter.MOZC_WA_SWALLOW_PENALTY : 0;
+              const total = state.cost + cand.cost + singlePenalty + waPenalty
+                + this.getEdgeCost(prevClass, cand.leftClass);
               const existing = nextStates.get(cand.rightClass);
               if (existing === undefined || total < existing.cost) {
                 nextStates.set(cand.rightClass, { cost: total, prevPos: i, prevClass, surface: cand.surface });
