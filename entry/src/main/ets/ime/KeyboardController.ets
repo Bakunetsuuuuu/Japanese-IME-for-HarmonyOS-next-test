@@ -8,7 +8,7 @@ import pasteboard from '@ohos.pasteboard';
 import vibrator from '@ohos.vibrator';
 import systemVibrator from '@system.vibrator';
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
-import { KanaKanjiConverter, MozcMatrixData } from './KanaKanjiConverter';
+import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
 import type { UserPosEntry, PosKind, VerbGroup } from './ConjugationEngine';
@@ -490,57 +490,65 @@ export class InputHandler {
   // resident) that coexisted with its own flattened output at the peak,
   // well over the extension's ~464MB heap budget. A catchable failure just
   // falls back to custom.
+  // 読み終わるまで isMozcLoaded() は false のままなので、起動直後に
+  // applyConversionEngine が二度呼ばれると読み込みも二度走る (実機ログで確認)。
+  // 読み込み中であることを別に覚えておいて、二本目は目標エンジンだけ更新する。
+  private mozcLoading: boolean = false;
+  private mozcLoadTarget: 'mozc' | 'hybrid' = 'mozc';
+
   private loadMozcRawfiles(ctx: InputMethodExtensionContext, target: 'mozc' | 'hybrid' = 'mozc'): void {
+    this.mozcLoadTarget = target;
+    if (this.mozcLoading) { return; }
+    this.mozcLoading = true;
     const rm = ctx.resourceManager;
-    const decoder = new util.TextDecoder('utf-8');
-    // toU16Array: getRawFileContent's Uint8Array may sit at a non-even
-    // byteOffset, which Uint16Array/Int32Array can't wrap directly -- copy
-    // into a fresh aligned buffer first. Device is little-endian, matching
-    // the files written by convert_to_binary.py.
+    // toAligned: getRawFileContent's Uint8Array may sit at a non-even
+    // byteOffset, which Uint32Array/Int32Array/Uint16Array can't wrap
+    // directly -- copy into a fresh aligned buffer first. Device is
+    // little-endian, matching the files written by the build scripts.
+    // The big UTF-8 blobs are read as Uint8Array and used as-is (no copy).
     const toBuf = (data: Uint8Array, byteOffset: number, byteLength: number): ArrayBuffer =>
       data.buffer.slice(data.byteOffset + byteOffset, data.byteOffset + byteOffset + byteLength);
-    // Chained (not Promise.all + destructuring) to match this file's existing
-    // getRawFileContent().then() style (see loadDictionary/loadGlobalDictionary
-    // above) rather than introduce a new pattern.
-    rm.getRawFileContent('mozc_readings.json')
-      .then((readingsData: Uint8Array) => {
-        const readings = JSON.parse(decoder.decode(readingsData)) as string[];
-        return rm.getRawFileContent('mozc_dict_surfaces.json').then((dictSurfacesData: Uint8Array) => {
-          const dictSurfaces = JSON.parse(decoder.decode(dictSurfacesData)) as string[];
-          return rm.getRawFileContent('mozc_dict_index.bin').then((dictIndexData: Uint8Array) => {
-            const dictIndex = new Uint32Array(toBuf(dictIndexData, 0, dictIndexData.byteLength));
-            return rm.getRawFileContent('mozc_costs_surfaces.json').then((costsSurfacesData: Uint8Array) => {
-              const costsSurfaces = JSON.parse(decoder.decode(costsSurfacesData)) as string[];
-              return rm.getRawFileContent('mozc_costs_index.bin').then((costsIndexData: Uint8Array) => {
-                const costsIndex = new Uint32Array(toBuf(costsIndexData, 0, costsIndexData.byteLength));
-                return rm.getRawFileContent('mozc_costs.bin').then((costsBinData: Uint8Array) => {
-                  // mozc_costs.bin layout: int32 cost[n] + uint16 left[n] + uint16 right[n]
-                  // (see convert_to_binary.py write_outputs). n_senses = last cumulative index.
-                  const nSenses = costsIndex[costsIndex.length - 1];
-                  const costsCost = new Int32Array(toBuf(costsBinData, 0, nSenses * 4));
-                  const costsLeft = new Uint16Array(toBuf(costsBinData, nSenses * 4, nSenses * 2));
-                  const costsRight = new Uint16Array(toBuf(costsBinData, nSenses * 4 + nSenses * 2, nSenses * 2));
-                  return rm.getRawFileContent('mozc_matrix.json').then((matrixData: Uint8Array) => {
-                    const matrix = JSON.parse(decoder.decode(matrixData)) as MozcMatrixData;
-                    // The connection matrix cells ship as a separate flat uint16 binary
-                    // (mozc_matrix.bin) rather than inside the JSON, so it can be read
-                    // straight into a Uint16Array without a multi-megabyte JSON parse or
-                    // a boxed number[][] -- the change that keeps mozc inside the heap.
-                    return rm.getRawFileContent('mozc_matrix.bin').then((binData: Uint8Array) => {
-                      const cells = new Uint16Array(toBuf(binData, 0, binData.byteLength));
-                      KanaKanjiConverter.loadMozcEngine(readings, dictSurfaces, dictIndex,
-                        costsSurfaces, costsIndex, costsCost, costsLeft, costsRight, matrix, cells);
-                      KanaKanjiConverter.setEngine(target);
-                      console.info('shuntiIME mozc engine loaded, engine =', target);
-                    });
-                  });
-                });
-              });
-            });
-          });
-        });
+    // 全ファイルを並行して読む。以前は1本ずつ .then() で繋いでいたが、
+    // ここは純粋な読み込みで互いに依存が無く、直列にする理由が無い。
+    const names: string[] = [
+      'mozc_readings.blob', 'mozc_readings.len', 'mozc_readings.base', 'mozc_readings.srt',
+      'mozc_dict_surfaces.blob', 'mozc_dict_surfaces.len', 'mozc_dict_surfaces.base',
+      'mozc_dict_index.bin',
+      'mozc_costs_surfaces.blob', 'mozc_costs_surfaces.len', 'mozc_costs_surfaces.base',
+      'mozc_costs_index.bin', 'mozc_costs.bin',
+      'mozc_matrix.json', 'mozc_matrix.bin',
+    ];
+    Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
+      .then((all: Uint8Array[]) => {
+        const u32 = (d: Uint8Array): Uint32Array => new Uint32Array(toBuf(d, 0, d.byteLength));
+        const costsIndex = u32(all[11]);
+        // mozc_costs.bin layout: int32 cost[n] + uint16 left[n] + uint16 right[n]
+        // (see convert_to_binary.py write_outputs). n_senses = last cumulative index.
+        const costsBin = all[12];
+        const nSenses = costsIndex[costsIndex.length - 1];
+        const tables: MozcPackedTables = {
+          readBlob: all[0], readLens: all[1], readBase: u32(all[2]), readSorted: u32(all[3]),
+          dictSurfBlob: all[4], dictSurfLens: all[5], dictSurfBase: u32(all[6]),
+          dictIndex: u32(all[7]),
+          costSurfBlob: all[8], costSurfLens: all[9], costSurfBase: u32(all[10]),
+          costsIndex: costsIndex,
+          costsCost: new Int32Array(toBuf(costsBin, 0, nSenses * 4)),
+          costsLeft: new Uint16Array(toBuf(costsBin, nSenses * 4, nSenses * 2)),
+          costsRight: new Uint16Array(toBuf(costsBin, nSenses * 4 + nSenses * 2, nSenses * 2)),
+        };
+        const decoder = new util.TextDecoder('utf-8');
+        const matrix = JSON.parse(decoder.decode(all[13])) as MozcMatrixData;
+        // The connection matrix cells ship as a separate flat uint16 binary
+        // (mozc_matrix.bin) rather than inside the JSON, so it can be read
+        // straight into a Uint16Array without a multi-megabyte JSON parse or
+        // a boxed number[][] -- the change that keeps mozc inside the heap.
+        const cells = new Uint16Array(toBuf(all[14], 0, all[14].byteLength));
+        this.mozcLoading = false;
+        KanaKanjiConverter.loadMozcEngine(tables, matrix, cells);
+        KanaKanjiConverter.setEngine(this.mozcLoadTarget);
       })
       .catch((e: Error) => {
+        this.mozcLoading = false;
         console.error('shuntiIME mozc engine load failed, staying on custom', JSON.stringify(e));
         KanaKanjiConverter.setEngine('custom');
       });
@@ -2779,16 +2787,44 @@ export class KeyboardController {
     }
   }
 
+  // 独自辞書 (dict.json / global_dict.json) はパック済みバイナリで読む。
+  //
+  // JSON.parse した状態は実機で ArkTS ヒープ約144MB を占めていた -- mozc の
+  // データ全部より重い。読み383,383件と表記594,173個をJSオブジェクトとして
+  // 持てばそうなる。中身は一切変えず、mozc の表と同じ形式 (blob + 長さ +
+  // ブロック基準、触れた文字列だけ復号) に移してある。
+  // 書き出しは tools/pack_dicts.py、等価性の検証は tools/verify_dicts.js。
+  private loadPackedDict(name: string,
+      apply: (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array,
+              vb: Uint8Array, vl: Uint8Array, vbase: Uint32Array,
+              idx: Uint32Array) => void): void {
+    const rm = this.context.resourceManager;
+    const toU32 = (d: Uint8Array): Uint32Array =>
+      new Uint32Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+    const names: string[] = [
+      name + '.keys.blob', name + '.keys.len', name + '.keys.base',
+      name + '.vals.blob', name + '.vals.len', name + '.vals.base',
+      name + '.idx.bin',
+    ];
+    Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
+      .then((all: Uint8Array[]) => {
+        apply(all[0], all[1], toU32(all[2]), all[3], all[4], toU32(all[5]), toU32(all[6]));
+      })
+      .catch((e: Error) => {
+        // 黙って落とさない。辞書が読めていない状態は変換品質が静かに下がる
+        // だけで表からは見えず、実際 KeyboardPage 側の重複ロードが
+        // dict.json 削除後に無言で死んでいた。
+        console.error('shuntiIME packed dict load failed: ' + name, JSON.stringify(e));
+      });
+  }
+
   private loadDictionary(): void {
     if (!USE_DICT_JSON) { return; }
-    this.context.resourceManager.getRawFileContent('dict.json')
-      .then((data: Uint8Array) => {
-        const decoder = new util.TextDecoder('utf-8');
-        const text = decoder.decode(data);
-        const dict = JSON.parse(text) as Record<string, string[]>;
-        KanaKanjiConverter.loadDictionary(dict);
-      })
-      .catch((_e: Error) => { /* fall back to inline static dict */ });
+    this.loadPackedDict('dict',
+      (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
+       vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
+        KanaKanjiConverter.loadDictionaryPacked(kb, kl, kbase, vb, vl, vbase, idx);
+      });
   }
 
   // Build the Viterbi connection matrix from inline grammar rules (no external file).
@@ -2800,14 +2836,11 @@ export class KeyboardController {
   // Bundled with the app and committed to the repo (the old DevDict editor is gone);
   // applies to all users from the next patch. Highest conversion priority.
   private loadGlobalDictionary(): void {
-    this.context.resourceManager.getRawFileContent('global_dict.json')
-      .then((data: Uint8Array) => {
-        const decoder = new util.TextDecoder('utf-8');
-        const text = decoder.decode(data);
-        const dict = JSON.parse(text) as Record<string, string[]>;
-        KanaKanjiConverter.setGlobalDict(dict);
-      })
-      .catch((_e: Error) => { /* no global dict bundled yet */ });
+    this.loadPackedDict('global_dict',
+      (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
+       vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
+        KanaKanjiConverter.setGlobalDictPacked(kb, kl, kbase, vb, vl, vbase, idx);
+      });
   }
 
   private computeKeyWidths(dis: display.Display): void {

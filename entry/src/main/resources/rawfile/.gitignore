@@ -7,3 +7,8 @@
 # `git add` them.
 mozc_dict.json
 mozc_costs.json
+
+# 注意: gitignore は「同梱されない」ことを意味しない。rawfile 配下のファイルは
+# 追跡の有無に関わらず HAP に丸ごと入る。上の2つを生成したまま置いておくと
+# 85MB が黙って同梱される (実際に一度そうなり、HAP が 98MB -> 181MB になった)。
+# convert_to_binary.py を回したあとは必ず消すこと。

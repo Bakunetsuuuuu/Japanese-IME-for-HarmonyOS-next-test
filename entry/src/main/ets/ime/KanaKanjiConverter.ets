@@ -32541,6 +32541,10 @@ export interface MozcMatrixData {
   // The N*N connection matrix itself is no longer part of this JSON header --
   // it ships as a flat uint16 binary (mozc_matrix.bin) passed to loadMozcEngine
   // separately. See build_mozc_engine.py's write_outputs.
+  // 各クラスの「文末に立つ」コスト。mozc の接続行列には EOS 列が無い
+  // (列0は全ゼロ) ため、句点「。」の前に立てるかどうかを代わりに使う。
+  // tools/mozc_data/build_eos_costs.py が書く。
+  eosCosts?: number[];
 }
 
 // One grammatical sense a reading can take (see tools/mozc_data/
@@ -32564,6 +32568,259 @@ interface MozcDpState {
   prevPos: number;
   prevClass: number;
   surface: string | undefined;
+}
+
+// mozc の文字列表 (読み・候補表記・語義表記) を、JSON ではなくパック済みの
+// バイナリのまま保持するための入れ物。書き出しは tools/mozc_data/pack_strings.py。
+//
+// なぜこの形にしたか。実機で mozc エンジンのロードを段階ごとに測ったところ、
+// 合計 1990ms のうちファイルの読み込みは 139ms しかなく、内訳は
+// JSON.parse が 1456ms、Map<読み, 番号> の構築が 395ms だった。つまり重いのは
+// 76MB のバイト列を読むことではなく、JS エンジンに 74.6 万個の文字列オブジェクトと
+// ハッシュ表を作らせることだった。IME 拡張は入力欄を離れるたびに落とされるので、
+// この代金は「一度きり」ではなく起動のたびにかかる。
+//
+// 形式は blob (UTF-8 を区切りなしで連結) + lens (各文字列のバイト長, uint8) +
+// base (32 件ごとの blob 内オフセット, uint32)。文字列ごとに uint32 の開始位置を
+// 持つ方が素直だが、3 表で 296 万件あるため、それだけで 11.3MB と元の JSON より
+// 重くなる。実データの最長は 99 バイトなので長さは 1 バイトに収まり、開始位置は
+// ブロック先頭から高々 31 個ぶん足せば求まる。Uint8Array 上の数十回の加算は
+// JSON.parse に比べれば無いに等しく、この形なら JSON より小さくなる。
+//
+// 文字列は必要になったときだけ復号して cache に控える。会話一回で実際に触るのは
+// 全体のごく一部なので、起動時の復号は 0 件で済む。
+const MOZC_STR_BLOCK = 32;
+
+// 復号済み文字列を控えるブロックの大きさ。1ブロック 4096 件 = 32KB 程度で、
+// 触れたブロックだけ確保する (MozcStrTable.cache の説明を参照)。
+const MOZC_CACHE_BLOCK = 4096;
+
+// loadMozcEngine に渡す一式。引数を 15 個並べる代わりの入れ物で、
+// 中身はすべて tools/mozc_data/pack_strings.py / convert_to_binary.py の出力。
+export interface MozcPackedTables {
+  readBlob: Uint8Array;
+  readLens: Uint8Array;
+  readBase: Uint32Array;
+  readSorted: Uint32Array;
+  dictSurfBlob: Uint8Array;
+  dictSurfLens: Uint8Array;
+  dictSurfBase: Uint32Array;
+  dictIndex: Uint32Array;
+  costSurfBlob: Uint8Array;
+  costSurfLens: Uint8Array;
+  costSurfBase: Uint32Array;
+  costsIndex: Uint32Array;
+  costsCost: Int32Array;
+  costsLeft: Uint16Array;
+  costsRight: Uint16Array;
+}
+
+// UTF-8 の符号化/復号は手書きする。このファイルは tools/ime-eval のハーネスが
+// そのまま Node の TypeScript として読むので、@ohos.util を import できない
+// (TextDecoder が使えない)。対象は最長 99 バイトの短い文字列だけなので、
+// 自前の方が速くもある。
+function mozcDecodeUtf8(buf: Uint8Array, start: number, len: number): string {
+  let out = '';
+  let i = start;
+  const end = start + len;
+  while (i < end) {
+    const b0 = buf[i];
+    if (b0 < 0x80) {
+      out += String.fromCharCode(b0);
+      i += 1;
+    } else if (b0 < 0xE0) {
+      out += String.fromCharCode(((b0 & 0x1F) << 6) | (buf[i + 1] & 0x3F));
+      i += 2;
+    } else if (b0 < 0xF0) {
+      out += String.fromCharCode(((b0 & 0x0F) << 12) | ((buf[i + 1] & 0x3F) << 6)
+        | (buf[i + 2] & 0x3F));
+      i += 3;
+    } else {
+      const cp = ((b0 & 0x07) << 18) | ((buf[i + 1] & 0x3F) << 12)
+        | ((buf[i + 2] & 0x3F) << 6) | (buf[i + 3] & 0x3F);
+      const v = cp - 0x10000;
+      out += String.fromCharCode(0xD800 + (v >> 10), 0xDC00 + (v & 0x3FF));
+      i += 4;
+    }
+  }
+  return out;
+}
+
+// 探索のたびに Uint8Array を作らずに済むよう、符号化先は使い回す。読みは
+// 最長 99 バイトなので 256 バイトあれば足りる。戻り値は書き込んだバイト数、
+// 入り切らなければ -1 (該当なしと同じ扱いでよい)。
+const MOZC_ENC_SCRATCH: Uint8Array = new Uint8Array(256);
+
+function mozcEncodeUtf8(s: string): number {
+  let n = 0;
+  for (let i = 0; i < s.length; i++) {
+    let cp = s.charCodeAt(i);
+    if (cp >= 0xD800 && cp <= 0xDBFF && i + 1 < s.length) {
+      const lo = s.charCodeAt(i + 1);
+      if (lo >= 0xDC00 && lo <= 0xDFFF) {
+        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
+        i++;
+      }
+    }
+    if (n + 4 > MOZC_ENC_SCRATCH.length) { return -1; }
+    if (cp < 0x80) {
+      MOZC_ENC_SCRATCH[n++] = cp;
+    } else if (cp < 0x800) {
+      MOZC_ENC_SCRATCH[n++] = 0xC0 | (cp >> 6);
+      MOZC_ENC_SCRATCH[n++] = 0x80 | (cp & 0x3F);
+    } else if (cp < 0x10000) {
+      MOZC_ENC_SCRATCH[n++] = 0xE0 | (cp >> 12);
+      MOZC_ENC_SCRATCH[n++] = 0x80 | ((cp >> 6) & 0x3F);
+      MOZC_ENC_SCRATCH[n++] = 0x80 | (cp & 0x3F);
+    } else {
+      MOZC_ENC_SCRATCH[n++] = 0xF0 | (cp >> 18);
+      MOZC_ENC_SCRATCH[n++] = 0x80 | ((cp >> 12) & 0x3F);
+      MOZC_ENC_SCRATCH[n++] = 0x80 | ((cp >> 6) & 0x3F);
+      MOZC_ENC_SCRATCH[n++] = 0x80 | (cp & 0x3F);
+    }
+  }
+  return n;
+}
+
+export class MozcStrTable {
+  private blob: Uint8Array = new Uint8Array(0);
+  private lens: Uint8Array = new Uint8Array(0);
+  private base: Uint32Array = new Uint32Array(0);
+  // UTF-8 バイト順に並べた番号の列 (読みの表だけが持つ)。これがあるので
+  // Map を作らずに二分探索で読みを引ける。
+  private sorted: Uint32Array = new Uint32Array(0);
+  // 復号済み文字列の控え。全件ぶんを一度に確保すると、1件も復号していなくても
+  // 296万スロット (3表合計) = 約24MB のポインタ領域を取ってしまう。廉価端末では
+  // これがそのまま無駄なので、4096件ごとのブロックに分けて、触れたブロックだけ
+  // 確保する。索引は2段になるが、どちらも配列添字なので打鍵ごとの経路でも軽い。
+  private cache: ((string | undefined)[] | undefined)[] = [];
+
+  load(blob: Uint8Array, lens: Uint8Array, base: Uint32Array,
+      sorted: Uint32Array): void {
+    this.blob = blob;
+    this.lens = lens;
+    this.base = base;
+    this.sorted = sorted;
+    this.cache = new Array<(string | undefined)[] | undefined>(
+      ((lens.length + MOZC_CACHE_BLOCK - 1) / MOZC_CACHE_BLOCK) | 0);
+  }
+
+  get count(): number {
+    return this.lens.length;
+  }
+
+  private startOf(i: number): number {
+    let p = this.base[(i / MOZC_STR_BLOCK) | 0];
+    const from = i - (i % MOZC_STR_BLOCK);
+    for (let j = from; j < i; j++) { p += this.lens[j]; }
+    return p;
+  }
+
+  get(i: number): string {
+    const b = (i / MOZC_CACHE_BLOCK) | 0;
+    let block = this.cache[b];
+    if (block !== undefined) {
+      const hit = block[i % MOZC_CACHE_BLOCK];
+      if (hit !== undefined) { return hit; }
+    } else {
+      block = new Array<string | undefined>(MOZC_CACHE_BLOCK);
+      this.cache[b] = block;
+    }
+    const s = mozcDecodeUtf8(this.blob, this.startOf(i), this.lens[i]);
+    block[i % MOZC_CACHE_BLOCK] = s;
+    return s;
+  }
+
+  slice(start: number, end: number): string[] {
+    const out: string[] = [];
+    for (let i = start; i < end; i++) { out.push(this.get(i)); }
+    return out;
+  }
+
+  // i 番目の項目と、MOZC_ENC_SCRATCH の先頭 nlen バイトを辞書順で比べる。
+  // 復号を挟まないので、探索の 20 回ぶんが素の整数比較で済む。
+  private compareScratch(i: number, nlen: number): number {
+    const start = this.startOf(i);
+    const len = this.lens[i];
+    const n = len < nlen ? len : nlen;
+    for (let k = 0; k < n; k++) {
+      const d = this.blob[start + k] - MOZC_ENC_SCRATCH[k];
+      if (d !== 0) { return d; }
+    }
+    return len - nlen;
+  }
+
+  // 見つからなければ -1。
+  // sorted が空の表は「中身が既に UTF-8 バイト順で並んでいる」とみなして、
+  // 番号そのものを順位として二分探索する (並べ替え表を持たずに済む)。
+  indexOf(key: string): number {
+    const nlen = mozcEncodeUtf8(key);
+    if (nlen < 0) { return -1; }
+    const presorted = this.sorted.length === 0;
+    let lo = 0;
+    let hi = (presorted ? this.lens.length : this.sorted.length) - 1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      const idx = presorted ? mid : this.sorted[mid];
+      const c = this.compareScratch(idx, nlen);
+      if (c === 0) { return idx; }
+      if (c < 0) { lo = mid + 1; } else { hi = mid - 1; }
+    }
+    return -1;
+  }
+
+  has(key: string): boolean {
+    return this.indexOf(key) >= 0;
+  }
+}
+
+// 読み -> 表記一覧 の辞書。中身は同じで、持ち方が2通りある。
+//
+//   JSON:  Record<読み, 表記[]>  評価ハーネス(tools/)がそのまま渡す
+//   パック: MozcStrTable 2本 + 索引  実機が読む
+//
+// なぜ2通り要るか。実機で測ったところ、dict.json 4.7MB + global_dict.json
+// 11.6MB を JSON.parse した状態は **ArkTS ヒープで約144MB** を占めていた
+// (mozc のデータ全部より重い)。キー 383,383 個と文字列 594,173 個を JS
+// オブジェクトとして持てばそうなる。mozc 側と同じパック形式に移せば同じ中身が
+// 型付き配列 10MB 程度に収まり、文字列は触れた分だけ復号される。
+// 中身は1バイトも変えない -- 持ち方だけの話。
+// tools/pack_dicts.py が書き、KeyboardController が読む。
+export class PackedDict {
+  private rec: Record<string, string[]> | undefined = undefined;
+  private keys: MozcStrTable = new MozcStrTable();
+  private vals: MozcStrTable = new MozcStrTable();
+  private idx: Uint32Array = new Uint32Array(0);
+
+  setRecord(rec: Record<string, string[]>): void {
+    this.rec = rec;
+  }
+
+  setPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
+      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array,
+      idx: Uint32Array): void {
+    this.rec = undefined;
+    // キーは書き出し時点で UTF-8 バイト順に並んでいるので、並べ替え表は要らない。
+    this.keys.load(keyBlob, keyLens, keyBase, new Uint32Array(0));
+    this.vals.load(valBlob, valLens, valBase, new Uint32Array(0));
+    this.idx = idx;
+  }
+
+  get(key: string): string[] | undefined {
+    const rec = this.rec;
+    if (rec !== undefined) { return rec[key]; }
+    if (this.idx.length === 0) { return undefined; }
+    const i = this.keys.indexOf(key);
+    if (i < 0) { return undefined; }
+    return this.vals.slice(this.idx[i], this.idx[i + 1]);
+  }
+
+  // get() は表記一覧を組み立てるので、有無を見るだけならこちらを使う。
+  has(key: string): boolean {
+    const rec = this.rec;
+    if (rec !== undefined) { return rec[key] !== undefined; }
+    return this.idx.length !== 0 && this.keys.indexOf(key) >= 0;
+  }
 }
 
 export class KanaKanjiConverter {
@@ -33140,7 +33397,7 @@ export class KanaKanjiConverter {
     // ranks first. しんどい itself already defaults to kana correctly; only
     // the bare stem (used before すぎる/すぎて) needed the same override.
     'しんど':'しんど'};
-  private static supplementaryDict: Record<string, string[]> = {};
+  private static supplementaryDict: PackedDict = new PackedDict();
   private static learned: Record<string, Record<string, number>> = {};
   private static userDict: Record<string, string[]> = {};
   // [leftClass, rightClass] overrides for user-dictionary readings, keyed the
@@ -33151,7 +33408,7 @@ export class KanaKanjiConverter {
   // verb/adjective entries.
   private static userClassMap: Record<string, number[]> = {};
   // Developer-curated dictionary bundled as rawfile/global_dict.json. Highest priority.
-  private static globalDict: Record<string, string[]> = {};
+  private static globalDict: PackedDict = new PackedDict();
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
   // No external file dependency — rules ported from tools/gen_matrix_default.py.
   private static connectionMatrix: number[][] = [];
@@ -33197,14 +33454,15 @@ export class KanaKanjiConverter {
   // ~746k entries is far lighter than the old Record<string, string[]>: no
   // per-key array-object allocation, and it's the ONLY structure the reading
   // string itself is duplicated into (dict/costs below reference readings
-  // only by integer index).
-  private static mozcReadingIndex: Map<string, number> = new Map();
+  // only by integer index). 読み -> 番号 は Map ではなく、UTF-8 バイト順の
+  // 並び (mozc_readings.srt) を二分探索して引く -- MozcStrTable を参照。
+  private static mozcReadings: MozcStrTable = new MozcStrTable();
   // Flattened surfaces (all readings' candidate lists concatenated) + a
   // cumulative uint32 start-offset per reading (length = readings.length+1,
   // so surface count for reading i = dictIndex[i+1]-dictIndex[i]). Replaces
   // a Record<reading, string[]> of ~746k array objects (one per reading) --
   // see mozc_dict_index.bin / mozc_dict_surfaces.json.
-  private static mozcDictSurfaces: string[] = [];
+  private static mozcDictSurfaces: MozcStrTable = new MozcStrTable();
   private static mozcDictIndex: Uint32Array = new Uint32Array(0);
   // Costs stored columnar: three parallel typed arrays (cost/leftClass/
   // rightClass) + a surface string[], indexed by a global sense index, plus a
@@ -33221,7 +33479,7 @@ export class KanaKanjiConverter {
   private static mozcCostCostArr: Int32Array = new Int32Array(0);
   private static mozcCostLeftArr: Uint16Array = new Uint16Array(0);
   private static mozcCostRightArr: Uint16Array = new Uint16Array(0);
-  private static mozcCostSurfaceArr: string[] = [];
+  private static mozcCostSurfaceArr: MozcStrTable = new MozcStrTable();
   // Connection matrix as a FLAT row-major Uint16 array (cell [a][b] lives at
   // a*mozcMatrixSize + b), read straight from mozc_matrix.bin. Storing it as a
   // typed array instead of a boxed number[][] of ~7.14M cells is what keeps the
@@ -33229,6 +33487,9 @@ export class KanaKanjiConverter {
   private static mozcMatrix: Uint16Array = new Uint16Array(0);
   private static mozcMatrixSize: number = 0;
   private static mozcBosClass: number = 0;
+  // build_eos_costs.py が導出した、クラスごとの文末コスト。空なら従来どおり
+  // matrix[cls][bos] を使う (どの道ゼロなので EOS 項が効かないだけ)。
+  private static mozcEosCosts: number[] = [];
   private static mozcUnknownClass: number = 0;
   private static mozcNounGeneralClass: number = -1;
   private static mozcKanjiNumberClass: number = -1;
@@ -33413,7 +33674,13 @@ export class KanaKanjiConverter {
   };
 
   static loadDictionary(dict: Record<string, string[]>): void {
-    KanaKanjiConverter.supplementaryDict = dict;
+    KanaKanjiConverter.supplementaryDict.setRecord(dict);
+  }
+
+  static loadDictionaryPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
+      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
+    KanaKanjiConverter.supplementaryDict.setPacked(keyBlob, keyLens, keyBase,
+      valBlob, valLens, valBase, idx);
   }
 
   static setUserDict(dict: Record<string, string[]>): void {
@@ -33425,7 +33692,13 @@ export class KanaKanjiConverter {
   }
 
   static setGlobalDict(dict: Record<string, string[]>): void {
-    KanaKanjiConverter.globalDict = dict;
+    KanaKanjiConverter.globalDict.setRecord(dict);
+  }
+
+  static setGlobalDictPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
+      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
+    KanaKanjiConverter.globalDict.setPacked(keyBlob, keyLens, keyBase,
+      valBlob, valLens, valBase, idx);
   }
 
   // Build and store the connection matrix from inline grammar rules (no JSON file needed).
@@ -33441,26 +33714,27 @@ export class KanaKanjiConverter {
   // not touch any track-A state. Call once, lazily, the first time the user
   // switches the conversionEngine setting to 'mozc' — see
   // KeyboardController.reloadSettings().
-  static loadMozcEngine(readings: string[], dictSurfaces: string[], dictIndex: Uint32Array,
-      costsSurfaces: string[], costsIndex: Uint32Array, costsCost: Int32Array,
-      costsLeft: Uint16Array, costsRight: Uint16Array,
+  // 文字列 3 表はパック済みバイナリのまま受け取り、そのまま持つ。ここで
+  // 展開もハッシュ表の構築もしないのが要点 (MozcStrTable の説明を参照)。
+  static loadMozcEngine(t: MozcPackedTables,
       matrixData: MozcMatrixData, matrixCells: Uint16Array): void {
-    const readingIndex = new Map<string, number>();
-    for (let i = 0; i < readings.length; i++) { readingIndex.set(readings[i], i); }
-    KanaKanjiConverter.mozcReadingIndex = readingIndex;
-    KanaKanjiConverter.mozcDictSurfaces = dictSurfaces;
-    KanaKanjiConverter.mozcDictIndex = dictIndex;
-    KanaKanjiConverter.mozcCostIndex = costsIndex;
-    KanaKanjiConverter.mozcCostCostArr = costsCost;
-    KanaKanjiConverter.mozcCostLeftArr = costsLeft;
-    KanaKanjiConverter.mozcCostRightArr = costsRight;
-    KanaKanjiConverter.mozcCostSurfaceArr = costsSurfaces;
+    KanaKanjiConverter.mozcReadings.load(t.readBlob, t.readLens, t.readBase, t.readSorted);
+    KanaKanjiConverter.mozcDictSurfaces.load(t.dictSurfBlob, t.dictSurfLens,
+      t.dictSurfBase, new Uint32Array(0));
+    KanaKanjiConverter.mozcDictIndex = t.dictIndex;
+    KanaKanjiConverter.mozcCostIndex = t.costsIndex;
+    KanaKanjiConverter.mozcCostCostArr = t.costsCost;
+    KanaKanjiConverter.mozcCostLeftArr = t.costsLeft;
+    KanaKanjiConverter.mozcCostRightArr = t.costsRight;
+    KanaKanjiConverter.mozcCostSurfaceArr.load(t.costSurfBlob, t.costSurfLens,
+      t.costSurfBase, new Uint32Array(0));
     // Flat row-major connection matrix straight from mozc_matrix.bin -- no
     // reshape into a boxed number[][] (that array was the mozc engine's biggest
     // heap cost and the OOM crash's dominant driver).
     KanaKanjiConverter.mozcMatrix = matrixCells;
     KanaKanjiConverter.mozcMatrixSize = matrixData.size;
     KanaKanjiConverter.mozcBosClass = matrixData.bosClass;
+    KanaKanjiConverter.mozcEosCosts = matrixData.eosCosts ?? [];
     KanaKanjiConverter.mozcUnknownClass = matrixData.unknownClass;
     KanaKanjiConverter.mozcNounGeneralClass = matrixData.nounGeneralClass ?? -1;
     KanaKanjiConverter.mozcKanjiNumberClass = matrixData.kanjiNumberClass ?? -1;
@@ -33471,8 +33745,8 @@ export class KanaKanjiConverter {
   // mozcDict[reading] under the old Record<string,string[]> shape --
   // reconstructs a plain string[] slice on demand (transient, GC'd).
   private static getMozcDictSurfaces(reading: string): string[] | undefined {
-    const idx = KanaKanjiConverter.mozcReadingIndex.get(reading);
-    if (idx === undefined) { return undefined; }
+    const idx = KanaKanjiConverter.mozcReadings.indexOf(reading);
+    if (idx < 0) { return undefined; }
     const start = KanaKanjiConverter.mozcDictIndex[idx];
     const end = KanaKanjiConverter.mozcDictIndex[idx + 1];
     return KanaKanjiConverter.mozcDictSurfaces.slice(start, end);
@@ -34226,9 +34500,9 @@ export class KanaKanjiConverter {
     let allRecognized = true;
     for (let idx = 0; idx < segs.length; idx++) {
       const seg = segs[idx];
-      const g = KanaKanjiConverter.globalDict[seg];
+      const g = KanaKanjiConverter.globalDict.get(seg);
       const e = DICTIONARY[seg];
-      const s = KanaKanjiConverter.supplementaryDict[seg];
+      const s = KanaKanjiConverter.supplementaryDict.get(seg);
       const fw = KanaKanjiConverter.FUNCTION_WORDS[seg];
       const hasDictHit = !!((g && g.length > 0) || (e && e.length > 0) || (s && s.length > 0));
       if (!hasDictHit && !fw) { allRecognized = false; }
@@ -34806,9 +35080,9 @@ export class KanaKanjiConverter {
     }
 
     const entry = DICTIONARY[kana];
-    const ext = KanaKanjiConverter.supplementaryDict[kana];
+    const ext = KanaKanjiConverter.supplementaryDict.get(kana);
     const user = KanaKanjiConverter.userDict[kana];
-    const global = KanaKanjiConverter.globalDict[kana];
+    const global = KanaKanjiConverter.globalDict.get(kana);
     const kata = KanaKanjiConverter.toKatakana(kana);
     let cands: string[];
 
@@ -35768,12 +36042,12 @@ export class KanaKanjiConverter {
       // intent, and without this a registered novel word could never even
       // become a DP span (getWordInfoCandidatesMozc gives such spans a
       // generic-noun sense).
-      return KanaKanjiConverter.mozcReadingIndex.has(sub) || !!KanaKanjiConverter.userDict[sub];
+      return KanaKanjiConverter.mozcReadings.has(sub) || !!KanaKanjiConverter.userDict[sub];
     }
     if (KanaKanjiConverter.NEVER_SPAN.has(sub)) { return false; }
-    return !!(KanaKanjiConverter.globalDict[sub]
+    return !!(KanaKanjiConverter.globalDict.has(sub)
       || KanaKanjiConverter.userDict[sub]
-      || KanaKanjiConverter.supplementaryDict[sub]
+      || KanaKanjiConverter.supplementaryDict.has(sub)
       || DICTIONARY[sub]
       || KanaKanjiConverter.FW_CLASS_MAP[sub] !== undefined
       || KanaKanjiConverter.FUNCTION_WORDS[sub]);
@@ -35854,12 +36128,12 @@ export class KanaKanjiConverter {
   // katakana (which the segment path can't distinguish from an auto-fallback).
   static isDictionaryWord(reading: string): boolean {
     if (KanaKanjiConverter.isMozcEngine()) {
-      return KanaKanjiConverter.mozcReadingIndex.has(reading);
+      return KanaKanjiConverter.mozcReadings.has(reading);
     }
     return !!(DICTIONARY[reading]
-      || KanaKanjiConverter.globalDict[reading]
+      || KanaKanjiConverter.globalDict.has(reading)
       || KanaKanjiConverter.userDict[reading]
-      || KanaKanjiConverter.supplementaryDict[reading]);
+      || KanaKanjiConverter.supplementaryDict.has(reading));
   }
 
   // Returns true for kana that cannot start a Japanese word/morpheme.
@@ -36333,19 +36607,19 @@ export class KanaKanjiConverter {
         || KanaKanjiConverter.FW_CLASS_MAP[reading] !== undefined) { return hint; }
     const preferred = KanaKanjiConverter.getTrackAPreferredSurface(reading);
     if (preferred === undefined || preferred === hint) { return hint; }
-    const readingIdx = KanaKanjiConverter.mozcReadingIndex.get(reading);
-    if (readingIdx === undefined) { return hint; }
+    const readingIdx = KanaKanjiConverter.mozcReadings.indexOf(reading);
+    if (readingIdx < 0) { return hint; }
     const start = KanaKanjiConverter.mozcCostIndex[readingIdx];
     const end = KanaKanjiConverter.mozcCostIndex[readingIdx + 1];
     for (let idx = start; idx < end; idx++) {
-      if (KanaKanjiConverter.mozcCostSurfaceArr[idx] === preferred) { return preferred; }
+      if (KanaKanjiConverter.mozcCostSurfaceArr.get(idx) === preferred) { return preferred; }
     }
     return hint;
   }
 
   private getWordInfoCandidatesMozc(sub: string): MozcSense[] {
-    const readingIdx = KanaKanjiConverter.mozcReadingIndex.get(sub);
-    if (readingIdx !== undefined) {
+    const readingIdx = KanaKanjiConverter.mozcReadings.indexOf(sub);
+    if (readingIdx >= 0) {
       // Rebuild this reading's senses from the columnar arrays (see
       // loadMozcEngine/convert_to_binary.py). count is 1 for ~85% of
       // readings, so this is a tiny transient allocation; the persistent
@@ -36359,7 +36633,7 @@ export class KanaKanjiConverter {
           cost: KanaKanjiConverter.mozcCostCostArr[idx],
           leftClass: KanaKanjiConverter.mozcCostLeftArr[idx],
           rightClass: KanaKanjiConverter.mozcCostRightArr[idx],
-          surface: KanaKanjiConverter.mozcCostSurfaceArr[idx],
+          surface: KanaKanjiConverter.mozcCostSurfaceArr.get(idx),
         };
       }
       return senses;
@@ -36766,7 +37040,7 @@ export class KanaKanjiConverter {
               rightClass: KanaKanjiConverter.mozcKanjiNumberClass,
               surface: numRun.surface,
             };
-            const hasReal = KanaKanjiConverter.mozcReadingIndex.has(sub);
+            const hasReal = KanaKanjiConverter.mozcReadings.has(sub);
             candidates = hasReal ? [...candidates, numSense] : [numSense];
           }
           for (let ci = 0; ci < candidates.length; ci++) {
@@ -36823,8 +37097,13 @@ export class KanaKanjiConverter {
       // an unreachable position had under the old scalar (INF) version.
       let bestFinalClass = -1;
       let bestFinalCost = INF;
+      const eos = KanaKanjiConverter.mozcEosCosts;
       states[n].forEach((state: MozcDpState, cls: number) => {
-        const total = state.cost + this.getEdgeCost(cls, bosClass);
+        // mozc の接続行列は EOS 列を持たない (列0は全ゼロ)。文末形を選ぶ
+        // 信号がここには無いので、句点の前に立てるかどうかから導出した
+        // eosCosts を使う -- build_eos_costs.py の説明を参照。
+        const total = state.cost
+          + (eos.length > cls ? eos[cls] : this.getEdgeCost(cls, bosClass));
         if (total < bestFinalCost) { bestFinalCost = total; bestFinalClass = cls; }
       });
       if (bestFinalClass >= 0) {
@@ -36918,7 +37197,16 @@ export class KanaKanjiConverter {
     const mergedHints: (string | undefined)[] = [];
     for (let k = 0; k < segs.length; k++) {
       const seg = segs[k];
-      const isProtectedNContraction = seg[0] === 'ん' && seg.length > 1;
+      // 単独の「ん」も、mozc エンジンでは畳み込まない。ん は語頭に立てない
+      // という理由でここに来るが、それは「他の語の一部」であることを意味しない
+      // -- んです/んだ の ん は助動詞そのもので、mozc の辞書にも助動詞として
+      // 入っている。畳み込むと DP が選んだ語義ごと捨てられ、ある|ん|です が
+      // あるん|です になって、名詞「アルン」しか候補が無くなっていた
+      // (ここに軽い痛みがアルンです)。DP は分割側 (9367) が結合側 (11731) より
+      // 安いと正しく判断できているので、その判断を消さないだけでよい。
+      // track A は 1 文字の ん を語として扱わないので、従来どおり畳み込む。
+      const isProtectedNContraction = seg[0] === 'ん'
+        && (seg.length > 1 || (isMozc && segHints[k] !== undefined));
       if (merged.length > 0 && KanaKanjiConverter.isNoStarter(seg[0]) && !isProtectedNContraction) {
         merged[merged.length - 1] += seg;
         mergedHints[mergedHints.length - 1] = undefined;

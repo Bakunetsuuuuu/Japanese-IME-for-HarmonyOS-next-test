@@ -63,15 +63,31 @@ struct KeyboardPage {
     let panelAppDir = ''; // [DEBUG-LOG]
     try { panelAppDir = (getContext(this) as ESObject).getApplicationContext().filesDir as string; } catch (_e) { panelAppDir = ''; } // [DEBUG-LOG]
     InputLog.ensureFromPanel([panelAppDir, getContext(this).filesDir]); // [DEBUG-LOG]
+    // KeyboardController 側でも読んでいるが、そちらが走らない実機状態が出た
+    // ため、確実に走るこの場所からも読む (_dictLoaded で一度きり)。
+    //
+    // 読む形式は KeyboardController.loadPackedDict と揃えること。ここだけ
+    // dict.json を JSON で読んでいた間は、(a) 同じ4.7MBを二重にパースし、
+    // (b) 後に完了した方が勝つので、パック済みの状態を JSON の状態で
+    // 上書きしうる、という二重の問題があった。dict.json を rawfile から
+    // 外したあとは、空の catch がその失敗を黙って飲み込むだけになっていた。
     if (!_dictLoaded && USE_DICT_JSON) {
       _dictLoaded = true;
-      getContext(this).resourceManager.getRawFileContent('dict.json')
-        .then((data: Uint8Array) => {
-          const decoder = new util.TextDecoder('utf-8');
-          const text = decoder.decode(data);
-          KanaKanjiConverter.loadDictionary(JSON.parse(text) as Record<string, string[]>);
+      const rm = getContext(this).resourceManager;
+      const toU32 = (d: Uint8Array): Uint32Array =>
+        new Uint32Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+      const names: string[] = ['dict.keys.blob', 'dict.keys.len', 'dict.keys.base',
+        'dict.vals.blob', 'dict.vals.len', 'dict.vals.base', 'dict.idx.bin'];
+      Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
+        .then((all: Uint8Array[]) => {
+          KanaKanjiConverter.loadDictionaryPacked(all[0], all[1], toU32(all[2]),
+            all[3], all[4], toU32(all[5]), toU32(all[6]));
         })
-        .catch((_e: Error) => {});
+        .catch((e: Error) => {
+          // 黙って失敗させない。ここが死ぬと変換品質が静かに落ちるだけで、
+          // 表からは何も見えなくなる。
+          console.error('shuntiIME dict load (panel) failed', JSON.stringify(e));
+        });
     }
 
     // aboutToAppear runs every time this panel's content is (re)constructed —

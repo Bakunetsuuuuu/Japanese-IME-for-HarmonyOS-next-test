@@ -1,11 +1,17 @@
 const fs=require('fs'),path=require('path'),os=require('os'),{execFileSync}=require('child_process');
-const ROOT='/home/user/Japanese-IME-for-HarmonyOS-next';const RAW=path.join(ROOT,'entry/src/main/resources/rawfile');
+const ROOT=path.resolve(__dirname,'..','..');const RAW=path.join(ROOT,'entry/src/main/resources/rawfile');
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'blind-'));
 fs.writeFileSync(path.join(tmp,'KKC.ts'),'// @ts-nocheck\n'+fs.readFileSync(path.join(ROOT,'entry/src/main/ets/ime/KanaKanjiConverter.ets'),'utf-8'));
-execFileSync('npx',['tsc','--target','ES2020','--module','CommonJS','--skipLibCheck',path.join(tmp,'KKC.ts')],{stdio:'inherit'});
-const {KanaKanjiConverter}=require(path.join(tmp,'KKC.js'));
-KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(RAW,'dict.json'),'utf-8')));
-KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(RAW,'global_dict.json'),'utf-8')));
+// bun なら TypeScript をそのまま require できるので tsc を挟まない。
+//   bun tools/blind-eval/run_ours.js blind_corpus.json out.json
+let kkcPath=path.join(tmp,'KKC.ts');
+if(typeof Bun==='undefined'){
+  execFileSync('npx',['tsc','--target','ES2020','--module','CommonJS','--skipLibCheck',kkcPath],{stdio:'inherit'});
+  kkcPath=path.join(tmp,'KKC.js');
+}
+const {KanaKanjiConverter}=require(kkcPath);
+KanaKanjiConverter.loadDictionary(JSON.parse(fs.readFileSync(path.join(ROOT,'tools/dict_src/dict.json'),'utf-8')));
+KanaKanjiConverter.setGlobalDict(JSON.parse(fs.readFileSync(path.join(ROOT,'tools/dict_src/global_dict.json'),'utf-8')));
 KanaKanjiConverter.initConnectionMatrix();
 // Every per-reading mozc structure ships pre-flattened at build time (see
 // tools/mozc_data/convert_to_binary.py); loadMozcArgs reads the files and
@@ -29,7 +35,8 @@ const out={};
 for(const [r,g] of pairs){
   KanaKanjiConverter.setEngine('custom'); const a=convert(r);
   KanaKanjiConverter.setEngine('mozc');   const b=convert(r);
-  out[r]={a,b};
+  KanaKanjiConverter.setEngine('hybrid'); const h=convert(r);
+  out[r]={a,b,h};
 }
 fs.writeFileSync(process.argv[3],JSON.stringify(out));
 console.error('ours done:',Object.keys(out).length);

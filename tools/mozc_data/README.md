@@ -66,6 +66,39 @@ JSON directly on-device peaked past the IME extension's memory budget and
 crashed it). `tools/mozc_data/load_mozc.js` is the Node-side equivalent
 loader, used by `compare_engines.js`/the eval harness.
 
+`convert_to_binary.py`'s three *string* outputs (`mozc_readings.json` /
+`mozc_dict_surfaces.json` / `mozc_costs_surfaces.json`) are no longer shipped
+as JSON either: `pack_strings.py` repacks them into `.blob`/`.len`/`.base`
+(+`.srt` for readings) and those are what ship. The JSON originals moved to
+`tools/mozc_data/packed_src/` -- anything left under `rawfile/` is packed
+into the HAP whether the app reads it or not, and nothing reads them at
+runtime any more. Re-run `pack_strings.py` after any rebuild that changes
+those three files, then `verify_packed.js`.
+
+Why: the JSON was cheap to *read* and expensive to *parse*. Measured
+on-device, per stage, loading the mozc engine took 1990ms:
+
+| stage | time |
+| --- | --- |
+| file reads (76MB, every file) | 139ms |
+| `JSON.parse` of the three string tables | 1456ms |
+| building `Map<reading, index>` (746k) | 395ms |
+
+93% of it was making the JS engine materialise 746k+ string objects and a
+hash map, none of which is needed until a reading is actually looked up. The
+packed form is read as bytes, strings are decoded lazily on first access, and
+readings are found by binary-searching `.srt` against the raw UTF-8 in the
+blob instead of through a `Map`. Same measurement after: **117ms** (106ms
+reads + 11ms assembly), and the packed files are 2.45MB *smaller* than the
+JSON they replace. See `MozcStrTable` in `KanaKanjiConverter.ets` for the
+layout and `pack_strings.py`'s docstring for why lengths are uint8 with a
+per-32-entry base rather than a uint32 offset per string.
+
+This is a format change only, and is held to that: `verify_packed.js` checks
+every one of the 2,960,934 entries against the JSON, plus `indexOf()`
+round-tripping on all 745,964 readings and negative lookups. Run it after
+`pack_strings.py`.
+
 **"Full spec" mode**: `MAX_COST`/`MAX_CANDIDATES_PER_READING`/
 `MAX_SENSES_PER_READING` in `build_mozc_engine.py` were relaxed to mozc's
 own true observed maximums (no reading dropped by cost, every candidate
@@ -478,6 +511,124 @@ attempts tried and never beat plain mozc with. Flagging the *pattern* here
 (not a per-sentence fix) so a future attempt has a documented starting
 point instead of re-discovering these from scratch.
 
+### The missing EOS column, and the katakana-id twins (2026-08)
+
+Two structural defects found by reading track B's *actual* losses on
+`tools/blind-eval` rather than by tuning. Both are data-shape problems, not
+model weakness, and fixing them moved track B on the blind corpus for the
+first time: **54.9% -> 55.7% (+3 sentences, 0 regressions)**, track A
+unchanged at 44.6%, in-house corpora unchanged.
+
+**1. The EOS term was always zero.** `segment()`'s track-B DP charges the
+final word an edge cost into EOS via `matrix[cls][0]`, on the (stated)
+assumption that mozc's BOS and EOS share raw id 0. BOS does; EOS does not
+carry costs. In mozc's own `connection_single_column.txt`:
+
+| | non-zero |
+| --- | --- |
+| row 0 (BOS -> x) | 2671 / 2672 |
+| column 0 (x -> EOS) | **0 / 2672** |
+
+So the term evaluated to 0 for every class and the DP had no sentence-final
+signal whatsoever -- exactly the omission the code comment says it exists to
+prevent. `build_eos_costs.py` substitutes the 記号,句点 columns, which *are*
+populated: what a word may precede before a 。 is what it may end a sentence
+with. 助動詞 279, 名詞,一般 2405, 助詞,格助詞 12882 -- mozc's own numbers,
+nothing invented. Stored as `eosCosts` in `mozc_matrix.json`.
+
+**2. Katakana and hiragana spellings of one closed-class word are different
+POS ids.** IPADIC encodes the written form in the id itself:
+
+    172  助動詞,*,*,*,特殊・デス,基本形,です   surface です  cost 40
+    178  助動詞,*,*,*,特殊・デス,基本形,デス   surface デス  cost  0
+
+The matrix cannot separate them -- the 助詞,格助詞「の」 row holds 217
+distinct values across 2,673 columns and both ids land in the same bucket
+(`M[の][です] == M[の][デス] == 12882`) -- so the 40-unit word-cost gap
+decided, and every hiragana sentence ending in です produced デス.
+`HIRA_MARGIN` in `build_mozc_engine.py` was written for exactly this but only
+compares *within* one (leftId, rightId) group, and these two are in different
+groups by construction. `fix_kana_register.py` drops the katakana-id sense
+when a twin hiragana id has a sense for the same reading **whose surface is
+the reading itself** -- the condition that keeps デカール/デフェンス and the
+rest of the loanwords mozc files under 助詞「デ」 ids alive. 77 senses across
+77 readings.
+
+**3. A single 「ん」 was being folded into the previous segment.** The DP was
+right all along -- it splits ある|ん|です and prices that at 9367 against
+あるん's 11731 -- but `segment()`'s post-DP merge folds any segment starting
+with a non-word-start kana into its predecessor, and that includes a bare ん.
+The merged span carries no hint, so `lookup('あるん')` fell back to mozc's
+名詞,一般 entry アルン. The merge already exempts 2+-char ん-initial segments
+on the grounds that ん cannot start a word; a lone ん is not glue either, it
+is the 助動詞 of んです/んだ and mozc lists it as one. Now exempt under the
+mozc engine whenever the DP gave that span a sense. Track A is unchanged (it
+does not treat a lone ん as a word).
+
+Running total on the blind corpus: **54.9% -> 57.1% (+8 sentences, 0
+regressions)**, track A flat at 44.6%, `corpus_test11` +1 and the other
+in-house corpora unchanged.
+
+### Character n-gram rescoring, measured and rejected (2026-08)
+
+Track B's segmentation is already right; what it gets wrong is *which*
+homophone. Measured on the blind corpus, holding its segmentation fixed and
+choosing surfaces freely:
+
+| reachable by choosing surfaces | sentences |
+| --- | --- |
+| top 1 per segment | 217 / 350 (62.0%) |
+| top 3 per segment | 286 / 350 (81.7%) |
+| all candidates | 318 / 350 (90.9%) |
+| **actually produced** | **200 / 350 (57.1%)** |
+
+So ~24 points sit inside the top 3 candidates of each segment, and mozc's POS
+bigram cannot reach them: 髪を乾かす and 神を乾かす are both 名詞+を+動詞.
+
+`build_char_lm.py` + `pack_char_lm.py` build a character n-gram model
+(order 4, stupid backoff) over Japanese Wikipedia -- deliberately *not*
+Tatoeba, which is where `tools/blind-eval` draws from; training on the
+benchmark's own source would make its numbers meaningless. The rescorer runs
+inside the lattice, not per segment: candidate senses keep their mozc word
+cost, connection cost, single-char content penalty and EOS cost, with
+`- λ · logP_LM` added. λ was tuned on the in-house corpora (Tatoeba-free) and
+the blind corpus read once.
+
+Result, blind corpus, baseline 200/350:
+
+| model size (tsv) | blind |
+| --- | --- |
+| 2.6MB | 202 |
+| 9.1MB | 203 |
+| 38.2MB | 205 |
+| 52.8MB | 204 |
+
+**Not shipped.** +0.6 to +1.4 points for several MB and a lattice rescorer is
+a bad trade in a keyboard whose binding constraint is load time, and it is
+under 5% of the headroom it was aimed at. The diagnosis says more data will
+not rescue it either: on the sentences it still gets wrong, the LM scores the
+*wrong* string higher than the gold 33 times against 11 -- the feature is
+weak, not underweighted. Encyclopedic character context is the wrong signal
+for everyday sentences.
+
+What would actually be needed, in rough order of value per byte: the IME's
+own per-user learning (already built, converges on the user's vocabulary); a
+word-level model over (surface, POS) trained on a *conversational* corpus,
+which needs a morphological analyzer over the training text; failing that, a
+better-matched corpus than Wikipedia. The scripts are kept so this does not
+get re-attempted from scratch.
+
+Two implementation traps worth recording, both of which made the prototype
+silently produce nonsense before being found:
+
+- `0 * -Infinity` is `NaN`. With λ=0 the LM term must be skipped, not
+  multiplied out, or every path cost becomes NaN and the beam returns
+  arbitrary strings (it scored 4/106 before this was traced).
+- Candidate senses must **not** be deduplicated by surface. が exists as
+  接続助詞 (332) and 格助詞 (369), both cost 0, and only the latter may follow
+  a noun. Keeping "the cheapest sense per surface" drops the one the lattice
+  needs and collapses the whole reconstruction.
+
 ## Considered, not yet done
 
 - **SudachiDict's own connection-cost matrix** — see the "SudachiDict
@@ -526,6 +677,21 @@ point instead of re-discovering these from scratch.
   augmentation as `build_jmdict_augment.py`, sourced from SudachiDict
   instead. Must run after `build_mozc_engine.py`. See "SudachiDict
   vocabulary augmentation" above.
+- `fix_kana_register.py` — drops katakana-id senses of words normally
+  written in kana (です/ございます/だけ...). Reads the `*.json.source`
+  intermediates, writes `mozc_dict.json`/`mozc_costs.json` for
+  `convert_to_binary.py`. See "The missing EOS column..." above.
+- `build_eos_costs.py` — derives a per-class word→EOS cost from the 記号,句点
+  columns and stores it as `eosCosts` in `mozc_matrix.json`, because mozc's
+  matrix has no EOS column at all. Same section.
+- `pack_strings.py` — repacks the three string tables from JSON into the
+  shipped `.blob`/`.len`/`.base`/`.srt` binaries. Reads
+  `packed_src/*.json`, writes into `rawfile/`. Run after any rebuild that
+  changes those tables. See "On-device format" above.
+- `verify_packed.js` — proves `pack_strings.py`'s output is entry-for-entry
+  identical to the JSON it replaced (`bun tools/mozc_data/verify_packed.js`).
+- `packed_src/` — the JSON originals of the three string tables, kept out of
+  `rawfile/` so they aren't packed into the HAP.
 - `compare_engines.js` — side-by-side custom-vs-mozc scoring against any
   `tools/ime-eval/` corpus file (`corpus_test10.js` by default). Not a
   regression gate like `tools/ime-eval/regress.js` — track B isn't expected

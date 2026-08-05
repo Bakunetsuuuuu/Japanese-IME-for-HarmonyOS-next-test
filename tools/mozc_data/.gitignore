@@ -1,3 +1,11 @@
 cache/
 cache_jmdict/
 cache_sudachi/
+
+# pack_strings.py の入力。convert_to_binary.py が書く JSON をそのまま置いた
+# だけのもので、同梱されるのは pack_strings.py が書くバイナリの方 (rawfile の
+# *.blob/*.len/*.base/*.srt)。mozc_dict.json/mozc_costs.json と同じ扱いで、
+# 中間生成物なので追跡しない -- README の "On-device format" を参照。
+# 失った場合は build_mozc_engine.py からの再生成でも、同梱バイナリからの
+# 復元でも作れる (パックは可逆)。
+packed_src/

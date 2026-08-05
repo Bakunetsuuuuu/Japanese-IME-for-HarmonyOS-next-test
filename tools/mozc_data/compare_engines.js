@@ -20,14 +20,18 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.resolve(__dirname, '..', '..');
 const SRC = path.join(ROOT, 'entry/src/main/ets/ime/KanaKanjiConverter.ets');
-const DICT = path.join(ROOT, 'entry/src/main/resources/rawfile/dict.json');
-const GDICT = path.join(ROOT, 'entry/src/main/resources/rawfile/global_dict.json');
+const DICT = path.join(ROOT, 'tools/dict_src/dict.json');
+const GDICT = path.join(ROOT, 'tools/dict_src/global_dict.json');
 const { loadMozcArgs } = require('./load_mozc');
 
 function build() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cmpeng-'));
   const tsPath = path.join(tmp, 'KKC.ts');
   fs.writeFileSync(tsPath, '// @ts-nocheck\n' + fs.readFileSync(SRC, 'utf-8'));
+  // bun で走らせた場合は TypeScript をそのまま require できるので tsc を
+  // 挟まない (tsc の入っていない環境でも動かせる):
+  //   bun tools/mozc_data/compare_engines.js
+  if (typeof Bun !== 'undefined') { return tsPath; }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
     '--skipLibCheck', tsPath], { stdio: 'inherit' });
   return path.join(tmp, 'KKC.js');
@@ -52,7 +56,10 @@ function main() {
     if (segs.length <= 1) return conv.lookup(reading)[0];
     const full = conv.lookup(reading);
     if ((full[0] !== fullKata && full[0] !== reading) || KanaKanjiConverter.isDictionaryWord(reading)) return full[0];
-    const prefixParts = segs.slice(0, -1).map((s) => conv.autoConvert(s));
+    // 前後のセグメントを渡す。実機 (KeyboardController の候補組み立て) と
+    // tools/blind-eval/run_ours.js はどちらも渡しており、ここだけ文脈なしで
+    // 呼んでいた -- 退行判定に使う harness がアプリと違う条件で測っていた。
+    const prefixParts = segs.slice(0, -1).map((s, i) => conv.autoConvert(s, segs[i + 1], segs[i - 1]));
     if (prefixParts.some((p) => KanaKanjiConverter.isSymbolOnly(p))) return reading;
     return prefixParts.join('') + conv.lookup(segs[segs.length - 1])[0];
   };

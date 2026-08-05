@@ -42,7 +42,7 @@ const MIN_LEN = 4;
 const MAX_LEN = 28;
 
 function main() {
-  const dict = JSON.parse(fs.readFileSync(path.join(ROOT, 'entry/src/main/resources/rawfile/dict.json'), 'utf-8'));
+  const dict = JSON.parse(fs.readFileSync(path.join(ROOT, 'tools/dict_src/dict.json'), 'utf-8'));
   const inverse = new Map();
   for (const reading of Object.keys(dict)) {
     if (!/^[ぁ-んー]+$/.test(reading)) { continue; }
