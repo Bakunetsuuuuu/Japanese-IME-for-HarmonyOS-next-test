@@ -12,9 +12,17 @@ export interface KeyboardSettings {
   alphabetKeyboardLayout: string;
   oneHandedMode: boolean;
   oneHandedSide: string;
-  // 'custom' = hand-built dictionary (default, unchanged behavior).
-  // 'mozc' = optional statistical engine derived from mozc (see
-  // KanaKanjiConverter.loadMozcEngine / THIRD_PARTY_NOTICES.md).
+  // 'mozc' = mozc 由来の統計エンジン (既定)。'custom' = 独自の手作り辞書。
+  // 'hybrid' は現状 'mozc' の別名 (KanaKanjiConverter の engine コメント参照)。
+  //
+  // 既定を 'mozc' にした根拠は tools/blind-eval の盲検350文で、
+  // mozc 57.1% に対し custom 44.6%。手持ちコーパスでは custom が勝つが、
+  // あれは custom に合わせて育てたものなので判断材料にならない
+  // (tools/blind-eval/README.md にその旨が書いてある)。
+  //
+  // 影響するのは conversionEngine を一度も保存していない利用者だけ。
+  // 自分で「独自辞書」を選んだ人は prefs の値が優先されるので変わらない。
+  // 代わりに mozc のデータを読むぶんメモリが増える (実測で +46MB 程度)。
   conversionEngine: string;
   // Whether the "あA"/"Aあ" mode-switch key cycles 日本語→アルファベット→数字
   // (numeric pad) or just 日本語⇔アルファベット -- see InputHandler.cycleInputMode
@@ -30,7 +38,7 @@ const DEFAULTS: KeyboardSettings = {
   alphabetKeyboardLayout: 'QWERTY',
   oneHandedMode: false,
   oneHandedSide: 'right',
-  conversionEngine: 'custom',
+  conversionEngine: 'mozc',
   numericPadEnabled: false,
   hapticEnabled: false,
 };

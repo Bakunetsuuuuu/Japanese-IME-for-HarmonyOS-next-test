@@ -31,7 +31,7 @@ export struct SettingsBar {
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
-  @StorageLink('conversionEngine') conversionEngine: string = 'custom';
+  @StorageLink('conversionEngine') conversionEngine: string = 'mozc';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。
@@ -566,7 +566,9 @@ export struct SettingsBar {
         Toggle({ type: ToggleType.Switch, isOn: this.conversionEngine === 'hybrid' })
           .selectedColor(kbTheme(this.isDark).accent)
           .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setConversionEngine(isOn ? 'hybrid' : 'custom');
+            // 切ったときの戻り先は 'mozc'。hybrid は mozc の上に乗る位置づけ
+            // なので、切っただけで独自辞書まで落ちるのは選んでいない変更になる。
+            InputHandler.getInstance().setConversionEngine(isOn ? 'hybrid' : 'mozc');
           })
       }
       .width('100%')
