@@ -34,6 +34,9 @@ export struct SettingsBar {
   @StorageLink('conversionEngine') conversionEngine: string = 'mozc';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
+  // キーボードのライト／ダーク。'system' = 端末に合わせる。
+  @StorageLink('themeMode') themeMode: string = 'system';
+  @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
   // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。
   @StorageLink('hapticUnavailable') hapticUnavailable: boolean = false;
   @State showHistory: boolean = false;
@@ -573,6 +576,87 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 10, bottom: 13 })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
+    this.SectionLabel('テーマ')
+    Column() {
+      Row() {
+        Text('外観')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+
+        Row({ space: 2 }) {
+          Text('自動')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.themeMode === 'system' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.themeMode === 'system' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.themeMode === 'system' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setThemeMode('system'); })
+
+          Text('ライト')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.themeMode === 'light' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.themeMode === 'light' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.themeMode === 'light' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setThemeMode('light'); })
+
+          Text('ダーク')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.themeMode === 'dark' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.themeMode === 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.themeMode === 'dark' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setThemeMode('dark'); })
+        }
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(TRACK_RADIUS)
+        .padding(3)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Column({ space: 2 }) {
+          Text('キーの外枠')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text('キーの背景色を有効にする')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.keyChromeEnabled })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setKeyChromeEnabled(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)

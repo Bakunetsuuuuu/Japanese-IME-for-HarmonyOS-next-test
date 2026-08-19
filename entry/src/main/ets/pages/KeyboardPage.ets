@@ -131,6 +131,9 @@ struct KeyboardPage {
       AppStorage.setOrCreate('oneHandedMode', s.oneHandedMode);
       AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
       AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
+      AppStorage.setOrCreate('themeMode', s.themeMode);
+      AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
+      InputHandler.getInstance().setThemeMode(s.themeMode);
       // This panel and the extension's InputHandler share the same process/
       // KanaKanjiConverter static state (see setConversionEngine's own
       // lazy-load comment), but this aboutToAppear-driven reload is the more

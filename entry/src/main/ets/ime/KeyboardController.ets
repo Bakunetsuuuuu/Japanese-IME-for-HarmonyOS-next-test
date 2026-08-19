@@ -13,7 +13,7 @@ import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
 import type { UserPosEntry, PosKind, VerbGroup } from './ConjugationEngine';
 import { buildUserExpansion } from './ConjugationEngine';
-import { SettingsStore, KeyboardSettings, isDarkFromConfiguration, isDarkFromResourceManager } from './SettingsStore';
+import { SettingsStore, KeyboardSettings, isDarkFromConfiguration, isDarkFromResourceManager, resolveIsDark } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
@@ -455,8 +455,11 @@ export class InputHandler {
         AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
         AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
+        AppStorage.setOrCreate('themeMode', s.themeMode);
+        AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
         this.hapticEnabled = s.hapticEnabled;
         this.applyConversionEngine(s.conversionEngine);
+        this.applyThemeMode(s.themeMode);
       });
   }
 
@@ -682,6 +685,31 @@ export class InputHandler {
         .catch((_e: ESObject) => {});
     } catch (_e) {
       // 非対応端末。鳴らないだけで害は無い。
+    }
+  }
+
+  // キーボードのライト／ダーク。即時反映し、OS のカラーモード変更は
+  // 'system' のときだけ追従する (applyColorMode / applyColorModeFrom)。
+  setThemeMode(mode: string): void {
+    AppStorage.setOrCreate('themeMode', mode);
+    this.applyThemeMode(mode);
+    if (this.imeContext) {
+      SettingsStore.saveThemeMode(this.imeContext, mode);
+    }
+  }
+
+  private applyThemeMode(mode: string): void {
+    if (!this.imeContext) {
+      AppStorage.setOrCreate('isDark', resolveIsDark(mode, AppStorage.get<boolean>('isDark') ?? false));
+      return;
+    }
+    AppStorage.setOrCreate('isDark', resolveIsDark(mode, isDarkFromResourceManager(this.imeContext as ESObject)));
+  }
+
+  setKeyChromeEnabled(enabled: boolean): void {
+    AppStorage.setOrCreate('keyChromeEnabled', enabled);
+    if (this.imeContext) {
+      SettingsStore.saveKeyChromeEnabled(this.imeContext, enabled);
     }
   }
 
@@ -2754,7 +2782,8 @@ export class KeyboardController {
   // is what must be called anywhere isDark needs to be current -- including
   // repeatedly, from inputStart, not just once at onCreate).
   applyColorMode(): void {
-    AppStorage.setOrCreate('isDark', isDarkFromResourceManager(this.context as ESObject));
+    const mode = AppStorage.get<string>('themeMode') ?? 'system';
+    AppStorage.setOrCreate('isDark', resolveIsDark(mode, isDarkFromResourceManager(this.context as ESObject)));
   }
 
   // Applies the Configuration object handed directly to onConfigurationUpdate
@@ -2764,7 +2793,8 @@ export class KeyboardController {
   // handed to the callback (not a context.config re-read) is what's safe to
   // trust here.
   applyColorModeFrom(config: ESObject): void {
-    AppStorage.setOrCreate('isDark', isDarkFromConfiguration(config));
+    const mode = AppStorage.get<string>('themeMode') ?? 'system';
+    AppStorage.setOrCreate('isDark', resolveIsDark(mode, isDarkFromConfiguration(config)));
   }
 
   onDestroy(): void {

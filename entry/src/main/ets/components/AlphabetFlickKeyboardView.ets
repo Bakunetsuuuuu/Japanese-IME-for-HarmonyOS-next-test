@@ -53,6 +53,7 @@ export struct AlphabetFlickKeyboardView {
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
   // 数字パッドが有効だと「あA」キーは 日本語→アルファベット→数字 の3段階に
   // なるので、ラベルも切り替わる順に並べる (あA1 / A1あ / 1あA)。
   // 半角の A/1 は ひらがな と字形の大きさが厳密には揃わないが、
@@ -139,7 +140,14 @@ export struct AlphabetFlickKeyboardView {
   private keyBg(row: number, col: number, key: FlickKeyDef): ResourceColor {
     if (key.special === 'case') { return kbTheme(this.isDark).specialBg; }
     if (this.isActive(row, col)) { return kbTheme(this.isDark).accentSoft; }
-    return kbTheme(this.isDark).keyBg;
+    return this.keyChromeEnabled ? kbTheme(this.isDark).keyBg : 'transparent';
+  }
+
+  private keyShadow(row: number, col: number, key: FlickKeyDef): ShadowOptions {
+    const filled = key.special === 'case' || this.isActive(row, col) || this.keyChromeEnabled;
+    return filled
+      ? { radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 }
+      : { radius: 0, color: 'transparent', offsetY: 0 };
   }
 
   private centerLabel(row: number, col: number, key: FlickKeyDef): string {
@@ -425,7 +433,7 @@ export struct AlphabetFlickKeyboardView {
         .height('100%')
         .backgroundColor(this.keyBg(rowIdx, colIdx, key))
         .borderRadius(CELL_RADIUS)
-        .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        .shadow(this.keyShadow(rowIdx, colIdx, key))
         .onTouch((e: TouchEvent) => {
           this.handleTouch(e, rowIdx, colIdx, key);
         })
@@ -483,7 +491,7 @@ export struct AlphabetFlickKeyboardView {
       .height('100%')
       .backgroundColor(this.keyBg(rowIdx, colIdx, key))
       .borderRadius(CELL_RADIUS)
-      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      .shadow(this.keyShadow(rowIdx, colIdx, key))
       .onTouch((e: TouchEvent) => {
         this.handleTouch(e, rowIdx, colIdx, key);
       })
