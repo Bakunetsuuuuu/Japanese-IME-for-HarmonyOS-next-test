@@ -44,7 +44,7 @@ const ALPHA_GRID: FlickKeyDef[][] = [
   ],
 ];
 
-const CELL_RADIUS = 14;
+const CELL_RADIUS = 8;
 
 @Component
 export struct AlphabetFlickKeyboardView {
@@ -213,7 +213,7 @@ export struct AlphabetFlickKeyboardView {
       .fontSize(13)
       .fontWeight(FontWeight.Medium)
       .fontColor(kbTheme(this.isDark).textPrimary)
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+      .padding({ left: 14, right: 14, top: 6, bottom: 6 })
   }
 
   build() {
@@ -284,7 +284,7 @@ export struct AlphabetFlickKeyboardView {
           enableArrow: true,
           popupColor: kbTheme(this.isDark).specialBg,
           backgroundBlurStyle: BlurStyle.NONE,
-          radius: 14,
+          radius: 20,
           mask: false,
         })
         .gesture(
@@ -369,7 +369,7 @@ export struct AlphabetFlickKeyboardView {
           enableArrow: true,
           popupColor: kbTheme(this.isDark).specialBg,
           backgroundBlurStyle: BlurStyle.NONE,
-          radius: 14,
+          radius: 20,
           mask: false,
         })
         .gesture(

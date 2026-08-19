@@ -168,7 +168,7 @@ export struct EmojiView {
             .textAlign(TextAlign.Center)
             .width(34).height(32)
             .backgroundColor(this.currentTab === i ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-            .borderRadius(12)
+            .borderRadius(8)
             .onClick(() => {
               this.currentTab = i;
               // 押したカテゴリの先頭行へ飛ぶ。切り替えではなく移動。
@@ -195,7 +195,7 @@ export struct EmojiView {
                   .width(this.symKeyWidthVp)
                   .height(GRID_ROW_H)
                   .backgroundColor(kbTheme(this.isDark).keyBg)
-                  .borderRadius(10)
+                  .borderRadius(8)
                   .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
                   .onClick(() => {
                     this.h().commitTopCandidate();
@@ -237,7 +237,7 @@ export struct EmojiView {
           .width(60).height(44)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .backgroundColor(kbTheme(this.isDark).funcBg)
-          .borderRadius(12)
+          .borderRadius(8)
           .onClick(() => {
             AppStorage.setOrCreate('keyboardSubMode', 'symbol');
           })
@@ -248,7 +248,7 @@ export struct EmojiView {
           .width(52).height(44)
           .fontColor(kbTheme(this.isDark).textPrimary)
           .backgroundColor(kbTheme(this.isDark).specialBg)
-          .borderRadius(14)
+          .borderRadius(8)
           .onClick(() => { this.h().handleBackspace(); })
       }
       .width('100%')

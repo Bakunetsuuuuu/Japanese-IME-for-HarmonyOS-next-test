@@ -81,7 +81,7 @@ export struct ExpandedCandidateView {
                   .fontSize(17)
                   .fontWeight(index === this.selectedIndex ? FontWeight.Bold : FontWeight.Normal)
                   .width('100%').textAlign(TextAlign.Center)
-                  .padding({ top: 12, bottom: 12 }).borderRadius(10)
+                  .padding({ top: 12, bottom: 12 }).borderRadius(8)
                   .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
                   .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
               }
@@ -91,7 +91,7 @@ export struct ExpandedCandidateView {
                 enableArrow: true,
                 popupColor: kbTheme(this.isDark).cardBg,
                 backgroundBlurStyle: BlurStyle.NONE,
-                radius: 12,
+                radius: 20,
                 mask: true,
                 onStateChange: (e: PopupStateChangeParam) => {
                   if (!e.isVisible && this.menuIndex === index) { this.closeMenu(); }

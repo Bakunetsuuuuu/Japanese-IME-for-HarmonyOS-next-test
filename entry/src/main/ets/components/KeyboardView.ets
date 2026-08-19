@@ -20,8 +20,8 @@ const ROW1_ALPHANUMERIC: string[] = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'
 
 const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
-// Key corner radius (design tokens: "regular keys 14px").
-const KEY_RADIUS = 14;
+// Key corner radius (design tokens: "regular keys 8px").
+const KEY_RADIUS = 8;
 
 @Component
 export struct KeyboardView {
@@ -77,14 +77,14 @@ export struct KeyboardView {
       .fontSize(13)
       .fontWeight(FontWeight.Medium)
       .fontColor(kbTheme(this.isDark).textPrimary)
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+      .padding({ left: 14, right: 14, top: 6, bottom: 6 })
   }
 
   build() {
     Stack() {
-      Column({ space: 5 }) {
+      Column({ space: 4 }) {
         if (!this.isLandscape) {
-          Row({ space: 5 }) {
+          Row({ space: 4 }) {
             ForEach(NUMBER_ROW, (key: string) => {
               this.RegularKey(key, this.keyWidthVp)
             }, (key: string) => key)
@@ -95,7 +95,7 @@ export struct KeyboardView {
         }
 
         ForEach([0, 1], (rowIdx: number) => {
-          Row({ space: 5 }) {
+          Row({ space: 4 }) {
             ForEach(rowIdx === 1 && this.inputMode === InputMode.ALPHANUMERIC ? ROW1_ALPHANUMERIC : ROWS[rowIdx], (key: string) => {
               this.RegularKey(key, this.keyWidthVp)
             }, (key: string) => key)
@@ -105,7 +105,7 @@ export struct KeyboardView {
           .layoutWeight(1)
         }, (rowIdx: number) => String(rowIdx))
 
-        Row({ space: 5 }) {
+        Row({ space: 4 }) {
           this.ShiftKey()
           ForEach(ROWS[2], (key: string) => {
             this.RegularKey(key, this.keyWidthVp)
@@ -116,7 +116,7 @@ export struct KeyboardView {
         .justifyContent(FlexAlign.Center)
         .layoutWeight(1)
 
-        Row({ space: 5 }) {
+        Row({ space: 4 }) {
           this.ModeKey()
           this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
             const ch = this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、';
@@ -196,7 +196,7 @@ export struct KeyboardView {
         enableArrow: true,
         popupColor: kbTheme(this.isDark).specialBg,
         backgroundBlurStyle: BlurStyle.NONE,
-        radius: 14,
+        radius: 20,
         mask: false,
       })
       .gesture(
@@ -285,7 +285,7 @@ export struct KeyboardView {
         enableArrow: true,
         popupColor: kbTheme(this.isDark).specialBg,
         backgroundBlurStyle: BlurStyle.NONE,
-        radius: 14,
+        radius: 20,
         mask: false,
       })
       .gesture(

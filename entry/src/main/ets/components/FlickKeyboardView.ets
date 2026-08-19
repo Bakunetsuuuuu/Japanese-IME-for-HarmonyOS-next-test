@@ -46,8 +46,8 @@ const FLICK_GRID: FlickKeyDef[][] = [
   ],
 ];
 
-// Flick cell corner radius (design tokens: "flick cells 14px").
-const CELL_RADIUS = 14;
+// Flick cell corner radius (design tokens: "flick cells 8px").
+const CELL_RADIUS = 8;
 
 @Component
 export struct FlickKeyboardView {
@@ -234,7 +234,7 @@ export struct FlickKeyboardView {
       .fontSize(13)
       .fontWeight(FontWeight.Medium)
       .fontColor(kbTheme(this.isDark).textPrimary)
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+      .padding({ left: 14, right: 14, top: 6, bottom: 6 })
   }
 
   build() {
@@ -306,7 +306,7 @@ export struct FlickKeyboardView {
           enableArrow: true,
           popupColor: kbTheme(this.isDark).specialBg,
           backgroundBlurStyle: BlurStyle.NONE,
-          radius: 14,
+          radius: 20,
           mask: false,
         })
         .gesture(
@@ -393,7 +393,7 @@ export struct FlickKeyboardView {
           enableArrow: true,
           popupColor: kbTheme(this.isDark).specialBg,
           backgroundBlurStyle: BlurStyle.NONE,
-          radius: 14,
+          radius: 20,
           mask: false,
         })
         .gesture(

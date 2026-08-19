@@ -76,7 +76,7 @@ export struct DictEditBar {
           .backgroundColor(this.dictEditPos === pos
             ? kbTheme(this.isDark).accent
             : kbTheme(this.isDark).keyBg)
-          .borderRadius(10)
+          .borderRadius(8)
           .padding({ left: 10, right: 10, top: 4, bottom: 4 })
           .onClick(() => {
             AppStorage.setOrCreate('dictEditPos', pos);
@@ -96,7 +96,7 @@ export struct DictEditBar {
             .backgroundColor(this.dictEditVerbGroup === g
               ? kbTheme(this.isDark).accentStrong
               : kbTheme(this.isDark).keyBg)
-            .borderRadius(10)
+            .borderRadius(8)
             .padding({ left: 10, right: 10, top: 4, bottom: 4 })
             .onClick(() => { AppStorage.setOrCreate('dictEditVerbGroup', g); })
         }, (g: string) => g)
@@ -129,7 +129,7 @@ export struct DictEditBar {
         .padding({ left: 8, right: 8 })
         .alignItems(VerticalAlign.Center)
         .backgroundColor(kbTheme(this.isDark).keyBg)
-        .borderRadius(6)
+        .borderRadius(8)
         .border({
           width: this.dictCaptureTarget === 'yomi' ? 2 : 0,
           color: kbTheme(this.isDark).accent,
@@ -161,7 +161,7 @@ export struct DictEditBar {
         .padding({ left: 8, right: 8 })
         .alignItems(VerticalAlign.Center)
         .backgroundColor(kbTheme(this.isDark).keyBg)
-        .borderRadius(6)
+        .borderRadius(8)
         .border({
           width: this.dictCaptureTarget === 'word' ? 2 : 0,
           color: kbTheme(this.isDark).accent,
@@ -179,7 +179,7 @@ export struct DictEditBar {
           .textAlign(TextAlign.Center)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .backgroundColor(kbTheme(this.isDark).funcBg)
-          .borderRadius(6)
+          .borderRadius(8)
           .onClick(() => { InputHandler.getInstance().clearDictEdit(); })
 
         Text('登録')
@@ -190,7 +190,7 @@ export struct DictEditBar {
           .textAlign(TextAlign.Center)
           .fontColor(kbTheme(this.isDark).onAccent)
           .backgroundColor(kbTheme(this.isDark).accent)
-          .borderRadius(6)
+          .borderRadius(8)
           .padding({ left: 12, right: 12 })
           .onClick(() => {
             const msg = InputHandler.getInstance().commitDictEdit();
@@ -204,7 +204,7 @@ export struct DictEditBar {
           .textAlign(TextAlign.Center)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .backgroundColor(kbTheme(this.isDark).funcBg)
-          .borderRadius(6)
+          .borderRadius(8)
           .onClick(() => { InputHandler.getInstance().endDictEdit(); })
       }
       .alignItems(VerticalAlign.Center)

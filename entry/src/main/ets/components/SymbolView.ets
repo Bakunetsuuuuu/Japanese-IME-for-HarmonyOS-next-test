@@ -196,7 +196,7 @@ export struct SymbolView {
               .width(38).height(32)
               .fontColor(this.currentTab === i ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
               .backgroundColor(this.currentTab === i ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-              .borderRadius(12)
+              .borderRadius(8)
               .onClick(() => {
                 this.currentTab = i;
               })
@@ -204,7 +204,8 @@ export struct SymbolView {
         } else {
           Text('ⓘ ライセンス')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(13)
+            .fontSize(14)
+            .fontWeight(FontWeight.Medium)
             .fontColor(kbTheme(this.isDark).textSecondary)
             .padding({ left: 8 })
         }
@@ -245,7 +246,7 @@ export struct SymbolView {
                     .height(gridRowHeight(this.currentRows().length))
                     .fontColor(kbTheme(this.isDark).textPrimary)
                     .backgroundColor(kbTheme(this.isDark).keyBg)
-                    .borderRadius(10)
+                    .borderRadius(8)
                     .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
                     .onClick(() => { this.insert(sym); })
                 }, (sym: string) => String(this.currentTab) + sym)
@@ -281,7 +282,7 @@ export struct SymbolView {
           .width(46).height(44)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .backgroundColor(kbTheme(this.isDark).funcBg)
-          .borderRadius(12)
+          .borderRadius(8)
           .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'emoji'); })
 
         // ⓘ license info toggle
@@ -291,7 +292,7 @@ export struct SymbolView {
           .width(46).height(44)
           .fontColor(this.showLicense ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
           .backgroundColor(this.showLicense ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-          .borderRadius(12)
+          .borderRadius(8)
           .onClick(() => { this.showLicense = !this.showLicense; })
 
         // ⌫ backspace
@@ -301,7 +302,7 @@ export struct SymbolView {
           .width(52).height(44)
           .fontColor(kbTheme(this.isDark).textPrimary)
           .backgroundColor(kbTheme(this.isDark).specialBg)
-          .borderRadius(14)
+          .borderRadius(8)
           .onClick(() => { this.h().handleBackspace(); })
       }
       .width('100%')

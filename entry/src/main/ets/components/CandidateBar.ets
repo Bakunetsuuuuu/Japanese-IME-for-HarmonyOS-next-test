@@ -71,7 +71,7 @@ export struct CandidateBar {
               enableArrow: true,
               popupColor: kbTheme(this.isDark).cardBg,
               backgroundBlurStyle: BlurStyle.NONE,
-              radius: 12,
+              radius: 20,
               // Masked: deleting is destructive enough to deserve a deliberate
               // second tap, and tapping the mask dismisses without deleting.
               mask: true,

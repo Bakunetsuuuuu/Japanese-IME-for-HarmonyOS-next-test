@@ -232,7 +232,7 @@ struct Index {
       Column({ space: 14 }) {
         Text($r('app.string.consent_title'))
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(18)
+          .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(kbTheme(this.isDark).textPrimary)
 
@@ -260,7 +260,7 @@ struct Index {
 
         Text($r('app.string.consent_decline'))
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13)
+          .fontSize(12)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .onClick(() => { this.declineConsent(); })
       }
