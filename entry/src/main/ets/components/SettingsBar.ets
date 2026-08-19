@@ -5,17 +5,12 @@ import { JP_FONT_FAMILY } from './JpFont';
 import { DEBUG_INPUT_LOG } from '../ime/InputLog'; // [DEBUG-LOG]
 
 // Segmented-control / card metrics (design tokens: settings cards 16px,
-// segmented-control track 20px / inner pill 20px, selected option gets a
-// slight elevation vs. the flat unselected one).
+// segmented-control track 20px / inner pill 20px).
 const CARD_RADIUS = 16;
 const TRACK_RADIUS = 20;
 const PILL_RADIUS = 20;
-// 削除系の操作に使う赤 (本体アプリ側 pages/Index.ets と同じ値)。
-const DELETE_RED = '#E5484D';
 // 全消去に必要な連打回数。誤操作で到達しない回数にしてある。
 const RESET_ALL_TAPS = 5;
-const SELECTED_SHADOW: ShadowOptions = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
-const NO_SHADOW: ShadowOptions = { radius: 0, color: 'transparent' };
 
 // Dedicated settings sub-mode, entered via keyboardSubMode === 'settings'
 // (the ⚙ button in KeyboardPage). Takes the full IME panel the same way
@@ -332,7 +327,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.kanaKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.kanaKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.kanaKeyboardLayout === 'QWERTY' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setKanaKeyboardLayout('QWERTY'); })
 
           Text('フリック')
@@ -343,7 +337,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.kanaKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.kanaKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.kanaKeyboardLayout === 'FLICK' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setKanaKeyboardLayout('FLICK'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
@@ -369,7 +362,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.alphabetKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.alphabetKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.alphabetKeyboardLayout === 'QWERTY' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setAlphabetKeyboardLayout('QWERTY'); })
 
           Text('フリック')
@@ -380,7 +372,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.alphabetKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.alphabetKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.alphabetKeyboardLayout === 'FLICK' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setAlphabetKeyboardLayout('FLICK'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
@@ -479,7 +470,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
             .fontColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.oneHandedSide === 'left' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'left'); })
 
           Text('右寄せ')
@@ -490,7 +480,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
             .fontColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.oneHandedSide === 'right' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'right'); })
         }
         .width('100%')
@@ -516,7 +505,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.conversionEngine === 'custom' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.conversionEngine === 'custom' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.conversionEngine === 'custom' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setConversionEngine('custom'); })
 
           Text('統計データ')
@@ -527,7 +515,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.conversionEngine === 'mozc' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setConversionEngine('mozc'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
@@ -600,7 +587,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.themeMode === 'system' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.themeMode === 'system' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'system' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setThemeMode('system'); })
 
           Text('ライト')
@@ -611,7 +597,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.themeMode === 'light' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.themeMode === 'light' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'light' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setThemeMode('light'); })
 
           Text('ダーク')
@@ -622,7 +607,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.themeMode === 'dark' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.themeMode === 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'dark' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setThemeMode('dark'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
@@ -704,7 +688,7 @@ export struct SettingsBar {
             : 'すべてリセット')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
-            .fontColor(DELETE_RED)
+            .fontColor(kbTheme(this.isDark).deleteRed)
             .width('100%')
           Text(`${RESET_ALL_TAPS}回連続で押すと実行。学習に加えユーザー辞書・削除した候補・設定も消えます`)
             .fontFamily(JP_FONT_FAMILY)
@@ -1030,7 +1014,7 @@ export struct SettingsBar {
         Text('すべて消去')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
-          .fontColor(DELETE_RED)
+          .fontColor(kbTheme(this.isDark).deleteRed)
           .padding({ left: 8 })
           .onClick(() => { InputHandler.getInstance().clearUnknownWords(); })
       }
@@ -1204,7 +1188,7 @@ export struct SettingsBar {
             Text('削除')
               .fontFamily(JP_FONT_FAMILY)
               .fontSize(12)
-              .fontColor(DELETE_RED)
+              .fontColor(kbTheme(this.isDark).deleteRed)
               .padding({ left: 10, right: 4, top: 6, bottom: 6 })
               .onClick(() => {
                 const p = row.split('\t');
@@ -1241,7 +1225,7 @@ export struct SettingsBar {
       Text('消去')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(12)
-        .fontColor(DELETE_RED)
+        .fontColor(kbTheme(this.isDark).deleteRed)
         .padding({ left: 8, right: 8, top: 6, bottom: 6 })
         .onClick(() => { InputHandler.getInstance().clearInputLog(); })
     }

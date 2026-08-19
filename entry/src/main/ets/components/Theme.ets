@@ -29,40 +29,43 @@ export interface KbTheme {
   // Lines / shadow
   divider: ResourceColor;
   shadowColor: ResourceColor;
+  deleteRed: ResourceColor;      // destructive actions (settings delete)
 }
 
 export const LIGHT_THEME: KbTheme = {
-  panelBg: '#EEF1F5',
+  panelBg: '#F1F3F5',
   keyBg: '#FFFFFF',
   candidateBg: '#FFFFFF',
-  specialBg: '#E3E7EC',
-  funcBg: '#DFE3E9',
+  specialBg: '#E5E5EA',
+  funcBg: '#E5E5EA',
   cardBg: '#FFFFFF',
-  accent: '#2F6FED',
-  accentSoft: '#DCE7FD',
-  accentStrong: '#1E54C7',
-  textPrimary: '#1C1C1E',
-  textSecondary: '#7A7F87',
+  accent: '#0A59F7',
+  accentSoft: '#0C0A59F7',
+  accentStrong: '#CC0A59F7',
+  textPrimary: '#E5000000',
+  textSecondary: '#66000000',
   onAccent: '#FFFFFF',
   divider: '#E2E5EA',
   shadowColor: '#0F142B0F', // rgba(20,20,43,0.06)
+  deleteRed: '#E84026',
 };
 
 export const DARK_THEME: KbTheme = {
-  panelBg: '#1C1C1E',
-  keyBg: '#2C2C2E',
-  candidateBg: '#2C2C2E',
-  specialBg: '#3A3A3C',
-  funcBg: '#333336',
+  panelBg: '#191A1C',
+  keyBg: '#202224',
+  candidateBg: '#202224',
+  specialBg: '#2E3033',
+  funcBg: '#2E3033',
   cardBg: '#232325',
-  accent: '#4C8DFF',
-  accentSoft: '#274070',
-  accentStrong: '#5B9BFF',
-  textPrimary: '#F2F2F7',
-  textSecondary: '#9A9AA0',
+  accent: '#317AF7',
+  accentSoft: '#0C317AF7',
+  accentStrong: '#CC317AF7',
+  textPrimary: '#E5FFFFFF',
+  textSecondary: '#66FFFFFF',
   onAccent: '#FFFFFF',
-  divider: '#3A3A3C',
+  divider: '#2E3033',
   shadowColor: '#0F142B1F',
+  deleteRed: '#D94838',
 };
 
 export function kbTheme(isDark: boolean): KbTheme {
