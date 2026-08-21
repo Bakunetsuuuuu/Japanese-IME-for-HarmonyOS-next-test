@@ -3,6 +3,7 @@
     "pages/KeyboardPage",
     "pages/Index",
     "pages/PrivacyPolicy",
+    "pages/License",
     "pages/WebViewPage"
   ]
 }

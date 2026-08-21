@@ -78,38 +78,6 @@ const SYMBOL_CATEGORIES: string[][][] = [
   ],
 ];
 
-const LICENSE_TEXT: string =
-  'shunti Japanese IME\n\n' +
-  '■ 変換辞書 (dict.json, global_dict.json)\n' +
-  '独自収集データを使用しています。\n' +
-  '・常用漢字（文部科学省告示、パブリックドメイン）\n' +
-  '・Unicode Unihan データベース（パブリックドメイン）\n' +
-  '・Wikipedia日本語版から収集した読み情報（CC BY-SA 4.0）\n' +
-  '・Wiktionary日本語版から収集した読み情報\n' +
-  '  （CC BY-SA 4.0 / GFDL、ja.wiktionary.org）\n' +
-  '・JMdict/EDICT（電子化辞書研究開発グループ、CC BY-SA 4.0）\n' +
-  '  https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project\n' +
-  '・日本郵便 郵便番号データ\n' +
-  '・独自収録語彙（global_dict）\n\n' +
-  '詳細な出典一覧は DATA_SOURCES.md を参照してください。\n\n' +
-  '■ 文節分割\n' +
-  '外部データファイルには依存せず、文法ルールをアプリ内に実装した\n' +
-  '独自のViterbiアルゴリズムで分割しています。\n\n' +
-  '■ 統計データ変換エンジン (mozc_dict.json 等, 設定でオプション有効化)\n' +
-  '上記の独自辞書とは完全に別データの、切り替え式の第二変換エンジンです。\n' +
-  '・mozc（Google, BSD-3-Clause）\n' +
-  '  https://github.com/google/mozc\n' +
-  '・JMdict/EDICT（電子化辞書研究開発グループ、CC BY-SA 4.0）\n' +
-  '  https://www.edrdg.org/wiki/index.php/JMdict-EDICT_Dictionary_Project\n' +
-  '・SudachiDict（Works Applications, Apache License 2.0）\n' +
-  '  https://github.com/WorksApplications/SudachiDict\n' +
-  '詳細なライセンス全文は THIRD_PARTY_NOTICES.md を参照してください。\n\n' +
-  '■ アプリコード\n' +
-  'MIT License\n\n' +
-  '■ 開発\n' +
-  '開発者: Shunti (X: @shunti_nitijou)\n' +
-  '協力者: Hashima';
-
 // Grid area budget (unchanged from before the redesign, so the overall
 // keyboard body height doesn't shift when switching into the symbol panel).
 const GRID_AREA_H = 252;
@@ -135,7 +103,6 @@ export struct SymbolView {
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('frequentSymbols') frequentSymbols: string[] = [];
   @State currentTab: number = 1;
-  @State showLicense: boolean = false;
 
   private h(): InputHandler { return InputHandler.getInstance(); }
 
@@ -182,58 +149,32 @@ export struct SymbolView {
           .backgroundColor(kbTheme(this.isDark).specialBg)
           .borderRadius(20)
           .onClick(() => {
-            this.showLicense = false;
             AppStorage.setOrCreate('keyboardSubMode', 'kana');
           })
 
-        if (!this.showLicense) {
-          // Category tabs
-          ForEach([0, 1, 2, 3, 4, 5, 6, 7], (i: number) => {
-            Text(SYM_TABS[i])
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(i === 1 ? 12 : 13)
-              .textAlign(TextAlign.Center)
-              .width(38).height(32)
-              .fontColor(this.currentTab === i ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-              .backgroundColor(this.currentTab === i ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-              .borderRadius(8)
-              .onClick(() => {
-                this.currentTab = i;
-              })
-          }, (i: number) => String(i))
-        } else {
-          Text('ⓘ ライセンス')
+        ForEach([0, 1, 2, 3, 4, 5, 6, 7], (i: number) => {
+          Text(SYM_TABS[i])
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontWeight(FontWeight.Medium)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .padding({ left: 8 })
-        }
+            .fontSize(i === 1 ? 12 : 13)
+            .textAlign(TextAlign.Center)
+            .width(38).height(32)
+            .fontColor(this.currentTab === i ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .backgroundColor(this.currentTab === i ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+            .borderRadius(8)
+            .onClick(() => {
+              this.currentTab = i;
+            })
+        }, (i: number) => String(i))
       }
       .width('100%')
       .height(48)
       .padding({ left: 4, right: 4, top: 4 })
       .alignItems(VerticalAlign.Center)
 
-      if (this.showLicense) {
-        // ── License view ─────────────────────────────────────────
-        Scroll() {
-          Text(LICENSE_TEXT)
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .lineHeight(20)
-            .width('100%')
-            .padding({ left: 12, right: 12, top: 8, bottom: 8 })
-        }
-        .width('100%')
-        .height(GRID_AREA_H)
-        .backgroundColor(kbTheme(this.isDark).panelBg)
-      } else {
-        // ── Symbol grid: row height fills the fixed grid budget (capped —
-        // see gridRowHeight above), extra slack centers as padding so
-        // switching tabs never changes the panel's total height. ──
-        Column({ space: GRID_ROW_GAP }) {
+      // ── Symbol grid: row height fills the fixed grid budget (capped —
+      // see gridRowHeight above), extra slack centers as padding so
+      // switching tabs never changes the panel's total height. ──
+      Column({ space: GRID_ROW_GAP }) {
           ForEach([0, 1, 2, 3, 4, 5, 6], (rowIdx: number) => {
             if (rowIdx < this.currentRows().length) {
               Row({ space: 4 }) {
@@ -259,7 +200,6 @@ export struct SymbolView {
         .width('100%')
         .height(GRID_AREA_H)
         .justifyContent(FlexAlign.Center)
-      }
 
       // ── Bottom function row ───────────────────────────────────
       Row({ space: 0 }) {
@@ -270,7 +210,6 @@ export struct SymbolView {
           .width(68).height(44)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .onClick(() => {
-            this.showLicense = false;
             AppStorage.setOrCreate('keyboardSubMode', 'kana');
           })
 
@@ -284,16 +223,6 @@ export struct SymbolView {
           .backgroundColor(kbTheme(this.isDark).funcBg)
           .borderRadius(8)
           .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'emoji'); })
-
-        // ⓘ license info toggle
-        Text('ⓘ')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(18).textAlign(TextAlign.Center)
-          .width(46).height(44)
-          .fontColor(this.showLicense ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-          .backgroundColor(this.showLicense ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-          .borderRadius(8)
-          .onClick(() => { this.showLicense = !this.showLicense; })
 
         // ⌫ backspace
         Text('⌫')
