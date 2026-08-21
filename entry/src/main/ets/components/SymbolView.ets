@@ -140,22 +140,24 @@ export struct SymbolView {
       // ── Top tab row ──────────────────────────────────────────
       Row({ space: 4 }) {
         // ← back to kana
-        Text('←')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(18)
-          .textAlign(TextAlign.Center)
-          .width(48).height(40)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .backgroundColor(kbTheme(this.isDark).specialBg)
-          .borderRadius(20)
-          .onClick(() => {
-            AppStorage.setOrCreate('keyboardSubMode', 'kana');
-          })
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(18)
+            .fontColor([kbTheme(this.isDark).textPrimary])
+        }
+        .width(48).height(40)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).specialBg)
+        .borderRadius(20)
+        .onClick(() => {
+          AppStorage.setOrCreate('keyboardSubMode', 'kana');
+        })
 
         ForEach([0, 1, 2, 3, 4, 5, 6, 7], (i: number) => {
           Text(SYM_TABS[i])
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(i === 1 ? 12 : 13)
+            .fontSize(i === 1 ? 12 : 14)
             .textAlign(TextAlign.Center)
             .width(38).height(32)
             .fontColor(this.currentTab === i ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
@@ -206,7 +208,7 @@ export struct SymbolView {
         // あいう — back to kana
         Text('あいう')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13).textAlign(TextAlign.Center)
+          .fontSize(14).textAlign(TextAlign.Center)
           .width(68).height(44)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .onClick(() => {
@@ -216,7 +218,7 @@ export struct SymbolView {
         // Emoji button → emoji panel
         Text('☺')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(17)
+          .fontSize(18)
           .textAlign(TextAlign.Center)
           .width(46).height(44)
           .fontColor(kbTheme(this.isDark).textSecondary)
@@ -225,14 +227,17 @@ export struct SymbolView {
           .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'emoji'); })
 
         // ⌫ backspace
-        Text('⌫')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(18).textAlign(TextAlign.Center)
-          .width(52).height(44)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .backgroundColor(kbTheme(this.isDark).specialBg)
-          .borderRadius(8)
-          .onClick(() => { this.h().handleBackspace(); })
+        Row() {
+          SymbolGlyph($r('sys.symbol.delete_left'))
+            .fontSize(18)
+            .fontColor([kbTheme(this.isDark).textPrimary])
+        }
+        .width(52).height(44)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).specialBg)
+        .borderRadius(8)
+        .onClick(() => { this.h().handleBackspace(); })
       }
       .width('100%')
       .height(52)

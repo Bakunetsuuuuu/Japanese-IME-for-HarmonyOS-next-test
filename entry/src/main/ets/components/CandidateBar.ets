@@ -29,12 +29,12 @@ export struct CandidateBar {
 
   @Builder DeleteMenu() {
     Row({ space: 6 }) {
-      Text('🗑')
-        .fontFamily(JP_FONT_FAMILY)
+      SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(14)
+        .fontColor([kbTheme(this.isDark).textPrimary])
       Text(`「${this.menuCandidate}」を候補から削除`)
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13)
+        .fontSize(14)
         .fontWeight(FontWeight.Medium)
         .fontColor(kbTheme(this.isDark).textPrimary)
     }
@@ -101,14 +101,16 @@ export struct CandidateBar {
       .height(this.isLandscape ? 22 : 48)
 
       if (this.showExpand && this.candidates.length > 0) {
-        Text('▼')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(this.isLandscape ? 10 : 14)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-          .width(this.isLandscape ? 24 : 36)
-          .height(this.isLandscape ? 22 : 48)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(kbTheme(this.isDark).funcBg)
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_down'))
+            .fontSize(this.isLandscape ? 10 : 14)
+            .fontColor([kbTheme(this.isDark).textSecondary])
+        }
+        .width(this.isLandscape ? 24 : 36)
+        .height(this.isLandscape ? 22 : 48)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).funcBg)
           .onClick(() => {
             AppStorage.setOrCreate('candidateExpanded', true);
           })

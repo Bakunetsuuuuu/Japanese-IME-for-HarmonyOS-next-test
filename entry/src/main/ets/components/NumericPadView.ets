@@ -221,7 +221,7 @@ export struct NumericPadView {
       // gesture, not this label.
       Text(this.centerLabel(rowIdx, colIdx, key))
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(this.isActive(rowIdx, colIdx) ? 17 : 18)
+        .fontSize(18)
         .fontWeight(FontWeight.Medium)
         .textAlign(TextAlign.Center)
         .fontColor(kbTheme(this.isDark).textPrimary)
@@ -236,7 +236,7 @@ export struct NumericPadView {
         Row() {
           Text(key.up ?? ' ')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
             .textAlign(TextAlign.Center)
         }
@@ -247,7 +247,7 @@ export struct NumericPadView {
         Row({ space: 0 }) {
           Text(key.left ?? ' ')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
             .width('25%').textAlign(TextAlign.Center)
 
@@ -260,7 +260,7 @@ export struct NumericPadView {
 
           Text(key.right ?? ' ')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
             .width('25%').textAlign(TextAlign.Center)
         }
@@ -270,7 +270,7 @@ export struct NumericPadView {
         Row() {
           Text(key.down ?? ' ')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
             .textAlign(TextAlign.Center)
         }
@@ -293,7 +293,7 @@ export struct NumericPadView {
       // 1つずつ戻す(消し過ぎた分を押した回数だけ復元する順次アンドゥ)。
       Text('取消')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13).textAlign(TextAlign.Center)
+        .fontSize(14).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
@@ -301,12 +301,16 @@ export struct NumericPadView {
           this.h().undoLastDeletion();
         })
     } else if (rowIdx === 1) {
-      Text('◄')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_left'))
+          .fontSize(16)
+          .fontColor([kbTheme(this.isDark).textPrimary])
+      }
+      .width(this.flickKeyWidthVp).height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(kbTheme(this.isDark).specialBg)
+      .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
           if (event.type === TouchType.Down) { this.startCurRepeat('left'); }
           else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
@@ -314,7 +318,7 @@ export struct NumericPadView {
     } else if (rowIdx === 2) {
       Text('記号')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13).textAlign(TextAlign.Center)
+        .fontSize(14).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
@@ -326,7 +330,7 @@ export struct NumericPadView {
       // あってもループが一貫した状態に着地するようにする)。
       Text(this.numericPadEnabled ? '1あA' : 'あA')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13).textAlign(TextAlign.Center)
+        .fontSize(14).textAlign(TextAlign.Center)
         .width(this.flickKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
@@ -339,12 +343,16 @@ export struct NumericPadView {
 
   @Builder RightKey(rowIdx: number) {
     if (rowIdx === 0) {
-      Text('⌫')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      Row() {
+        SymbolGlyph($r('sys.symbol.delete_left'))
+          .fontSize(16)
+          .fontColor([kbTheme(this.isDark).textPrimary])
+      }
+      .width(this.flickKeyWidthVp).height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(kbTheme(this.isDark).specialBg)
+      .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
           if (event.type === TouchType.Down) {
             this.startBsRepeat();
@@ -353,12 +361,16 @@ export struct NumericPadView {
           }
         })
     } else if (rowIdx === 1) {
-      Text('►')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      Row() {
+        SymbolGlyph($r('sys.symbol.chevron_right'))
+          .fontSize(16)
+          .fontColor([kbTheme(this.isDark).textPrimary])
+      }
+      .width(this.flickKeyWidthVp).height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(kbTheme(this.isDark).specialBg)
+      .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
           if (event.type === TouchType.Down) { this.startCurRepeat('right'); }
           else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
@@ -372,12 +384,16 @@ export struct NumericPadView {
         .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => { this.h().handleSpaceKey(); })
     } else {
-      Text('⏎')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).accent).fontColor(kbTheme(this.isDark).onAccent)
-        .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      Row() {
+        SymbolGlyph($r('sys.symbol.arrow_right'))
+          .fontSize(16)
+          .fontColor([kbTheme(this.isDark).onAccent])
+      }
+      .width(this.flickKeyWidthVp).height('100%')
+      .justifyContent(FlexAlign.Center)
+      .alignItems(VerticalAlign.Center)
+      .backgroundColor(kbTheme(this.isDark).accent)
+      .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => { this.h().handleEnterKey(); })
     }
   }

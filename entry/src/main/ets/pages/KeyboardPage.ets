@@ -191,20 +191,20 @@ struct KeyboardPage {
                   if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
                     Text(this.composingText.slice(0, this.convEnd))
                       .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 16)
+                      .fontSize(this.isLandscape ? 12 : 16)
                       .fontWeight(FontWeight.Medium)
                       .fontColor(kbTheme(this.isDark).textPrimary)
                       .maxLines(1)
                       .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
                     Text(this.composingText.slice(this.convEnd))
                       .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 16)
+                      .fontSize(this.isLandscape ? 12 : 16)
                       .fontColor(kbTheme(this.isDark).textSecondary)
                       .maxLines(1)
                   } else {
                     Text(this.composingText + this.pendingRomaji)
                       .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 16)
+                      .fontSize(this.isLandscape ? 12 : 16)
                       .fontWeight(FontWeight.Medium)
                       .fontColor(kbTheme(this.isDark).textPrimary)
                       .maxLines(1)
@@ -217,10 +217,11 @@ struct KeyboardPage {
                   }
                 }
                 Blank()
-                Text('設定')
-                  .fontFamily(JP_FONT_FAMILY)
-                  .fontSize(this.isLandscape ? 10 : 13)
-                  .fontColor(kbTheme(this.isDark).textSecondary)
+                SymbolGlyph($r('sys.symbol.gearshape'))
+                  .fontSize(this.isLandscape ? 12 : 18)
+                  .fontColor([kbTheme(this.isDark).textSecondary])
+                  .width(this.isLandscape ? 20 : 28)
+                  .height('100%')
                   .onClick(() => {
                     AppStorage.setOrCreate('keyboardSubMode', 'settings');
                   })
@@ -254,7 +255,7 @@ struct KeyboardPage {
                     // rather than left-aligned like an actual conversion candidate.
                     Text(this.clipboardPreview)
                       .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 16)
+                      .fontSize(this.isLandscape ? 12 : 16)
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       // Cap how wide the chip can grow instead of letting it stretch to

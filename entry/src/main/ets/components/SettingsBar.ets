@@ -105,26 +105,36 @@ export struct SettingsBar {
       Row() {
         Row() {
           if (this.showHistory || this.showDict || this.showLog) {
-            Text('‹ 戻る')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(kbTheme(this.isDark).accent)
-              .onClick(() => {
-                InputHandler.getInstance().stopCapture();
-                // 辞書の下位画面にいるときは、まず辞書の入口へ戻る。
-                if (this.showDict && this.dictSub.length > 0) {
-                  this.dictSub = '';
-                  return;
-                }
-                this.showHistory = false;
-                this.showDict = false;
-                this.showLog = false; // [DEBUG-LOG]
-              })
+            Row({ space: 2 }) {
+              SymbolGlyph($r('sys.symbol.chevron_left'))
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .fontColor([kbTheme(this.isDark).accent])
+              Text('戻る')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(kbTheme(this.isDark).accent)
+            }
+            .height('100%')
+            .alignItems(VerticalAlign.Center)
+            .onClick(() => {
+              InputHandler.getInstance().stopCapture();
+              // 辞書の下位画面にいるときは、まず辞書の入口へ戻る。
+              if (this.showDict && this.dictSub.length > 0) {
+                this.dictSub = '';
+                return;
+              }
+              this.showHistory = false;
+              this.showDict = false;
+              this.showLog = false; // [DEBUG-LOG]
+            })
           }
         }
         .width(56)
+        .height('100%')
         .justifyContent(FlexAlign.Start)
+        .alignItems(VerticalAlign.Center)
 
         Text(this.showHistory
           ? 'クリップボード履歴'
@@ -150,15 +160,17 @@ export struct SettingsBar {
                 InputHandler.getInstance().clearClipboardHistory();
               })
           } else if (!this.showDict && !this.showLog) {
-            Text('✕')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(12)
-              .width(28).height(28)
-              .textAlign(TextAlign.Center)
-              .fontColor(kbTheme(this.isDark).textSecondary)
-              .backgroundColor(kbTheme(this.isDark).funcBg)
-              .borderRadius(8)
-              .onClick(() => { this.close(); })
+            Row() {
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(14)
+                .fontColor([kbTheme(this.isDark).textSecondary])
+            }
+            .width(28).height(28)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .backgroundColor(kbTheme(this.isDark).funcBg)
+            .borderRadius(8)
+            .onClick(() => { this.close(); })
           }
         }
         .width(56)

@@ -69,7 +69,7 @@ export struct DictEditBar {
       ForEach(['noun', 'verb', 'adjective', 'person', 'place'], (pos: string) => {
         Text(this.posLabel(pos))
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(11)
+          .fontSize(12)
           .fontColor(this.dictEditPos === pos
             ? kbTheme(this.isDark).onAccent
             : kbTheme(this.isDark).textSecondary)
@@ -89,7 +89,7 @@ export struct DictEditBar {
         ForEach(['godan', 'ichidan'], (g: string) => {
           Text(g === 'godan' ? '五段' : '一段')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(12)
             .fontColor(this.dictEditVerbGroup === g
               ? kbTheme(this.isDark).onAccent
               : kbTheme(this.isDark).textSecondary)
@@ -109,7 +109,7 @@ export struct DictEditBar {
       Column({ space: 2 }) {
         Text('よみ')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(9)
+          .fontSize(10)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .width('100%')
         // 高さを固定して2つの欄を必ず同じ大きさに保つ。
@@ -142,7 +142,7 @@ export struct DictEditBar {
       Column({ space: 2 }) {
         Text('単語')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(9)
+          .fontSize(10)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .width('100%')
         Row() {
@@ -172,19 +172,21 @@ export struct DictEditBar {
 
       // 操作ボタンは欄と同じ高さに揃える (ラベル分だけ下げる)。
       Row({ space: 6 }) {
-        Text('⌫')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13)
-          .width(34).height(34)
-          .textAlign(TextAlign.Center)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-          .backgroundColor(kbTheme(this.isDark).funcBg)
-          .borderRadius(8)
-          .onClick(() => { InputHandler.getInstance().clearDictEdit(); })
+        Row() {
+          SymbolGlyph($r('sys.symbol.delete_left'))
+            .fontSize(14)
+            .fontColor([kbTheme(this.isDark).textSecondary])
+        }
+        .width(34).height(34)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(8)
+        .onClick(() => { InputHandler.getInstance().clearDictEdit(); })
 
         Text('登録')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13)
+          .fontSize(14)
           .fontWeight(FontWeight.Bold)
           .height(34)
           .textAlign(TextAlign.Center)
@@ -199,7 +201,7 @@ export struct DictEditBar {
 
         Text('✕')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13)
+          .fontSize(14)
           .width(34).height(34)
           .textAlign(TextAlign.Center)
           .fontColor(kbTheme(this.isDark).textSecondary)

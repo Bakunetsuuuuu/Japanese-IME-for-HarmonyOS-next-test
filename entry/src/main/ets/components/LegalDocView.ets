@@ -14,16 +14,22 @@ export struct LegalDocView {
   build() {
     Column() {
       Row() {
-        Row() {
-          Text('‹ 戻る')
+        Row({ space: 2 }) {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(16)
+            .fontWeight(FontWeight.Medium)
+            .fontColor([kbTheme(this.isDark).accent])
+          Text('戻る')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontWeight(FontWeight.Medium)
             .fontColor(kbTheme(this.isDark).accent)
-            .onClick(() => { router.back(); })
         }
         .width(56)
+        .height('100%')
         .justifyContent(FlexAlign.Start)
+        .alignItems(VerticalAlign.Center)
+        .onClick(() => { router.back(); })
 
         Text(this.pageTitle)
           .fontFamily(JP_FONT_FAMILY)

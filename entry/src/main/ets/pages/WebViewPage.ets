@@ -54,7 +54,7 @@ struct WebViewPage {
       Row() {
         Text('← 戻る')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(16)
           .fontColor(kbTheme(this.isDark).onAccent)
           .onClick(() => { this.handleBack(); })
         Text(this.pageTitle)
