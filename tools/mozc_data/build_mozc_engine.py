@@ -206,6 +206,15 @@ ARABIC_DIGIT_PENALTY = 3000
 # ordinary sentences should require stronger evidence before dropping a
 # person/place name into the middle of one. Candidate lists still carry
 # the proper noun for cycling; this only weights the DP's default path.
+#
+# 実測の結果 1 に戻してある。3 にして再ビルドすると語義は 906,375 ->
+# 1,129,082 (+24.6%) に増えるが、盲検350文は 200 -> 198 と下がった。
+# 髪 が候補に入っても神の方が安いので結局神が勝ち、狙った文は1つも直らず
+# 他の文で誤る道だけが増える。mozc のコストは既に「その同音語のうち一般的に
+# どれか」を表していて、文脈を見る手段が無い限り覆せない (文字n-gramでの
+# 再採点も同じ壁で不採用。README の "Character n-gram rescoring" 参照)。
+#
+# 機構は残してある。文脈を読む信号が手に入ったときに、まずここを開ける。
 MAX_SURFACES_PER_CLASS = 1
 
 PROPER_NOUN_PENALTY = 2500
