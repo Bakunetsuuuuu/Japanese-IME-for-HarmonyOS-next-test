@@ -18,6 +18,8 @@ function build() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'uw-'));
   const tsPath = path.join(tmp, 'UW.ts');
   fs.writeFileSync(tsPath, '// @ts-nocheck\n' + fs.readFileSync(SRC, 'utf-8'));
+  // bun なら TypeScript をそのまま require できるので tsc を挟まない。
+  if (typeof Bun !== 'undefined') { return tsPath; }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
     '--skipLibCheck', tsPath], { stdio: 'inherit' });
   return path.join(tmp, 'UW.js');
@@ -37,7 +39,8 @@ function check(label, cond, detail) {
 const NEVER_KNOWN = () => false;
 
 function main() {
-  const { UnknownWordLearner: UW } = require(build());
+  const { UnknownWordLearner: UW, LEARN_THRESHOLD, MAX_SURFACE_LEN,
+    MAX_RUN_FRAGMENTS, MAX_KEYS } = require(build());
 
   // ---- signal 1: piecewise assembly (音 + 街 + ウナ) ----
   // Four assemblies should be needed before the word is offered, so the user
@@ -49,14 +52,12 @@ function main() {
     UW.observe('うな', 'ウナ', NEVER_KNOWN);
     UW.endRun(NEVER_KNOWN);
   };
-  buildUna();
-  check('piecewise: not offered after 1 assembly',
-    UW.candidates('おとまちうな').length === 0);
-  buildUna(); buildUna();
-  check('piecewise: not offered after 3 assemblies',
+  // 回数は LEARN_THRESHOLD から決める。閾値を動かしてもテストが追従する。
+  for (let i = 0; i < LEARN_THRESHOLD - 1; i++) { buildUna(); }
+  check('piecewise: not offered before the threshold',
     UW.candidates('おとまちうな').length === 0);
   buildUna();
-  check('piecewise: offered after 4 assemblies',
+  check('piecewise: offered once the threshold is reached',
     UW.candidates('おとまちうな').join(',') === '音街ウナ',
     JSON.stringify(UW.candidates('おとまちうな')));
 
@@ -68,7 +69,7 @@ function main() {
     UW.truncate(); // deletes け
     UW.endRun(NEVER_KNOWN);
   };
-  for (let i = 0; i < 4; i++) { buildSho(); }
+  for (let i = 0; i < LEARN_THRESHOLD; i++) { buildSho(); }
   check('truncated: single trimmed commit is learned under the typed reading',
     UW.candidates('かける').join(',') === '翔',
     JSON.stringify(UW.candidates('かける')));
@@ -87,7 +88,7 @@ function main() {
   // 音 + 街 then は: the particle closes the run, and 音街 (not 音街は) is what
   // gets counted.
   UW.setLearned({});
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < LEARN_THRESHOLD; i++) {
     UW.observe('おと', '音', NEVER_KNOWN);
     UW.observe('まち', '街', NEVER_KNOWN);
     UW.observe('は', 'は', NEVER_KNOWN);
@@ -115,14 +116,17 @@ function main() {
   // ---- shape guards ----
   // Too long to be a term (9 chars of surface).
   UW.setLearned({});
-  for (let i = 0; i < 5; i++) {
-    UW.observe('あいうえお', '亜衣宇江男', NEVER_KNOWN);
-    UW.observe('かきくけ', '下記句家', NEVER_KNOWN);
+  // 上限をちょうど1文字超える表記を2断片で組み立てる (定数に追従)。
+  const longSurface = '亜'.repeat(MAX_SURFACE_LEN + 1);
+  const longReading = 'あ'.repeat(MAX_SURFACE_LEN + 1);
+  for (let i = 0; i < LEARN_THRESHOLD + 1; i++) {
+    UW.observe(longReading.slice(0, 2), longSurface.slice(0, 2), NEVER_KNOWN);
+    UW.observe(longReading.slice(2), longSurface.slice(2), NEVER_KNOWN);
     UW.endRun(NEVER_KNOWN);
   }
   check('over-long assemblies are rejected',
-    UW.candidates('あいうえおかきくけ').length === 0,
-    JSON.stringify(UW.candidates('あいうえおかきくけ')));
+    UW.candidates(longReading).length === 0,
+    JSON.stringify(UW.candidates(longReading)));
 
   // A run made only of kana surfaces has no conversion to remember.
   UW.setLearned({});
@@ -149,9 +153,12 @@ function main() {
 
   // ---- a run longer than the fragment cap is discarded ----
   UW.setLearned({});
-  for (let i = 0; i < 5; i++) {
-    for (const f of [['あ','亜'],['い','衣'],['う','宇'],['え','江'],['お','雄'],['か','火'],['き','木']]) {
-      UW.observe(f[0], f[1], NEVER_KNOWN);
+  // 断片の上限をちょうど1つ超える run を作る (定数に追従)。
+  const frags = [['あ','亜'],['い','衣'],['う','宇'],['え','江'],['お','雄'],
+    ['か','火'],['き','木'],['く','区'],['け','家'],['こ','古']];
+  for (let i = 0; i < LEARN_THRESHOLD + 1; i++) {
+    for (let f = 0; f < MAX_RUN_FRAGMENTS + 1; f++) {
+      UW.observe(frags[f][0], frags[f][1], NEVER_KNOWN);
     }
     UW.endRun(NEVER_KNOWN);
   }
@@ -171,11 +178,12 @@ function main() {
 
   // ---- key cap evicts the weakest reading rather than freezing ----
   UW.setLearned({});
-  // Fill well past the 300-key cap with distinct 2-fragment assemblies.
+  // 上限を少し超えるところまで、2断片の別々の組み立てで埋める (定数に追従)。
   const kana = 'あいうえおかきくけこさしすせそたちつてとなにぬねのはひふへほ';
+  const target = MAX_KEYS + 20;
   let made = 0;
-  for (let a = 0; a < kana.length && made < 320; a++) {
-    for (let b = 0; b < kana.length && made < 320; b++) {
+  for (let a = 0; a < kana.length && made < target; a++) {
+    for (let b = 0; b < kana.length && made < target; b++) {
       UW.observe(kana[a], '亜', NEVER_KNOWN);
       UW.observe(kana[b], '衣', NEVER_KNOWN);
       UW.endRun(NEVER_KNOWN);
@@ -183,7 +191,7 @@ function main() {
     }
   }
   const keyCount = Object.keys(UW.getLearned()).length;
-  check('store stays at or under the key cap', keyCount <= 300, `keys=${keyCount}`);
+  check('store stays at or under the key cap', keyCount <= MAX_KEYS, `keys=${keyCount}`);
   check('store keeps learning past the cap', keyCount > 0, `keys=${keyCount}`);
 
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

@@ -31,7 +31,11 @@
 // Counted assemblies needed before a word is offered. The count reaches this on
 // the Nth assembly, so the word first appears as a candidate on the N+1th time
 // the reading is typed.
-const LEARN_THRESHOLD = 4;
+// 2 にしてある (以前は 4)。手で組み立て直している時点でユーザーはもう
+// 「変換できない語」だと分かっていて、5回目まで待たされるのは長い。誤って
+// 覚えた場合は候補の長押しで消せる (SuppressedCandidates) ので、早めに出して
+// 外れを消してもらう方が体感が良い。テストが追従できるよう公開している。
+export const LEARN_THRESHOLD = 2;
 
 // Word-shape bounds for the joined result. A single-character surface is
 // allowed on purpose: trimming a longer conversion down to one kanji (かける →
@@ -40,17 +44,17 @@ const LEARN_THRESHOLD = 4;
 // ordinary one-word commit still can't slip through. Above 8 chars the run is a
 // phrase rather than a term.
 const MIN_SURFACE_LEN = 1;
-const MAX_SURFACE_LEN = 8;
+export const MAX_SURFACE_LEN = 12;
 // A one-kana reading is too ambiguous to hang a learned surface off.
 const MIN_READING_LEN = 2;
 const MAX_READING_LEN = 16;
 
 // A run longer than this is someone typing a sentence in content fragments, not
 // building one word -- discarded rather than learned.
-const MAX_RUN_FRAGMENTS = 6;
+export const MAX_RUN_FRAGMENTS = 8;
 
-const MAX_KEYS = 300;
-const MAX_SURFACES_PER_KEY = 3;
+export const MAX_KEYS = 2000;
+const MAX_SURFACES_PER_KEY = 4;
 
 // Resolves whether the converter can ALREADY produce `surface` for `reading`.
 // Anything it can is by definition not an unknown word.
