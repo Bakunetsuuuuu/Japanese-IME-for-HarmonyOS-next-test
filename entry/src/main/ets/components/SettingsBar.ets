@@ -31,7 +31,7 @@ export struct SettingsBar {
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
-  @StorageLink('conversionEngine') conversionEngine: string = 'mozc';
+  @StorageLink('conversionEngine') conversionEngine: string = 'hybrid';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。

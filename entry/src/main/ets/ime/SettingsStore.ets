@@ -12,13 +12,25 @@ export interface KeyboardSettings {
   alphabetKeyboardLayout: string;
   oneHandedMode: boolean;
   oneHandedSide: string;
-  // 'mozc' = mozc 由来の統計エンジン (既定)。'custom' = 独自の手作り辞書。
-  // 'hybrid' は現状 'mozc' の別名 (KanaKanjiConverter の engine コメント参照)。
+  // 'hybrid' = 既定。mozc の統計エンジンで文を決めたうえで、候補の2番目以降に
+  // 独自辞書の同音語を織り交ぜる (composeMozcCandidates 参照)。
+  // 'mozc' = 織り交ぜ無しの素の mozc。'custom' = 独自の手作り辞書のみ。
   //
-  // 既定を 'mozc' にした根拠は tools/blind-eval の盲検350文で、
-  // mozc 57.1% に対し custom 44.6%。手持ちコーパスでは custom が勝つが、
-  // あれは custom に合わせて育てたものなので判断材料にならない
-  // (tools/blind-eval/README.md にその旨が書いてある)。
+  // 根拠は tools/blind-eval の盲検350文 (Tatoeba由来で、この企画のどの調整も
+  // 届いていない)。手持ちコーパスでは custom が勝つが、あれは custom に
+  // 合わせて育てたものなので判断材料にならない。
+  //
+  // 候補[0]の完全一致:  custom 44.6%  /  mozc・hybrid 59.4%
+  // 正解が候補リストの何位に出るか (tools/ime-eval/run_candlist.js):
+  //
+  //            1位     3位以内   5位以内   リストに無い
+  //   custom   44.6%   44.6%     44.6%     55.4%
+  //   mozc     59.4%   63.1%     65.4%     22.9%
+  //   hybrid   59.4%   68.9%     70.3%     20.6%
+  //
+  // custom は候補が平均4.1個あるのに2番目以降がまったく効いていない
+  // (正解は1位にあるか無いかのどちらか)。hybrid は候補[0]では mozc と同点で、
+  // リストは全面的に上 -- 下がる指標が無いので既定はこれ。
   //
   // 影響するのは conversionEngine を一度も保存していない利用者だけ。
   // 自分で「独自辞書」を選んだ人は prefs の値が優先されるので変わらない。
@@ -38,7 +50,7 @@ const DEFAULTS: KeyboardSettings = {
   alphabetKeyboardLayout: 'QWERTY',
   oneHandedMode: false,
   oneHandedSide: 'right',
-  conversionEngine: 'mozc',
+  conversionEngine: 'hybrid',
   numericPadEnabled: false,
   hapticEnabled: false,
 };
