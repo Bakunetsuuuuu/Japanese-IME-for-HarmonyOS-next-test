@@ -37,6 +37,7 @@ export struct KeyboardView {
   @StorageLink('specialKeyWidthVp') specialKeyWidthVp: number = 44;
   @StorageLink('spaceKeyWidthVp') spaceKeyWidthVp: number = 160;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
   // 数字パッドが有効だと「あA」キーは 日本語→アルファベット→数字 の3段階に
   // なるので、ラベルも切り替わる順に並べる (あA1 / A1あ / 1あA)。
   // 半角の A/1 は ひらがな と字形の大きさが厳密には揃わないが、
@@ -157,9 +158,11 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(width)
       .height('100%')
-      .backgroundColor(kbTheme(this.isDark).keyBg)
+      .backgroundColor(this.keyChromeEnabled ? kbTheme(this.isDark).keyBg : 'transparent')
       .borderRadius(KEY_RADIUS)
-      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      .shadow(this.keyChromeEnabled
+        ? { radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 }
+        : { radius: 0, color: 'transparent', offsetY: 0 })
       .onClick(() => {
         this.getHandler().hapticTick();
         const key = (this.isShift || this.isCapsLock) ? value.toUpperCase() : value;
@@ -335,9 +338,11 @@ export struct KeyboardView {
       .textAlign(TextAlign.Center)
       .width(this.keyWidthVp)
       .height('100%')
-      .backgroundColor(kbTheme(this.isDark).keyBg)
+      .backgroundColor(this.keyChromeEnabled ? kbTheme(this.isDark).keyBg : 'transparent')
       .borderRadius(KEY_RADIUS)
-      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      .shadow(this.keyChromeEnabled
+        ? { radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 }
+        : { radius: 0, color: 'transparent', offsetY: 0 })
       .onClick(action)
   }
 

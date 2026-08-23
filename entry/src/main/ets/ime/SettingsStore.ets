@@ -43,6 +43,12 @@ export interface KeyboardSettings {
   numericPadEnabled: boolean;
   // キーを押したときに短く振動させるか。
   hapticEnabled: boolean;
+  // キーボードのライト／ダーク。'system' は端末のカラーモードに従う（既定）。
+  // 'light' / 'dark' はキーボードだけ固定する（ホストアプリの色は変えない）。
+  themeMode: string;
+  // 通常キー（英数・かな）の背景／影。既定はオン（現状どおり）。オフにすると
+  // 文字キーだけ背景が消え、シフト／スペース／切り替え／エンター等は残る。
+  keyChromeEnabled: boolean;
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -53,6 +59,8 @@ const DEFAULTS: KeyboardSettings = {
   conversionEngine: 'hybrid',
   numericPadEnabled: false,
   hapticEnabled: false,
+  themeMode: 'system',
+  keyChromeEnabled: true,
 };
 
 export class SettingsStore {
@@ -76,7 +84,9 @@ export class SettingsStore {
       const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
       const numericPad = await prefs.get('numericPadEnabled', DEFAULTS.numericPadEnabled);
       const haptic = await prefs.get('hapticEnabled', DEFAULTS.hapticEnabled);
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, forceReload }));
+      const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
+      const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, themeMode, keyChrome, forceReload }));
       return {
         kanaKeyboardLayout: String(kanaLayout),
         alphabetKeyboardLayout: String(alphabetLayout),
@@ -85,6 +95,8 @@ export class SettingsStore {
         conversionEngine: String(engine),
         numericPadEnabled: numericPad === true,
         hapticEnabled: haptic === true,
+        themeMode: String(themeMode),
+        keyChromeEnabled: keyChrome !== false,
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
@@ -96,6 +108,8 @@ export class SettingsStore {
         conversionEngine: DEFAULTS.conversionEngine,
         numericPadEnabled: DEFAULTS.numericPadEnabled,
         hapticEnabled: DEFAULTS.hapticEnabled,
+        themeMode: DEFAULTS.themeMode,
+        keyChromeEnabled: DEFAULTS.keyChromeEnabled,
       };
     }
   }
@@ -157,6 +171,25 @@ export class SettingsStore {
       await prefs.flush();
     } catch (_e) {}
   }
+
+  static async saveKeyChromeEnabled(context: common.Context, enabled: boolean): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('keyChromeEnabled', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveThemeMode(context: common.Context, mode: string): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('themeMode', mode);
+      await prefs.flush();
+      console.info('shuntiIME SettingsStore.saveThemeMode ok', mode);
+    } catch (e) {
+      console.error('shuntiIME SettingsStore.saveThemeMode error', JSON.stringify(e));
+    }
+  }
 }
 
 // Reads colorMode off a Configuration object directly -- specifically the one
@@ -198,4 +231,13 @@ export function isDarkFromResourceManager(context: ESObject): boolean {
   } catch (_e) {
     return false;
   }
+}
+
+// Combines the user's テーマ setting with the live OS color mode.
+// 'system' (and any unknown value) follows the OS; 'light'/'dark' pin the
+// keyboard regardless of what the rest of the device is doing.
+export function resolveIsDark(themeMode: string, osIsDark: boolean): boolean {
+  if (themeMode === 'dark') { return true; }
+  if (themeMode === 'light') { return false; }
+  return osIsDark;
 }
