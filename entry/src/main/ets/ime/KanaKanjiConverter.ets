@@ -35464,7 +35464,9 @@ export class KanaKanjiConverter {
     // comment). segment()/joinSegs()/findAlternateSegmentation() all call
     // through this same lookup() entry point, so this one dispatch makes
     // every caller engine-aware without touching their own code.
-    if (KanaKanjiConverter.isMozcEngine()) { return this.lookupMozc(kana); }
+    if (KanaKanjiConverter.isMozcEngine()) {
+      return KanaKanjiConverter.withExtraForms(kana, this.lookupMozc(kana));
+    }
     const base = this.lookupCore(kana, fromNorm);
     if (fromNorm) { return base; }
     let result = base;
@@ -35490,7 +35492,11 @@ export class KanaKanjiConverter {
     }
     const emojis = EMOJI_MAP[kana];
     const kaomoji = KAOMOJI_MAP[kana];
-    if (emojis === undefined && kaomoji === undefined) { return result; }
+    // 末尾の付け足し (絵文字・顔文字・半角カタカナ) は track B と共通の
+    // withExtraForms にまとめてある。track A 側にも同じものが並ぶようにする。
+    if (emojis === undefined && kaomoji === undefined) {
+      return KanaKanjiConverter.withExtraForms(kana, result);
+    }
     const withExtra = [...result];
     const push = (arr: string[] | undefined): void => {
       if (arr === undefined) { return; }
@@ -35500,7 +35506,7 @@ export class KanaKanjiConverter {
     };
     push(emojis);
     push(kaomoji);
-    return withExtra;
+    return KanaKanjiConverter.withExtraForms(kana, withExtra);
   }
 
   // Track B's lookup: a plain read from mozc_dict.json, ascending mozc cost
@@ -35585,6 +35591,73 @@ export class KanaKanjiConverter {
   // cannot enumerate them -- but the per-segment dictionaries still know
   // every surface, and one-segment-at-a-time swaps cover the dominant
   // real-world correction pattern (exactly one word wrong).
+
+  // 半角カタカナへ。濁点・半濁点は独立した文字に分ける (ガ -> ｶﾞ)。
+  private static readonly HALF_KATA_BASE: string =
+    '｡｢｣､･ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ';
+  private static readonly FULL_KATA_BASE: string =
+    '。「」、・ヲァィゥェォャュョッーアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン';
+  private static readonly HALF_DAKUTEN: string = 'ガギグゲゴザジズゼゾダヂヅデドバビブベボヴ';
+  private static readonly HALF_DAKUTEN_SRC: string = 'カキクケコサシスセソタチツテトハヒフヘホウ';
+  private static readonly HALF_HANDAKU: string = 'パピプペポ';
+  private static readonly HALF_HANDAKU_SRC: string = 'ハヒフヘホ';
+
+  static toHalfWidthKatakana(s: string): string {
+    let out = '';
+    for (const ch of KanaKanjiConverter.toKatakana(s)) {
+      const d = KanaKanjiConverter.HALF_DAKUTEN.indexOf(ch);
+      if (d >= 0) {
+        const base = KanaKanjiConverter.HALF_DAKUTEN_SRC.charAt(d);
+        const bi = KanaKanjiConverter.FULL_KATA_BASE.indexOf(base);
+        out += (bi >= 0 ? KanaKanjiConverter.HALF_KATA_BASE.charAt(bi) : base) + 'ﾞ';
+        continue;
+      }
+      const h = KanaKanjiConverter.HALF_HANDAKU.indexOf(ch);
+      if (h >= 0) {
+        const base = KanaKanjiConverter.HALF_HANDAKU_SRC.charAt(h);
+        const bi = KanaKanjiConverter.FULL_KATA_BASE.indexOf(base);
+        out += (bi >= 0 ? KanaKanjiConverter.HALF_KATA_BASE.charAt(bi) : base) + 'ﾟ';
+        continue;
+      }
+      const i = KanaKanjiConverter.FULL_KATA_BASE.indexOf(ch);
+      out += i >= 0 ? KanaKanjiConverter.HALF_KATA_BASE.charAt(i) : ch;
+    }
+    return out;
+  }
+
+  // 候補の末尾を厚くする。上位の並びには触らない。
+  //
+  // track B は lookupCore を通らないので、EMOJI_MAP/KAOMOJI_MAP (ひだり->←、
+  // みぎ->→、顔文字…) が丸ごと落ちていた。既定がハイブリッドになった以上、
+  // track A のこの手の便利変換が既定で消えるのは筋が通らないので、mozc 側の
+  // 候補にも同じものを足す。あわせて半角カタカナも末尾に入れる。
+  // どれも末尾なので、上位の順位 (= 変換精度の指標) は動かない。
+  private static withExtraForms(kana: string, list: string[]): string[] {
+    const out = [...list];
+    const push = (x: string | undefined): void => {
+      if (x !== undefined && x.length > 0 && out.indexOf(x) < 0) { out.push(x); }
+    };
+    const emojis = EMOJI_MAP[kana];
+    if (emojis !== undefined) { for (const e of emojis) { push(e); } }
+    const kaomoji = KAOMOJI_MAP[kana];
+    if (kaomoji !== undefined) { for (const k of kaomoji) { push(k); } }
+    if (KanaKanjiConverter.isAllKana(kana)) {
+      push(KanaKanjiConverter.toHalfWidthKatakana(kana));
+    }
+    return out;
+  }
+
+  private static isAllKana(s: string): boolean {
+    if (s.length === 0) { return false; }
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      const hira = c >= 0x3041 && c <= 0x3096;
+      const kata = c >= 0x30A1 && c <= 0x30FA;
+      if (!hira && !kata && c !== 0x30FC) { return false; }
+    }
+    return true;
+  }
+
   private composeMozcCandidates(): string[] {
     const segs = this.mozcLastSegs;
     const chosen: string[] = [];
