@@ -52,8 +52,10 @@ shunti Japanese IME（以下简称“本应用”），由开发者 shuntilettuc
 
 | 文件 | 来源 | 许可证 |
 |------|------|--------|
-| dict.json | 常用汉字（日本文部科学省告示）／Unicode Unihan 数据库／自有收录词汇及读音 | 公有领域／自制 |
-| reading_cost.json, matrix.json | mecab-ipadic | NAIST License |
+| dict.json, global_dict.json | 常用汉字（日本文部科学省告示）／Unicode Unihan 数据库／自有收录词汇及读音 | 公有领域／自制 |
+| mozc_dict.json, mozc_costs.json, mozc_matrix.json | mozc（Google）的转换词典与连接成本数据，并以 JMdict、SudachiDict 补充汉字候选 | BSD-3-Clause／CC BY-SA 4.0／Apache License 2.0 |
+
+详细出处与完整许可证文本请参见 [`DATA_SOURCES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/main/DATA_SOURCES.md) 与 [`THIRD_PARTY_NOTICES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/main/THIRD_PARTY_NOTICES.md)。
 
 ---
 

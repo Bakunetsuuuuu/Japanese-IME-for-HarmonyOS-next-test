@@ -52,8 +52,10 @@ The App includes the following conversion dictionary data. These are **read-only
 
 | File | Source | License |
 |------|--------|---------|
-| dict.json | Jōyō kanji (MEXT notification) / Unicode Unihan database / original vocabulary & readings | Public domain / original |
-| reading_cost.json, matrix.json | mecab-ipadic | NAIST License |
+| dict.json, global_dict.json | Jōyō kanji (MEXT notification) / Unicode Unihan database / original vocabulary & readings | Public domain / original |
+| mozc_dict.json, mozc_costs.json, mozc_matrix.json | mozc (Google) conversion dictionary & connection-cost data, augmented with kanji-spelling candidates from JMdict and SudachiDict | BSD-3-Clause / CC BY-SA 4.0 / Apache License 2.0 |
+
+See [`DATA_SOURCES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/main/DATA_SOURCES.md) and [`THIRD_PARTY_NOTICES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/main/THIRD_PARTY_NOTICES.md) for full attribution and license text.
 
 ---
 

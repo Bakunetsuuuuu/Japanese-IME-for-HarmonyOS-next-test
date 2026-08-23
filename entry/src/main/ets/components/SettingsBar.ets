@@ -555,11 +555,11 @@ export struct SettingsBar {
 
       Row() {
         Column({ space: 2 }) {
-          Text('ハイブリッド（β）')
+          Text('ハイブリッド')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(13)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('独自辞書と統計データの融合を試験中。有効にすると上の選択は一時的に無効になります')
+          Text('独自辞書と統計データを融合。有効にすると上の選択は一時的に無効になります')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
