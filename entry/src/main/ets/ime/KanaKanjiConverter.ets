@@ -23322,7 +23322,12 @@ const DICTIONARY: Record<string, string[]> = {
   'はげしい': ['激しい'],
   'しんせん': ['新鮮'],
   'いみのある': ['意味のある'],
-  'だいじ': ['大事'],
+  // 大丈夫 は「だいじょうぶ」の口語での短縮読み ("だいじ?"=大丈夫?、「だいじだよ」)。
+  // 入力ログ(2ヶ月分)で「だいじ」を5回打って毎回この読みで大丈夫を選んでいたのに、
+  // 候補には無かった (過去の辞書整理でどこかで落ちていた)。学習は正しく動いていた
+  // (2回目以降ちゃんと上位に来ていた) が、候補そのものが消えていたので、これ以上
+  // 上に上げようがなかった -- ここが原因。
+  'だいじ': ['大事', '大丈夫'],
   'けいし': ['軽視'],
   'むかんしん': ['無関心'],
   'きょうみしんしん': ['興味津々'],
@@ -35619,7 +35624,20 @@ export class KanaKanjiConverter {
         list = [hint];
       }
     } else if (entry && entry.length > 0) {
-      list = entry;
+      // 単語単体の変換 (文中ではなく、その読みだけを打って変換したとき)。
+      // composeMozcCandidates が効くのは「直前の segment() が複数文節に
+      // 割った、その全文とまったく同じ文字列」を引いたときだけ -- 単語単体は
+      // 常にこの分岐に落ち、hybrid でも track A の候補が一切混ざらないまま
+      // mozc の生の並びがそのまま出ていた。
+      //
+      // 実データ (入力ログ 10,037件) を洗って見つけた実例: 「かえる」だけを
+      // 変換すると 帰る が7番目 (代える/変える/換える/替える/買える の後)。
+      // custom (track A) 単体では 帰る が1位で、これは frequency 順に
+      // 手で整えてある。文中では hybridTrackAAlternatives 経由でこの並びが
+      // 生きるのに、単語単体だと素通りしていた。
+      list = KanaKanjiConverter.engine === 'hybrid'
+        ? KanaKanjiConverter.interleaveAlternatives(this.singleWordTrackAOrder(kana), entry)
+        : entry;
     } else {
       const kata = KanaKanjiConverter.toKatakana(kana);
       if (kata === kana) {
@@ -35850,6 +35868,24 @@ export class KanaKanjiConverter {
   // scraped surfaces leak in. segment() only writes mozc instance state inside
   // its isMozc block, so the temporary engine flip cannot corrupt the mozc
   // locals composeMozcCandidates already captured.
+  // 単語単体 (文中ではなく、その読みだけを変換したとき) の hybrid 用ブレンド。
+  // hybridTrackAAlternatives と同じ「一時的に engine を custom に切り替えて
+  // track A の実 lookup を走らせる」手法を、全文ではなく1つの読みに対して行う。
+  // track A の filterCandidates/boostCommonWords などの手入れがそのまま効く。
+  private singleWordTrackAOrder(kana: string): string[] {
+    const saved = KanaKanjiConverter.engine;
+    KanaKanjiConverter.engine = 'custom';
+    let result: string[] = [];
+    try {
+      result = this.lookup(kana);
+    } catch (_e) {
+      result = [];
+    } finally {
+      KanaKanjiConverter.engine = saved;
+    }
+    return result;
+  }
+
   private hybridTrackAAlternatives(input: string): string[] {
     const saved = KanaKanjiConverter.engine;
     KanaKanjiConverter.engine = 'custom';

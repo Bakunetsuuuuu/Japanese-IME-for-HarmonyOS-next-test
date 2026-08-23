@@ -1129,14 +1129,55 @@ export class InputHandler {
     AppStorage.setOrCreate('inputLogRows', rows);
   }
 
-  // 全文をクリップボードへ。端末上で読むには量が多いので、取り出して使う。
+  // 全文を hilog へ吐き出す。クリップボードの setData (生テキスト・URI 両方)は
+  // この拡張プロセスからだと常に "async call failed" で落ちることを実測で確認
+  // 済み (759,070 文字のテキストでも file:// URI でも同じ)。原因の切り分けは
+  // 打ち切り、このセッション中ずっと問題なく読めている hilog 経由に変える --
+  // サンドボックスの外から hdc で読める、ここまでで唯一確実な経路。
+  //
+  // Base64 にしてから 1 行 1500 文字ずつ区切って console.info する。生の
+  // JSONL のまま流すと、たまたま長い1レコードが hilog の1行上限を超えたときに
+  // そこだけ千切れる可能性がある。Base64 化しておけば区切り位置は文字数だけの
+  // 問題になり、復元側 (PC 側スクリプト) で単純に連結してから戻せる。
+  // 各行に SHUNTILOGDUMP という専用マーカーと連番/総数を入れているので、
+  // hilog の他の行に紛れても grep で拾い、番号順に並べ直せる。
   exportInputLog(): void { // [DEBUG-LOG]
     const dir = InputLog.writerDir();
-    const raw = dir.length > 0 ? InputLog.readRaw(dir) : '';
-    if (raw.length === 0) { return; }
-    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, raw);
-    pasteboard.getSystemPasteboard().setData(data)
-      .catch((e: ESObject) => { console.error('shuntiIME exportInputLog failed', JSON.stringify(e)); });
+    if (dir.length === 0) {
+      console.error('shuntiIME exportInputLog: no writerDir'); // [DEBUG-LOG]
+      return;
+    }
+    const raw = InputLog.readRaw(dir);
+    if (raw.length === 0) {
+      console.error('shuntiIME exportInputLog: empty'); // [DEBUG-LOG]
+      return;
+    }
+    const bytes = new util.TextEncoder().encodeInto(raw);
+    const b64 = new util.Base64Helper().encodeToStringSync(bytes);
+    const CHUNK = 1500;
+    const total = Math.ceil(b64.length / CHUNK);
+    console.info('shuntiIME SHUNTILOGDUMP_BEGIN total=' + String(total)
+      + ' rawLen=' + String(raw.length) + ' b64Len=' + String(b64.length)); // [DEBUG-LOG]
+    // まとめて書くと hilog 側のバースト制御に引っかかり、実測で733行中
+    // 100行前後が静かに落ちた (2回試して毎回ほぼ同じ範囲が欠けた -- ランダムな
+    // 取りこぼしではなく、書き込み速度そのものが上限を超えていた)。
+    // 1回に少数ずつ・間隔を空けて書くことで確実性を優先する。
+    const BATCH = 5;
+    const INTERVAL_MS = 120;
+    let i = 0;
+    const writeBatch = (): void => {
+      const end = Math.min(i + BATCH, total);
+      for (; i < end; i++) {
+        const chunk = b64.slice(i * CHUNK, (i + 1) * CHUNK);
+        console.info('shuntiIME SHUNTILOGDUMP ' + String(i) + '/' + String(total) + ' ' + chunk); // [DEBUG-LOG]
+      }
+      if (i < total) {
+        setTimeout(writeBatch, INTERVAL_MS);
+      } else {
+        console.info('shuntiIME SHUNTILOGDUMP_END'); // [DEBUG-LOG]
+      }
+    };
+    writeBatch();
   }
 
   clearInputLog(): void { // [DEBUG-LOG]
@@ -1966,6 +2007,25 @@ export class InputHandler {
     this.refreshClipboardPreview();
   }
 
+  // 実機の SELinux ログで原因を確定済み:
+  //
+  //   avc: denied { get } for service=3701
+  //     scontext=u:r:input_isolate_debug_hap:s0
+  //     tcontext=u:object_r:sa_pasteboard_service:s0  permissive=0
+  //   PasteboardClient# proxyService is null
+  //
+  // 入力方式拡張の隔離ドメイン (input_isolate_debug_hap) から
+  // PasteboardService への接続そのものが SELinux で恒久的に拒否されている。
+  // 今日判明した振動 (sa_miscdevice_service) の拒否と同じ形の制限で、
+  // コード側のバグではなく直せない。setData (exportInputLog 参照) と
+  // getData (このメソッド) はどちらも同じ経路を通るので、書き込みが
+  // "async call failed" で落ちるのと同じ理由で、読み取りも常に失敗して
+  // 静かに空へフォールバックしている -- 「クリップボード検出」チップが
+  // 最近ずっと出ないのは、機能が壊れたのではなく、この隔離ドメインからは
+  // そもそも一度も届いたことがなかった可能性が高い。
+  //
+  // OS がこの制限を緩めれば動くようになるので、機構はそのまま残す
+  // (振動の markHapticUnavailable と同じ方針)。
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
       if (!data || data.getRecordCount() === 0) {
