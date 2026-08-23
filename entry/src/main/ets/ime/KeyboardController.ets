@@ -352,6 +352,9 @@ export class InputHandler {
       InputLog.recordPaths('setContext', // [DEBUG-LOG]
         used.length > 0 ? used : '書き込めるディレクトリ無し', // [DEBUG-LOG]
         ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
+      let appVersion = ''; // [DEBUG-LOG]
+      try { appVersion = ctx.getApplicationContext().applicationInfo.versionName; } catch (_e) { appVersion = ''; } // [DEBUG-LOG]
+      InputLog.recordVersion(appVersion); // [DEBUG-LOG]
       UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
     } catch (e) { // [DEBUG-LOG]
       console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
@@ -1790,7 +1793,7 @@ export class InputHandler {
         this.saveLearning();
         this.observeUnknownWord(reading, text);
       }
-      InputLog.recordCommit(reading, text, index, candidates.length); // [DEBUG-LOG]
+      InputLog.recordCommit(reading, text, index, candidates.length, candidates); // [DEBUG-LOG]
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
       const words = this.committedWords(text);
@@ -1881,7 +1884,7 @@ export class InputHandler {
         this.saveLearning();
         this.observeUnknownWord(reading, chosen);
       }
-      InputLog.recordCommit(reading, chosen, idx, candidates.length); // [DEBUG-LOG]
+      InputLog.recordCommit(reading, chosen, idx, candidates.length, candidates); // [DEBUG-LOG]
       this.insertText(chosen);
       KanaKanjiConverter.addContext(chosen);
       const words = this.committedWords(chosen);
@@ -2656,6 +2659,7 @@ export class InputHandler {
     for (let i = 0; i < this.bSegs.length; i++) {
       KanaKanjiConverter.recordChoice(this.bSegs[i], this.bChosen[i]);
     }
+    InputLog.recordBunsetsuFinal(this.bSegs.join(''), text); // [DEBUG-LOG]
     this.insertText(text);
     this.bSegs = [];
     this.bChosen = [];
@@ -2669,7 +2673,7 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     if (index < candidates.length) {
       KanaKanjiConverter.recordChoice(this.bSegs[this.bCur], candidates[index]);
-      InputLog.recordBunsetsuPick(this.bSegs[this.bCur], candidates[index], index, candidates.length); // [DEBUG-LOG]
+      InputLog.recordBunsetsuPick(this.bSegs[this.bCur], candidates[index], index, candidates.length, candidates); // [DEBUG-LOG]
       this.bChosen[this.bCur] = candidates[index];
     }
     // Advance to next segment if available
