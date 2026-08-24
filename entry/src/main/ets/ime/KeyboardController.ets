@@ -1389,9 +1389,14 @@ export class InputHandler {
   private observeUnknownWord(reading: string, surface: string): void {
     // タップされた表記が、確定直前に候補一覧で「準候補」として見えていたか。
     // observe() は既存の run に積むだけで判定を変えてしまうので、その前に
-    // AppStorage の表示済みスナップショットを見る。
+    // AppStorage の表示済みスナップショットを見る。単体タップは run 経由では
+    // 絶対にカウントされない (flush の assembled 判定を満たさない) ので、
+    // confirmQuasi で直接1つ進める -- これが「押されたら昇進」の実体。
     const quasi = AppStorage.get<string[]>('quasiCandidateSurfaces') ?? [];
-    if (quasi.includes(surface)) { InputLog.recordQuasiPick(reading, surface); } // [DEBUG-LOG]
+    if (quasi.includes(surface)) {
+      InputLog.recordQuasiPick(reading, surface); // [DEBUG-LOG]
+      UnknownWordLearner.confirmQuasi(reading, surface);
+    }
     UnknownWordLearner.observe(reading, surface,
       (r: string, s: string): boolean => this.isKnownConversion(r, s));
     this.saveUnknownWords();

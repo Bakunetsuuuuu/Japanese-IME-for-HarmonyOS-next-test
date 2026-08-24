@@ -160,10 +160,23 @@ export class UnknownWordLearner {
     if (isKnown(reading, surface)) { return; }
     // ABANDONED との一致判定。一度きりの合図なので判定した時点で必ず消す
     // (一致しなかった場合も、もう別の語に対する古い合図でしかないため)。
+    // 強い合図ではあるが、いきなり本採用まで飛ばすと外れたときに目立つ位置に
+    // 出てしまう。1回目は他の組み立てと同じ扱いで準候補どまりにし、本人が
+    // 準候補欄からもう一度タップして初めて本採用にする (confirmQuasi 参照)。
+    // confirmed はログ用にだけ残す。
     const confirmed = reading === UnknownWordLearner.abandonedReading && UnknownWordLearner.abandonedReading.length > 0;
     UnknownWordLearner.abandonedReading = '';
     if (UnknownWordLearner.onLearn !== undefined) { UnknownWordLearner.onLearn(reading, surface, confirmed); } // [DEBUG-LOG]
-    UnknownWordLearner.bump(reading, surface, confirmed ? LEARN_THRESHOLD : 1);
+    UnknownWordLearner.bump(reading, surface, 1);
+  }
+
+  // 準候補として出ていた表記が、確定前にタップされて選ばれた。単体でタップ
+  // された commit は runSurfaces に1件積むだけで assembled 判定を満たさず
+  // (flush の assembled = surfaces.length>=2 || runTruncated) 通常の run
+  // 経路では絶対にカウントされないため、別経路として直接1つ進める。
+  // これでしきい値に達すれば次から本採用の候補として出る (押されたら昇進)。
+  static confirmQuasi(reading: string, surface: string): void {
+    UnknownWordLearner.bump(reading, surface, 1);
   }
 
   // ひらがなで打った読みを、変換せず全部消して諦めた。次にこの読みが手作業で

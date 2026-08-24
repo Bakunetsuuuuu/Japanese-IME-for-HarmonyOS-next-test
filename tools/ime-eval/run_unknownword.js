@@ -196,13 +196,25 @@ function main() {
 
   // ---- signal 3: ABANDONED - typed reading in full, deleted it without
   // converting, then immediately hand-assembled the same reading piecewise.
-  // This should fast-track straight to LEARN_THRESHOLD on the FIRST rebuild.
+  // Even though this is a strong signal, it must NOT jump straight to a real
+  // candidate on the very first rebuild -- a wrong guess promoted straight to
+  // a prominent candidate slot would be worse than an ordinary miss. It lands
+  // as a quasi-candidate, same as any other first-time assembly; only an
+  // explicit follow-up pick (confirmQuasi) promotes it from there.
   UW.setLearned({});
   UW.noteAbandonedReading('しょうがっこう');
   UW.observe('しょう', '小', NEVER_KNOWN);
   UW.observe('がっこう', '学校', NEVER_KNOWN);
   UW.endRun(NEVER_KNOWN);
-  check('abandon-confirmed: offered after a single rebuild',
+  check('abandon-confirmed: quasi (not yet a real candidate) after a single rebuild',
+    UW.candidates('しょうがっこう').length === 0
+      && UW.quasiCandidates('しょうがっこう').join(',') === '小学校',
+    JSON.stringify({ real: UW.candidates('しょうがっこう'), quasi: UW.quasiCandidates('しょうがっこう') }));
+
+  // Explicitly picking that quasi-candidate (confirmQuasi, mirrors tapping it
+  // in the candidate bar) promotes it -- "押されたら昇進".
+  UW.confirmQuasi('しょうがっこう', '小学校');
+  check('confirmQuasi: promoted to a real candidate after being picked',
     UW.candidates('しょうがっこう').join(',') === '小学校',
     JSON.stringify(UW.candidates('しょうがっこう')));
 
@@ -228,15 +240,29 @@ function main() {
     JSON.stringify(UW.candidates('あんまり')));
 
   // Garbage input to noteAbandonedReading (too short / not hiragana) is ignored
-  // rather than remembered as a bogus signal.
+  // rather than remembered as a bogus signal. confirmed no longer changes the
+  // bump amount (see above), so the only observable trace is the onLearn
+  // callback's confirmed flag -- hook it to check.
   UW.setLearned({});
+  let lastConfirmed = undefined;
+  UW.onLearn = (r, s, confirmed) => { lastConfirmed = confirmed; };
   UW.noteAbandonedReading('A'); // too short, not hiragana
   UW.observe('しょう', '小', NEVER_KNOWN);
   UW.observe('がっこう', '学校', NEVER_KNOWN);
   UW.endRun(NEVER_KNOWN);
-  check('invalid abandoned reading is not remembered',
-    UW.candidates('しょうがっこう').length === 0,
-    JSON.stringify(UW.candidates('しょうがっこう')));
+  check('invalid abandoned reading is not remembered (confirmed=false)',
+    lastConfirmed === false, `lastConfirmed=${lastConfirmed}`);
+
+  // A genuinely matching abandon signal does flag confirmed=true.
+  UW.setLearned({});
+  lastConfirmed = undefined;
+  UW.noteAbandonedReading('しょうがっこう');
+  UW.observe('しょう', '小', NEVER_KNOWN);
+  UW.observe('がっこう', '学校', NEVER_KNOWN);
+  UW.endRun(NEVER_KNOWN);
+  check('matching abandon signal flags confirmed=true',
+    lastConfirmed === true, `lastConfirmed=${lastConfirmed}`);
+  UW.onLearn = undefined;
 
   // ---- quasiCandidates: sub-threshold assemblies are visible but not
   // promoted into candidates() ----
@@ -248,10 +274,31 @@ function main() {
   check('quasi: visible after just one assembly (threshold not reached)',
     UW.quasiCandidates('おとまちうな').join(',') === '音街ウナ',
     JSON.stringify(UW.quasiCandidates('おとまちうな')));
+
+  // Tapping the quasi-candidate as shown in the candidate bar is a single
+  // whole-word commit, not a piecewise assembly -- observe()/endRun() alone
+  // would never count it (flush's assembled check needs >=2 fragments or a
+  // truncation). confirmQuasi is the separate path KeyboardController calls
+  // for exactly this tap, and it alone must be enough to promote.
+  UW.observe('おとまちうな', '音街ウナ', NEVER_KNOWN); // the tap's own commit
+  UW.endRun(NEVER_KNOWN); // proves this alone does NOT promote it
+  check('a single quasi-candidate tap, observed only as a run, does not promote by itself',
+    UW.candidates('おとまちうな').length === 0,
+    JSON.stringify(UW.candidates('おとまちうな')));
+  UW.confirmQuasi('おとまちうな', '音街ウナ');
+  check('confirmQuasi promotes a tapped quasi-candidate to a real candidate',
+    UW.candidates('おとまちうな').join(',') === '音街ウナ',
+    JSON.stringify(UW.candidates('おとまちうな')));
+
+  UW.setLearned({});
+  UW.observe('おと', '音', NEVER_KNOWN);
+  UW.observe('まち', '街', NEVER_KNOWN);
+  UW.observe('うな', 'ウナ', NEVER_KNOWN);
+  UW.endRun(NEVER_KNOWN); // back to a fresh single quasi assembly for the checks below
   check('quasi: not yet a real candidate',
     UW.candidates('おとまちうな').length === 0);
   buildUna(); // crosses LEARN_THRESHOLD
-  check('quasi: promoted out of quasiCandidates once real',
+  check('quasi: promoted out of quasiCandidates once real (repeat piecewise assembly)',
     UW.quasiCandidates('おとまちうな').length === 0,
     JSON.stringify(UW.quasiCandidates('おとまちうな')));
   check('quasi: now a real candidate',
