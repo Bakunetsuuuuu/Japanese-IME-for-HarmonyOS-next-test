@@ -493,8 +493,7 @@ export class InputHandler {
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
-        AppStorage.setOrCreate('enabledVocabPacks', s.enabledVocabPacks);
-        KanaKanjiConverter.setEnabledPackIds(s.enabledVocabPacks);
+        this.applyVocabPacks(s.vocabPackOverrides);
         this.applyComposingDisplay(s.composingInPanel, s.composingInField);
         this.hapticEnabled = s.hapticEnabled;
         this.applyConversionEngine(s.conversionEngine);
@@ -812,19 +811,67 @@ export class InputHandler {
     this.publishPreviewMode();
   }
 
+  // 語彙パックの明示的な ON/OFF (利用者が自分で触ったものだけ)。
+  // ここに無いパックは .pack の default: ヘッダに従う。
+  private vocabPackOverrides: Record<string, boolean> = {};
+
+  // manifest が届いたあとに呼ばれる。保存済みの指定でもう一度反映する。
+  refreshVocabPacks(): void {
+    this.applyVocabPacks(this.vocabPackOverrides);
+  }
+
+  // 有効なパックの語彙バイナリだけを読む。
+  //
+  // 地名パックは1つで最大8千語あるので、無効なものまで読むとパックに分けた
+  // 意味が無くなる。読み込みは一度きり (isVocabPackLoaded) で、以後の
+  // ON/OFF は enabledPacks の出し入れだけで済む -- 一度読んだものを捨てて
+  // また読み直すほうが、切り替えのたびに待たされて体感が悪い。
+  private loadEnabledPackData(ids: string[]): void {
+    const ctx = this.imeContext;
+    if (!ctx) { return; }
+    const rm = ctx.resourceManager;
+    const toU32 = (d: Uint8Array): Uint32Array =>
+      new Uint32Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+    for (const id of ids) {
+      if (KanaKanjiConverter.isVocabPackLoaded(id)) { continue; }
+      const base = 'pack_' + id;
+      const names: string[] = [
+        base + '.keys.blob', base + '.keys.len', base + '.keys.base',
+        base + '.vals.blob', base + '.vals.len', base + '.vals.base',
+        base + '.idx.bin',
+      ];
+      Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
+        .then((all: Uint8Array[]) => {
+          KanaKanjiConverter.setVocabPackPacked(id, all[0], all[1], toU32(all[2]),
+            all[3], all[4], toU32(all[5]), toU32(all[6]));
+        })
+        .catch((e: Error) => {
+          console.error('shuntiIME vocab pack load failed: ' + id, JSON.stringify(e));
+        });
+    }
+  }
+
+  // 明示指定 (overrides) と .pack の既定から実際に有効なパックを決めて反映する。
+  private applyVocabPacks(overrides: Record<string, boolean>): void {
+    this.vocabPackOverrides = overrides;
+    const enabled = KanaKanjiConverter.resolveEnabledPacks(overrides);
+    KanaKanjiConverter.setEnabledPackIds(enabled);
+    AppStorage.setOrCreate('enabledVocabPacks', enabled);
+    AppStorage.setOrCreate('vocabPackOverrides', overrides);
+    this.loadEnabledPackData(enabled);
+  }
+
   // 語彙パックのON/OFF切替 (設定画面 → SettingsBar)。パック自体の中身は
   // loadVocabPacks で既に読み込み済み (どのパックもロードだけでは効かない)
   // なので、ここは有効/無効の集合を切り替えて保存するだけで即座に候補へ
   // 反映される。
   setVocabPackEnabled(id: string, enabled: boolean): void {
-    const current = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
-    const next = enabled
-      ? (current.includes(id) ? current : [...current, id])
-      : current.filter((x: string) => x !== id);
-    AppStorage.setOrCreate('enabledVocabPacks', next);
-    KanaKanjiConverter.setEnabledPackIds(next);
+    const next: Record<string, boolean> = {};
+    for (const k of Object.keys(this.vocabPackOverrides)) { next[k] = this.vocabPackOverrides[k]; }
+    next[id] = enabled;
+    this.applyVocabPacks(next);
     if (this.imeContext) {
-      SettingsStore.saveEnabledVocabPacks(this.imeContext, next);
+      SettingsStore.saveVocabPackOverrides(this.imeContext, next);
     }
   }
 
@@ -3177,29 +3224,36 @@ export class KeyboardController {
         const list = JSON.parse(text) as VocabPackInfo[];
         KanaKanjiConverter.setVocabPackManifest(list);
         for (const p of list) {
-          // 動詞・形容詞・人名・地名は ConjugationEngine に通して活用形まで
-          // 展開する -- ユーザー辞書とまったく同じ関数を使う。「がばる 五段」
-          // と1行書けば がばって/がばった/がばらない … まで生えるのはこれ。
-          // 品詞指定が1つも無いパックでも、buildUserExpansion は素通しで
-          // 元の語彙をそのまま返すので分岐は要らない。
+          // 活用展開 (五段/一段/形容詞) は品詞が付いた語だけの話で、その語は
+          // manifest の pos に読みと表記の両方が入っている。そこから最小限の
+          // 入力を組み立てて ConjugationEngine に通す -- ユーザー辞書と
+          // まったく同じ関数なので活用ロジックの二重実装は無い。
+          // 語彙本体 (バイナリ) を JS へ展開する必要はない。
+          const seed: Record<string, string[]> = {};
           const posMap: Record<string, UserPosEntry> = {};
           for (const key of Object.keys(p.pos)) {
             const v = p.pos[key];
             posMap[key] = { pos: v.pos as PosKind, group: v.group as VerbGroup | undefined };
+            const parts = key.split('	');
+            if (parts.length === 2) {
+              const cur = seed[parts[0]];
+              if (cur === undefined) { seed[parts[0]] = [parts[1]]; }
+              else if (!cur.includes(parts[1])) { cur.push(parts[1]); }
+            }
           }
-          const expanded = buildUserExpansion(p.entries, posMap);
+          const expanded = buildUserExpansion(seed, posMap);
           // 活用展開で得たクラス (がばって→[14,17] など) の上に、.pack の
-          // 品詞名/@指定を重ねる。明示指定のほうが後勝ちで強い。
+          // @指定を重ねる。明示指定のほうが後勝ちで強い。
           const classes: Record<string, number[]> = {};
           for (const k of Object.keys(expanded.classMap)) { classes[k] = expanded.classMap[k]; }
           for (const k of Object.keys(p.classes)) { classes[k] = p.classes[k]; }
-          KanaKanjiConverter.setVocabPackEntries(p.id, expanded.dict, classes);
+          KanaKanjiConverter.setVocabPackOverlay(p.id, expanded.dict, classes);
         }
-        // 設定より先に manifest が来るとは限らないので、既に読み込み済みの
-        // 有効IDをここでもう一度適用する (順序に依存させない)。
-        const enabled = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
-        KanaKanjiConverter.setEnabledPackIds(enabled);
         AppStorage.setOrCreate('vocabPackIds', list.map((p: VocabPackInfo) => p.id));
+        // 設定より先に manifest が来るとは限らないので、ここでもう一度
+        // 有効なパックを決め直す (順序に依存させない)。有効判定と読み込みは
+        // 設定を持っている InputHandler 側が担当する。
+        this.inputHandle.refreshVocabPacks();
       })
       .catch((e: Error) => {
         // 語彙パックが読めなくても変換自体は動く (全部OFFと同じ状態)。

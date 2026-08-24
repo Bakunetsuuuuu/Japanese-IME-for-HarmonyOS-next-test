@@ -32679,8 +32679,16 @@ export interface VocabPackInfo {
   id: string;
   name: string;
   description: string;
-  // 読み -> 表記の一覧 (.pack の優先度順で並んでいる)
-  entries: Record<string, string[]>;
+  // 既定で有効にするか (.pack の default: ヘッダ)。地名のように「今まで
+  // 普通に引けていたもの」は true にして、更新しただけで引けなくなる
+  // 後退が起きないようにする。
+  defaultOn: boolean;
+  // 収録語数 (設定画面の表示用)。語彙そのものは manifest に入れず、
+  // rawfile/pack_<id>.* のバイナリを有効化時に読む。
+  count: number;
+  // パック全体の既定品詞のクラス (.pack の pos: ヘッダ)。全語が同じ品詞の
+  // パック(地名など)で1語ずつ持つと manifest が語数ぶん膨らむため。
+  defaultClass: number[] | null;
   // "読み\t表記" -> 品詞。動詞・形容詞・人名・地名だけ入る。ConjugationEngine
   // の UserPosEntry と同じ形だが、このファイルは import を持たない方針
   // (先頭のコメント参照 -- Node からそのまま読めるようにしてある) なので
@@ -33652,11 +33660,14 @@ export class KanaKanjiConverter {
   // tools/build_vocab_packs.py で他の辞書と同じパック形式に固めたもの。
   // ロードは KeyboardController 側で有効なパックだけ遅延読み込みする
   // (mozcエンジンと同じ考え方 -- 使わない人にメモリを払わせない)。
-  // パックID -> 読み -> 表記の一覧。活用展開済み (KeyboardController が
-  // ConjugationEngine に通した結果) を入れる。パックは「界隈の定番語彙」と
-  // いう性質上小さいので、dict/global_dict のようなバイナリ化はしていない。
-  private static vocabPacks: Record<string, Record<string, string[]>> = {};
-  // パックID -> 読み -> [左クラス, 右クラス]。接続行列のクラス上書き。
+  // パックID -> 語彙 (dict/global_dict と同じパック済みバイナリ)。
+  // 地名を地方別に分けた時点で1パック2万語規模になったため、JS オブジェクト
+  // での保持をやめてバイナリに載せ替えた。有効なパックのぶんだけ読む。
+  private static vocabPacks: Record<string, PackedDict> = {};
+  // パックID -> 読み -> 表記。活用展開 (五段/一段/形容詞) で増えた読みだけの
+  // 小さな上乗せ。品詞が付いた語しか対象にならないので件数は少ない。
+  private static vocabPackExtra: Record<string, Record<string, string[]>> = {};
+  // パックID -> 読み -> [左クラス, 右クラス]。個別指定ぶん。
   private static vocabPackClasses: Record<string, Record<string, number[]>> = {};
   private static enabledPacks: Set<string> = new Set<string>();
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
@@ -33979,6 +33990,30 @@ export class KanaKanjiConverter {
     return id;
   }
 
+  static vocabPackCount(id: string): number {
+    const m = KanaKanjiConverter.packMetaOf(id);
+    return m === undefined ? 0 : m.count;
+  }
+
+  // 利用者が一度も触っていないパックの初期状態。.pack の default: ヘッダ。
+  static vocabPackDefaultOn(id: string): boolean {
+    const m = KanaKanjiConverter.packMetaOf(id);
+    return m !== undefined && m.defaultOn === true;
+  }
+
+  // 保存済みの明示指定 (overrides) と manifest の既定から、実際に有効な
+  // パックIDを決める。overrides に無いパックは既定に従う -- こうしないと
+  // 新しく既定ONのパックを足しても、既存利用者には一生届かない。
+  static resolveEnabledPacks(overrides: Record<string, boolean>): string[] {
+    const out: string[] = [];
+    for (const p of KanaKanjiConverter.vocabPackMeta) {
+      const ov = overrides[p.id];
+      const on = (ov === undefined) ? (p.defaultOn === true) : ov;
+      if (on) { out.push(p.id); }
+    }
+    return out;
+  }
+
   static vocabPackDescription(id: string): string {
     for (const p of KanaKanjiConverter.vocabPackMeta) {
       if (p.id === id) { return p.description; }
@@ -34004,11 +34039,19 @@ export class KanaKanjiConverter {
     return kept.length > 0 ? kept : cands;
   }
 
-  // 活用展開まで済ませた語彙 (KeyboardController.loadVocabPacks が
-  // ConjugationEngine.buildUserExpansion に通した結果) を受け取る。
-  static setVocabPackEntries(id: string, entries: Record<string, string[]>,
+  // パックの語彙本体 (バイナリ) を受け取る。有効化されたときだけ呼ばれる。
+  static setVocabPackPacked(id: string, keyBlob: Uint8Array, keyLens: Uint8Array,
+      keyBase: Uint32Array, valBlob: Uint8Array, valLens: Uint8Array,
+      valBase: Uint32Array, idx: Uint32Array): void {
+    const d = new PackedDict();
+    d.setPacked(keyBlob, keyLens, keyBase, valBlob, valLens, valBase, idx);
+    KanaKanjiConverter.vocabPacks[id] = d;
+  }
+
+  // 活用展開で増えた読みと、クラス指定。バイナリとは別に持つ。
+  static setVocabPackOverlay(id: string, extra: Record<string, string[]>,
       classes: Record<string, number[]>): void {
-    KanaKanjiConverter.vocabPacks[id] = entries;
+    KanaKanjiConverter.vocabPackExtra[id] = extra;
     KanaKanjiConverter.vocabPackClasses[id] = classes;
   }
 
@@ -34021,10 +34064,25 @@ export class KanaKanjiConverter {
   static packClassFor(kana: string): number[] | undefined {
     for (const id of KanaKanjiConverter.enabledPacks.values()) {
       const m = KanaKanjiConverter.vocabPackClasses[id];
-      if (m === undefined) { continue; }
-      const c = m[kana];
-      if (c !== undefined) { return c; }
+      if (m !== undefined) {
+        const c = m[kana];
+        if (c !== undefined) { return c; }
+      }
+      // パック全体の既定品詞 (.pack の pos: ヘッダ)。地名パックのように
+      // 全語が同じ品詞のとき、1語ずつ持たずここで解決する。
+      const meta = KanaKanjiConverter.packMetaOf(id);
+      if (meta === undefined || meta.defaultClass === undefined
+          || meta.defaultClass === null || meta.defaultClass.length < 2) { continue; }
+      const d = KanaKanjiConverter.vocabPacks[id];
+      if (d !== undefined && d.has(kana)) { return meta.defaultClass; }
+      const ex = KanaKanjiConverter.vocabPackExtra[id];
+      if (ex !== undefined && ex[kana] !== undefined) { return meta.defaultClass; }
     }
+    return undefined;
+  }
+
+  private static packMetaOf(id: string): VocabPackInfo | undefined {
+    for (const p of KanaKanjiConverter.vocabPackMeta) { if (p.id === id) { return p; } }
     return undefined;
   }
 
@@ -34049,9 +34107,15 @@ export class KanaKanjiConverter {
   private static packEntry(kana: string): string[] | undefined {
     for (const id of KanaKanjiConverter.enabledPacks.values()) {
       const d = KanaKanjiConverter.vocabPacks[id];
-      if (d === undefined) { continue; }
-      const v = d[kana];
-      if (v !== undefined && v.length > 0) { return v; }
+      if (d !== undefined) {
+        const v = d.get(kana);
+        if (v !== undefined && v.length > 0) { return v; }
+      }
+      const ex = KanaKanjiConverter.vocabPackExtra[id];
+      if (ex !== undefined) {
+        const v2 = ex[kana];
+        if (v2 !== undefined && v2.length > 0) { return v2; }
+      }
     }
     return undefined;
   }

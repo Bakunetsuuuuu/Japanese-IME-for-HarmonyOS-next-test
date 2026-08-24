@@ -313,8 +313,8 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textPrimary)
             .width('100%')
           Text(this.enabledVocabPacks.length > 0
-            ? this.enabledVocabPacks.length + '件を使用中'
-            : '界隈語をまとめて追加できます')
+            ? this.enabledVocabPacks.length + ' / ' + this.vocabPackIds.length + ' 個を使用中'
+            : '地名や界隈語をまとめて切り替えられます')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
@@ -1067,6 +1067,13 @@ export struct SettingsBar {
                   .fontColor(kbTheme(this.isDark).textSecondary)
                   .width('100%')
               }
+              // 語数を出す。地名パックは地方ごとに規模がかなり違うので、
+              // どれを切ると効くのかが分かるようにしておく。
+              Text(KanaKanjiConverter.vocabPackCount(id).toLocaleString() + ' 語')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(10)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .width('100%')
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)
