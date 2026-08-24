@@ -32663,6 +32663,17 @@ interface MozcNumeralRun {
   surface: string;
 }
 
+// 語彙パック1つ分のメタ情報。tools/build_vocab_packs.py が
+// tools/vocab_packs/*.pack から rawfile/pack_manifest.json として生成し、
+// KeyboardController.loadVocabPackManifest がそのまま読む。
+// suppress は 読み -> 出したくない表記の一覧 (.pack の行頭 - 指定)。
+export interface VocabPackInfo {
+  id: string;
+  name: string;
+  description: string;
+  suppress: Record<string, string[]>;
+}
+
 export interface MozcMatrixData {
   size: number;
   bosClass: number;
@@ -33918,20 +33929,55 @@ export class KanaKanjiConverter {
 
   // ---- 語彙パック ---------------------------------------------------------
 
-  // どのパックIDが実在するかは tools/build_vocab_packs.py が書き出す
-  // pack_manifest.json (KeyboardController がロード時に読む) が真実。
-  // ここは表示名だけ持つ -- 新しいパックを足すときはここにも1行足すこと。
-  private static readonly VOCAB_PACK_NAMES: Record<string, string> = {
-    'inmu': '淫夢語録',
-    'nanj': 'なんJ・掲示板文化',
-  };
+  // パックの一覧・表示名・説明・抑制指定は、すべて
+  // tools/build_vocab_packs.py が tools/vocab_packs/*.pack から生成する
+  // rawfile/pack_manifest.json から来る。ここにハードコードは持たない --
+  // 持つと「パックを1つ足すのに .ets の編集が要る」ことになり、
+  // 「誰でも語彙を足せる」という語彙パックの目的そのものが崩れる。
+  private static vocabPackMeta: VocabPackInfo[] = [];
 
-  static vocabPackDisplayName(id: string): string {
-    return KanaKanjiConverter.VOCAB_PACK_NAMES[id] ?? id;
+  static setVocabPackManifest(list: VocabPackInfo[]): void {
+    KanaKanjiConverter.vocabPackMeta = list;
+  }
+
+  static listVocabPacks(): VocabPackInfo[] {
+    return KanaKanjiConverter.vocabPackMeta;
   }
 
   static listVocabPackIds(): string[] {
-    return Object.keys(KanaKanjiConverter.VOCAB_PACK_NAMES);
+    return KanaKanjiConverter.vocabPackMeta.map((p: VocabPackInfo) => p.id);
+  }
+
+  static vocabPackDisplayName(id: string): string {
+    for (const p of KanaKanjiConverter.vocabPackMeta) {
+      if (p.id === id) { return p.name; }
+    }
+    return id;
+  }
+
+  static vocabPackDescription(id: string): string {
+    for (const p of KanaKanjiConverter.vocabPackMeta) {
+      if (p.id === id) { return p.description; }
+    }
+    return '';
+  }
+
+  // 有効なパックが「この読みのこの表記は出すな」と言っているか
+  // (.pack の行頭 - 指定)。パックを有効にしている間だけ効く。
+  static isSuppressedByPack(kana: string, surface: string): boolean {
+    for (const p of KanaKanjiConverter.vocabPackMeta) {
+      if (!KanaKanjiConverter.enabledPacks.has(p.id)) { continue; }
+      const words = p.suppress[kana];
+      if (words !== undefined && words.includes(surface)) { return true; }
+    }
+    return false;
+  }
+
+  private static dropPackSuppressed(kana: string, cands: string[]): string[] {
+    if (KanaKanjiConverter.enabledPacks.size === 0) { return cands; }
+    const kept = cands.filter((c: string) => !KanaKanjiConverter.isSuppressedByPack(kana, c));
+    // 全部消えるくらいなら抑制しない (打っても何も出ない読みを作らない)。
+    return kept.length > 0 ? kept : cands;
   }
 
   static setVocabPackPacked(id: string, keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
@@ -35442,7 +35488,13 @@ export class KanaKanjiConverter {
       // the as-typed hiragana is the better default. A true loanword lists only
       // its katakana (パソコン), never the ぱそこん hiragana.
       const dictHasHiragana = ext.some((c: string) => c === kana);
-      if (!hasKanji && dictHasKatakana && !dictHasHiragana && kata !== kana && cands[0] !== kata) {
+      // 語彙パック由来のときはこの推測を効かせない。パックの並びは .pack に
+      // 書かれた優先度そのもの (作者が「1=最優先」で明示したもの) なので、
+      // 外来語向けのカタカナ推測で上書きすると指定を無視することになる。
+      // 実例: ふぁっ は パック側で ファッ!?(1) → ファッ(5) の順なのに、
+      // この昇格でカタカナの ファッ が先頭に出ていた。
+      if (packHit === undefined
+          && !hasKanji && dictHasKatakana && !dictHasHiragana && kata !== kana && cands[0] !== kata) {
         cands = [kata, ...cands.filter((c: string) => c !== kata)];
       }
     } else if ((user && user.length > 0) || (global && global.length > 0)) {
@@ -35667,7 +35719,18 @@ export class KanaKanjiConverter {
   // global-only readings, colloquial forms, and out-of-dict fallbacks, and
   // those would otherwise miss the pictographs. Skipped for fromNorm (internal
   // recursive) calls so intermediate results don't accrue duplicates.
+  // 語彙パックの抑制指定 (.pack の行頭 -) をここで一括して落とす。
+  // lookup() の出口は3つあり、mozc/track A/絵文字ありなしで分かれているので、
+  // 個別に書くと将来どれかを直し忘れる。実処理は lookupInner に移して、
+  // ここは「最終結果から抑制対象を落とす」だけの薄い包みにしてある。
+  // fromNorm (内部の再帰呼び出し) では触らない -- 中間結果を削ると
+  // 呼び出し側の突き合わせが壊れるため、最終結果にだけ効かせる。
   lookup(kana: string, fromNorm: boolean = false): string[] {
+    const result = this.lookupInner(kana, fromNorm);
+    return fromNorm ? result : KanaKanjiConverter.dropPackSuppressed(kana, result);
+  }
+
+  private lookupInner(kana: string, fromNorm: boolean): string[] {
     // Track B bypasses lookupCore() and everything below (dakuten
     // enrichment, EMOJI_MAP/KAOMOJI_MAP) entirely -- all of that is
     // track-A-specific hand-tuning layered onto the hand-built dictionary,

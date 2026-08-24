@@ -9,7 +9,7 @@ import vibrator from '@ohos.vibrator';
 import bundleManager from '@ohos.bundle.bundleManager';
 
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
-import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables } from './KanaKanjiConverter';
+import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables, VocabPackInfo } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
 import type { UserPosEntry, PosKind, VerbGroup } from './ConjugationEngine';
@@ -3018,19 +3018,41 @@ export class KeyboardController {
   }
 
   // 語彙パック (淫夢語録・なんJ語など、既定OFFの追加インストール的な
-  // ニッチ語彙)。各パックは数十件しかないので mozc のような遅延読み込みは
-  // せず、他の辞書と同じタイミングで全部バイナリを読んでおく -- ロードした
-  // だけではまだ何も変換に効かない (KanaKanjiConverter.enabledPacks が
-  // 空のまま)。実際に候補へ混ざるかどうかは reloadSettings 側で
-  // setEnabledPackIds を呼んだときだけ決まる。
+  // ニッチ語彙)。どのパックが存在するかはアプリ側にハードコードせず、
+  // rawfile/pack_manifest.json (tools/build_vocab_packs.py が
+  // tools/vocab_packs/*.pack から生成) を読んで決める -- こうしないと
+  // 「パックを1つ足すのに .ets の編集が要る」ことになり、語彙パックの
+  // 目的 (誰でも語彙を足せる) が崩れる。
+  //
+  // 各パックは数十件しかないので mozc のような遅延読み込みはせず、
+  // manifest が読めた時点で全部バイナリを読んでおく -- ロードしただけでは
+  // まだ何も変換に効かない (KanaKanjiConverter.enabledPacks が空のまま)。
+  // 実際に候補へ混ざるかどうかは reloadSettings 側で setEnabledPackIds を
+  // 呼んだときだけ決まる。
   private loadVocabPacks(): void {
-    for (const id of KanaKanjiConverter.listVocabPackIds()) {
-      this.loadPackedDict('pack_' + id,
-        (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
-         vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
-          KanaKanjiConverter.setVocabPackPacked(id, kb, kl, kbase, vb, vl, vbase, idx);
-        });
-    }
+    this.context.resourceManager.getRawFileContent('pack_manifest.json')
+      .then((data: Uint8Array) => {
+        const text = util.TextDecoder.create('utf-8').decodeToString(data);
+        const list = JSON.parse(text) as VocabPackInfo[];
+        KanaKanjiConverter.setVocabPackManifest(list);
+        // 設定より先に manifest が来るとは限らないので、既に読み込み済みの
+        // 有効IDをここでもう一度適用する (順序に依存させない)。
+        const enabled = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
+        KanaKanjiConverter.setEnabledPackIds(enabled);
+        AppStorage.setOrCreate('vocabPackIds', list.map((p: VocabPackInfo) => p.id));
+        for (const p of list) {
+          this.loadPackedDict('pack_' + p.id,
+            (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
+             vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
+              KanaKanjiConverter.setVocabPackPacked(p.id, kb, kl, kbase, vb, vl, vbase, idx);
+            });
+        }
+      })
+      .catch((e: Error) => {
+        // 語彙パックが読めなくても変換自体は動く (全部OFFと同じ状態)。
+        // ただし黙って消えると原因が分からないので必ず残す。
+        console.error('shuntiIME vocab pack manifest load failed', JSON.stringify(e));
+      });
   }
 
   private computeKeyWidths(dis: display.Display): void {

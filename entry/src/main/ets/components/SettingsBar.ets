@@ -43,6 +43,9 @@ export struct SettingsBar {
   // フィルタ/スプレッドして新しい参照を作っている) ので @StorageLink の
   // 更新検知に乗る。
   @StorageLink('enabledVocabPacks') enabledVocabPacks: string[] = [];
+  // 存在するパックのID一覧。rawfile/pack_manifest.json を非同期に読んだ
+  // KeyboardController.loadVocabPacks が入れる。
+  @StorageLink('vocabPackIds') vocabPackIds: string[] = [];
   // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。
   @StorageLink('hapticUnavailable') hapticUnavailable: boolean = false;
   @State showHistory: boolean = false;
@@ -596,13 +599,27 @@ export struct SettingsBar {
       .width('100%')
       .padding({ left: 2, bottom: 8 })
     Column() {
-      ForEach(KanaKanjiConverter.listVocabPackIds(), (id: string) => {
+      // 一覧は rawfile/pack_manifest.json 由来 (KanaKanjiConverter に
+      // ハードコードは無い)。manifest は非同期に読まれるので、その完了を
+      // vocabPackIds への @StorageLink で受けて再描画する -- ここで
+      // KanaKanjiConverter.listVocabPackIds() を直接呼ぶと、まだ空の
+      // タイミングで描画されたきり更新されない。
+      ForEach(this.vocabPackIds, (id: string) => {
         Row() {
-          Text(KanaKanjiConverter.vocabPackDisplayName(id))
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(13)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .layoutWeight(1)
+          Column({ space: 2 }) {
+            Text(KanaKanjiConverter.vocabPackDisplayName(id))
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(13)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+            if (KanaKanjiConverter.vocabPackDescription(id).length > 0) {
+              Text(KanaKanjiConverter.vocabPackDescription(id))
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(11)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+            }
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
           Toggle({ type: ToggleType.Switch, isOn: this.enabledVocabPacks.includes(id) })
             .selectedColor(kbTheme(this.isDark).accent)
             .onChange((isOn: boolean) => {
