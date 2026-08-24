@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""dict.json から「日本語で使わない漢字」の項目を落とす。
+"""dict.json / global_dict.json から「日本語で使わない漢字」の項目を落とす。
 
 見つかった経緯: 同梱フォント (Noto Sans JP) に無い文字を数えたら 2,777 字も
 出てきた。Noto Sans JP は日本語をほぼ網羅しているので、それだけ足りないのは
@@ -21,19 +21,30 @@ JIS X 0213:2004 (euc_jis_2004 で符号化できるか) に入らない CJK 統�
 
   - 対象は CJK 統合漢字/拡張/互換漢字のみ。絵文字・記号・ラテン等は触らない
     (JIS X 0213 に無い文字が他にもあるが、それらは正当に使う)
-  - 読みの候補が全部消える場合はその項目を残す (打っても何も出ない読みを
-    作らないため)
+  - 候補の一部だけが対象文字を含む場合は、その候補だけを落として読みは残す
+  - 候補が全部対象文字だった場合は、読みそのものを丸ごと削除する。中途半端に
+    残すと「その読みでは読めない1文字だけが出る」という一番タチの悪い状態に
+    なる (例: dict.json の「ねばつち」→堇 だけ、のような項目が30件あった)。
+    読みごと消えれば hybrid エンジンの mozc 側や生のかな確定にフォールバック
+    するだけなので、変換不能になるわけではない。
+
+パッキング前の生JSON (tools/dict_src/) を対象にする -- rawfile/ 側は
+pack_dicts.py が作るバイナリ形式のみで、平文JSONはもう置かれていない。
+書き換えたら tools/pack_dicts.py で rawfile/ を作り直すこと。
 
 Usage:
   python3 tools/clean_nonjapanese.py --report   何が落ちるかだけ出す
-  python3 tools/clean_nonjapanese.py            実際に dict.json を書き換える
+  python3 tools/clean_nonjapanese.py            実際に dict_src/ の両方を書き換える
 """
 import json
 import os
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DICT = os.path.join(ROOT, 'entry/src/main/resources/rawfile/dict.json')
+DICTS = [
+    os.path.join(ROOT, 'tools/dict_src/dict.json'),
+    os.path.join(ROOT, 'tools/dict_src/global_dict.json'),
+]
 
 
 def is_cjk(ch: str) -> bool:
@@ -55,56 +66,66 @@ def is_foreign(surface: str) -> bool:
     return any(is_cjk(ch) and not in_jis(ch) for ch in surface)
 
 
-def main() -> None:
-    report_only = '--report' in sys.argv
-    with open(DICT, encoding='utf-8') as f:
+def clean_one(path: str, report_only: bool) -> None:
+    name = os.path.basename(path)
+    with open(path, encoding='utf-8') as f:
         d = json.load(f)
 
     out = {}
-    dropped = []          # (reading, surface)
-    kept_last = []        # 全消えを避けて残した項目
+    dropped = []           # (reading, surface) -- 候補の一部だけ落とした
+    removed_readings = []  # (reading, surfaces) -- 候補が全部対象で読みごと削除
     for reading, v in d.items():
         surfaces = v if isinstance(v, list) else [v]
         keep = [s for s in surfaces if not is_foreign(s)]
         drop = [s for s in surfaces if is_foreign(s)]
         if drop and not keep:
-            # この読みの候補が全部消える -> 打っても何も出なくなるので残す
-            kept_last.append((reading, drop))
-            out[reading] = v
+            # この読みの候補が全部対象文字 -> 読みごと削除
+            removed_readings.append((reading, drop))
             continue
         for s in drop:
             dropped.append((reading, s))
         out[reading] = keep if isinstance(v, list) else keep[0]
 
-    empty_readings = sum(1 for r, v in out.items() if not v)
+    print(f'== {name} ==')
     print(f'読み          {len(d):,} -> {len(out):,}')
-    print(f'落とす表記    {len(dropped):,}')
-    print(f'全消え回避    {len(kept_last):,} 読み (候補が無くなるので残した)')
-    print(f'空になった読み {empty_readings}')
+    print(f'落とす表記    {len(dropped):,} (読みは残る)')
+    print(f'削除する読み  {len(removed_readings):,} (候補が全部対象文字だった)')
 
     chars = set()
     for _, s in dropped:
         for ch in s:
             if is_cjk(ch) and not in_jis(ch):
                 chars.add(ch)
+    for _, ss in removed_readings:
+        for s in ss:
+            for ch in s:
+                if is_cjk(ch) and not in_jis(ch):
+                    chars.add(ch)
     print(f'消える文字種  {len(chars):,}')
 
-    print('\n-- 落とす例 --')
+    print('-- 候補だけ落とす例 --')
     for r, s in dropped[:15]:
         print(f'   {r:12s} {s}')
-    if kept_last:
-        print('\n-- 全消え回避で残した例 --')
-        for r, ss in kept_last[:10]:
+    if removed_readings:
+        print('-- 読みごと削除する例 --')
+        for r, ss in removed_readings[:10]:
             print(f'   {r:12s} {" ".join(ss)}')
+    print()
 
     if report_only:
         return
 
-    before = os.path.getsize(DICT)
-    with open(DICT, 'w', encoding='utf-8') as f:
+    before = os.path.getsize(path)
+    with open(path, 'w', encoding='utf-8') as f:
         json.dump(out, f, ensure_ascii=False, separators=(',', ':'))
-    after = os.path.getsize(DICT)
-    print(f'\ndict.json {before:,} -> {after:,} バイト ({after - before:+,})')
+    after = os.path.getsize(path)
+    print(f'{name} {before:,} -> {after:,} バイト ({after - before:+,})\n')
+
+
+def main() -> None:
+    report_only = '--report' in sys.argv
+    for path in DICTS:
+        clean_one(path, report_only)
 
 
 if __name__ == '__main__':
