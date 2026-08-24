@@ -237,6 +237,39 @@ const KAOMOJI_MAP: Record<string, string[]> = {
 };
 
 const DICTIONARY: Record<string, string[]> = {
+  // ネットスラング・ミーム語彙 (2026年時点)。一般的な言語資源には出てこない
+  // 表記なので、独自辞書ならではの手入れ対象。「淫夢語録」由来のフレーズは
+  // 意味が薄れて一般的な驚き表現として定着したものだけに絞ってある
+  // (露骨な由来が残るものは対象外)。
+  'うまかく': ['うま確'],
+  'ちゃっぴー': ['チャッピー'],
+  'いんぷれぞんび': ['インプレゾンビ'],
+  'けんちゃな': ['ケンチャナ'],
+  'ふろきゃんせるかいわい': ['風呂キャンセル界隈'],
+  'きゃぱい': ['キャパい'],
+  'わかりみがふかい': ['わかりみが深い'],
+  'おじさんこうぶん': ['おじさん構文'],
+  'すきすぎてめつ': ['好きすぎて滅'],
+  'ふれねみー': ['フレネミー'],
+  'ぎゅん': ['ギュン'],
+  'めろい': ['メロい'],
+  'ぴきる': ['ピキる'],
+  // てぇてぇ→尊い は読みと表記の対応が一見して分からない、辞書の手入れが
+  // 一番効く典型例。
+  'てぇてぇ': ['尊い', 'てぇてぇ'],
+  'げんかいおたく': ['限界オタク'],
+  'かえるかげんしょう': ['蛙化現象'],
+  'しかかたん': ['しか勝たん'],
+  'ちるする': ['チルする'],
+  'わんちゃん': ['ワンちゃん'],
+  'げきおこぷんぷんまる': ['激おこぷんぷん丸'],
+  'でぃする': ['ディスる'],
+  // 「完全に一致」「ファッ!?」「たまげたなあ」は淫夢語録が由来だが、今は
+  // 由来と無関係に使われる一般的な驚き表現として定着している。
+  'かんぜんにいっち': ['完全に一致'],
+  'ふぁっ': ['ファッ!?', 'ファッ'],
+  'たまげたなあ': ['たまげたなあ'],
+
   'いち': ['一', '１'],
   // さん as bare kana is typed almost exclusively for the honorific suffix
   // (田中さん, 店員さん, 屋さん…) — the numeral 三 is usually entered as a
@@ -35640,17 +35673,34 @@ export class KanaKanjiConverter {
         : entry;
     } else {
       const kata = KanaKanjiConverter.toKatakana(kana);
-      if (kata === kana) {
-        list = [kana];
-      } else {
-        // Unknown reading: katakana leads only when the reading carries a
-        // long-vowel mark ー (a strong loanword signal -- こんさーと etc.);
-        // otherwise plain kana leads. The old unconditional katakana-first
-        // fallback turned ordinary casual contractions the dictionary happens
-        // to miss (それって, あれって, ほんまに) into gratuitous katakana
-        // (ソレッテ...) at the top of the candidate list.
-        list = kana.indexOf('ー') >= 0 ? [kata, kana] : [kana, kata];
-      }
+      // Unknown reading: katakana leads only when the reading carries a
+      // long-vowel mark ー (a strong loanword signal -- こんさーと etc.);
+      // otherwise plain kana leads. The old unconditional katakana-first
+      // fallback turned ordinary casual contractions the dictionary happens
+      // to miss (それって, あれって, ほんまに) into gratuitous katakana
+      // (ソレッテ...) at the top of the candidate list.
+      const kanaFallback = kata === kana ? [kana] : (kana.indexOf('ー') >= 0 ? [kata, kana] : [kana, kata]);
+      // mozc の辞書にこの読みが一切無いとき (entry が空) の最終フォールバック。
+      // 単語単体の変換でも track A (独自辞書) にしか無い語を拾えるようにする --
+      // これが無いと、mozc に対応語義が1つも無いというだけで DICTIONARY の
+      // 中身は一度も参照されず、かな/カタカナへ即フォールバックしていた。
+      // ネットスラング・ミーム語彙のように mozc の一般辞書には無い語を
+      // DICTIONARY に足しても、hybrid のデフォルトでは永久に出てこない穴
+      // だった (2026-08-24、実際に追加した語で発覚)。上の entry-ありの
+      // 分岐と同じ singleWordTrackAOrder を再利用する。
+      // この読みが track A (独自辞書) に実際に登録されている場合だけ通す。
+      // singleWordTrackAOrder (= lookupCore) は完全に未知の読み (「ぬぽわきゅ」
+      // のような雑音) にも独自の分割・当て推量フォールバックを返すことがあり、
+      // それをそのまま混ぜるとかな確定より先に出て悪化した (実機で確認)。
+      // DICTIONARY/補助辞書に本当に載っている語だけを通すことで、雑音を
+      // 混ぜずに実在のネットスラング等だけを拾う。
+      const registeredInTrackA = !!(DICTIONARY[kana]
+        || KanaKanjiConverter.globalDict.has(kana)
+        || KanaKanjiConverter.supplementaryDict.has(kana));
+      const trackA = (KanaKanjiConverter.engine === 'hybrid' && registeredInTrackA)
+        ? this.singleWordTrackAOrder(kana).filter((c: string) => !kanaFallback.includes(c))
+        : [];
+      list = trackA.length > 0 ? [...trackA, ...kanaFallback] : kanaFallback;
     }
     // Same user-intent layering as track A's lookupCore (and in the same
     // priority order): the user's learned candidate choices outrank raw
