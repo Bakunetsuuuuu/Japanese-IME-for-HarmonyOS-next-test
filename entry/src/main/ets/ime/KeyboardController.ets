@@ -334,6 +334,7 @@ export class InputHandler {
     UnknownWordLearner.onKnownAssembly = (r: string, s: string) => {
       KanaKanjiConverter.recordChoice(r, s);
       this.saveLearning();
+      InputLog.recordKnownAssembly(r, s); // [DEBUG-LOG]
     };
     this.setupInputLog(ctx); // [DEBUG-LOG] 必ず最後。上の初期化を壊さないため
   }

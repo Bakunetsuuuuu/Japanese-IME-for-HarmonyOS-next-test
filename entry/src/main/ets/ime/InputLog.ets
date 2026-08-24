@@ -68,6 +68,7 @@ export const LK_FIELD: string = 'field';        // 入力欄が変わった(診�
 export const LK_DIAG: string = 'diag';          // 拡張プロセスの自己申告(診断用・本文なし)
 export const LK_BSEG_FINAL: string = 'bsegfinal'; // 文節モードの最終確定(全文節をつなげた結果)
 export const LK_QUASI_PICK: string = 'quasipick'; // まだしきい値未満の未知語候補(準候補)をタップして確定した
+export const LK_KNOWN_ASSEMBLY: string = 'knownassembly'; // 単漢字ずつ組み立てた語が、実は既に辞書にあった(埋もれていた)
 
 // 確定の性質を表す補助タグ (entry.x に入る)。
 export const LF_KATAKANA: string = 'kata';      // 読みのカタカナ形をそのまま確定
@@ -361,6 +362,17 @@ export class InputLog {
   static recordQuasiPick(reading: string, surface: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
     InputLog.push(LK_QUASI_PICK, reading, surface, -1, 0, '');
+  }
+
+  // 単漢字ずつ組み立て直した語が、実は辞書のどこかに(埋もれて)もう存在した
+  // (UnknownWordLearner.onKnownAssembly)。「志岐」のような、読み全体では
+  // 一発で出てこないくらい埋もれている語が誰にも学習されないまま埋もれ
+  // 続ける穴を塞いだ側の記録。これが無かった間はこのパターン自体が
+  // ログから一切見えず、過去ログをいくら遡っても実例を拾えなかった
+  // (2026-08-24のログ分析で判明)。
+  static recordKnownAssembly(reading: string, surface: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.push(LK_KNOWN_ASSEMBLY, reading, surface, -1, 0, '');
   }
 
   // 文字を消した。x は消した時の状態(composing / idle)。確定後すぐの idle 削除は
