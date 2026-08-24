@@ -208,6 +208,9 @@ export class InputHandler {
   private previewActive: boolean = false;
   // いまプレビューとして出している文字数 (取り消し時の削除長に使う)。
   private previewLen: number = 0;
+  // 入力中のかなをどこに出すかの設定 (SettingsStore、独立した2つのトグル)。
+  private composingInPanel: boolean = true;
+  private composingInField: boolean = true;
   // Cap for the persistent deleted-character log (recordDeletedChar) --
   // unlike restoreStack above (a short-lived undo stack wiped by the next
   // keystroke, see insertText), this survives typing and is only capped by
@@ -492,6 +495,7 @@ export class InputHandler {
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
         AppStorage.setOrCreate('enabledVocabPacks', s.enabledVocabPacks);
         KanaKanjiConverter.setEnabledPackIds(s.enabledVocabPacks);
+        this.applyComposingDisplay(s.composingInPanel, s.composingInField);
         this.hapticEnabled = s.hapticEnabled;
         this.applyConversionEngine(s.conversionEngine);
         this.applyThemeMode(s.themeMode);
@@ -784,6 +788,28 @@ export class InputHandler {
     if (this.imeContext) {
       SettingsStore.saveConversionEngine(this.imeContext, engine);
     }
+  }
+
+  // 入力中のかなの表示先の切替 (設定画面 → SettingsBar)。2つは独立で、
+  // 両方OFFにもできる (どこにも出なくなるので設定画面側で警告を出す)。
+  setComposingDisplay(inPanel: boolean, inField: boolean): void {
+    this.applyComposingDisplay(inPanel, inField);
+    if (this.imeContext) {
+      SettingsStore.saveComposingDisplay(this.imeContext, inPanel, inField);
+    }
+  }
+
+  // 保存せずに反映だけする。設定の読み直しは拡張側 (reloadSettings) と
+  // パネル側 (KeyboardPage.reloadSettingsIntoStorage) の両方から走るので、
+  // 読み直しのたびに書き戻さないよう保存と分けてある。
+  applyComposingDisplay(inPanel: boolean, inField: boolean): void {
+    this.composingInPanel = inPanel;
+    this.composingInField = inField;
+    AppStorage.setOrCreate('composingInPanel', inPanel);
+    AppStorage.setOrCreate('composingInField', inField);
+    // 入力欄側をOFFにした瞬間、出したままのプレビューを消す。
+    if (!inField) { this.cancelPreviewText(); }
+    this.publishPreviewMode();
   }
 
   // 語彙パックのON/OFF切替 (設定画面 → SettingsBar)。パック自体の中身は
@@ -2408,17 +2434,26 @@ export class InputHandler {
     return this.shareUrl('https://github.com/sponsors/shuntilettuce');
   }
 
-  // 入力欄プレビューが実際に効いているか(= パネル内の composing 表示を
-  // 畳んでよいか)を UI 側へ配る。
+  // 入力中のかなの表示先を UI 側へ配る。
+  //
+  // 入力欄側 (previewInField) は「設定でONかつ入力欄が対応している」ときだけ
+  // 実際に効く。パネル側 (showComposingPanel) は設定そのままだが、入力欄側を
+  // 選んでいるのに入力欄が非対応で、かつパネルもOFFだと、打っているかなが
+  // どこにも出なくなる。それは設定の意図(入力欄に出す)ではなく端末側の都合
+  // なので、その場合だけパネルに戻して見えなくならないようにする。
+  // 両方を自分でOFFにした場合は意図どおり何も出さない (設定画面で警告済み)。
   private publishPreviewMode(): void {
-    AppStorage.setOrCreate('previewInField', this.previewSupported);
+    const fieldActive = this.composingInField && this.previewSupported;
+    AppStorage.setOrCreate('previewInField', fieldActive);
+    AppStorage.setOrCreate('showComposingPanel',
+      this.composingInPanel || (this.composingInField && !fieldActive));
   }
 
   // 入力中のかなをホストアプリの入力欄へ反映する。composing が空になったら
   // プレビューを終了する。updateCandidates の入口/出口から呼ぶので、
   // composing を変える経路すべてがここを通る。
   private syncPreviewText(): void {
-    if (!this.previewSupported) { return; }
+    if (!this.previewSupported || !this.composingInField) { return; }
     const text = (AppStorage.get<string>('composingText') ?? '')
       + (AppStorage.get<string>('pendingRomaji') ?? '');
     if (text.length === 0) {

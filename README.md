@@ -141,6 +141,16 @@ bun tools/mozc_data/compare_engines.js corpus_test10.js
 bun tools/mozc_data/compare_engines.js corpus_test11.js
 ```
 
+### 語彙パックを作る
+
+「一般語彙ではないが、ある界隈の人はめちゃくちゃ使う」語彙は、既定OFFの
+**語彙パック**としてまとめられます（設定 → 辞書 → 語彙パック で切替）。
+読み・単語・優先度・品詞を並べるだけの簡単な形式で、アプリのコードを触らずに
+ファイル1つ足せば増やせます。
+
+- **[語彙パック エディタ](https://shuntilettuce.github.io/Japanese-IME-for-HarmonyOS-next/pack-editor.html)**（スマホ・PC両対応。品詞や優先度は選ぶだけ）
+- 形式の詳細: [`tools/vocab_packs/README.md`](./tools/vocab_packs/README.md)
+
 ### コントリビュート
 
 Issue・Pull Request歓迎です。辞書データや変換ロジックに手を入れる変更は、上記の回帰テストで既存スコアが下がっていないことを確認のうえ送ってください。

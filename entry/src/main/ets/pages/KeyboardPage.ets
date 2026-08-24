@@ -34,6 +34,9 @@ struct KeyboardPage {
   // 入力中のかなをホストアプリの入力欄側に出せているか。出せているときは
   // パネル内の composing 表示を畳んでキーボードを低くする。
   @StorageLink('previewInField') previewInField: boolean = false;
+  // かな表示の行をキーボード内に出すか (設定。入力欄側が非対応のときの
+  // 保険もここに含めて KeyboardController が決める)。
+  @StorageLink('showComposingPanel') showComposingPanel: boolean = true;
   @StorageLink('candidates') candidates: string[] = [];
   @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
@@ -136,6 +139,9 @@ struct KeyboardPage {
       AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
       AppStorage.setOrCreate('themeMode', s.themeMode);
       AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
+      // かなの表示先は「設定値そのまま」ではなく入力欄の対応状況も混ぜて
+      // 決まるので、AppStorage を直接書かず InputHandler に計算させる。
+      InputHandler.getInstance().applyComposingDisplay(s.composingInPanel, s.composingInField);
       InputHandler.getInstance().setThemeMode(s.themeMode);
       // This panel and the extension's InputHandler share the same process/
       // KanaKanjiConverter static state (see setConversionEngine's own
@@ -196,7 +202,7 @@ struct KeyboardPage {
               // 無くなるので、候補バーの右端へ移す (下の previewInField 分岐)。
               // ただし変換範囲を ◀▶ で変えている最中だけは、どこまでを変換
               // するかが入力欄側では分からないのでこの行を出す。
-              if (!this.previewInField
+              if (this.showComposingPanel
                   || (this.convEnd > 0 && this.convEnd < this.composingText.length)) {
               Row() {
                 if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
@@ -311,7 +317,7 @@ struct KeyboardPage {
 
                 // かな表示の行を出していないときは「設定」の置き場がここしか
                 // 無いので、候補バーの右端に寄せる。
-                if (this.previewInField
+                if (!this.showComposingPanel
                     && !(this.convEnd > 0 && this.convEnd < this.composingText.length)) {
                   Text('設定')
                     .fontFamily(JP_FONT_FAMILY)

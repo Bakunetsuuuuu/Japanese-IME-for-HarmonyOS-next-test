@@ -1,0 +1,518 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>語彙パック エディタ — shunti Japanese IME</title>
+<style>
+  /* 依存ゼロ (CDN も webfont も無し)。ファイルを直接開いてもオフラインで動く。 */
+  :root {
+    --bg: #f5f5f7; --card: #ffffff; --text: #1c1c1e; --sub: #6b6b70;
+    --line: #e0e0e4; --accent: #3b6fe0; --accent-weak: #eaf0fd;
+    --warn-bg: #fff4e5; --warn-text: #8a5300; --warn-line: #f0c98a;
+    --err-bg: #fdeaea; --err-text: #a32222; --err-line: #f0a0a0;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #131316; --card: #1e1e22; --text: #eceef2; --sub: #9a9aa2;
+      --line: #33333a; --accent: #7aa2f7; --accent-weak: #232a3d;
+      --warn-bg: #3a2c14; --warn-text: #f0c98a; --warn-line: #6b5424;
+      --err-bg: #3a1d1d; --err-text: #f0a0a0; --err-line: #6b2b2b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Hiragino Sans", "Noto Sans JP", sans-serif;
+    font-size: 15px; line-height: 1.6;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 16px 14px 96px; }
+  h1 { font-size: 19px; margin: 4px 0 2px; }
+  .lede { color: var(--sub); font-size: 13px; margin: 0 0 18px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
+  .card h2 { font-size: 14px; margin: 0 0 10px; letter-spacing: .02em; }
+  label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
+  input[type=text], textarea, select {
+    width: 100%; padding: 9px 10px; font-size: 15px; color: var(--text);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+    font-family: inherit;
+  }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { font-family: var(--mono); font-size: 13px; line-height: 1.7; min-height: 220px; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+  .field { margin-bottom: 10px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px; justify-content: center;
+    padding: 9px 14px; font-size: 14px; font-family: inherit; font-weight: 600;
+    border-radius: 8px; border: 1px solid var(--line); background: var(--card);
+    color: var(--text); cursor: pointer; min-height: 40px;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn.ghost { background: transparent; }
+  .btn.danger { color: var(--err-text); }
+  .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  /* エントリ1件。狭い画面では縦積み、広い画面では横並び。 */
+  .rows { display: flex; flex-direction: column; gap: 10px; }
+  .row {
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px;
+    background: var(--bg);
+    display: grid; gap: 8px;
+    grid-template-columns: 1fr 1fr;
+    grid-template-areas: "yomi word" "pos pri" "note note" "act act";
+  }
+  .row.sup { grid-template-areas: "yomi word" "note note" "act act"; }
+  .row[data-bad="1"] { border-color: var(--err-line); background: var(--err-bg); }
+  .a-yomi { grid-area: yomi; } .a-word { grid-area: word; }
+  .a-pos { grid-area: pos; } .a-pri { grid-area: pri; }
+  .a-note { grid-area: note; } .a-act { grid-area: act; }
+  .a-act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+  .act-btns { display: flex; gap: 6px; margin-left: auto; }
+  .act-btns .btn { padding: 8px 12px; min-height: 38px; }
+  /* 狭い画面ではクラス指定を1行占有させ、ボタンは次の行にまとめて右寄せ。
+     混在させると ↑ だけ前の行に取り残されて押しにくかった。 */
+  @media (max-width: 719px) {
+    .a-act .chk { width: 100%; }
+    .a-act .chk input { flex: 1; width: auto !important; }
+  }
+  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--sub); }
+  .chk input { width: 18px; height: 18px; }
+  @media (min-width: 720px) {
+    .row { grid-template-columns: 1.2fr 1.2fr .9fr .6fr; grid-template-areas: "yomi word pos pri" "note note note note" "act act act act"; }
+    .row.sup { grid-template-columns: 1.2fr 1.2fr 1.5fr; grid-template-areas: "yomi word note" "act act act"; }
+  }
+  .msg { border-radius: 8px; padding: 9px 11px; font-size: 12.5px; margin-top: 8px; }
+  .msg.warn { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-line); }
+  .msg.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-line); }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 6px; }
+  .count { font-size: 12px; color: var(--sub); }
+  details { margin-top: 10px; }
+  summary { cursor: pointer; font-size: 13px; color: var(--accent); }
+  table.ref { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 8px; }
+  table.ref th, table.ref td { border: 1px solid var(--line); padding: 5px 7px; text-align: left; }
+  table.ref th { background: var(--accent-weak); }
+  .bar {
+    position: fixed; left: 0; right: 0; bottom: 0; background: var(--card);
+    border-top: 1px solid var(--line); padding: 10px 14px;
+    padding-bottom: calc(10px + env(safe-area-inset-bottom));
+    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; z-index: 10;
+  }
+  code { font-family: var(--mono); background: var(--accent-weak); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>語彙パック エディタ</h1>
+  <p class="lede">
+    shunti Japanese IME の語彙パック (<code>.pack</code>) を作る・直すためのツールです。
+    出来上がったファイルをリポジトリの <code>tools/vocab_packs/</code> に置いて
+    Pull Request を送れば、パックとして配布できます。
+  </p>
+
+  <div class="card">
+    <h2>パックの情報</h2>
+    <div class="field">
+      <label for="pname">パック名 (必須) — 設定画面に出ます</label>
+      <input type="text" id="pname" placeholder="例: なんJ・掲示板文化">
+    </div>
+    <div class="field">
+      <label for="pdesc">説明 (任意) — パック名の下に1行で出ます</label>
+      <input type="text" id="pdesc" placeholder="例: 5ちゃんねる なんでも実況J 由来の語彙">
+    </div>
+    <div class="field">
+      <label for="pfile">ファイル名 — 半角英数。これがパックIDになります</label>
+      <input type="text" id="pfile" placeholder="例: nanj" value="mypack">
+    </div>
+    <div id="metaMsg"></div>
+  </div>
+
+  <div class="card">
+    <h2>語彙 <span class="count" id="cnt"></span></h2>
+    <div class="rows" id="rows"></div>
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn primary" id="add">＋ 語を追加</button>
+      <button class="btn ghost" id="addSup">＋ 抑制を追加</button>
+    </div>
+    <div class="hint">
+      「抑制」は、その読みでその表記を<strong>出さない</strong>指定です。パックを有効にしている間だけ効きます。
+    </div>
+
+    <details>
+      <summary>品詞のはたらき / クラスID直接指定について</summary>
+      <p class="hint" style="margin-top:8px">
+        品詞を指定すると、変換エンジンの接続コスト行列で正しい品詞として扱われ、文の途中に混ざったときの区切り方がまともになります。
+        <strong>五段・一段・形容詞は活用形が自動で生えます</strong> —
+        <code>がばる / ガバる / 五段</code> と1行書けば がばって→ガバって、がばった→ガバった、がばらない→ガバらない まで引けます。
+      </p>
+      <table class="ref">
+        <tr><th>品詞</th><th>用途</th><th>活用</th></tr>
+        <tr><td>名詞</td><td>既定。指定しなくてよい</td><td>—</td></tr>
+        <tr><td>五段 / 一段</td><td>動詞。る で終わる語は字面で区別できないので必須</td><td>あり</td></tr>
+        <tr><td>形容詞</td><td>い形容詞 (めろい、やばい)</td><td>あり</td></tr>
+        <tr><td>な形容詞</td><td>静か、ぐう聖</td><td>—</td></tr>
+        <tr><td>サ変名詞</td><td>〜する が付く名詞</td><td>—</td></tr>
+        <tr><td>人名 / 地名 / 組織</td><td>固有名詞</td><td>—</td></tr>
+        <tr><td>その他</td><td>代名詞 / 数 / 助数詞 / 非自立名詞 / 副詞可能 / 外来語 / 副詞 / 感動詞 / 接頭辞 / 接尾辞 / 記号</td><td>—</td></tr>
+      </table>
+      <p class="hint">
+        品詞で足りないときは「クラス指定」に <code>@34</code> (左右とも34) や <code>@0,10</code> (左0・右10) と書くと、
+        接続行列のクラスIDを直接指定できます。左右で分けられるのは、活用語が「前から見た顔」と「次へ渡す顔」で別のクラスを持つためです。
+      </p>
+    </details>
+  </div>
+
+  <div class="card">
+    <h2>出来上がり (.pack)</h2>
+    <textarea id="out" spellcheck="false" readonly></textarea>
+    <div id="outMsg"></div>
+    <div class="hint">
+      区切りはタブです。この内容をそのまま <code>tools/vocab_packs/&lt;ファイル名&gt;.pack</code> として保存してください。
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>読み込み</h2>
+    <div class="btn-row">
+      <button class="btn" id="openFile">ファイルを開く</button>
+      <button class="btn" id="pasteIn">テキストから読み込む</button>
+      <button class="btn danger ghost" id="clearAll">全部消す</button>
+    </div>
+    <input type="file" id="file" accept=".pack,.txt,.tsv,text/plain" hidden>
+    <div class="hint">既存の .pack を開いて続きから編集できます。作業内容はこの端末に自動保存されます。</div>
+  </div>
+</div>
+
+<div class="bar">
+  <button class="btn primary" id="download">ファイルを保存</button>
+  <button class="btn" id="copy">コピー</button>
+</div>
+
+<script>
+"use strict";
+
+// tools/build_vocab_packs.py の POS_TABLE と同じ並び。ここを変えるときは
+// 向こうも一緒に直すこと (品詞名が食い違うとビルドで弾かれる)。
+const POS = ['', '名詞', 'サ変名詞', 'な形容詞', '形容動詞', '代名詞', '人名', '地名',
+  '組織', '数', '助数詞', '非自立名詞', '副詞可能', '外来語',
+  '五段', '一段', '形容詞', '副詞', '感動詞', '接頭辞', '接尾辞', '記号'];
+// 活用が自動で生える品詞。入力の形を検査して警告を出す対象。
+const EXPANDING = { '五段': 'verb', '一段': 'verb', '形容詞': 'adj' };
+// 五段で連用形などを作れる語尾 (ConjugationEngine.detectGodanRow と同じ)。
+const GODAN_TAIL = 'うくぐすつぬぶむる';
+const STORE_KEY = 'shunti-pack-editor-v1';
+
+let state = { name: '', desc: '', file: 'mypack', rows: [] };
+
+const $ = (id) => document.getElementById(id);
+const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
+
+function newRow(sup) {
+  return { yomi: '', word: '', pri: '', pos: '', cls: '', note: '', sup: !!sup };
+}
+
+// ---- 検証 (build_vocab_packs.py の parse_pack と同じ規則) ----------------
+
+function checkRow(r) {
+  const errs = [];
+  const warns = [];
+  const y = r.yomi.trim(), w = r.word.trim();
+  if (!y && !w) return { errs, warns, empty: true };
+  if (!y) errs.push('読みが空です');
+  if (!w) errs.push('単語が空です');
+  // 読み・単語に区切り文字が入るとビルド時に列がずれる。
+  if (/\t/.test(y) || /\t/.test(w)) errs.push('読み・単語にタブは使えません');
+  if (/ {2,}/.test(y) || / {2,}/.test(w)) errs.push('読み・単語に半角スペース2個以上は使えません(区切りとして解釈されます)');
+  if (y && !/^[ぁ-んー―]+$/.test(y)) warns.push('読みはひらがなで書きます');
+
+  if (r.sup) {
+    if (r.pri || r.pos || r.cls) errs.push('抑制指定に優先度・品詞・クラスは書けません');
+    return { errs, warns };
+  }
+
+  if (r.pri !== '') {
+    const n = Number(r.pri);
+    if (!Number.isInteger(n)) errs.push('優先度は整数で書きます');
+    else if (n < 1 || n > 10) errs.push('優先度は 1〜10 の範囲です (1=最優先, 10=一番右でいい)');
+  }
+  if (r.cls) {
+    // 桁数はここで縛らない。@120 のような範囲外は「形式が違う」ではなく
+    // 「範囲外」と言ってもらうほうが直しやすいので、下の範囲検査に回す。
+    const m = /^@(\d+)(?:,(\d+))?$/.exec(r.cls.trim());
+    if (!m) errs.push('クラス指定は @12 か @0,10 の形で書きます');
+    else {
+      for (const v of [m[1], m[2]]) {
+        if (v === undefined) continue;
+        const n = Number(v);
+        if (n < 0 || n > 99) errs.push('クラスIDは 0〜99 の範囲です');
+      }
+    }
+  }
+  // 活用展開の前提を満たしているか。満たさないと端末側で黙って
+  // 展開されない (エラーにならないぶん気付きにくい) ので、ここで出す。
+  const kind = EXPANDING[r.pos];
+  if (kind && y && w) {
+    if (y.length < 2 || w.length < 2) {
+      warns.push('活用させるには読み・単語とも2文字以上必要です');
+    } else if (kind === 'adj' && !y.endsWith('い')) {
+      warns.push('形容詞は「い」で終わる読みにしてください (例: めろい)');
+    } else if (r.pos === '五段' && !GODAN_TAIL.includes(y[y.length - 1])) {
+      warns.push('五段の読みは ' + GODAN_TAIL.split('').join('/') + ' のどれかで終わります');
+    } else if (r.pos === '一段' && !y.endsWith('る')) {
+      warns.push('一段の読みは「る」で終わります (例: たべる)');
+    }
+  }
+  return { errs, warns };
+}
+
+// ---- .pack の生成 -------------------------------------------------------
+
+function build() {
+  const lines = [];
+  lines.push('name: ' + state.name.trim());
+  if (state.desc.trim()) lines.push('description: ' + state.desc.trim());
+  lines.push('---');
+  for (const r of state.rows) {
+    const y = r.yomi.trim(), w = r.word.trim();
+    if (!y || !w) continue;
+    const cols = [(r.sup ? '-' : '') + y, w];
+    if (!r.sup) {
+      if (r.pri !== '') cols.push(String(r.pri).trim());
+      if (r.pos) cols.push(r.pos);
+      if (r.cls) cols.push(r.cls.trim());
+    }
+    let line = cols.join('\t');
+    const note = r.note.trim();
+    if (note) line += '\t#' + note;
+    lines.push(line);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// ---- .pack の読み込み ---------------------------------------------------
+
+function parse(text) {
+  const rows = [];
+  let name = '', desc = '', inBody = false;
+  for (const raw of text.split(/\r?\n/)) {
+    const s = raw.trim();
+    if (!s) continue;
+    if (!inBody) {
+      if (s === '---') { inBody = true; continue; }
+      if (s.startsWith('#')) continue;
+      const i = s.indexOf(':');
+      if (i < 0) continue;
+      const k = s.slice(0, i).trim(), v = s.slice(i + 1).trim();
+      if (k === 'name') name = v;
+      else if (k === 'description') desc = v;
+      continue;
+    }
+    if (s.startsWith('#')) continue;
+    const sup = s.startsWith('-');
+    const body = sup ? s.slice(1).trim() : s;
+    let cols = body.split(/\t+| {2,}/).map((c) => c.trim()).filter((c) => c.length > 0);
+    // 3列目以降の # から先はコメント (読み・単語は切らない)。
+    let note = '';
+    for (let i = 2; i < cols.length; i++) {
+      if (cols[i].startsWith('#')) {
+        note = cols.slice(i).join(' ').replace(/^#\s*/, '');
+        cols = cols.slice(0, i);
+        break;
+      }
+    }
+    if (cols.length < 2) continue;
+    const r = newRow(sup);
+    r.yomi = cols[0]; r.word = cols[1]; r.note = note;
+    for (const tok of cols.slice(2)) {
+      if (tok.startsWith('@')) r.cls = tok;
+      else if (/^-?\d+$/.test(tok)) r.pri = tok;
+      else if (POS.includes(tok)) r.pos = tok;
+    }
+    rows.push(r);
+  }
+  return { name, desc, rows };
+}
+
+// ---- 描画 ---------------------------------------------------------------
+
+function render() {
+  const box = $('rows');
+  box.textContent = '';
+  let bad = 0, entries = 0, sups = 0;
+
+  state.rows.forEach((r, idx) => {
+    const { errs, warns, empty } = checkRow(r);
+    if (errs.length) bad++;
+    if (!empty && r.yomi.trim() && r.word.trim()) { r.sup ? sups++ : entries++; }
+
+    const row = el('div', 'row' + (r.sup ? ' sup' : ''));
+    if (errs.length) row.dataset.bad = '1';
+
+    const mk = (area, labelText, node) => {
+      const c = el('div', area);
+      const l = el('label'); l.textContent = labelText;
+      c.appendChild(l); c.appendChild(node); return c;
+    };
+    const txt = (val, ph, on) => {
+      const i = el('input'); i.type = 'text'; i.value = val; i.placeholder = ph;
+      i.addEventListener('input', () => { on(i.value); save(); });
+      // 入力のたびに全体を描き直すと日本語入力が途切れるので、
+      // 検証表示の更新だけ遅らせて行う。
+      i.addEventListener('blur', render);
+      return i;
+    };
+
+    row.appendChild(mk('a-yomi', r.sup ? '読み (抑制)' : '読み', txt(r.yomi, 'がばる', (v) => r.yomi = v)));
+    row.appendChild(mk('a-word', r.sup ? '出したくない表記' : '単語', txt(r.word, 'ガバる', (v) => r.word = v)));
+
+    if (!r.sup) {
+      const sel = el('select');
+      for (const p of POS) {
+        const o = el('option'); o.value = p; o.textContent = p === '' ? '名詞 (既定)' : p;
+        if (p === r.pos) o.selected = true;
+        sel.appendChild(o);
+      }
+      sel.addEventListener('change', () => { r.pos = sel.value; save(); render(); });
+      row.appendChild(mk('a-pos', '品詞', sel));
+
+      const pri = el('select');
+      const opts = [['', '5 (既定)'], ['1', '1 最優先'], ['2', '2'], ['3', '3'], ['4', '4'],
+        ['5', '5'], ['6', '6'], ['7', '7'], ['8', '8'], ['9', '9'], ['10', '10 一番右']];
+      for (const [v, t] of opts) {
+        const o = el('option'); o.value = v; o.textContent = t;
+        if (v === String(r.pri)) o.selected = true;
+        pri.appendChild(o);
+      }
+      pri.addEventListener('change', () => { r.pri = pri.value; save(); render(); });
+      row.appendChild(mk('a-pri', '優先度', pri));
+    }
+
+    row.appendChild(mk('a-note', 'コメント (任意)', txt(r.note, '語源など。ファイルに # で残ります', (v) => r.note = v)));
+
+    const act = el('div', 'a-act');
+    if (!r.sup) {
+      const cw = el('label', 'chk');
+      const cb = el('input'); cb.type = 'text'; cb.placeholder = '@34 / @0,10';
+      cb.value = r.cls; cb.style.width = '130px'; cb.style.padding = '5px 8px'; cb.style.fontSize = '13px';
+      cb.addEventListener('input', () => { r.cls = cb.value; save(); });
+      cb.addEventListener('blur', render);
+      const cl = el('span'); cl.textContent = 'クラス指定';
+      cw.appendChild(cl); cw.appendChild(cb);
+      act.appendChild(cw);
+    }
+    const btns = el('div', 'act-btns');
+    const up = el('button', 'btn ghost'); up.textContent = '↑'; up.title = '上へ';
+    up.addEventListener('click', () => { if (idx > 0) { const t = state.rows[idx - 1]; state.rows[idx - 1] = r; state.rows[idx] = t; save(); render(); } });
+    const dn = el('button', 'btn ghost'); dn.textContent = '↓'; dn.title = '下へ';
+    dn.addEventListener('click', () => { if (idx < state.rows.length - 1) { const t = state.rows[idx + 1]; state.rows[idx + 1] = r; state.rows[idx] = t; save(); render(); } });
+    const del = el('button', 'btn ghost danger'); del.textContent = '削除';
+    del.addEventListener('click', () => { state.rows.splice(idx, 1); save(); render(); });
+    btns.appendChild(up); btns.appendChild(dn); btns.appendChild(del);
+    act.appendChild(btns);
+    row.appendChild(act);
+
+    for (const e of errs) { const m = el('div', 'msg err'); m.style.gridColumn = '1/-1'; m.textContent = '⚠ ' + e; row.appendChild(m); }
+    for (const w of warns) { const m = el('div', 'msg warn'); m.style.gridColumn = '1/-1'; m.textContent = 'ⓘ ' + w; row.appendChild(m); }
+
+    box.appendChild(row);
+  });
+
+  $('cnt').textContent = entries + ' 語' + (sups ? ' / 抑制 ' + sups : '') + (bad ? ' / 要修正 ' + bad : '');
+
+  const mm = $('metaMsg'); mm.textContent = '';
+  if (!state.name.trim()) {
+    const m = el('div', 'msg err'); m.textContent = '⚠ パック名は必須です (ヘッダの name:)';
+    mm.appendChild(m);
+  }
+  if (!/^[A-Za-z0-9_-]+$/.test(state.file.trim())) {
+    const m = el('div', 'msg err'); m.textContent = '⚠ ファイル名は半角英数・ハイフン・アンダースコアだけにしてください';
+    mm.appendChild(m);
+  }
+
+  $('out').value = build();
+  const om = $('outMsg'); om.textContent = '';
+  if (bad) { const m = el('div', 'msg err'); m.textContent = '⚠ ' + bad + ' 件に修正が必要です。直さないとビルドで弾かれます。'; om.appendChild(m); }
+  else if (entries === 0 && sups === 0) { const m = el('div', 'msg warn'); m.textContent = 'ⓘ まだ語がありません。'; om.appendChild(m); }
+}
+
+// ---- 保存・入出力 -------------------------------------------------------
+
+function save() {
+  state.name = $('pname').value; state.desc = $('pdesc').value; state.file = $('pfile').value;
+  try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
+  $('out').value = build();
+}
+
+function load() {
+  try {
+    const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+    if (s && Array.isArray(s.rows)) state = Object.assign(state, s);
+  } catch (e) {}
+  $('pname').value = state.name; $('pdesc').value = state.desc; $('pfile').value = state.file || 'mypack';
+  if (state.rows.length === 0) state.rows.push(newRow(false));
+}
+
+function adopt(p) {
+  state.name = p.name; state.desc = p.desc;
+  state.rows = p.rows.length ? p.rows : [newRow(false)];
+  $('pname').value = state.name; $('pdesc').value = state.desc;
+  save(); render();
+}
+
+$('pname').addEventListener('input', () => { save(); render(); });
+$('pdesc').addEventListener('input', save);
+$('pfile').addEventListener('input', () => { save(); render(); });
+$('add').addEventListener('click', () => { state.rows.push(newRow(false)); save(); render(); });
+$('addSup').addEventListener('click', () => { state.rows.push(newRow(true)); save(); render(); });
+$('clearAll').addEventListener('click', () => {
+  if (!confirm('入力内容をすべて消します。よろしいですか?')) return;
+  state = { name: '', desc: '', file: 'mypack', rows: [newRow(false)] };
+  $('pname').value = ''; $('pdesc').value = ''; $('pfile').value = 'mypack';
+  save(); render();
+});
+$('openFile').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', (ev) => {
+  const f = ev.target.files && ev.target.files[0];
+  if (!f) return;
+  const rd = new FileReader();
+  rd.onload = () => {
+    adopt(parse(String(rd.result)));
+    const base = f.name.replace(/\.[^.]+$/, '');
+    if (/^[A-Za-z0-9_-]+$/.test(base)) { state.file = base; $('pfile').value = base; save(); render(); }
+  };
+  rd.readAsText(f, 'utf-8');
+  ev.target.value = '';
+});
+$('pasteIn').addEventListener('click', () => {
+  const t = prompt('.pack の中身を貼り付けてください');
+  if (t) adopt(parse(t));
+});
+$('download').addEventListener('click', () => {
+  const name = (state.file.trim() || 'mypack') + '.pack';
+  const blob = new Blob([build()], { type: 'text/plain;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+});
+$('copy').addEventListener('click', async () => {
+  const text = build();
+  try {
+    await navigator.clipboard.writeText(text);
+    alert('コピーしました');
+  } catch (e) {
+    // クリップボードAPIが使えない環境 (file:// など) 向け。
+    const ta = $('out');
+    ta.removeAttribute('readonly'); ta.select();
+    try { document.execCommand('copy'); alert('コピーしました'); }
+    catch (e2) { alert('コピーできませんでした。出来上がりの欄を手動で選択してください。'); }
+    ta.setAttribute('readonly', '');
+  }
+});
+
+load();
+render();
+</script>
+</body>
+</html>
