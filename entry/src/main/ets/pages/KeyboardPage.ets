@@ -31,6 +31,9 @@ struct KeyboardPage {
   @StorageLink('inputMode') inputMode: string = InputMode.HIRAGANA;
   @StorageLink('composingText') composingText: string = '';
   @StorageLink('pendingRomaji') pendingRomaji: string = '';
+  // 入力中のかなをホストアプリの入力欄側に出せているか。出せているときは
+  // パネル内の composing 表示を畳んでキーボードを低くする。
+  @StorageLink('previewInField') previewInField: boolean = false;
   @StorageLink('candidates') candidates: string[] = [];
   @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
@@ -187,7 +190,13 @@ struct KeyboardPage {
               // Landscape has much less vertical room to spare for the keys below,
               // so this strip and the candidate row underneath both run compact.
               Row() {
-                if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
+                // 入力欄側にプレビューが出ているときは、ここに同じかなを
+                // 二重で見せない。設定ボタンだけ残して行を細くする
+                // (KeyboardController.publishPreviewMode)。ただし変換範囲を
+                // ◀▶ で変えている最中だけは、どこまでを変換するかが
+                // 入力欄側では分からないのでこちらに出す。
+                if ((!this.previewInField || (this.convEnd > 0 && this.convEnd < this.composingText.length))
+                    && (this.composingText.length > 0 || this.pendingRomaji.length > 0)) {
                   if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
                     Text(this.composingText.slice(0, this.convEnd))
                       .fontFamily(JP_FONT_FAMILY)
@@ -226,7 +235,11 @@ struct KeyboardPage {
                   })
               }
               .width('100%')
-              .height(this.isLandscape ? 14 : 28)
+              // 入力欄プレビューが効いている間は、かなを表示しないぶん
+              // この行を詰めてキーボード全体を低くする。
+              .height(this.previewInField
+                ? (this.isLandscape ? 12 : 20)
+                : (this.isLandscape ? 14 : 28))
               .backgroundColor(kbTheme(this.isDark).panelBg)
               .alignItems(VerticalAlign.Center)
               .padding({ left: 12, right: 8 })

@@ -201,6 +201,13 @@ export class InputHandler {
   // UnknownWordLearner.noteAbandonedReading へ渡す。確定すれば
   // resetComposition で捨てる (諦めたのではなく使われたため)。
   private composingWatermark: string = '';
+  // この入力欄が setPreviewTextSync に対応しているか (onInputStart で判定)。
+  private previewSupported: boolean = false;
+  // 実際に入力欄へプレビューを出している最中か。出していないのに
+  // finishTextPreviewSync を呼ぶと無駄な IPC になるので状態を持つ。
+  private previewActive: boolean = false;
+  // いまプレビューとして出している文字数 (取り消し時の削除長に使う)。
+  private previewLen: number = 0;
   // Cap for the persistent deleted-character log (recordDeletedChar) --
   // unlike restoreStack above (a short-lived undo stack wiped by the next
   // keystroke, see insertText), this survives typing and is only capped by
@@ -1585,9 +1592,24 @@ export class InputHandler {
     // a password field is never logged even for the few ms before the async
     // answer lands.
     InputLog.beginField(); // [DEBUG-LOG]
-    client.getEditorAttribute() // [DEBUG-LOG]
-      .then((attr: inputMethodEngine.EditorAttribute) => { InputLog.setFieldPattern(attr.inputPattern); }) // [DEBUG-LOG]
-      .catch((_e: Error) => { InputLog.setFieldPattern(0); }); // [DEBUG-LOG]
+    // 入力中のかなを、キーボード内ではなくホストアプリの入力欄に直接
+    // 下線付きで出せるか (setPreviewTextSync)。対応は入力欄ごとに違い、
+    // 非対応の欄で呼ぶと 12800011 で失敗するので、必ずここで確認してから使う。
+    // 対応していればパネル内の composing 表示を畳んで、その分キーボードを
+    // 低くできる (publishPreviewMode)。
+    this.previewSupported = false;
+    this.publishPreviewMode();
+    client.getEditorAttribute()
+      .then((attr: inputMethodEngine.EditorAttribute) => {
+        this.previewSupported = attr.isTextPreviewSupported === true;
+        this.publishPreviewMode();
+        InputLog.setFieldPattern(attr.inputPattern); // [DEBUG-LOG]
+      })
+      .catch((_e: Error) => {
+        this.previewSupported = false;
+        this.publishPreviewMode();
+        InputLog.setFieldPattern(0); // [DEBUG-LOG]
+      });
     this.converter.reset();
     this.reloadUserDict();
     this.reloadSettings();
@@ -1611,6 +1633,10 @@ export class InputHandler {
 
   onInputStop(): void {
     InputLog.beginField(); // [DEBUG-LOG] flushes, then pauses until the next field is known
+    // 欄を離れる前にプレビューを畳む (inputClient を捨てた後では解除できない)。
+    this.cancelPreviewText();
+    this.previewSupported = false;
+    this.publishPreviewMode();
     this.kbController = undefined;
     this.inputClient = undefined;
     this.converter.reset();
@@ -2010,6 +2036,9 @@ export class InputHandler {
   }
 
   private resetComposition(): void {
+    // 入力欄に残っているプレビューを必ず消す。insertText を経ない経路
+    // (取消・欄の切り替えなど) でもここを通るので、消し忘れの受け皿になる。
+    this.cancelPreviewText();
     this.converter.reset();
     this.bSegs = [];
     this.bChosen = [];
@@ -2379,7 +2408,66 @@ export class InputHandler {
     return this.shareUrl('https://github.com/sponsors/shuntilettuce');
   }
 
+  // 入力欄プレビューが実際に効いているか(= パネル内の composing 表示を
+  // 畳んでよいか)を UI 側へ配る。
+  private publishPreviewMode(): void {
+    AppStorage.setOrCreate('previewInField', this.previewSupported);
+  }
+
+  // 入力中のかなをホストアプリの入力欄へ反映する。composing が空になったら
+  // プレビューを終了する。updateCandidates の入口/出口から呼ぶので、
+  // composing を変える経路すべてがここを通る。
+  private syncPreviewText(): void {
+    if (!this.previewSupported) { return; }
+    const text = (AppStorage.get<string>('composingText') ?? '')
+      + (AppStorage.get<string>('pendingRomaji') ?? '');
+    if (text.length === 0) {
+      this.cancelPreviewText();
+      return;
+    }
+    try {
+      // range は「置き換える範囲」。-1/-1 で現在のプレビュー(無ければ
+      // カーソル位置)を差し替える指定になる。
+      this.inputClient?.setPreviewTextSync(text, { start: -1, end: -1 });
+      this.previewActive = true;
+      this.previewLen = text.length;
+    } catch (e) {
+      // 12800011 = この入力欄はプレビュー非対応。以後は呼ばずパネル内表示へ
+      // 戻す (対応可否は欄ごとなので、ここで諦めても次の欄でまた試される)。
+      this.previewSupported = false;
+      this.previewActive = false;
+      this.previewLen = 0;
+      this.publishPreviewMode();
+      console.info('shuntiIME setPreviewText unsupported, falling back ' + JSON.stringify(e));
+    }
+  }
+
+  // プレビューを「中身を残さずに」取り消す。
+  //
+  // finishTextPreviewSync() はプレビューを消すのではなく確定するので、
+  // 単に呼ぶと打っていたかながそのまま入力欄に残ってしまう (全消ししたのに
+  // 文字が残る)。空文字で置き換えてから確定するのが正しい取り消し方。
+  // 空文字を拒否する入力欄向けに、確定してから同じ長さを消す経路も用意する。
+  private cancelPreviewText(): void {
+    if (!this.previewActive) { return; }
+    const len = this.previewLen;
+    this.previewActive = false;
+    this.previewLen = 0;
+    try {
+      this.inputClient?.setPreviewTextSync('', { start: -1, end: -1 });
+      this.inputClient?.finishTextPreviewSync();
+    } catch (_e) {
+      try {
+        this.inputClient?.finishTextPreviewSync();
+        if (len > 0) { this.inputClient?.deleteForward(len); }
+      } catch (_e2) {
+        // 欄が外れた等。ここで失敗しても入力は続けられる。
+      }
+    }
+  }
+
   private updateCandidates(): void {
+    this.syncPreviewText();
     const composing = AppStorage.get<string>('composingText') ?? '';
     if (composing.length === 0) {
       // 打っていた読みを変換せず全部消して諦めた (resetComposition 経由の
@@ -2873,12 +2961,30 @@ export class InputHandler {
       this.appendCaptured(text);
       return;
     }
+    // 入力欄プレビューが出ているときは insertText を使わない。
+    //
+    // finishTextPreviewSync() は「プレビューを消す」のではなく「プレビューの
+    // 内容をその場で確定する」API だった。そのため 解除 → insertText の順に
+    // 呼ぶと、確定したかな + 変換結果 で入力欄に二重に残る (実機で確認)。
+    // 正しくは、プレビュー自体を最終的な文字列で置き換えてから確定する。
+    let previewCommitted = false;
+    if (this.previewActive) {
+      try {
+        this.inputClient?.setPreviewTextSync(text, { start: -1, end: -1 });
+        this.inputClient?.finishTextPreviewSync();
+        this.previewActive = false;
+        previewCommitted = true;
+      } catch (_e) {
+        // 置き換えに失敗したらプレビューを畳んで通常の挿入に落とす。
+        this.cancelPreviewText();
+      }
+    }
     // Brackets used to auto-place the caret between the pair (「|」), but no
     // caret-move primitive worked reliably across the editors this IME runs in
     // -- moveCursor was a no-op on some, and the absolute-index selectByRange
     // overshot on others -- so the pair is now inserted plainly and the caret
     // stays after it, same as any other committed text.
-    this.inputClient?.insertText(text);
+    if (!previewCommitted) { this.inputClient?.insertText(text); }
     if (text.length > 0) {
       for (let i = 0; i < text.length; i++) {
         this.insertedBuffer.push(text[i]);
