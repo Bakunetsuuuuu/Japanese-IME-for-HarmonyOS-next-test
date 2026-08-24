@@ -323,6 +323,18 @@ export class InputHandler {
       .catch((e: Error) => { InputLog.recordInit('shunti_symbol_freq', e); }); // [DEBUG-LOG]
     this.reloadUserDict();
     this.reloadSettings();
+    // 単漢字ずつ組み立て直した語が、実は辞書のどこかに(埋もれて)もう存在した
+    // ときの合図。「志岐」のように読み全体では一発で出てこないくらい埋もれて
+    // いる語は、UnknownWordLearner からは isKnown()=true で毎回捨てられる一方、
+    // 読み全体をひとつの文字列として打つことが無いので recordChoice も一切
+    // 呼ばれず、いつまでも埋もれたままになる穴があった。通常の学習ブーストに
+    // 回すことでこの穴を塞ぐ。
+    // ★ デバッグ専用ではない (リリースでも効くべき機能) ので、下の
+    // setupInputLog とは違い [DEBUG-LOG] タグを付けないこと。
+    UnknownWordLearner.onKnownAssembly = (r: string, s: string) => {
+      KanaKanjiConverter.recordChoice(r, s);
+      this.saveLearning();
+    };
     this.setupInputLog(ctx); // [DEBUG-LOG] 必ず最後。上の初期化を壊さないため
   }
 
