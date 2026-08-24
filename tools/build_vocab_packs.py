@@ -56,6 +56,11 @@ PACKS_DIR = os.path.join(HERE, 'vocab_packs')
 RAWFILE = os.path.join(HERE, '..', 'entry', 'src', 'main', 'resources', 'rawfile')
 SRCDIR = os.path.join(HERE, 'dict_src')
 
+# この値以上の優先度が付いた語は、基本辞書の候補より後ろに回す。
+# KanaKanjiConverter 側にも同じ考え方の実装があるが、閾値の判定は
+# ここ (ビルド時) だけで行い、端末には結果 (tailDefault/flip) を渡す。
+TAIL_THRESHOLD = 6
+
 sys.path.insert(0, HERE)
 from pack_dicts import pack  # noqa: E402  (再利用: 辞書と同じバイナリ形式で書き出す)
 
@@ -173,6 +178,7 @@ def parse_pack(path):
     description = ''
     default_on = False
     default_class = None   # パック全体の既定品詞 (pos: ヘッダ)
+    default_priority = DEFAULT_PRIORITY  # パック全体の既定優先度 (priority: ヘッダ)
     in_body = False
     rows = []        # (reading, word, priority, order)
     pos_map = {}     # "読み\t単語" -> {"pos":..., "group":...}
@@ -211,6 +217,18 @@ def parse_pack(path):
                             f'{where}: pos: に活用する品詞 ({value}) は指定できない '
                             f'(語ごとに書くこと)')
                     default_class = kind[1]
+                elif key == 'priority':
+                    # パック全体の既定優先度。全語が同じ優先度のパック(地名など)で
+                    # 1語ずつ書くと生成物が語数ぶん膨らむので、ここで1回だけ指定
+                    # できるようにしてある。個別指定があればそちらが勝つ。
+                    try:
+                        default_priority = int(value)
+                    except ValueError:
+                        raise SystemExit(f'{where}: priority は整数で書く: {value!r}')
+                    if not (MIN_PRIORITY <= default_priority <= MAX_PRIORITY):
+                        raise SystemExit(
+                            f'{where}: priority は {MIN_PRIORITY}〜{MAX_PRIORITY} '
+                            f'の範囲で書く: {default_priority}')
                 elif key == 'default':
                     v = value.lower()
                     if v not in ('on', 'off'):
@@ -239,7 +257,8 @@ def parse_pack(path):
                 continue
 
             priority, pos_name, classes = _parse_options(cols[2:], where)
-            rows.append((reading, word, priority if priority is not None else DEFAULT_PRIORITY, order))
+            rows.append((reading, word,
+                         priority if priority is not None else default_priority, order))
             order += 1
 
             if classes is not None:
@@ -261,6 +280,23 @@ def parse_pack(path):
     if not name:
         raise SystemExit(f'{path}: ヘッダに name: が無い')
 
+    # 優先度は「パック内での並び順」だけでなく「基本辞書に対して前に出るか
+    # 後ろに回るか」も決める。閾値 (TAIL_THRESHOLD) 以上の語は、基本辞書の
+    # 候補より後ろ・ただし かな/カナ のフォールバックよりは前に差し込まれる。
+    # これが無いと優先度10と書いても基本辞書を押しのけてしまい、
+    # 「（確信） は 確信 の後ろでいい」のような指定が効かなかった。
+    #
+    # 端末側には「パック既定が後ろ回しか (tail_default)」と「既定と逆側に
+    # 置く語だけ (flip)」を渡す。全語が同じ優先度のパック(地名は priority: 8)
+    # では flip が空になり、語数ぶん膨らまない。
+    tail_default = default_priority >= TAIL_THRESHOLD
+    flip = {}
+    for reading, word, priority, _idx in rows:
+        if (priority >= TAIL_THRESHOLD) != tail_default:
+            flip.setdefault(reading, [])
+            if word not in flip[reading]:
+                flip[reading].append(word)
+
     by_reading = {}
     for reading, word, priority, idx in rows:
         by_reading.setdefault(reading, []).append((priority, idx, word))
@@ -278,6 +314,9 @@ def parse_pack(path):
         'description': description,
         'default_on': default_on,
         'default_class': default_class,
+        'default_priority': default_priority,
+        'tail_default': tail_default,
+        'flip': flip,
         'entries': entries,
         'pos': pos_map,
         'classes': class_map,
@@ -304,6 +343,9 @@ def main():
         print(f'== {pack_id} ({p["name"]}) {"[既定ON]" if p["default_on"] else ""}')
         print(f'   読み {len(p["entries"]):,} / 表記 {n_words:,} / 活用展開 {len(p["pos"])} '
               f'/ クラス指定 {len(p["classes"])} / 抑制 {sum(len(v) for v in p["suppress"].values())}')
+        n_flip = sum(len(v) for v in p['flip'].values())
+        print(f'   基本辞書より{"前" if p["tail_default"] else "後ろ"}に置く語 {n_flip:,} '
+              f'(既定は{"後ろ" if p["tail_default"] else "前"})')
 
         if report_only:
             continue
@@ -323,6 +365,9 @@ def main():
             'description': p['description'],
             'defaultOn': p['default_on'],
             'defaultClass': p['default_class'],
+            # 優先度による前後の振り分け (parse_pack のコメント参照)
+            'tailDefault': p['tail_default'],
+            'flip': p['flip'],
             'count': len(p['entries']),
             # 品詞・クラス・抑制は語彙全体に比べて小さく、一覧表示や
             # 活用展開のために有効化前から要るので manifest に置く。

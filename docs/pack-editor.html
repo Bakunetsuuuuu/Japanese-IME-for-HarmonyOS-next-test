@@ -223,7 +223,10 @@ const STORE_KEY = 'shunti-pack-editor-v2';
 // 表の列。貼り付け展開とキー移動の順序もこれに従う。
 const COLS = ['yomi', 'word', 'pos', 'pri', 'cls', 'note'];
 
-let state = { name: '', desc: '', file: 'mypack', rows: [] };
+// extra は name/description 以外のヘッダ行 (default:/pos:/priority: など) を
+// 読み込んだまま持ち回るためのもの。ここで捨てると、既存のパックを開いて
+// 保存し直しただけで設定が消える。編集UIは出さず素通しにしている。
+let state = { name: '', desc: '', extra: [], file: 'mypack', rows: [] };
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
@@ -283,6 +286,7 @@ function build() {
   const lines = [];
   lines.push('name: ' + state.name.trim());
   if (state.desc.trim()) lines.push('description: ' + state.desc.trim());
+  for (const h of state.extra) lines.push(h);
   lines.push('---');
   for (const r of state.rows) {
     const y = r.yomi.trim(), w = r.word.trim();
@@ -304,6 +308,7 @@ function build() {
 function parse(text) {
   const rows = [];
   let name = '', desc = '', inBody = false;
+  const extra = [];
   for (const raw of text.split(/\r?\n/)) {
     const s = raw.trim();
     if (!s) continue;
@@ -313,7 +318,9 @@ function parse(text) {
       const i = s.indexOf(':');
       if (i < 0) continue;
       const k = s.slice(0, i).trim(), v = s.slice(i + 1).trim();
-      if (k === 'name') name = v; else if (k === 'description') desc = v;
+      if (k === 'name') name = v;
+      else if (k === 'description') desc = v;
+      else extra.push(s);
       continue;
     }
     if (s.startsWith('#')) continue;
@@ -335,7 +342,7 @@ function parse(text) {
     }
     rows.push(r);
   }
-  return { name, desc, rows };
+  return { name, desc, extra, rows };
 }
 
 // ---- 表の描画 -----------------------------------------------------------
@@ -539,13 +546,14 @@ function load() {
   try {
     const s = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
     if (s && Array.isArray(s.rows)) state = Object.assign(state, s);
+    if (!Array.isArray(state.extra)) state.extra = [];   // 旧い保存データ
   } catch (e) {}
   $('pname').value = state.name; $('pdesc').value = state.desc; $('pfile').value = state.file || 'mypack';
   if (state.rows.length === 0) state.rows.push(newRow(false));
 }
 
 function adopt(p) {
-  state.name = p.name; state.desc = p.desc;
+  state.name = p.name; state.desc = p.desc; state.extra = p.extra || [];
   state.rows = p.rows.length ? p.rows.slice() : [];
   state.rows.push(newRow(false));   // 末尾に空行を1つ残して続けて打てるようにする
   $('pname').value = state.name; $('pdesc').value = state.desc;
@@ -576,7 +584,7 @@ $('paste').addEventListener('click', () => {
 });
 $('clearAll').addEventListener('click', () => {
   if (!confirm('入力内容をすべて消します。よろしいですか?')) return;
-  state = { name: '', desc: '', file: 'mypack', rows: [newRow(false)] };
+  state = { name: '', desc: '', extra: [], file: 'mypack', rows: [newRow(false)] };
   $('pname').value = ''; $('pdesc').value = ''; $('pfile').value = 'mypack';
   renderRows(); refresh();
 });

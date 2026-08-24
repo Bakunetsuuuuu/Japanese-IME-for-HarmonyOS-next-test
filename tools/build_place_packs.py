@@ -170,11 +170,13 @@ def main():
             # 全語が地名なので、パック全体の既定品詞として1回だけ指定する。
             # 1語ずつ書くと manifest が語数ぶん膨らむ (2万語で 1.6MB になった)。
             f.write('pos: 地名\n')
+            # 町域名は一般語より前に出したくない。1語ずつ優先度を書くと
+            # manifest が語数ぶん膨らむので、パック全体の既定として1回書く。
+            f.write('priority: 8\n')
             f.write('---\n')
             for r in sorted(entries):
                 for s in entries[r]:
-                    # 町域名は一般語より前に出したくないので優先度は低め(8)。
-                    f.write(f'{r}\t{s}\t8\n')
+                    f.write(f'{r}\t{s}\n')
         print(f'  書き出し: {os.path.relpath(path, HERE)}')
 
     for r in remove:

@@ -7,3 +7,4 @@
 # コラボレータに渡り、git 履歴からは消せない。
 *.jsonl
 debug_input_log*
+__pycache__/
