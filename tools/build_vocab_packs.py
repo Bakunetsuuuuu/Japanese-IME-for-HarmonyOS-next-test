@@ -106,6 +106,19 @@ def _parse_class_spec(token, where):
     return ids if len(ids) == 2 else [ids[0], ids[0]]
 
 
+def _strip_trailing_comment(cols):
+    """3列目以降に現れた # からあとを行末コメントとして落とす。
+
+    読み(0)・単語(1)は絶対に切らない -- 「しゃーぷ → #」のように記号そのものを
+    登録したい場合があり、単語列の # をコメント開始と誤解すると登録できなく
+    なるため。コメントとして扱うのはオプション列だけ。
+    """
+    for i in range(2, len(cols)):
+        if cols[i].startswith('#'):
+            return cols[:i]
+    return cols
+
+
 def _parse_options(tokens, where):
     """優先度・品詞・クラス指定を順不同で受ける。"""
     priority = None
@@ -174,6 +187,7 @@ def parse_pack(path):
             suppressed = stripped.startswith('-')
             body = stripped[1:].strip() if suppressed else stripped
             cols = [c.strip() for c in SPLIT_RE.split(body) if c.strip()]
+            cols = _strip_trailing_comment(cols)
             if len(cols) < 2:
                 raise SystemExit(
                     f'{where}: 「読み(タブ|スペース2個以上)単語」が必要: {line!r}')
