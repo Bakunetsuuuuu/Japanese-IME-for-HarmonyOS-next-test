@@ -264,28 +264,10 @@ const DICTIONARY: Record<string, string[]> = {
   'わんちゃん': ['ワンちゃん'],
   'げきおこぷんぷんまる': ['激おこぷんぷん丸'],
   'でぃする': ['ディスる'],
-  // 「完全に一致」「ファッ!?」「たまげたなあ」は淫夢語録が由来だが、今は
-  // 由来と無関係に使われる一般的な驚き表現として定着している。
-  'かんぜんにいっち': ['完全に一致'],
-  'ふぁっ': ['ファッ!?', 'ファッ'],
-  'たまげたなあ': ['たまげたなあ'],
-  // 「はっきりわかんだね」も同じく由来と無関係な一般的リアクション表現
-  // として定着している。
-  'はっきりわかんだね': ['はっきりわかんだね'],
-  // なんJ語・掲示板文化 (5ch/なんでも実況J系)。「軽い」一般ミームより
-  // こちら寄りが実利用に近いとのフィードバックを受けて追加。
-  'わいし': ['ワイ氏'],
-  'おおくさはら': ['大草原'],
-  'ぐうせい': ['ぐう聖'],
-  'ぐうあく': ['ぐう悪'],
-  'しゃかいてきにしんだ': ['社会的に死んだ'],
-  'おきもちひょうめい': ['お気持ち表明'],
-  'がばる': ['ガバる'],
-  'ゆるしてくれめんす': ['許してクレメンス'],
-  'よすれ': ['良スレ'],
-  'とうとしぬ': ['尊死'],
-  // なんJのタイガースファン特有の口調。
-  'もうこべん': ['猛虎弁'],
+  // 淫夢語録・なんJ語のうち niche な語彙本体は tools/vocab_packs/ 側の
+  // 語彙パック (デフォルトOFF、設定画面で有効化) に移した。ここに残すのは
+  // 「もともと存在する読みの1位が不自然な誤変換になっている」バグ修正
+  // だけ -- パックを入れない人にとっても直っているべきものだから。
   // せやかて工藤 のコピペで有名な猛虎弁のツッコミ表現。かな確定が自然なのに
   // mozc側は「瀬谷勝て」のような無関係な地名+命令形を1位に出していたので
   // 直す。
@@ -33633,6 +33615,15 @@ export class KanaKanjiConverter {
   private static userClassMap: Record<string, number[]> = {};
   // Developer-curated dictionary bundled as rawfile/global_dict.json. Highest priority.
   private static globalDict: PackedDict = new PackedDict();
+  // 語彙パック: 「界隈の人はめちゃくちゃ使うが全員には要らない」ニッチ語彙
+  // (淫夢語録・なんJ語など) を、既定でOFFの追加インストール的な単位に
+  // 分けたもの。ソースは tools/vocab_packs/*.tsv (読み/単語/優先度の3列
+  // だけなので、コードを読めない人でもPRで語彙を足せる) を
+  // tools/build_vocab_packs.py で他の辞書と同じパック形式に固めたもの。
+  // ロードは KeyboardController 側で有効なパックだけ遅延読み込みする
+  // (mozcエンジンと同じ考え方 -- 使わない人にメモリを払わせない)。
+  private static vocabPacks: Record<string, PackedDict> = {};
+  private static enabledPacks: Set<string> = new Set<string>();
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
   // No external file dependency — rules ported from tools/gen_matrix_default.py.
   private static connectionMatrix: number[][] = [];
@@ -33923,6 +33914,63 @@ export class KanaKanjiConverter {
       valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
     KanaKanjiConverter.globalDict.setPacked(keyBlob, keyLens, keyBase,
       valBlob, valLens, valBase, idx);
+  }
+
+  // ---- 語彙パック ---------------------------------------------------------
+
+  // どのパックIDが実在するかは tools/build_vocab_packs.py が書き出す
+  // pack_manifest.json (KeyboardController がロード時に読む) が真実。
+  // ここは表示名だけ持つ -- 新しいパックを足すときはここにも1行足すこと。
+  private static readonly VOCAB_PACK_NAMES: Record<string, string> = {
+    'inmu': '淫夢語録',
+    'nanj': 'なんJ・掲示板文化',
+  };
+
+  static vocabPackDisplayName(id: string): string {
+    return KanaKanjiConverter.VOCAB_PACK_NAMES[id] ?? id;
+  }
+
+  static listVocabPackIds(): string[] {
+    return Object.keys(KanaKanjiConverter.VOCAB_PACK_NAMES);
+  }
+
+  static setVocabPackPacked(id: string, keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
+      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
+    const d = new PackedDict();
+    d.setPacked(keyBlob, keyLens, keyBase, valBlob, valLens, valBase, idx);
+    KanaKanjiConverter.vocabPacks[id] = d;
+  }
+
+  static isVocabPackLoaded(id: string): boolean {
+    return KanaKanjiConverter.vocabPacks[id] !== undefined;
+  }
+
+  static setPackEnabled(id: string, enabled: boolean): void {
+    if (enabled) { KanaKanjiConverter.enabledPacks.add(id); } else { KanaKanjiConverter.enabledPacks.delete(id); }
+  }
+
+  static isPackEnabled(id: string): boolean {
+    return KanaKanjiConverter.enabledPacks.has(id);
+  }
+
+  static getEnabledPackIds(): string[] {
+    return Array.from(KanaKanjiConverter.enabledPacks.values());
+  }
+
+  static setEnabledPackIds(ids: string[]): void {
+    KanaKanjiConverter.enabledPacks = new Set<string>(ids);
+  }
+
+  // 有効なパックの中からこの読みに一致する最初の候補列を返す。複数の
+  // パックが同じ読みを持っていても構わない (どれかが有効ならヒットする)。
+  private static packEntry(kana: string): string[] | undefined {
+    for (const id of KanaKanjiConverter.enabledPacks.values()) {
+      const d = KanaKanjiConverter.vocabPacks[id];
+      if (d === undefined) { continue; }
+      const v = d.get(kana);
+      if (v !== undefined && v.length > 0) { return v; }
+    }
+    return undefined;
   }
 
   // Build and store the connection matrix from inline grammar rules (no JSON file needed).
@@ -35355,7 +35403,15 @@ export class KanaKanjiConverter {
     }
 
     const entry = DICTIONARY[kana];
-    const ext = KanaKanjiConverter.supplementaryDict.get(kana);
+    // 語彙パック (設定で個別に有効化するニッチ語彙) は補助辞書と同じ扱いに
+    // する -- entry/ext どちらのカスケードでも既存のマージ処理にそのまま
+    // 乗る。有効なパックが無ければ packHit は undefined で ext は今まで
+    // 通り。
+    const packHit = KanaKanjiConverter.packEntry(kana);
+    const suppHit = KanaKanjiConverter.supplementaryDict.get(kana);
+    const ext = packHit !== undefined
+      ? [...packHit, ...(suppHit ?? []).filter((c: string) => !packHit.includes(c))]
+      : suppHit;
     const user = KanaKanjiConverter.userDict[kana];
     const global = KanaKanjiConverter.globalDict.get(kana);
     const kata = KanaKanjiConverter.toKatakana(kana);
@@ -35733,7 +35789,8 @@ export class KanaKanjiConverter {
       // 混ぜずに実在のネットスラング等だけを拾う。
       const registeredInTrackA = !!(DICTIONARY[kana]
         || KanaKanjiConverter.globalDict.has(kana)
-        || KanaKanjiConverter.supplementaryDict.has(kana));
+        || KanaKanjiConverter.supplementaryDict.has(kana)
+        || KanaKanjiConverter.packEntry(kana) !== undefined);
       const trackA = (KanaKanjiConverter.engine === 'hybrid' && registeredInTrackA)
         ? this.singleWordTrackAOrder(kana).filter((c: string) => !kanaFallback.includes(c))
         : [];

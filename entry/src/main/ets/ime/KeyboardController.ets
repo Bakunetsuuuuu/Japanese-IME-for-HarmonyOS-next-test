@@ -483,6 +483,8 @@ export class InputHandler {
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
+        AppStorage.setOrCreate('enabledVocabPacks', s.enabledVocabPacks);
+        KanaKanjiConverter.setEnabledPackIds(s.enabledVocabPacks);
         this.hapticEnabled = s.hapticEnabled;
         this.applyConversionEngine(s.conversionEngine);
         this.applyThemeMode(s.themeMode);
@@ -774,6 +776,22 @@ export class InputHandler {
     this.applyConversionEngine(engine);
     if (this.imeContext) {
       SettingsStore.saveConversionEngine(this.imeContext, engine);
+    }
+  }
+
+  // 語彙パックのON/OFF切替 (設定画面 → SettingsBar)。パック自体の中身は
+  // loadVocabPacks で既に読み込み済み (どのパックもロードだけでは効かない)
+  // なので、ここは有効/無効の集合を切り替えて保存するだけで即座に候補へ
+  // 反映される。
+  setVocabPackEnabled(id: string, enabled: boolean): void {
+    const current = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
+    const next = enabled
+      ? (current.includes(id) ? current : [...current, id])
+      : current.filter((x: string) => x !== id);
+    AppStorage.setOrCreate('enabledVocabPacks', next);
+    KanaKanjiConverter.setEnabledPackIds(next);
+    if (this.imeContext) {
+      SettingsStore.saveEnabledVocabPacks(this.imeContext, next);
     }
   }
 
@@ -2908,6 +2926,7 @@ export class KeyboardController {
     this.registerListeners();
     this.loadDictionary();
     this.loadGlobalDictionary();
+    this.loadVocabPacks();
     this.loadViterbiData();
   }
 
@@ -2996,6 +3015,22 @@ export class KeyboardController {
        vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
         KanaKanjiConverter.setGlobalDictPacked(kb, kl, kbase, vb, vl, vbase, idx);
       });
+  }
+
+  // 語彙パック (淫夢語録・なんJ語など、既定OFFの追加インストール的な
+  // ニッチ語彙)。各パックは数十件しかないので mozc のような遅延読み込みは
+  // せず、他の辞書と同じタイミングで全部バイナリを読んでおく -- ロードした
+  // だけではまだ何も変換に効かない (KanaKanjiConverter.enabledPacks が
+  // 空のまま)。実際に候補へ混ざるかどうかは reloadSettings 側で
+  // setEnabledPackIds を呼んだときだけ決まる。
+  private loadVocabPacks(): void {
+    for (const id of KanaKanjiConverter.listVocabPackIds()) {
+      this.loadPackedDict('pack_' + id,
+        (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
+         vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
+          KanaKanjiConverter.setVocabPackPacked(id, kb, kl, kbase, vb, vl, vbase, idx);
+        });
+    }
   }
 
   private computeKeyWidths(dis: display.Display): void {

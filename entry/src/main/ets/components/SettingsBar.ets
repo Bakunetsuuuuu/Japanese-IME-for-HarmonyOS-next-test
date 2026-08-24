@@ -1,4 +1,5 @@
 import { InputHandler } from '../ime/KeyboardController';
+import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from './JpFont';
@@ -37,6 +38,11 @@ export struct SettingsBar {
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
+  // 語彙パック (淫夢語録・なんJ語など、既定OFFのニッチ語彙)。有効なIDだけの
+  // 配列。切替のたびに新しい配列で置き換える (setVocabPackEnabled 側で
+  // フィルタ/スプレッドして新しい参照を作っている) ので @StorageLink の
+  // 更新検知に乗る。
+  @StorageLink('enabledVocabPacks') enabledVocabPacks: string[] = [];
   // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。
   @StorageLink('hapticUnavailable') hapticUnavailable: boolean = false;
   @State showHistory: boolean = false;
@@ -576,6 +582,38 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 10, bottom: 13 })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
+    this.SectionLabel('語彙パック')
+    Text('界隈でしか使わないような語彙を、必要な人だけ追加できます。既定はすべてOFFです。')
+      .fontFamily(JP_FONT_FAMILY)
+      .fontSize(11)
+      .fontColor(kbTheme(this.isDark).textSecondary)
+      .width('100%')
+      .padding({ left: 2, bottom: 8 })
+    Column() {
+      ForEach(KanaKanjiConverter.listVocabPackIds(), (id: string) => {
+        Row() {
+          Text(KanaKanjiConverter.vocabPackDisplayName(id))
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(13)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .layoutWeight(1)
+          Toggle({ type: ToggleType.Switch, isOn: this.enabledVocabPacks.includes(id) })
+            .selectedColor(kbTheme(this.isDark).accent)
+            .onChange((isOn: boolean) => {
+              InputHandler.getInstance().setVocabPackEnabled(id, isOn);
+            })
+        }
+        .width('100%')
+        .padding({ top: 11, bottom: 11 })
+        .borderWidth({ bottom: 1 })
+        .borderColor(kbTheme(this.isDark).divider)
+      }, (id: string) => id)
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
