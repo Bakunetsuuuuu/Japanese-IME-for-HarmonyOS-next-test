@@ -15,6 +15,9 @@ export struct CandidateBar {
   @Prop showExpand: boolean = false;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('isLandscape') isLandscape: boolean = false;
+  // まだ LEARN_THRESHOLD 未満の未知語(準候補)。通常候補と見分けが付くよう
+  // 点線の縁取りだけ足す (UnknownWordLearner.quasiCandidates 参照)。
+  @StorageLink('quasiCandidateSurfaces') quasiCandidateSurfaces: string[] = [];
   // Which chip is showing its 削除 popup (-1 = none), and the text that chip
   // holds. Kept as state rather than passed into the popup builder because a
   // parameterised @Builder inside ForEach can capture a stale row -- the same
@@ -65,6 +68,9 @@ export struct CandidateBar {
             .padding({ left: this.isLandscape ? 10 : 18, right: this.isLandscape ? 10 : 18 })
             .borderRadius((this.isLandscape ? CHIP_H_LANDSCAPE : CHIP_H) / 2)
             .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
+            .border(this.quasiCandidateSurfaces.includes(candidate) ? {
+              width: 1, color: kbTheme(this.isDark).textSecondary, style: BorderStyle.Dotted,
+            } : { width: 0 })
             .bindPopup(this.menuIndex === index, {
               builder: this.DeleteMenu,
               placement: Placement.Top,

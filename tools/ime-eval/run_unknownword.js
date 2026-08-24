@@ -194,6 +194,69 @@ function main() {
   check('store stays at or under the key cap', keyCount <= MAX_KEYS, `keys=${keyCount}`);
   check('store keeps learning past the cap', keyCount > 0, `keys=${keyCount}`);
 
+  // ---- signal 3: ABANDONED - typed reading in full, deleted it without
+  // converting, then immediately hand-assembled the same reading piecewise.
+  // This should fast-track straight to LEARN_THRESHOLD on the FIRST rebuild.
+  UW.setLearned({});
+  UW.noteAbandonedReading('しょうがっこう');
+  UW.observe('しょう', '小', NEVER_KNOWN);
+  UW.observe('がっこう', '学校', NEVER_KNOWN);
+  UW.endRun(NEVER_KNOWN);
+  check('abandon-confirmed: offered after a single rebuild',
+    UW.candidates('しょうがっこう').join(',') === '小学校',
+    JSON.stringify(UW.candidates('しょうがっこう')));
+
+  // The signal is one-shot: a second unrelated flush must not still be "confirmed".
+  UW.setLearned({});
+  UW.noteAbandonedReading('あんまり');
+  // an unrelated flush consumes (and clears) the abandoned-reading signal
+  UW.observe('おと', '音', NEVER_KNOWN);
+  UW.observe('まち', '街', NEVER_KNOWN);
+  UW.endRun(NEVER_KNOWN);
+  check('abandon signal is consumed by the next flush regardless of match',
+    UW.candidates('おとまち').length === 0, // one occurrence, not fast-tracked
+    JSON.stringify(UW.candidates('おとまち')));
+  // and the original reading now needs the normal number of repeats again
+  const buildAnmari = () => {
+    UW.observe('あん', '安', NEVER_KNOWN);
+    UW.observe('まり', '余り', NEVER_KNOWN);
+    UW.endRun(NEVER_KNOWN);
+  };
+  for (let i = 0; i < LEARN_THRESHOLD - 1; i++) { buildAnmari(); }
+  check('a consumed (non-matching) abandon signal does not fast-track later rebuilds',
+    UW.candidates('あんまり').length === 0,
+    JSON.stringify(UW.candidates('あんまり')));
+
+  // Garbage input to noteAbandonedReading (too short / not hiragana) is ignored
+  // rather than remembered as a bogus signal.
+  UW.setLearned({});
+  UW.noteAbandonedReading('A'); // too short, not hiragana
+  UW.observe('しょう', '小', NEVER_KNOWN);
+  UW.observe('がっこう', '学校', NEVER_KNOWN);
+  UW.endRun(NEVER_KNOWN);
+  check('invalid abandoned reading is not remembered',
+    UW.candidates('しょうがっこう').length === 0,
+    JSON.stringify(UW.candidates('しょうがっこう')));
+
+  // ---- quasiCandidates: sub-threshold assemblies are visible but not
+  // promoted into candidates() ----
+  UW.setLearned({});
+  UW.observe('おと', '音', NEVER_KNOWN);
+  UW.observe('まち', '街', NEVER_KNOWN);
+  UW.observe('うな', 'ウナ', NEVER_KNOWN);
+  UW.endRun(NEVER_KNOWN); // 1st assembly only, threshold not reached
+  check('quasi: visible after just one assembly (threshold not reached)',
+    UW.quasiCandidates('おとまちうな').join(',') === '音街ウナ',
+    JSON.stringify(UW.quasiCandidates('おとまちうな')));
+  check('quasi: not yet a real candidate',
+    UW.candidates('おとまちうな').length === 0);
+  buildUna(); // crosses LEARN_THRESHOLD
+  check('quasi: promoted out of quasiCandidates once real',
+    UW.quasiCandidates('おとまちうな').length === 0,
+    JSON.stringify(UW.quasiCandidates('おとまちうな')));
+  check('quasi: now a real candidate',
+    UW.candidates('おとまちうな').join(',') === '音街ウナ');
+
   console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
   process.exit(failures === 0 ? 0 : 1);
 }

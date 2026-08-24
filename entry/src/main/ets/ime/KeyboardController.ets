@@ -6,6 +6,7 @@ import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
 import vibrator from '@ohos.vibrator';
+import bundleManager from '@ohos.bundle.bundleManager';
 
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables } from './KanaKanjiConverter';
@@ -194,6 +195,12 @@ export class InputHandler {
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
   private conversionEnd: number = 0;
+  // composingText の「今回の入力で一番長く伸びた時点」の値。updateCandidates
+  // のたびに更新し (打っている間は常に候補が見えているので、これが伸びる=
+  // 「変換候補を見た」の代わり)、消して空に戻ったときに
+  // UnknownWordLearner.noteAbandonedReading へ渡す。確定すれば
+  // resetComposition で捨てる (諦めたのではなく使われたため)。
+  private composingWatermark: string = '';
   // Cap for the persistent deleted-character log (recordDeletedChar) --
   // unlike restoreStack above (a short-lived undo stack wiped by the next
   // keystroke, see insertText), this survives typing and is only capped by
@@ -352,10 +359,13 @@ export class InputHandler {
       InputLog.recordPaths('setContext', // [DEBUG-LOG]
         used.length > 0 ? used : '書き込めるディレクトリ無し', // [DEBUG-LOG]
         ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
+      // ApplicationInfo に versionName は無い (ApplicationInfo.d.ts に存在しない
+      // フィールドだった -- BundleInfo 側にしかない)。getBundleInfoForSelfSync
+      // は追加権限なしで呼べる。 // [DEBUG-LOG]
       let appVersion = ''; // [DEBUG-LOG]
-      try { appVersion = ctx.getApplicationContext().applicationInfo.versionName; } catch (_e) { appVersion = ''; } // [DEBUG-LOG]
+      try { appVersion = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT).versionName; } catch (_e) { appVersion = ''; } // [DEBUG-LOG]
       InputLog.recordVersion(appVersion); // [DEBUG-LOG]
-      UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
+      UnknownWordLearner.onLearn = (r: string, s: string, confirmed: boolean) => { InputLog.recordUnknownWord(r, s, confirmed); }; // [DEBUG-LOG]
     } catch (e) { // [DEBUG-LOG]
       console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
     } // [DEBUG-LOG]
@@ -1377,6 +1387,11 @@ export class InputHandler {
   // it changed anything. Called from the ordinary commit paths only -- bunsetsu
   // editing and raw-kana commits close the run instead (see endUnknownWordRun).
   private observeUnknownWord(reading: string, surface: string): void {
+    // タップされた表記が、確定直前に候補一覧で「準候補」として見えていたか。
+    // observe() は既存の run に積むだけで判定を変えてしまうので、その前に
+    // AppStorage の表示済みスナップショットを見る。
+    const quasi = AppStorage.get<string[]>('quasiCandidateSurfaces') ?? [];
+    if (quasi.includes(surface)) { InputLog.recordQuasiPick(reading, surface); } // [DEBUG-LOG]
     UnknownWordLearner.observe(reading, surface,
       (r: string, s: string): boolean => this.isKnownConversion(r, s));
     this.saveUnknownWords();
@@ -1557,6 +1572,7 @@ export class InputHandler {
     this.insertedBuffer = [];
     this.restoreStack = [];
     this.conversionEnd = 0;
+    this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -1957,6 +1973,7 @@ export class InputHandler {
     // (onInputStart / onInputStop), which is the correct scope for it.
     this.restoreStack = [];
     this.conversionEnd = 0;
+    this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -2313,9 +2330,18 @@ export class InputHandler {
   private updateCandidates(): void {
     const composing = AppStorage.get<string>('composingText') ?? '';
     if (composing.length === 0) {
+      // 打っていた読みを変換せず全部消して諦めた (resetComposition 経由の
+      // 確定後クリアはこの関数を通らないので、ここに来るのは常に backspace)。
+      // この直後に同じ読みが手作業で組み立て直されたら強い確認信号になる。
+      if (this.composingWatermark.length > 0) {
+        UnknownWordLearner.noteAbandonedReading(this.composingWatermark);
+        this.composingWatermark = '';
+      }
       AppStorage.setOrCreate('candidates', [] as string[]);
+      AppStorage.setOrCreate('quasiCandidateSurfaces', [] as string[]);
       return;
     }
+    if (composing.length > this.composingWatermark.length) { this.composingWatermark = composing; }
     // A new composition has started -- retire the post-commit next-word strip
     // so it doesn't linger next to live conversion candidates.
     AppStorage.setOrCreate('predictions', [] as string[]);
@@ -2537,6 +2563,16 @@ export class InputHandler {
     // than relying on lookup()'s own learning boost because most of the list
     // above never passed through lookup() -- see applyLearnedOrder.
     candidates = KanaKanjiConverter.applyLearnedOrder(target, candidates);
+    // 準候補 (quasi-candidates): まだ LEARN_THRESHOLD 未満の、組み立てかけの
+    // 未知語。確定候補(上の UnknownWordLearner.candidates)とは違い列の末尾に
+    // だけ足す -- まだ確認できていない語を目立つ位置に出すと通常の変換を
+    // 押しのけてしまうため。CandidateBar 側は quasiCandidateSurfaces を見て
+    // うっすら区別して表示する。
+    const quasi = UnknownWordLearner.quasiCandidates(target);
+    for (const q of quasi) {
+      if (!candidates.includes(q)) { candidates.push(q); }
+    }
+    AppStorage.setOrCreate('quasiCandidateSurfaces', quasi);
     // Candidates the user deleted by long-pressing them are dropped last, so
     // every source above (dictionaries, learning, the injected predictions) is
     // covered by the one filter -- see SuppressedCandidates.

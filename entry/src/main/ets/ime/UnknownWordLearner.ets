@@ -65,12 +65,14 @@ interface Ranked {
   count: number;
 }
 
-// [DEBUG-LOG] Notified when a run is judged to be an unknown word. Injected as
-// a callback rather than imported so this module keeps its zero-dependency,
-// independently-testable shape (tools/ime-eval/run_unknownword.js compiles it
-// on its own) -- and so removing the debug build's collection means deleting
-// the two [DEBUG-LOG] lines here, nothing else.
-export type LearnedWordFn = (reading: string, surface: string) => void; // [DEBUG-LOG]
+// [DEBUG-LOG] Notified when a run is judged to be an unknown word. `confirmed`
+// is true when this assembly matched a just-abandoned reading (see
+// noteAbandonedReading) and was fast-tracked straight to LEARN_THRESHOLD.
+// Injected as a callback rather than imported so this module keeps its
+// zero-dependency, independently-testable shape (tools/ime-eval/run_unknownword.js
+// compiles it on its own) -- and so removing the debug build's collection means
+// deleting the two [DEBUG-LOG] lines here, nothing else.
+export type LearnedWordFn = (reading: string, surface: string, confirmed: boolean) => void; // [DEBUG-LOG]
 
 export class UnknownWordLearner {
   static onLearn: LearnedWordFn | undefined = undefined; // [DEBUG-LOG]
@@ -86,6 +88,15 @@ export class UnknownWordLearner {
   // single fragment only qualifies when it was (signal 2 above); an untouched
   // one-word commit is just ordinary typing.
   private static runTruncated: boolean = false;
+
+  // 3つ目の信号: ABANDONED - ひらがなで読みを最後まで打って、変換候補を見た
+  // (リアルタイム候補表示は常時出ているので、これは打っている間ずっと起きて
+  // いる)のに、変換せず全部消して諦めた読み。この直後に同じ読みが手作業で
+  // 組み立て直されたら、「辞書にこの語がないと分かって、自分で組み立てた」
+  // という一番強い合図なので、1回の再現だけで即しきい値まで進める。
+  // 一度きりの合図なので、次に flush() が起きたら (一致してもしなくても)
+  // 必ず消す。
+  private static abandonedReading: string = '';
 
   static setLearned(data: Record<string, Record<string, number>>): void {
     UnknownWordLearner.counts = (data === undefined || data === null) ? {} : data;
@@ -147,11 +158,26 @@ export class UnknownWordLearner {
     if (!UnknownWordLearner.isAllHiragana(reading)) { return; }
     if (!UnknownWordLearner.isContentOnly(surface)) { return; }
     if (isKnown(reading, surface)) { return; }
-    if (UnknownWordLearner.onLearn !== undefined) { UnknownWordLearner.onLearn(reading, surface); } // [DEBUG-LOG]
-    UnknownWordLearner.bump(reading, surface);
+    // ABANDONED との一致判定。一度きりの合図なので判定した時点で必ず消す
+    // (一致しなかった場合も、もう別の語に対する古い合図でしかないため)。
+    const confirmed = reading === UnknownWordLearner.abandonedReading && UnknownWordLearner.abandonedReading.length > 0;
+    UnknownWordLearner.abandonedReading = '';
+    if (UnknownWordLearner.onLearn !== undefined) { UnknownWordLearner.onLearn(reading, surface, confirmed); } // [DEBUG-LOG]
+    UnknownWordLearner.bump(reading, surface, confirmed ? LEARN_THRESHOLD : 1);
   }
 
-  private static bump(reading: string, surface: string): void {
+  // ひらがなで打った読みを、変換せず全部消して諦めた。次にこの読みが手作業で
+  // 組み立て直されたときの確認信号として1回だけ覚えておく。
+  static noteAbandonedReading(reading: string): void {
+    if (reading.length < MIN_READING_LEN || reading.length > MAX_READING_LEN
+        || !UnknownWordLearner.isAllHiragana(reading)) {
+      UnknownWordLearner.abandonedReading = '';
+      return;
+    }
+    UnknownWordLearner.abandonedReading = reading;
+  }
+
+  private static bump(reading: string, surface: string, amount: number): void {
     let entry = UnknownWordLearner.counts[reading];
     if (entry === undefined) {
       if (Object.keys(UnknownWordLearner.counts).length >= MAX_KEYS) {
@@ -165,7 +191,7 @@ export class UnknownWordLearner {
       // one-off typo displace them.
       return;
     }
-    entry[surface] = (entry[surface] ?? 0) + 1;
+    entry[surface] = (entry[surface] ?? 0) + amount;
   }
 
   // Drop the reading whose best surface has been assembled least often, so a
@@ -282,6 +308,20 @@ export class UnknownWordLearner {
     const ranked: Ranked[] = [];
     for (const s of Object.keys(entry)) {
       if (entry[s] >= LEARN_THRESHOLD) { ranked.push({ surface: s, count: entry[s] }); }
+    }
+    ranked.sort((a: Ranked, b: Ranked) => b.count - a.count);
+    return ranked.map((r: Ranked) => r.surface);
+  }
+
+  // 準候補 (quasi-candidates): まだ LEARN_THRESHOLD に達していない、組み立て
+  // 途中の語。candidates() と違い正式な変換候補には混ぜず、「これ、覚えかけて
+  // ます」を見せるためだけに使う (呼び出し側でうっすら区別して表示する)。
+  static quasiCandidates(reading: string): string[] {
+    const entry = UnknownWordLearner.counts[reading];
+    if (entry === undefined) { return []; }
+    const ranked: Ranked[] = [];
+    for (const s of Object.keys(entry)) {
+      if (entry[s] > 0 && entry[s] < LEARN_THRESHOLD) { ranked.push({ surface: s, count: entry[s] }); }
     }
     ranked.sort((a: Ranked, b: Ranked) => b.count - a.count);
     return ranked.map((r: Ranked) => r.surface);

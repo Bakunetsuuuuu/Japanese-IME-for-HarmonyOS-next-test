@@ -16,6 +16,9 @@ function build() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pc-'));
   const tsPath = path.join(tmp, 'PC.ts');
   fs.writeFileSync(tsPath, '// @ts-nocheck\n' + fs.readFileSync(SRC, 'utf-8'));
+  // bun なら TypeScript をそのまま require できるので tsc を挟まない
+  // (tools/ime-eval/run_unknownword.js と同じ回避)。
+  if (typeof Bun !== 'undefined') { return tsPath; }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
     '--skipLibCheck', tsPath], { stdio: 'inherit' });
   return path.join(tmp, 'PC.js');

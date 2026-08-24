@@ -30,7 +30,8 @@
 //  記録する: 読み(打鍵したかな) / 確定した表記 / 選んだ候補の番号 / 候補総数 /
 //            そのとき出ていた候補一覧(先頭12件) / カタカナ・英数変換だったか /
 //            文節の区切り位置と選択・最終確定文 / 変換範囲の変更 / 候補削除 /
-//            未知語学習 / 削除した文字 / アプリバージョンとエンジン種別(起動毎)
+//            未知語学習(諦め読み一致による即時確定を含む) / 準候補タップ /
+//            削除した文字 / アプリバージョンとエンジン種別(起動毎)
 //  記録しない: パスワード等の secure field (下の SECURE_PATTERNS)。
 //            クリップボードの中身も対象外(privacy policy 上メモリ内のみ)。
 //
@@ -66,6 +67,7 @@ export const LK_UNDO: string = 'undo';          // 取消で消した文字を�
 export const LK_FIELD: string = 'field';        // 入力欄が変わった(診断用・本文なし)
 export const LK_DIAG: string = 'diag';          // 拡張プロセスの自己申告(診断用・本文なし)
 export const LK_BSEG_FINAL: string = 'bsegfinal'; // 文節モードの最終確定(全文節をつなげた結果)
+export const LK_QUASI_PICK: string = 'quasipick'; // まだしきい値未満の未知語候補(準候補)をタップして確定した
 
 // 確定の性質を表す補助タグ (entry.x に入る)。
 export const LF_KATAKANA: string = 'kata';      // 読みのカタカナ形をそのまま確定
@@ -345,10 +347,20 @@ export class InputLog {
   }
 
   // 未知語として学習された(辞書に無い語を手で組み立てた)。
-  // 辞書に足すべき語がそのまま並ぶ。
-  static recordUnknownWord(reading: string, surface: string): void {
+  // 辞書に足すべき語がそのまま並ぶ。x に confirmed=true が入っている行は、
+  // 直前に同じ読みを変換せず消して諦めていたのを検出し、1回の再現だけで
+  // 即しきい値まで進めたもの (通常は複数回の積み上げが必要)。
+  static recordUnknownWord(reading: string, surface: string, confirmed: boolean): void {
     if (!DEBUG_INPUT_LOG) { return; }
-    InputLog.push(LK_UNKNOWN, reading, surface, -1, 0, '');
+    InputLog.push(LK_UNKNOWN, reading, surface, -1, 0, confirmed ? 'confirmed' : '');
+  }
+
+  // まだ LEARN_THRESHOLD 未満の未知語候補(準候補)を、確定前に候補一覧で見て
+  // タップして確定した。「敏感にした分、実際に使われているか」を見るための
+  // 記録。
+  static recordQuasiPick(reading: string, surface: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.push(LK_QUASI_PICK, reading, surface, -1, 0, '');
   }
 
   // 文字を消した。x は消した時の状態(composing / idle)。確定後すぐの idle 削除は
