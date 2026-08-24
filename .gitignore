@@ -8,3 +8,4 @@
 *.jsonl
 debug_input_log*
 __pycache__/
+tools/.cache/
