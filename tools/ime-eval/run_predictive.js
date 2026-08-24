@@ -16,6 +16,9 @@ function build() {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pc-'));
   const tsPath = path.join(tmp, 'PC.ts');
   fs.writeFileSync(tsPath, '// @ts-nocheck\n' + fs.readFileSync(SRC, 'utf-8'));
+  // bun なら TypeScript をそのまま require できるので tsc を挟まない
+  // (tools/ime-eval/run_unknownword.js と同じ回避)。
+  if (typeof Bun !== 'undefined') { return tsPath; }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
     '--skipLibCheck', tsPath], { stdio: 'inherit' });
   return path.join(tmp, 'PC.js');
@@ -30,13 +33,17 @@ function check(label, cond, detail) {
 function main() {
   const { PredictiveConversion: PC } = require(build());
 
-  // curated prefix completion
+  // curated prefix completion: かいし narrows CURATED down to exactly one
+  // longer reading (かいしゃ), so this is a "決まり字" moment -> shown.
   check('かいし -> 会社', PC.predict('かいし', {}).includes('会社'), JSON.stringify(PC.predict('かいし', {})));
-  // completion only offers words LONGER than the prefix: にほん (=日本, the exact
-  // conversion) is excluded, its longer extensions 日本語/日本人 are offered.
-  check('にほん -> 日本語/日本人 (not 日本 itself)',
-    PC.predict('にほん', {}).includes('日本語') && !PC.predict('にほん', {}).includes('日本'),
-    JSON.stringify(PC.predict('にほん', {})));
+  // にほん still has two live rivals in CURATED (にほんご/にほんじん) -- not
+  // decided yet, so nothing should surface (this is exactly the "蛇足候補"
+  // pattern the gate exists to suppress: neither guess reflects real usage).
+  check('にほん -> [] (日本語/日本人 still ambiguous)',
+    PC.predict('にほん', {}).length === 0, JSON.stringify(PC.predict('にほん', {})));
+  // typing one more kana resolves the ambiguity to a single reading.
+  check('にほんじ -> 日本人 (ambiguity resolved)',
+    PC.predict('にほんじ', {}).includes('日本人'), JSON.stringify(PC.predict('にほんじ', {})));
   // a fully-typed word has no longer curated extension -> no completion
   check('にほんご -> [] (full word, exact conversion handles it)',
     PC.predict('にほんご', {}).length === 0, JSON.stringify(PC.predict('にほんご', {})));
@@ -48,9 +55,14 @@ function main() {
   // exact-length reading (nothing longer) returns nothing from curated for that word
   check('exact にほん does not complete to itself', !PC.predict('にほん', {}).includes('にほん'));
 
-  // cap at 3
-  check('capped at 3', PC.predict('か', {}).length <= 3);
-  check('さい -> up to 3 (最近/最初/最後/最高 exist)', PC.predict('さい', {}).length === 3, JSON.stringify(PC.predict('さい', {})));
+  // か and さい each still have several live CURATED rivals -> withheld until
+  // the prefix narrows to one (決まり字 not reached yet).
+  check('か -> [] (still many rivals: 会社/会議/家族/彼女/簡単…)',
+    PC.predict('か', {}).length === 0, JSON.stringify(PC.predict('か', {})));
+  check('さい -> [] (最近/最初/最後/最高 all still live)',
+    PC.predict('さい', {}).length === 0, JSON.stringify(PC.predict('さい', {})));
+  check('さいき -> 最近 (narrowed to one)',
+    PC.predict('さいき', {}).includes('最近'), JSON.stringify(PC.predict('さいき', {})));
 
   // learned store: user's own word extends prefix and outranks curated
   const learned = {

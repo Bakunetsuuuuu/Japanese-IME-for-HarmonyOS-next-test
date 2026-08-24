@@ -115,6 +115,86 @@ const EMOJI_MAP: Record<string, string[]> = {
   'ちゅうしゃき': ['💉'], 'たいおんけい': ['🌡️'], 'でんち': ['🔋'], 'ぷらぐ': ['🔌'],
   'むしめがね': ['🔍', '🔎'], 'かがみ': ['🪞'], 'とびら': ['🚪'], 'といれ': ['🚽', '🧻'],
   'しゃわー': ['🚿'], 'ふろ': ['🛁', '♨️'], 'べっど': ['🛏️'], 'そふぁ': ['🛋️'],
+  // 家族・人
+  'かぞく': ['👨‍👩‍👧‍👦', '👪'], 'おとうさん': ['👨'], 'おかあさん': ['👩'], 'あかちゃん': ['👶'],
+  'こども': ['🧒'], 'おじいさん': ['👴'], 'おばあさん': ['👵'], 'かのじょ': ['👩'],
+  'かれし': ['👨'], 'ふうふ': ['💑'], 'かっぷる': ['💑'], 'あかんぼう': ['👶'],
+  'がくせい': ['🧑‍🎓'], 'せんせい': ['🧑‍🏫'], 'いしゃ': ['🧑‍⚕️'], 'けいさつかん': ['👮'],
+  'しょうぼうし': ['🧑‍🚒'], 'こっく': ['🧑‍🍳'], 'のうふ': ['🧑‍🌾'],
+  // 時間・暦
+  'あさ': ['🌅', '☀️'], 'ひる': ['🌞'], 'よる': ['🌙', '🌃'], 'しんや': ['🌌'],
+  'ゆうがた': ['🌇'], 'にちようび': ['📅'], 'しゅうまつ': ['📅'], 'すけじゅーる': ['📅', '🗓️'],
+  'かれんだー': ['📅'], 'あらーむ': ['⏰'], 'すとっぷうぉっち': ['⏱️'], 'すなどけい': ['⏳'],
+  // 和食・料理
+  'うどん': ['🍜'], 'そば': ['🍜'], 'ぎょうざ': ['🥟'], 'なっとう': ['🍚'],
+  'とうふ': ['🍢'], 'おでん': ['🍢'], 'やきとり': ['🍢'], 'やきにく': ['🥩', '🔥'],
+  'おこのみやき': ['🥞'], 'しゃぶしゃぶ': ['🍲'], 'なべ': ['🍲'], 'みそしる': ['🍲'],
+  'たまねぎ': ['🧅'], 'じゃがいも': ['🥔'], 'きゃべつ': ['🥬'], 'ぶろっこりー': ['🥦'],
+  'きのこ': ['🍄'], 'にんにく': ['🧄'], 'ぱせり': ['🌿'], 'しょうが': ['🫚'],
+  'おにぎり2': ['🍙'], 'ちゃーはん': ['🍚'], 'おじや': ['🍚'], 'さしみ': ['🍣'],
+  // お酒・飲み物
+  'にほんしゅ': ['🍶'], 'しょうちゅう': ['🍶'], 'じゅーす': ['🧃'], 'こーら': ['🥤'],
+  'かくてる': ['🍸'], 'うぃすきー': ['🥃'], 'しゃんぱん': ['🍾'], 'ちゅーはい': ['🍹'],
+  // 海・生き物
+  'まぐろ': ['🐟'], 'たい': ['🐟'], 'えび': ['🦐'], 'くらげ': ['🪼'],
+  'ふぐ': ['🐡'], 'さめ': ['🦈'], 'あざらし': ['🦭'], 'かわうそ': ['🦦'],
+  'びーばー': ['🦫'], 'さんご': ['🪸'],
+  // 虫
+  'あり': ['🐜'], 'はえ': ['🪰'], 'か': ['🦟'], 'くわがた': ['🪲'],
+  'かぶとむし': ['🪲'], 'せみ': ['🦗'], 'とんぼ': ['🪰'], 'ごきぶり': ['🪳'],
+  'くも2': ['🕸️'], 'だに': ['🕷️'],
+  // 動物
+  'ふくろう': ['🦉'], 'しか': ['🦌'], 'いのしし': ['🐗'], 'こうもり': ['🦇'],
+  'たか': ['🦅'], 'わし': ['🦅'], 'くじゃく': ['🦚'], 'おうむ': ['🦜'],
+  'はと': ['🕊️'], 'すずめ': ['🐦'], 'かも': ['🦆'], 'はりねずみ': ['🦔'],
+  'なまけもの': ['🦥'], 'かんがるー': ['🦘'], 'さい': ['🦏'], 'かば': ['🦛'],
+  'しまうま': ['🦓'], 'ごりら': ['🦍'], 'あるぱか': ['🦙'], 'こうし': ['🐄'],
+  // スポーツ(和)・武道
+  'すもう': ['🤼'], 'じゅうどう': ['🥋'], 'けんどう': ['🥋'], 'からて': ['🥋'],
+  'あーちぇりー': ['🏹'], 'じょぎんぐ': ['🏃'], 'まらそん': ['🏃'], 'よが': ['🧘'],
+  'さいくりんぐ': ['🚴'], 'すのーぼーど': ['🏂'], 'さーふぃん': ['🏄'],
+  // 建物・場所(和)
+  'じんじゃ': ['⛩️'], 'とりい': ['⛩️'], 'おてら': ['🛕'], 'ふじさん': ['🗻'],
+  'こんびに': ['🏪'], 'すーぱー': ['🏬'], 'でぱーと': ['🏬'], 'えき': ['🚉'],
+  'くうこう': ['🛫'], 'こうえん': ['🏞️'], 'かいがん': ['🏖️'], 'ゆうえんち': ['🎡'],
+  'おふろや': ['♨️'], 'じむしょ': ['🏢'], 'こうじょう': ['🏭'], 'のうえん': ['🌾'],
+  // 技術・オフィス
+  'わいふぁい': ['📶'], 'じゅうでん': ['🔋'], 'いんたーねっと': ['🌐'], 'ういるす': ['🦠'],
+  'かいぎ': ['🧑‍💼'], 'しごと': ['💼'], 'ぷりんたー': ['🖨️'], 'きーぼーど': ['⌨️'],
+  'まうす': ['🖱️'], 'ちゃーと': ['📊'], 'ぐらふ': ['📈'], 'くりっぷ': ['📎'],
+  'ふぁいる': ['📁'], 'めもりー': ['💾'],
+  // 季節・行事
+  'せつぶん': ['😈', '🫘'], 'はなみ': ['🌸'], 'なつまつり': ['🎆', '🏮'], 'たなばた': ['🎋'],
+  'ぼん': ['🏮'], 'しょうがつ': ['🎍'], 'おおみそか': ['🔔'], 'はろうぃん': ['🎃'],
+  'ばれんたいん': ['🍫', '💝'], 'えいごしんねん': ['🎊'], 'ちょうちん': ['🏮'],
+  // 気持ち・状態(追加)
+  'しょんぼり': ['😔'], 'どや': ['😏'], 'ほっと': ['😌'], 'びしょぬれ': ['😰', '💦'],
+  'ふるえる': ['🥶'], 'あつい': ['🥵'], 'ねつ': ['🤒'], 'かぜ': ['🤧'],
+  'げんき': ['💪', '😄'], 'たいくつ': ['😑'], 'こうふん': ['🤩'], 'あんしん': ['😌'],
+  // ジェスチャー(追加)
+  'おっけー2': ['👌'], 'ばいばい': ['👋'], 'たかいたっち': ['🙌'], 'ゆびきり': ['🤙'],
+  'しー': ['🤫'], 'かんがえる': ['🤔'], 'しらんぷり': ['🤷'],
+  // 記号(追加)
+  'けいこく': ['⚠️'], 'りさいくる': ['♻️'], 'ちゅうし': ['🚫'], 'しんこうきんし': ['⛔'],
+  'わっく': ['✔️'], 'くろすまーく': ['❌'], 'あんぜん': ['🆗'],
+  // あいさつ・区切り(チャット定番)
+  'おはよう': ['☀️', '👋'], 'おやすみ': ['🌙', '😴'], 'おつかれ': ['🙇', '💦'], 'おつかれさま': ['🙇', '💦'],
+  'いってきます': ['🚶', '👋'], 'いってらっしゃい': ['👋', '🚗'], 'ただいま': ['🏠'], 'おかえり': ['🏠', '👋'],
+  'またね': ['👋'], 'じゃあね': ['👋'],
+  // 相槌・返事
+  'りょうかい': ['👌', '✅'], 'りょ': ['👌'], 'なるほど': ['🤔', '💡'], 'そうだね': ['👍'],
+  'そうなんだ': ['🤔'], 'わかった': ['👍', '✅'], 'だいじょうぶ': ['👌', '😊'], 'まって': ['✋'],
+  // リアクション(チャットで多用)
+  'やばい': ['😱', '🔥'], 'まじで': ['😳', '❗'], 'うける': ['😂'], 'わろた': ['🤣'],
+  'すごい': ['😲', '👏'], 'かわいい': ['🥰', '😍'], 'かっこいい': ['😎'], 'うらやましい': ['😳', '✨'],
+  'はずかしい': ['😳'], 'もうやだ': ['😩'], 'びみょう': ['😅'], 'こわい': ['😨'],
+  // 体調・状態
+  'むり': ['🙅', '😩'], 'しんどい': ['😩'], 'つらい': ['😢'], 'ねむたい': ['😴'],
+  'さむい': ['🥶'], 'いそがしい': ['😵', '💦'], 'ひま': ['😐'], 'たのしい': ['🎉', '😆'],
+  'たのしみ': ['😆', '✨'], 'しんぱい': ['😟'], 'おなかすいた': ['🍚', '😋'], 'はらへった': ['🍚', '😋'],
+  // お礼・お祝い・依頼
+  'ごめん': ['🙏', '😔'], 'すみません': ['🙏'], 'よろしく': ['🙏'], 'おめでとう': ['🎉', '🎊'],
+  'どういたしまして': ['😊'],
 };
 
 // 顔文字（kaomoji）変換表。EMOJI_MAP と同様、候補末尾に付加する。日本語IMEの
@@ -23242,7 +23322,12 @@ const DICTIONARY: Record<string, string[]> = {
   'はげしい': ['激しい'],
   'しんせん': ['新鮮'],
   'いみのある': ['意味のある'],
-  'だいじ': ['大事'],
+  // 大丈夫 は「だいじょうぶ」の口語での短縮読み ("だいじ?"=大丈夫?、「だいじだよ」)。
+  // 入力ログ(2ヶ月分)で「だいじ」を5回打って毎回この読みで大丈夫を選んでいたのに、
+  // 候補には無かった (過去の辞書整理でどこかで落ちていた)。学習は正しく動いていた
+  // (2回目以降ちゃんと上位に来ていた) が、候補そのものが消えていたので、これ以上
+  // 上に上げようがなかった -- ここが原因。
+  'だいじ': ['大事', '大丈夫'],
   'けいし': ['軽視'],
   'むかんしん': ['無関心'],
   'きょうみしんしん': ['興味津々'],
@@ -35464,7 +35549,9 @@ export class KanaKanjiConverter {
     // comment). segment()/joinSegs()/findAlternateSegmentation() all call
     // through this same lookup() entry point, so this one dispatch makes
     // every caller engine-aware without touching their own code.
-    if (KanaKanjiConverter.isMozcEngine()) { return this.lookupMozc(kana); }
+    if (KanaKanjiConverter.isMozcEngine()) {
+      return KanaKanjiConverter.withExtraForms(kana, this.lookupMozc(kana));
+    }
     const base = this.lookupCore(kana, fromNorm);
     if (fromNorm) { return base; }
     let result = base;
@@ -35490,7 +35577,11 @@ export class KanaKanjiConverter {
     }
     const emojis = EMOJI_MAP[kana];
     const kaomoji = KAOMOJI_MAP[kana];
-    if (emojis === undefined && kaomoji === undefined) { return result; }
+    // 末尾の付け足し (絵文字・顔文字・半角カタカナ) は track B と共通の
+    // withExtraForms にまとめてある。track A 側にも同じものが並ぶようにする。
+    if (emojis === undefined && kaomoji === undefined) {
+      return KanaKanjiConverter.withExtraForms(kana, result);
+    }
     const withExtra = [...result];
     const push = (arr: string[] | undefined): void => {
       if (arr === undefined) { return; }
@@ -35500,7 +35591,7 @@ export class KanaKanjiConverter {
     };
     push(emojis);
     push(kaomoji);
-    return withExtra;
+    return KanaKanjiConverter.withExtraForms(kana, withExtra);
   }
 
   // Track B's lookup: a plain read from mozc_dict.json, ascending mozc cost
@@ -35533,7 +35624,20 @@ export class KanaKanjiConverter {
         list = [hint];
       }
     } else if (entry && entry.length > 0) {
-      list = entry;
+      // 単語単体の変換 (文中ではなく、その読みだけを打って変換したとき)。
+      // composeMozcCandidates が効くのは「直前の segment() が複数文節に
+      // 割った、その全文とまったく同じ文字列」を引いたときだけ -- 単語単体は
+      // 常にこの分岐に落ち、hybrid でも track A の候補が一切混ざらないまま
+      // mozc の生の並びがそのまま出ていた。
+      //
+      // 実データ (入力ログ 10,037件) を洗って見つけた実例: 「かえる」だけを
+      // 変換すると 帰る が7番目 (代える/変える/換える/替える/買える の後)。
+      // custom (track A) 単体では 帰る が1位で、これは frequency 順に
+      // 手で整えてある。文中では hybridTrackAAlternatives 経由でこの並びが
+      // 生きるのに、単語単体だと素通りしていた。
+      list = KanaKanjiConverter.engine === 'hybrid'
+        ? KanaKanjiConverter.interleaveAlternatives(this.singleWordTrackAOrder(kana), entry)
+        : entry;
     } else {
       const kata = KanaKanjiConverter.toKatakana(kana);
       if (kata === kana) {
@@ -35585,6 +35689,73 @@ export class KanaKanjiConverter {
   // cannot enumerate them -- but the per-segment dictionaries still know
   // every surface, and one-segment-at-a-time swaps cover the dominant
   // real-world correction pattern (exactly one word wrong).
+
+  // 半角カタカナへ。濁点・半濁点は独立した文字に分ける (ガ -> ｶﾞ)。
+  private static readonly HALF_KATA_BASE: string =
+    '｡｢｣､･ｦｧｨｩｪｫｬｭｮｯｰｱｲｳｴｵｶｷｸｹｺｻｼｽｾｿﾀﾁﾂﾃﾄﾅﾆﾇﾈﾉﾊﾋﾌﾍﾎﾏﾐﾑﾒﾓﾔﾕﾖﾗﾘﾙﾚﾛﾜﾝ';
+  private static readonly FULL_KATA_BASE: string =
+    '。「」、・ヲァィゥェォャュョッーアイウエオカキクケコサシスセソタチツテトナニヌネノハヒフヘホマミムメモヤユヨラリルレロワン';
+  private static readonly HALF_DAKUTEN: string = 'ガギグゲゴザジズゼゾダヂヅデドバビブベボヴ';
+  private static readonly HALF_DAKUTEN_SRC: string = 'カキクケコサシスセソタチツテトハヒフヘホウ';
+  private static readonly HALF_HANDAKU: string = 'パピプペポ';
+  private static readonly HALF_HANDAKU_SRC: string = 'ハヒフヘホ';
+
+  static toHalfWidthKatakana(s: string): string {
+    let out = '';
+    for (const ch of KanaKanjiConverter.toKatakana(s)) {
+      const d = KanaKanjiConverter.HALF_DAKUTEN.indexOf(ch);
+      if (d >= 0) {
+        const base = KanaKanjiConverter.HALF_DAKUTEN_SRC.charAt(d);
+        const bi = KanaKanjiConverter.FULL_KATA_BASE.indexOf(base);
+        out += (bi >= 0 ? KanaKanjiConverter.HALF_KATA_BASE.charAt(bi) : base) + 'ﾞ';
+        continue;
+      }
+      const h = KanaKanjiConverter.HALF_HANDAKU.indexOf(ch);
+      if (h >= 0) {
+        const base = KanaKanjiConverter.HALF_HANDAKU_SRC.charAt(h);
+        const bi = KanaKanjiConverter.FULL_KATA_BASE.indexOf(base);
+        out += (bi >= 0 ? KanaKanjiConverter.HALF_KATA_BASE.charAt(bi) : base) + 'ﾟ';
+        continue;
+      }
+      const i = KanaKanjiConverter.FULL_KATA_BASE.indexOf(ch);
+      out += i >= 0 ? KanaKanjiConverter.HALF_KATA_BASE.charAt(i) : ch;
+    }
+    return out;
+  }
+
+  // 候補の末尾を厚くする。上位の並びには触らない。
+  //
+  // track B は lookupCore を通らないので、EMOJI_MAP/KAOMOJI_MAP (ひだり->←、
+  // みぎ->→、顔文字…) が丸ごと落ちていた。既定がハイブリッドになった以上、
+  // track A のこの手の便利変換が既定で消えるのは筋が通らないので、mozc 側の
+  // 候補にも同じものを足す。あわせて半角カタカナも末尾に入れる。
+  // どれも末尾なので、上位の順位 (= 変換精度の指標) は動かない。
+  private static withExtraForms(kana: string, list: string[]): string[] {
+    const out = [...list];
+    const push = (x: string | undefined): void => {
+      if (x !== undefined && x.length > 0 && out.indexOf(x) < 0) { out.push(x); }
+    };
+    const emojis = EMOJI_MAP[kana];
+    if (emojis !== undefined) { for (const e of emojis) { push(e); } }
+    const kaomoji = KAOMOJI_MAP[kana];
+    if (kaomoji !== undefined) { for (const k of kaomoji) { push(k); } }
+    if (KanaKanjiConverter.isAllKana(kana)) {
+      push(KanaKanjiConverter.toHalfWidthKatakana(kana));
+    }
+    return out;
+  }
+
+  private static isAllKana(s: string): boolean {
+    if (s.length === 0) { return false; }
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      const hira = c >= 0x3041 && c <= 0x3096;
+      const kata = c >= 0x30A1 && c <= 0x30FA;
+      if (!hira && !kata && c !== 0x30FC) { return false; }
+    }
+    return true;
+  }
+
   private composeMozcCandidates(): string[] {
     const segs = this.mozcLastSegs;
     const chosen: string[] = [];
@@ -35697,6 +35868,24 @@ export class KanaKanjiConverter {
   // scraped surfaces leak in. segment() only writes mozc instance state inside
   // its isMozc block, so the temporary engine flip cannot corrupt the mozc
   // locals composeMozcCandidates already captured.
+  // 単語単体 (文中ではなく、その読みだけを変換したとき) の hybrid 用ブレンド。
+  // hybridTrackAAlternatives と同じ「一時的に engine を custom に切り替えて
+  // track A の実 lookup を走らせる」手法を、全文ではなく1つの読みに対して行う。
+  // track A の filterCandidates/boostCommonWords などの手入れがそのまま効く。
+  private singleWordTrackAOrder(kana: string): string[] {
+    const saved = KanaKanjiConverter.engine;
+    KanaKanjiConverter.engine = 'custom';
+    let result: string[] = [];
+    try {
+      result = this.lookup(kana);
+    } catch (_e) {
+      result = [];
+    } finally {
+      KanaKanjiConverter.engine = saved;
+    }
+    return result;
+  }
+
   private hybridTrackAAlternatives(input: string): string[] {
     const saved = KanaKanjiConverter.engine;
     KanaKanjiConverter.engine = 'custom';

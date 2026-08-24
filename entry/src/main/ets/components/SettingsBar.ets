@@ -26,7 +26,7 @@ export struct SettingsBar {
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
-  @StorageLink('conversionEngine') conversionEngine: string = 'mozc';
+  @StorageLink('conversionEngine') conversionEngine: string = 'hybrid';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
@@ -554,11 +554,11 @@ export struct SettingsBar {
 
       Row() {
         Column({ space: 2 }) {
-          Text('ハイブリッド（β）')
+          Text('ハイブリッド')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('独自辞書と統計データの融合を試験中。有効にすると上の選択は一時的に無効になります')
+          Text('独自辞書と統計データを融合。有効にすると上の選択は一時的に無効になります')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)

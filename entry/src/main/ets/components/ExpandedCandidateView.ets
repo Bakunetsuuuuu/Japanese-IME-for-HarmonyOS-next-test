@@ -8,6 +8,7 @@ export struct ExpandedCandidateView {
   @Prop candidates: string[] = [];
   @Prop selectedIndex: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
+  @StorageLink('quasiCandidateSurfaces') quasiCandidateSurfaces: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   // Same long-press-to-delete affordance as the candidate bar; see CandidateBar
@@ -86,6 +87,9 @@ export struct ExpandedCandidateView {
                   .padding({ top: 12, bottom: 12 }).borderRadius(8)
                   .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
                   .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+                  .border(this.quasiCandidateSurfaces.includes(candidate) ? {
+                    width: 1, color: kbTheme(this.isDark).textSecondary, style: BorderStyle.Dotted,
+                  } : { width: 0 })
               }
               .bindPopup(this.menuIndex === index, {
                 builder: this.DeleteMenu,

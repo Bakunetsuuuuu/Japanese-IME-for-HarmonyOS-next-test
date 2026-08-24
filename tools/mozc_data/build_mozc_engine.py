@@ -181,6 +181,21 @@ DICT_SHARDS = [f"dictionary{i:02d}.txt" for i in range(10)]
 MAX_COST = None  # no cap: keep every reading regardless of cost
 MAX_CANDIDATES_PER_READING = 300  # true observed max is 296
 MAX_SENSES_PER_READING = 30  # true observed max is 29
+
+# 同じ (leftId, rightId) の組の中で、何通りの表記まで別々の語義として残すか。
+#
+# 1 だと「クラスごとに最安の1表記だけ」になり、同じ品詞の同音異字が
+# まるごと DP から消える。かみ の 名詞,一般 は 神/髪/紙 が全部同じ組なので、
+# 最安の 神 しか残らず、髪 も 紙 も候補として存在しない -- 表記の一覧
+# (mozc_dict.json) には出るので候補欄には並ぶが、DP が選べないので
+# 文の途中では絶対に出てこない。盲検コーパスの誤りを語義まで分解したとき、
+# 「正解の表記に語義が無い」がおよそ半分を占めていた:
+#   かみ 誤 神 / 正 髪、かがく 誤 科学 / 正 化学、きこう 誤 機構 / 正 気候、
+#   あう 誤 合う / 正 会う ...
+# いずれも同じ品詞の同音異字で、負けたのではなく最初から土俵にいなかった。
+#
+# コストは mozc 自身のものをそのまま使うので、順位付けは mozc の判断のまま。
+# 増えるのは語義の件数 (= データ量と DP の分岐) だけ。
 # See the アラビア数字 comment in build_dict_and_costs for why kana-typed
 # readings penalize Arabic-digit senses.
 ARABIC_DIGIT_PENALTY = 3000
@@ -191,6 +206,17 @@ ARABIC_DIGIT_PENALTY = 3000
 # ordinary sentences should require stronger evidence before dropping a
 # person/place name into the middle of one. Candidate lists still carry
 # the proper noun for cycling; this only weights the DP's default path.
+#
+# 実測の結果 1 に戻してある。3 にして再ビルドすると語義は 906,375 ->
+# 1,129,082 (+24.6%) に増えるが、盲検350文は 200 -> 198 と下がった。
+# 髪 が候補に入っても神の方が安いので結局神が勝ち、狙った文は1つも直らず
+# 他の文で誤る道だけが増える。mozc のコストは既に「その同音語のうち一般的に
+# どれか」を表していて、文脈を見る手段が無い限り覆せない (文字n-gramでの
+# 再採点も同じ壁で不採用。README の "Character n-gram rescoring" 参照)。
+#
+# 機構は残してある。文脈を読む信号が手に入ったときに、まずここを開ける。
+MAX_SURFACES_PER_CLASS = 1
+
 PROPER_NOUN_PENALTY = 2500
 
 
@@ -358,12 +384,26 @@ def build_dict_and_costs(raw_to_reduced: dict, raw_pos_fields: dict):
             # very low, e.g. 2/に at 998) win numeral spans and produce
             # mixed-register output like 1日/1週間分 for いちにち typed in
             # kana. Kanji-numeral (漢数字) senses are untouched.
-            if RAW_POS_FIELDS[key[0]][:3] == ["名詞", "数", "アラビア数字"]:
-                best_cost += ARABIC_DIGIT_PENALTY
+            # この組から残す表記。先頭は上のかな優先を通した best_surface で、
+            # 続けて同じ組の他の表記を安い順に MAX_SURFACES_PER_CLASS 件まで。
+            # 同音異字を DP から届くようにするための拡張 (定数の説明を参照)。
+            emitted = [(best_cost, best_surface)]
+            for cost, surface in items:
+                if len(emitted) >= MAX_SURFACES_PER_CLASS:
+                    break
+                if any(surface == s for _, s in emitted):
+                    continue
+                emitted.append((cost, surface))
+
             fields = RAW_POS_FIELDS[key[0]]
-            if fields[0] == "名詞" and len(fields) > 1 and fields[1] == "固有名詞":
-                best_cost += PROPER_NOUN_PENALTY
-            reps.append([best_cost, key[0], key[1], best_surface])
+            is_digit = fields[:3] == ["名詞", "数", "アラビア数字"]
+            is_proper = fields[0] == "名詞" and len(fields) > 1 and fields[1] == "固有名詞"
+            for cost, surface in emitted:
+                if is_digit:
+                    cost += ARABIC_DIGIT_PENALTY
+                if is_proper:
+                    cost += PROPER_NOUN_PENALTY
+                reps.append([cost, key[0], key[1], surface])
         reps.sort(key=lambda r: r[0])
         senses = reps[:MAX_SENSES_PER_READING]
         if not senses:

@@ -31,7 +31,11 @@
 // Counted assemblies needed before a word is offered. The count reaches this on
 // the Nth assembly, so the word first appears as a candidate on the N+1th time
 // the reading is typed.
-const LEARN_THRESHOLD = 4;
+// 2 にしてある (以前は 4)。手で組み立て直している時点でユーザーはもう
+// 「変換できない語」だと分かっていて、5回目まで待たされるのは長い。誤って
+// 覚えた場合は候補の長押しで消せる (SuppressedCandidates) ので、早めに出して
+// 外れを消してもらう方が体感が良い。テストが追従できるよう公開している。
+export const LEARN_THRESHOLD = 2;
 
 // Word-shape bounds for the joined result. A single-character surface is
 // allowed on purpose: trimming a longer conversion down to one kanji (かける →
@@ -40,17 +44,17 @@ const LEARN_THRESHOLD = 4;
 // ordinary one-word commit still can't slip through. Above 8 chars the run is a
 // phrase rather than a term.
 const MIN_SURFACE_LEN = 1;
-const MAX_SURFACE_LEN = 8;
+export const MAX_SURFACE_LEN = 12;
 // A one-kana reading is too ambiguous to hang a learned surface off.
 const MIN_READING_LEN = 2;
 const MAX_READING_LEN = 16;
 
 // A run longer than this is someone typing a sentence in content fragments, not
 // building one word -- discarded rather than learned.
-const MAX_RUN_FRAGMENTS = 6;
+export const MAX_RUN_FRAGMENTS = 8;
 
-const MAX_KEYS = 300;
-const MAX_SURFACES_PER_KEY = 3;
+export const MAX_KEYS = 2000;
+const MAX_SURFACES_PER_KEY = 4;
 
 // Resolves whether the converter can ALREADY produce `surface` for `reading`.
 // Anything it can is by definition not an unknown word.
@@ -61,12 +65,14 @@ interface Ranked {
   count: number;
 }
 
-// [DEBUG-LOG] Notified when a run is judged to be an unknown word. Injected as
-// a callback rather than imported so this module keeps its zero-dependency,
-// independently-testable shape (tools/ime-eval/run_unknownword.js compiles it
-// on its own) -- and so removing the debug build's collection means deleting
-// the two [DEBUG-LOG] lines here, nothing else.
-export type LearnedWordFn = (reading: string, surface: string) => void; // [DEBUG-LOG]
+// [DEBUG-LOG] Notified when a run is judged to be an unknown word. `confirmed`
+// is true when this assembly matched a just-abandoned reading (see
+// noteAbandonedReading) and was fast-tracked straight to LEARN_THRESHOLD.
+// Injected as a callback rather than imported so this module keeps its
+// zero-dependency, independently-testable shape (tools/ime-eval/run_unknownword.js
+// compiles it on its own) -- and so removing the debug build's collection means
+// deleting the two [DEBUG-LOG] lines here, nothing else.
+export type LearnedWordFn = (reading: string, surface: string, confirmed: boolean) => void; // [DEBUG-LOG]
 
 export class UnknownWordLearner {
   static onLearn: LearnedWordFn | undefined = undefined; // [DEBUG-LOG]
@@ -82,6 +88,15 @@ export class UnknownWordLearner {
   // single fragment only qualifies when it was (signal 2 above); an untouched
   // one-word commit is just ordinary typing.
   private static runTruncated: boolean = false;
+
+  // 3つ目の信号: ABANDONED - ひらがなで読みを最後まで打って、変換候補を見た
+  // (リアルタイム候補表示は常時出ているので、これは打っている間ずっと起きて
+  // いる)のに、変換せず全部消して諦めた読み。この直後に同じ読みが手作業で
+  // 組み立て直されたら、「辞書にこの語がないと分かって、自分で組み立てた」
+  // という一番強い合図なので、1回の再現だけで即しきい値まで進める。
+  // 一度きりの合図なので、次に flush() が起きたら (一致してもしなくても)
+  // 必ず消す。
+  private static abandonedReading: string = '';
 
   static setLearned(data: Record<string, Record<string, number>>): void {
     UnknownWordLearner.counts = (data === undefined || data === null) ? {} : data;
@@ -143,11 +158,39 @@ export class UnknownWordLearner {
     if (!UnknownWordLearner.isAllHiragana(reading)) { return; }
     if (!UnknownWordLearner.isContentOnly(surface)) { return; }
     if (isKnown(reading, surface)) { return; }
-    if (UnknownWordLearner.onLearn !== undefined) { UnknownWordLearner.onLearn(reading, surface); } // [DEBUG-LOG]
-    UnknownWordLearner.bump(reading, surface);
+    // ABANDONED との一致判定。一度きりの合図なので判定した時点で必ず消す
+    // (一致しなかった場合も、もう別の語に対する古い合図でしかないため)。
+    // 強い合図ではあるが、いきなり本採用まで飛ばすと外れたときに目立つ位置に
+    // 出てしまう。1回目は他の組み立てと同じ扱いで準候補どまりにし、本人が
+    // 準候補欄からもう一度タップして初めて本採用にする (confirmQuasi 参照)。
+    // confirmed はログ用にだけ残す。
+    const confirmed = reading === UnknownWordLearner.abandonedReading && UnknownWordLearner.abandonedReading.length > 0;
+    UnknownWordLearner.abandonedReading = '';
+    if (UnknownWordLearner.onLearn !== undefined) { UnknownWordLearner.onLearn(reading, surface, confirmed); } // [DEBUG-LOG]
+    UnknownWordLearner.bump(reading, surface, 1);
   }
 
-  private static bump(reading: string, surface: string): void {
+  // 準候補として出ていた表記が、確定前にタップされて選ばれた。単体でタップ
+  // された commit は runSurfaces に1件積むだけで assembled 判定を満たさず
+  // (flush の assembled = surfaces.length>=2 || runTruncated) 通常の run
+  // 経路では絶対にカウントされないため、別経路として直接1つ進める。
+  // これでしきい値に達すれば次から本採用の候補として出る (押されたら昇進)。
+  static confirmQuasi(reading: string, surface: string): void {
+    UnknownWordLearner.bump(reading, surface, 1);
+  }
+
+  // ひらがなで打った読みを、変換せず全部消して諦めた。次にこの読みが手作業で
+  // 組み立て直されたときの確認信号として1回だけ覚えておく。
+  static noteAbandonedReading(reading: string): void {
+    if (reading.length < MIN_READING_LEN || reading.length > MAX_READING_LEN
+        || !UnknownWordLearner.isAllHiragana(reading)) {
+      UnknownWordLearner.abandonedReading = '';
+      return;
+    }
+    UnknownWordLearner.abandonedReading = reading;
+  }
+
+  private static bump(reading: string, surface: string, amount: number): void {
     let entry = UnknownWordLearner.counts[reading];
     if (entry === undefined) {
       if (Object.keys(UnknownWordLearner.counts).length >= MAX_KEYS) {
@@ -161,7 +204,7 @@ export class UnknownWordLearner {
       // one-off typo displace them.
       return;
     }
-    entry[surface] = (entry[surface] ?? 0) + 1;
+    entry[surface] = (entry[surface] ?? 0) + amount;
   }
 
   // Drop the reading whose best surface has been assembled least often, so a
@@ -220,6 +263,17 @@ export class UnknownWordLearner {
     const surfaces = UnknownWordLearner.runSurfaces;
     if (surfaces.length === 0) { return false; }
     const tail = surfaces[surfaces.length - 1];
+    // 末尾が全部ひらがな (生のかな確定・助詞など、漢字の手がかりが一切無い)
+    // なら、1回のbackspaceが表記の何文字に対応するか保証できない。実機で
+    // 大量発生した「〜して」のバグはまさにこれで、読みは削られないまま
+    // 表記だけ削れて対応が壊れていた。
+    // 翔ける (漢字+送り仮名) のようにひらがなが混じっていても、漢字が
+    // 1文字でも残っていれば手がかりがあるので安全に末尾から削れる --
+    // まさにこの関数が存在する理由 (かける→翔ける→⌫⌫→翔)。危険なのは
+    // 「全部ひらがな」の場合だけなので、そこだけ呼び出し側
+    // (KeyboardController) が代わりに abandonRun() へ回せるよう false を
+    // 返す (run はそのまま残す -- まだ捨てるべきと決まったわけではない)。
+    if (UnknownWordLearner.isAllHiragana(tail)) { return false; }
     if (tail.length <= 1) {
       // The whole fragment is gone: the run can't describe the text any more.
       UnknownWordLearner.clearRun();
@@ -278,6 +332,20 @@ export class UnknownWordLearner {
     const ranked: Ranked[] = [];
     for (const s of Object.keys(entry)) {
       if (entry[s] >= LEARN_THRESHOLD) { ranked.push({ surface: s, count: entry[s] }); }
+    }
+    ranked.sort((a: Ranked, b: Ranked) => b.count - a.count);
+    return ranked.map((r: Ranked) => r.surface);
+  }
+
+  // 準候補 (quasi-candidates): まだ LEARN_THRESHOLD に達していない、組み立て
+  // 途中の語。candidates() と違い正式な変換候補には混ぜず、「これ、覚えかけて
+  // ます」を見せるためだけに使う (呼び出し側でうっすら区別して表示する)。
+  static quasiCandidates(reading: string): string[] {
+    const entry = UnknownWordLearner.counts[reading];
+    if (entry === undefined) { return []; }
+    const ranked: Ranked[] = [];
+    for (const s of Object.keys(entry)) {
+      if (entry[s] > 0 && entry[s] < LEARN_THRESHOLD) { ranked.push({ surface: s, count: entry[s] }); }
     }
     ranked.sort((a: Ranked, b: Ranked) => b.count - a.count);
     return ranked.map((r: Ranked) => r.surface);

@@ -125,14 +125,29 @@ const CURATED: Completion[] = [
   { reading: 'かのうせい', surface: '可能性' },
 ];
 
+// learned 側の「ここまで打てば確実」判定に使う最低ピック数。1回選んだだけの
+// 語をここで確実扱いするとノイズに逆戻りするので、複数回選んだ語だけ通す。
+const LEARNED_CONFIDENT_MIN = 2;
+
 export class PredictiveConversion {
   // Completions of `prefix`, best first: the user's learned words (by pick
-  // count) then curated common words, deduped by surface, capped. `learned` is
-  // the conversion learning store (KanaKanjiConverter.getLearned()); passed in
-  // rather than imported to keep this module dependency-free and unit-testable.
+  // count) then curated/dictionary words, deduped by surface, capped. `learned`
+  // is the conversion learning store (KanaKanjiConverter.getLearned()); passed
+  // in rather than imported to keep this module dependency-free and
+  // unit-testable.
   // dictHits は辞書由来の前方一致 (KanaKanjiConverter.prefixCompletions)。
   // 引数で受け取るのは、このモジュールを依存なしに保つという元の方針のまま
   // 辞書を使えるようにするため。
+  //
+  // 「今打った文字より後ろに伸びる」候補 (蛇足候補) は、使用頻度の割に頻繁に
+  // 出てくるとの指摘を受けて絞り込んだ。かるたの決まり字のたとえの通り、
+  // 「この続きの文字はこの語しかあり得ない」というところまで打ってようやく
+  // 出す。具体的には:
+  //   - learned (本人が実際に選んだ実績) はそのままの信頼度で許可。ただし
+  //     1回だけの選択はノイズになりうるので LEARNED_CONFIDENT_MIN 回以上に限る。
+  //   - curated (手書き表) + dictHits (辞書全体) は、この prefix の続きとして
+  //     あり得る語がちょうど1つに絞られたとき (=決まり字に達したとき) だけ、
+  //     その1語だけを出す。2つ以上あり得るうちはまだ確実ではないので出さない。
   static predict(prefix: string, learned: Record<string, Record<string, number>>,
       dictHits?: string[]): string[] {
     if (prefix.length < MIN_PREFIX) { return []; }
@@ -146,7 +161,7 @@ export class PredictiveConversion {
     };
 
     // 1. learned readings that extend the prefix, best surface per reading,
-    //    readings ranked by their top surface's pick count (most-used first).
+    //    複数回選んだ語だけ「確実」として通す。
     interface LearnedHit { surface: string; count: number; }
     const hits: LearnedHit[] = [];
     if (learned) {
@@ -161,21 +176,23 @@ export class PredictiveConversion {
         if (bestSurface.length > 0) { hits.push({ surface: bestSurface, count: bestCount }); }
       }
       hits.sort((a: LearnedHit, b: LearnedHit) => b.count - a.count);
-      for (const h of hits) { push(h.surface); }
+      for (const h of hits) {
+        if (h.count >= LEARNED_CONFIDENT_MIN) { push(h.surface); }
+      }
     }
 
-    // 2. curated common words extending the prefix, in curated (frequency) order
-    for (const c of CURATED) {
-      if (out.length >= MAX_COMPLETIONS) { break; }
-      if (c.reading.length > prefix.length && c.reading.startsWith(prefix)) { push(c.surface); }
-    }
-
-    // 3. 辞書全体からの前方一致。学習も手書き表も外した語を拾う担当で、
-    //    ここを足すまで予測変換は辞書を一切見ていなかった。
-    if (dictHits !== undefined) {
-      for (const d of dictHits) {
-        if (out.length >= MAX_COMPLETIONS) { break; }
-        push(d);
+    // 2+3. curated + 辞書全体からの前方一致をまとめて集め、この prefix の続きと
+    //      してあり得る語(表記)がちょうど1つだけに絞れているときだけ採用する。
+    if (out.length < MAX_COMPLETIONS) {
+      const pool = new Set<string>();
+      for (const c of CURATED) {
+        if (c.reading.length > prefix.length && c.reading.startsWith(prefix)) { pool.add(c.surface); }
+      }
+      if (dictHits !== undefined) {
+        for (const d of dictHits) { if (d.length > 0) { pool.add(d); } }
+      }
+      if (pool.size === 1) {
+        for (const s of pool) { push(s); }
       }
     }
     return out;

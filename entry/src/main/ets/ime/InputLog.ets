@@ -28,8 +28,10 @@
 //  記録されるもの / されないもの
 // ---------------------------------------------------------------------------
 //  記録する: 読み(打鍵したかな) / 確定した表記 / 選んだ候補の番号 / 候補総数 /
-//            カタカナ・英数変換だったか / 文節の区切り位置と選択 / 変換範囲の
-//            変更 / 候補削除 / 未知語学習 / 削除した文字
+//            そのとき出ていた候補一覧(先頭12件) / カタカナ・英数変換だったか /
+//            文節の区切り位置と選択・最終確定文 / 変換範囲の変更 / 候補削除 /
+//            未知語学習(諦め読み一致による即時確定を含む) / 準候補タップ /
+//            削除した文字 / アプリバージョンとエンジン種別(起動毎)
 //  記録しない: パスワード等の secure field (下の SECURE_PATTERNS)。
 //            クリップボードの中身も対象外(privacy policy 上メモリ内のみ)。
 //
@@ -41,6 +43,7 @@
 // ===========================================================================
 
 import fs from '@ohos.file.fs';
+import { KanaKanjiConverter } from './KanaKanjiConverter';
 
 // 収集機構全体のスイッチ。false にすると全ての record*() が即 return し、
 // 設定画面の入口も出なくなる。リリースビルドでは false ではなく「削除」。
@@ -63,6 +66,8 @@ export const LK_DELCHAR: string = 'delchar';    // 文字を消した(⌫)
 export const LK_UNDO: string = 'undo';          // 取消で消した文字を戻した
 export const LK_FIELD: string = 'field';        // 入力欄が変わった(診断用・本文なし)
 export const LK_DIAG: string = 'diag';          // 拡張プロセスの自己申告(診断用・本文なし)
+export const LK_BSEG_FINAL: string = 'bsegfinal'; // 文節モードの最終確定(全文節をつなげた結果)
+export const LK_QUASI_PICK: string = 'quasipick'; // まだしきい値未満の未知語候補(準候補)をタップして確定した
 
 // 確定の性質を表す補助タグ (entry.x に入る)。
 export const LF_KATAKANA: string = 'kata';      // 読みのカタカナ形をそのまま確定
@@ -106,7 +111,14 @@ export interface InputLogEntry {
   i: number;   // 選んだ候補の番号 (0始まり, 該当なしは -1)
   n: number;   // そのとき出ていた候補の総数 (該当なしは 0)
   x: string;   // 補助情報 (LF_*, 文節の区切り, 変換範囲 など)
+  c?: string;  // その場に出ていた候補の先頭 CAND_LIMIT 件 (',' 区切り, commit/bseg のみ)
 }
+
+// recordCommit/recordBunsetsuPick に添える候補一覧の上限。全件入れると
+// 1レコードが肥大化する (n が多い読みでは候補が数十件になる) ので、選んだ
+// 候補が埋もれていた実例を追うのに十分な範囲だけ残す。かえる (7番目) や
+// だいじ (1番目) のような実例はどちらもこの範囲に収まる。
+const CAND_LIMIT: number = 12;
 
 export class InputLog {
   private static buffer: InputLogEntry[] = [];
@@ -232,6 +244,18 @@ export class InputLog {
       `log=${logDir} 起動元=${source} files=${filesDir} prefs=${prefsDir}`);
   }
 
+  // 拡張プロセス起動のたびに1件。アプリのバージョンとハイブリッド/mozc/custom
+  // のどれで動いているかを記録する。2か月分のログを分析したとき、この期間に
+  // デフォルトエンジンが custom→mozc→hybrid と変わり、辞書の手入れも複数回
+  // 入っていたため、「この失敗は今のバージョンでも起きるのか」を記録だけから
+  // 判別できなかった。record*() 系の記録と付き合わせれば、どの記録がどの
+  // バージョン/エンジンの下で残ったものかが分かるようにする。
+  static recordVersion(appVersion: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.write(LK_DIAG, '', '', -1, 0,
+      `ver=${appVersion} engine=${KanaKanjiConverter.getEngine()}`);
+  }
+
   // パネル(KeyboardPage)からの保険。
   //
   // 本来の初期化は KeyboardController.setContext -> setupInputLog だが、
@@ -263,10 +287,16 @@ export class InputLog {
 
   // ---- 記録 API (呼び出し側は必ず行末に // [DEBUG-LOG] を付ける) ----------
 
-  // 候補を確定した。index はタップした候補の番号、total はそのとき出ていた数。
-  static recordCommit(reading: string, surface: string, index: number, total: number): void {
+  // 候補を確定した。index はタップした候補の番号、total はそのとき出ていた数、
+  // candidates はそのとき出ていた候補一覧 (先頭 CAND_LIMIT 件だけ残す)。
+  // これがないと「index番目が何だったか」を後から知るには、辞書が変わって
+  // いないという前提で現在の lookup() を再実行するしかなく、辞書修正のたびに
+  // 過去ログの再現性が失われていた。
+  static recordCommit(reading: string, surface: string, index: number, total: number,
+      candidates: string[]): void {
     if (!DEBUG_INPUT_LOG) { return; }
-    InputLog.push(LK_COMMIT, reading, surface, index, total, InputLog.classify(reading, surface));
+    InputLog.push(LK_COMMIT, reading, surface, index, total,
+      InputLog.classify(reading, surface), candidates);
   }
 
   // 変換せずかなのまま確定した(無変換キー / pending の吐き出し)。
@@ -294,9 +324,20 @@ export class InputLog {
   }
 
   // 文節モードで1つの文節の候補を選んだ。
-  static recordBunsetsuPick(seg: string, surface: string, index: number, total: number): void {
+  static recordBunsetsuPick(seg: string, surface: string, index: number, total: number,
+      candidates: string[]): void {
     if (!DEBUG_INPUT_LOG) { return; }
-    InputLog.push(LK_BSEG, seg, surface, index, total, InputLog.classify(seg, surface));
+    InputLog.push(LK_BSEG, seg, surface, index, total, InputLog.classify(seg, surface), candidates);
+  }
+
+  // 文節モードを全文節ぶん確定した(commitBunsetsu)。reading は全文節をつなげた
+  // 読み、surface はその結果の全文。recordBunsetsuPick は文節ごとの選択しか
+  // 残らず、「区切りを手で直した結果、最終的に何が確定したか」が bunsetsu の
+  // 記録単体からは分からなかった(直したのに直っていない、を後から検証できない
+  // という穴があった)。
+  static recordBunsetsuFinal(reading: string, surface: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.push(LK_BSEG_FINAL, reading, surface, -1, 0, '');
   }
 
   // 候補を削除した(長押し→削除)。「出てはいけない候補」の直接の証拠になる。
@@ -306,10 +347,20 @@ export class InputLog {
   }
 
   // 未知語として学習された(辞書に無い語を手で組み立てた)。
-  // 辞書に足すべき語がそのまま並ぶ。
-  static recordUnknownWord(reading: string, surface: string): void {
+  // 辞書に足すべき語がそのまま並ぶ。x に confirmed=true が入っている行は、
+  // 直前に同じ読みを変換せず消して諦めていたのを検出し、1回の再現だけで
+  // 即しきい値まで進めたもの (通常は複数回の積み上げが必要)。
+  static recordUnknownWord(reading: string, surface: string, confirmed: boolean): void {
     if (!DEBUG_INPUT_LOG) { return; }
-    InputLog.push(LK_UNKNOWN, reading, surface, -1, 0, '');
+    InputLog.push(LK_UNKNOWN, reading, surface, -1, 0, confirmed ? 'confirmed' : '');
+  }
+
+  // まだ LEARN_THRESHOLD 未満の未知語候補(準候補)を、確定前に候補一覧で見て
+  // タップして確定した。「敏感にした分、実際に使われているか」を見るための
+  // 記録。
+  static recordQuasiPick(reading: string, surface: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.push(LK_QUASI_PICK, reading, surface, -1, 0, '');
   }
 
   // 文字を消した。x は消した時の状態(composing / idle)。確定後すぐの idle 削除は
@@ -326,10 +377,14 @@ export class InputLog {
 
   // ---- 書き込み ---------------------------------------------------------
 
-  private static push(k: string, r: string, s: string, i: number, n: number, x: string): void {
+  private static push(k: string, r: string, s: string, i: number, n: number, x: string,
+      candidates?: string[]): void {
     if (InputLog.secureField) { return; }
     if (InputLog.filesDir.length === 0) { return; }
     const e: InputLogEntry = { t: Date.now(), k: k, r: r, s: s, i: i, n: n, x: x };
+    if (candidates !== undefined && candidates.length > 0) {
+      e.c = candidates.slice(0, CAND_LIMIT).join(',');
+    }
     // 属性待ちの間は保留に積む(捨てない)。上限を超えたら古い方から落とす。
     if (InputLog.fieldPending) {
       InputLog.pending.push(e);

@@ -6,6 +6,7 @@ import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
 import vibrator from '@ohos.vibrator';
+import bundleManager from '@ohos.bundle.bundleManager';
 
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables } from './KanaKanjiConverter';
@@ -193,6 +194,12 @@ export class InputHandler {
   private insertedBuffer: string[] = [];
   private restoreStack: string[] = [];
   private conversionEnd: number = 0;
+  // composingText の「今回の入力で一番長く伸びた時点」の値。updateCandidates
+  // のたびに更新し (打っている間は常に候補が見えているので、これが伸びる=
+  // 「変換候補を見た」の代わり)、消して空に戻ったときに
+  // UnknownWordLearner.noteAbandonedReading へ渡す。確定すれば
+  // resetComposition で捨てる (諦めたのではなく使われたため)。
+  private composingWatermark: string = '';
   // Cap for the persistent deleted-character log (recordDeletedChar) --
   // unlike restoreStack above (a short-lived undo stack wiped by the next
   // keystroke, see insertText), this survives typing and is only capped by
@@ -351,7 +358,13 @@ export class InputHandler {
       InputLog.recordPaths('setContext', // [DEBUG-LOG]
         used.length > 0 ? used : '書き込めるディレクトリ無し', // [DEBUG-LOG]
         ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
-      UnknownWordLearner.onLearn = (r: string, s: string) => { InputLog.recordUnknownWord(r, s); }; // [DEBUG-LOG]
+      // ApplicationInfo に versionName は無い (ApplicationInfo.d.ts に存在しない
+      // フィールドだった -- BundleInfo 側にしかない)。getBundleInfoForSelfSync
+      // は追加権限なしで呼べる。 // [DEBUG-LOG]
+      let appVersion = ''; // [DEBUG-LOG]
+      try { appVersion = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT).versionName; } catch (_e) { appVersion = ''; } // [DEBUG-LOG]
+      InputLog.recordVersion(appVersion); // [DEBUG-LOG]
+      UnknownWordLearner.onLearn = (r: string, s: string, confirmed: boolean) => { InputLog.recordUnknownWord(r, s, confirmed); }; // [DEBUG-LOG]
     } catch (e) { // [DEBUG-LOG]
       console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
     } // [DEBUG-LOG]
@@ -1128,14 +1141,55 @@ export class InputHandler {
     AppStorage.setOrCreate('inputLogRows', rows);
   }
 
-  // 全文をクリップボードへ。端末上で読むには量が多いので、取り出して使う。
+  // 全文を hilog へ吐き出す。クリップボードの setData (生テキスト・URI 両方)は
+  // この拡張プロセスからだと常に "async call failed" で落ちることを実測で確認
+  // 済み (759,070 文字のテキストでも file:// URI でも同じ)。原因の切り分けは
+  // 打ち切り、このセッション中ずっと問題なく読めている hilog 経由に変える --
+  // サンドボックスの外から hdc で読める、ここまでで唯一確実な経路。
+  //
+  // Base64 にしてから 1 行 1500 文字ずつ区切って console.info する。生の
+  // JSONL のまま流すと、たまたま長い1レコードが hilog の1行上限を超えたときに
+  // そこだけ千切れる可能性がある。Base64 化しておけば区切り位置は文字数だけの
+  // 問題になり、復元側 (PC 側スクリプト) で単純に連結してから戻せる。
+  // 各行に SHUNTILOGDUMP という専用マーカーと連番/総数を入れているので、
+  // hilog の他の行に紛れても grep で拾い、番号順に並べ直せる。
   exportInputLog(): void { // [DEBUG-LOG]
     const dir = InputLog.writerDir();
-    const raw = dir.length > 0 ? InputLog.readRaw(dir) : '';
-    if (raw.length === 0) { return; }
-    const data = pasteboard.createData(pasteboard.MIMETYPE_TEXT_PLAIN, raw);
-    pasteboard.getSystemPasteboard().setData(data)
-      .catch((e: ESObject) => { console.error('shuntiIME exportInputLog failed', JSON.stringify(e)); });
+    if (dir.length === 0) {
+      console.error('shuntiIME exportInputLog: no writerDir'); // [DEBUG-LOG]
+      return;
+    }
+    const raw = InputLog.readRaw(dir);
+    if (raw.length === 0) {
+      console.error('shuntiIME exportInputLog: empty'); // [DEBUG-LOG]
+      return;
+    }
+    const bytes = new util.TextEncoder().encodeInto(raw);
+    const b64 = new util.Base64Helper().encodeToStringSync(bytes);
+    const CHUNK = 1500;
+    const total = Math.ceil(b64.length / CHUNK);
+    console.info('shuntiIME SHUNTILOGDUMP_BEGIN total=' + String(total)
+      + ' rawLen=' + String(raw.length) + ' b64Len=' + String(b64.length)); // [DEBUG-LOG]
+    // まとめて書くと hilog 側のバースト制御に引っかかり、実測で733行中
+    // 100行前後が静かに落ちた (2回試して毎回ほぼ同じ範囲が欠けた -- ランダムな
+    // 取りこぼしではなく、書き込み速度そのものが上限を超えていた)。
+    // 1回に少数ずつ・間隔を空けて書くことで確実性を優先する。
+    const BATCH = 5;
+    const INTERVAL_MS = 120;
+    let i = 0;
+    const writeBatch = (): void => {
+      const end = Math.min(i + BATCH, total);
+      for (; i < end; i++) {
+        const chunk = b64.slice(i * CHUNK, (i + 1) * CHUNK);
+        console.info('shuntiIME SHUNTILOGDUMP ' + String(i) + '/' + String(total) + ' ' + chunk); // [DEBUG-LOG]
+      }
+      if (i < total) {
+        setTimeout(writeBatch, INTERVAL_MS);
+      } else {
+        console.info('shuntiIME SHUNTILOGDUMP_END'); // [DEBUG-LOG]
+      }
+    };
+    writeBatch();
   }
 
   clearInputLog(): void { // [DEBUG-LOG]
@@ -1332,6 +1386,16 @@ export class InputHandler {
   // it changed anything. Called from the ordinary commit paths only -- bunsetsu
   // editing and raw-kana commits close the run instead (see endUnknownWordRun).
   private observeUnknownWord(reading: string, surface: string): void {
+    // タップされた表記が、確定直前に候補一覧で「準候補」として見えていたか。
+    // observe() は既存の run に積むだけで判定を変えてしまうので、その前に
+    // AppStorage の表示済みスナップショットを見る。単体タップは run 経由では
+    // 絶対にカウントされない (flush の assembled 判定を満たさない) ので、
+    // confirmQuasi で直接1つ進める -- これが「押されたら昇進」の実体。
+    const quasi = AppStorage.get<string[]>('quasiCandidateSurfaces') ?? [];
+    if (quasi.includes(surface)) {
+      InputLog.recordQuasiPick(reading, surface); // [DEBUG-LOG]
+      UnknownWordLearner.confirmQuasi(reading, surface);
+    }
     UnknownWordLearner.observe(reading, surface,
       (r: string, s: string): boolean => this.isKnownConversion(r, s));
     this.saveUnknownWords();
@@ -1512,6 +1576,7 @@ export class InputHandler {
     this.insertedBuffer = [];
     this.restoreStack = [];
     this.conversionEnd = 0;
+    this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -1620,10 +1685,16 @@ export class InputHandler {
       const deleted = this.insertedBuffer.pop() ?? '';
       if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
       this.inputClient?.deleteForward(1);
-      // 削除が入ったら組み立て中の run は捨てる。以前は truncate() で表記の
-      // 末尾だけを削っていたが、読みは削られないので対応が壊れる
-      // (abandonRun のコメント参照)。
-      UnknownWordLearner.abandonRun();
+      // 直前の確定 (熟語など) をバックスペースで削っていく間、漢字の手がかりが
+      // 残っている限り truncate() で末尾を追う (かける→翔ける→⌫⌫→翔 のような、
+      // 熟語や活用語尾の一部だけを残すケースを検出するため)。全部ひらがな
+      // (生のかな確定・助詞など、対応が保証できない) まで削り込んだら
+      // truncate() 自身が false を返すので、そこから先は以前と同じ
+      // abandonRun() で run ごと捨てる (「〜して」のバグの再発防止 --
+      // UnknownWordLearner.truncate のコメント参照)。
+      if (!UnknownWordLearner.truncate()) {
+        UnknownWordLearner.abandonRun();
+      }
       // The committed word the next-word strip was keyed on is being edited
       // away -- retire the strip so a now-stale prediction can't be tapped.
       if (this.recentWords.length > 0) {
@@ -1748,7 +1819,7 @@ export class InputHandler {
         this.saveLearning();
         this.observeUnknownWord(reading, text);
       }
-      InputLog.recordCommit(reading, text, index, candidates.length); // [DEBUG-LOG]
+      InputLog.recordCommit(reading, text, index, candidates.length, candidates); // [DEBUG-LOG]
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
       const words = this.committedWords(text);
@@ -1839,7 +1910,7 @@ export class InputHandler {
         this.saveLearning();
         this.observeUnknownWord(reading, chosen);
       }
-      InputLog.recordCommit(reading, chosen, idx, candidates.length); // [DEBUG-LOG]
+      InputLog.recordCommit(reading, chosen, idx, candidates.length, candidates); // [DEBUG-LOG]
       this.insertText(chosen);
       KanaKanjiConverter.addContext(chosen);
       const words = this.committedWords(chosen);
@@ -1912,6 +1983,7 @@ export class InputHandler {
     // (onInputStart / onInputStop), which is the correct scope for it.
     this.restoreStack = [];
     this.conversionEnd = 0;
+    this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -1965,6 +2037,25 @@ export class InputHandler {
     this.refreshClipboardPreview();
   }
 
+  // 実機の SELinux ログで原因を確定済み:
+  //
+  //   avc: denied { get } for service=3701
+  //     scontext=u:r:input_isolate_debug_hap:s0
+  //     tcontext=u:object_r:sa_pasteboard_service:s0  permissive=0
+  //   PasteboardClient# proxyService is null
+  //
+  // 入力方式拡張の隔離ドメイン (input_isolate_debug_hap) から
+  // PasteboardService への接続そのものが SELinux で恒久的に拒否されている。
+  // 今日判明した振動 (sa_miscdevice_service) の拒否と同じ形の制限で、
+  // コード側のバグではなく直せない。setData (exportInputLog 参照) と
+  // getData (このメソッド) はどちらも同じ経路を通るので、書き込みが
+  // "async call failed" で落ちるのと同じ理由で、読み取りも常に失敗して
+  // 静かに空へフォールバックしている -- 「クリップボード検出」チップが
+  // 最近ずっと出ないのは、機能が壊れたのではなく、この隔離ドメインからは
+  // そもそも一度も届いたことがなかった可能性が高い。
+  //
+  // OS がこの制限を緩めれば動くようになるので、機構はそのまま残す
+  // (振動の markHapticUnavailable と同じ方針)。
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
       if (!data || data.getRecordCount() === 0) {
@@ -2249,9 +2340,18 @@ export class InputHandler {
   private updateCandidates(): void {
     const composing = AppStorage.get<string>('composingText') ?? '';
     if (composing.length === 0) {
+      // 打っていた読みを変換せず全部消して諦めた (resetComposition 経由の
+      // 確定後クリアはこの関数を通らないので、ここに来るのは常に backspace)。
+      // この直後に同じ読みが手作業で組み立て直されたら強い確認信号になる。
+      if (this.composingWatermark.length > 0) {
+        UnknownWordLearner.noteAbandonedReading(this.composingWatermark);
+        this.composingWatermark = '';
+      }
       AppStorage.setOrCreate('candidates', [] as string[]);
+      AppStorage.setOrCreate('quasiCandidateSurfaces', [] as string[]);
       return;
     }
+    if (composing.length > this.composingWatermark.length) { this.composingWatermark = composing; }
     // A new composition has started -- retire the post-commit next-word strip
     // so it doesn't linger next to live conversion candidates.
     AppStorage.setOrCreate('predictions', [] as string[]);
@@ -2473,6 +2573,16 @@ export class InputHandler {
     // than relying on lookup()'s own learning boost because most of the list
     // above never passed through lookup() -- see applyLearnedOrder.
     candidates = KanaKanjiConverter.applyLearnedOrder(target, candidates);
+    // 準候補 (quasi-candidates): まだ LEARN_THRESHOLD 未満の、組み立てかけの
+    // 未知語。確定候補(上の UnknownWordLearner.candidates)とは違い列の末尾に
+    // だけ足す -- まだ確認できていない語を目立つ位置に出すと通常の変換を
+    // 押しのけてしまうため。CandidateBar 側は quasiCandidateSurfaces を見て
+    // うっすら区別して表示する。
+    const quasi = UnknownWordLearner.quasiCandidates(target);
+    for (const q of quasi) {
+      if (!candidates.includes(q)) { candidates.push(q); }
+    }
+    AppStorage.setOrCreate('quasiCandidateSurfaces', quasi);
     // Candidates the user deleted by long-pressing them are dropped last, so
     // every source above (dictionaries, learning, the injected predictions) is
     // covered by the one filter -- see SuppressedCandidates.
@@ -2595,6 +2705,7 @@ export class InputHandler {
     for (let i = 0; i < this.bSegs.length; i++) {
       KanaKanjiConverter.recordChoice(this.bSegs[i], this.bChosen[i]);
     }
+    InputLog.recordBunsetsuFinal(this.bSegs.join(''), text); // [DEBUG-LOG]
     this.insertText(text);
     this.bSegs = [];
     this.bChosen = [];
@@ -2608,7 +2719,7 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     if (index < candidates.length) {
       KanaKanjiConverter.recordChoice(this.bSegs[this.bCur], candidates[index]);
-      InputLog.recordBunsetsuPick(this.bSegs[this.bCur], candidates[index], index, candidates.length); // [DEBUG-LOG]
+      InputLog.recordBunsetsuPick(this.bSegs[this.bCur], candidates[index], index, candidates.length, candidates); // [DEBUG-LOG]
       this.bChosen[this.bCur] = candidates[index];
     }
     // Advance to next segment if available

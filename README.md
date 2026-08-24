@@ -1,8 +1,11 @@
 # shunti Japanese IME — HarmonyOS NEXT 日本語入力
 
-HarmonyOS NEXT (API 12+) 向けの日本語 IME です。フリック入力・QWERTY ローマ字入力の両方に対応し、独自辞書による高精度な漢字変換を提供します。
+HarmonyOS NEXT (API 12+) 向けの日本語 IME です。フリック入力・QWERTY ローマ字入力の両方に対応し、独自辞書による高精度な漢字変換を提供します。広告なし・分析ツールなし・個人開発のオープンソースプロジェクトです。
 
 > **開発者**: shuntilettuce
+> **コントリビューター**: [HiSubway](https://github.com/HiSubway)（さぶうぇい） — テーマ機能を追加（[#57](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/pull/57)）
+> **最新バージョン**: 1.5.2（[更新履歴](./CHANGELOG.md)）
+> **ライセンス**: [MIT](./LICENSE)（バンドル辞書データは別ライセンス、下記参照）
 
 ## 開発支援のご案内
 
@@ -52,7 +55,7 @@ AppGallery で「shunti Japanese IME」を検索してインストール後、�
 | **文節変換モード** | 文全体を文節に分割して個別に変換先を選択 |
 | **カタカナ変換** | 全文をカタカナに変換する候補を常に提供 |
 | **独自辞書** | 常用漢字・Unicode Unihan・独自収集データによる変換辞書 |
-| **変換エンジン切替** | 独自辞書（デフォルト）と、mozc 由来の統計データエンジンを設定で切替可能 |
+| **変換エンジン切替** | 独自辞書（track A）、mozc 由来の統計データ（track B）、両方を融合するハイブリッド（デフォルト）の3方式を設定で切替可能。詳細は下記「変換エンジンの仕組み」参照 |
 | **変換学習** | 選んだ変換先の優先度を自動で上げ、次回から上位表示 |
 | **ユーザー辞書** | アプリ本体から「よみ→単語」＋品詞（名詞/動詞/形容詞/人名/地名）を登録。動詞・形容詞は活用形も自動で変換候補に |
 | **括弧変換** | 「かっこ」で `()` `「」` `【】` 等を入力。確定後カーソルが内側へ移動 |
@@ -70,6 +73,77 @@ AppGallery で「shunti Japanese IME」を検索してインストール後、�
 
 ### 設定
 キーボードパネルの ⚙ から開く設定画面で、キーボードレイアウト（QWERTY / フリック）・片手モード・変換エンジン・クリップボード履歴・アプリ内ブラウザでの GitHub 表示・寄付リンクなどを変更できます。
+
+---
+
+## 変換エンジンの仕組み
+
+設定画面から3方式のかな漢字変換エンジンを切り替えられます。
+
+| エンジン | 中身 | 特徴 |
+|---|---|---|
+| **独自辞書 (track A)** | 常用漢字・Unihan・独自収集語彙による手作りの辞書＋文法ルール実装のViterbi文節分割 | チャット的な口語表現や「ひだり→←」のような独自の変換規則に強い。外部データファイルに依存しない自前ロジック |
+| **統計データ (track B)** | mozc（Google）の変換辞書・連接コストデータをベースに、JMdict/SudachiDictで漢字表記を補強 | 一般的な文章・固有名詞のカバレッジが広い |
+| **ハイブリッド（デフォルト）** | 文節分割・第一候補選定は track B（mozc統計）で行いつつ、track A側の語順整理・学習結果を候補順に混ぜ込む | 両方の強みを両立させる現在のデフォルト。単語単体で変換したときも track A の並び替えが効くよう継続的に手を入れている |
+
+変換の学習は選んだ候補の優先度を個人の入力履歴から自動で引き上げる仕組みで、上記どのエンジンでも共通して働きます。辞書の改善は実際の入力ログ（後述）を元に継続的に行っています。
+
+---
+
+## 開発
+
+### 必要環境
+
+- [DevEco Studio](https://developer.huawei.com/consumer/cn/deveco-studio/)（HarmonyOS NEXT SDK, API 12+）
+- Node.js（辞書生成・評価スクリプト用）
+- 実機または HarmonyOS エミュレータ、`hdc`（HarmonyOS Device Connector、SDK同梱）
+
+### ビルド
+
+DevEco Studio でプロジェクトを開くか、CLI から:
+
+```bash
+# デバッグビルド (HAP)
+hvigorw assembleHap --mode module -p product=default -p buildMode=debug
+
+# 実機へインストール (デバッグ署名済みHAP)
+hdc install <出力されたhapファイル>
+```
+
+### プロジェクト構成（抜粋）
+
+```
+entry/src/main/ets/
+  ime/          変換エンジン本体・IME拡張のロジック
+    KanaKanjiConverter.ets   かな漢字変換のコア（辞書lookup・学習・3エンジンのブレンド）
+    KeyboardController.ets   InputMethodExtensionAbility側の入力制御・状態管理
+    JapaneseConverter.ets    ローマ字/フリック入力の変換・文字種処理
+    ConjugationEngine.ets    活用形の自動展開（ユーザー辞書登録時など）
+    InputLog.ets             デバッグ専用の入力ログ収集（下記参照）
+  components/    キーボードUI（フリック/QWERTY/記号/絵文字/設定画面 等）
+  pages/         本体アプリ側の画面（設定・ユーザー辞書・プライバシーポリシー）
+tools/
+  mozc_data/     mozc/JMdict/SudachiDictから統計データエンジンの辞書を構築するスクリプト群
+  ime-eval/      変換精度の回帰テスト（corpus_test*.js）
+  blind-eval/    Google日本語入力との変換結果比較用コーパス・スコアラー
+  check_debug_log.js   InputLog呼び出し箇所の棚卸し（リリース前チェック）
+```
+
+IME本体は `InputMethodExtensionAbility` として別プロセス（`:inputMethod`）で動作するため、本体アプリとはサンドボックスが分離されています（ユーザー辞書やログの読み書きが両側で別経路になっているのはこのため）。
+
+### 変換精度の回帰テスト
+
+辞書やロジックを変更した際は、既存コーパスでのスコアを必ず確認してください。
+
+```bash
+bun tools/mozc_data/compare_engines.js corpus_test9.js
+bun tools/mozc_data/compare_engines.js corpus_test10.js
+bun tools/mozc_data/compare_engines.js corpus_test11.js
+```
+
+### コントリビュート
+
+Issue・Pull Request歓迎です。辞書データや変換ロジックに手を入れる変更は、上記の回帰テストで既存スコアが下がっていないことを確認のうえ送ってください。
 
 ---
 
