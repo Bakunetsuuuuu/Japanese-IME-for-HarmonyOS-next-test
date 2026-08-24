@@ -339,8 +339,10 @@ export class InputHandler {
     // 読み全体をひとつの文字列として打つことが無いので recordChoice も一切
     // 呼ばれず、いつまでも埋もれたままになる穴があった。通常の学習ブーストに
     // 回すことでこの穴を塞ぐ。
-    // ★ デバッグ専用ではない (リリースでも効くべき機能) ので、下の
-    // setupInputLog とは違い [DEBUG-LOG] タグを付けないこと。
+    // ★ デバッグ専用ではない (リリースでも効くべき機能) なので、下の
+    // setupInputLog とは違い収集用の印を付けないこと。
+    // (印の文字列をここに書くと、check_debug_log の
+    //  削除対象一覧にこの説明文自体が混ざる)
     UnknownWordLearner.onKnownAssembly = (r: string, s: string) => {
       KanaKanjiConverter.recordChoice(r, s);
       this.saveLearning();
