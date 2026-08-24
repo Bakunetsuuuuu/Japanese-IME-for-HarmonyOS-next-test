@@ -189,14 +189,17 @@ struct KeyboardPage {
               // Composing kana strip — always visible to prevent layout shifts.
               // Landscape has much less vertical room to spare for the keys below,
               // so this strip and the candidate row underneath both run compact.
+              //
+              // 入力欄プレビューが効いているときは、この行ごと出さない。
+              // かなは入力欄側に出ているので、ここに空の帯を残す意味が無く、
+              // その分キーボードを低くできる。行が消えると「設定」の置き場が
+              // 無くなるので、候補バーの右端へ移す (下の previewInField 分岐)。
+              // ただし変換範囲を ◀▶ で変えている最中だけは、どこまでを変換
+              // するかが入力欄側では分からないのでこの行を出す。
+              if (!this.previewInField
+                  || (this.convEnd > 0 && this.convEnd < this.composingText.length)) {
               Row() {
-                // 入力欄側にプレビューが出ているときは、ここに同じかなを
-                // 二重で見せない。設定ボタンだけ残して行を細くする
-                // (KeyboardController.publishPreviewMode)。ただし変換範囲を
-                // ◀▶ で変えている最中だけは、どこまでを変換するかが
-                // 入力欄側では分からないのでこちらに出す。
-                if ((!this.previewInField || (this.convEnd > 0 && this.convEnd < this.composingText.length))
-                    && (this.composingText.length > 0 || this.pendingRomaji.length > 0)) {
+                if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
                   if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
                     Text(this.composingText.slice(0, this.convEnd))
                       .fontFamily(JP_FONT_FAMILY)
@@ -235,14 +238,11 @@ struct KeyboardPage {
                   })
               }
               .width('100%')
-              // 入力欄プレビューが効いている間は、かなを表示しないぶん
-              // この行を詰めてキーボード全体を低くする。
-              .height(this.previewInField
-                ? (this.isLandscape ? 12 : 20)
-                : (this.isLandscape ? 14 : 28))
+              .height(this.isLandscape ? 14 : 28)
               .backgroundColor(kbTheme(this.isDark).panelBg)
               .alignItems(VerticalAlign.Center)
               .padding({ left: 12, right: 8 })
+              }
 
               // Candidate bar row + layout toggle
               Row() {
@@ -304,10 +304,24 @@ struct KeyboardPage {
                     PredictionBar({ predictions: this.predictions })
                   }
                 }
-                .width('100%')
+                .layoutWeight(1)
                 .height(this.isLandscape ? 22 : 48)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
+
+                // かな表示の行を出していないときは「設定」の置き場がここしか
+                // 無いので、候補バーの右端に寄せる。
+                if (this.previewInField
+                    && !(this.convEnd > 0 && this.convEnd < this.composingText.length)) {
+                  Text('設定')
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(this.isLandscape ? 10 : 13)
+                    .fontColor(kbTheme(this.isDark).textSecondary)
+                    .padding({ left: 10, right: 10 })
+                    .onClick(() => {
+                      AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                    })
+                }
               }
               .width('100%')
               .height(this.isLandscape ? 22 : 48)
