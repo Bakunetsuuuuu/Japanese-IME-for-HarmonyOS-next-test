@@ -35256,6 +35256,10 @@ export class KanaKanjiConverter {
   // rather than inventing a second one. Among detours that clear it, the
   // cheapest by the same getWordInfo()-sum metric the ALT_SEG_WORDS branch
   // already uses wins.
+  // 迂回を試す文節数の上限 (末尾から数えて)。4 は「直前の文節とその周辺」を
+  // 十分カバーし、かつ実行回数を文長から切り離せる値。
+  private static readonly MAX_DETOUR_EDGES = 4;
+
   private findBoundaryDetourAlternate(kana: string, primary: string[]): string | null {
     const primaryResult = this.joinSegs(primary);
     if (primaryResult === null) { return null; }
@@ -35264,7 +35268,20 @@ export class KanaKanjiConverter {
     let best: string[] | null = null;
     let bestResult = '';
     let bestCost = Infinity;
-    for (let e = 0; e < primary.length; e++) {
+    // 迂回は末尾側の数文節だけ試す。
+    //
+    // ここは「1文節ぶん禁止して segment() をやり直す」を文節の数だけ繰り返す
+    // ので、文が伸びるほど フル Viterbi の実行回数がそのまま増える。実測で
+    // 43文字/26文節のとき segment() を26回まわしており、変換1回あたり
+    // 41ms(全体50msのうち)をここだけで使っていた -- 打鍵ごとに走るので
+    // 体感のラグはほぼこれ。
+    //
+    // 打っている最中に人が直したいのは常に入力の末尾側で、既に確定的に
+    // 切れている前方の境界の代替はその場では使わない。末尾から
+    // MAX_DETOUR_EDGES 本だけ試せば、実用上の当たりは保ったまま実行回数が
+    // 文長に依存しなくなる。
+    const first = Math.max(0, primary.length - KanaKanjiConverter.MAX_DETOUR_EDGES);
+    for (let e = first; e < primary.length; e++) {
       const start = bounds[e];
       const len = primary[e].length;
       const detour = this.segment(kana, [start, len]);
