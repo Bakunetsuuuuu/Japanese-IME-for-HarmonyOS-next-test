@@ -3035,18 +3035,30 @@ export class KeyboardController {
         const text = util.TextDecoder.create('utf-8').decodeToString(data);
         const list = JSON.parse(text) as VocabPackInfo[];
         KanaKanjiConverter.setVocabPackManifest(list);
+        for (const p of list) {
+          // 動詞・形容詞・人名・地名は ConjugationEngine に通して活用形まで
+          // 展開する -- ユーザー辞書とまったく同じ関数を使う。「がばる 五段」
+          // と1行書けば がばって/がばった/がばらない … まで生えるのはこれ。
+          // 品詞指定が1つも無いパックでも、buildUserExpansion は素通しで
+          // 元の語彙をそのまま返すので分岐は要らない。
+          const posMap: Record<string, UserPosEntry> = {};
+          for (const key of Object.keys(p.pos)) {
+            const v = p.pos[key];
+            posMap[key] = { pos: v.pos as PosKind, group: v.group as VerbGroup | undefined };
+          }
+          const expanded = buildUserExpansion(p.entries, posMap);
+          // 活用展開で得たクラス (がばって→[14,17] など) の上に、.pack の
+          // 品詞名/@指定を重ねる。明示指定のほうが後勝ちで強い。
+          const classes: Record<string, number[]> = {};
+          for (const k of Object.keys(expanded.classMap)) { classes[k] = expanded.classMap[k]; }
+          for (const k of Object.keys(p.classes)) { classes[k] = p.classes[k]; }
+          KanaKanjiConverter.setVocabPackEntries(p.id, expanded.dict, classes);
+        }
         // 設定より先に manifest が来るとは限らないので、既に読み込み済みの
         // 有効IDをここでもう一度適用する (順序に依存させない)。
         const enabled = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
         KanaKanjiConverter.setEnabledPackIds(enabled);
         AppStorage.setOrCreate('vocabPackIds', list.map((p: VocabPackInfo) => p.id));
-        for (const p of list) {
-          this.loadPackedDict('pack_' + p.id,
-            (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
-             vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
-              KanaKanjiConverter.setVocabPackPacked(p.id, kb, kl, kbase, vb, vl, vbase, idx);
-            });
-        }
       })
       .catch((e: Error) => {
         // 語彙パックが読めなくても変換自体は動く (全部OFFと同じ状態)。

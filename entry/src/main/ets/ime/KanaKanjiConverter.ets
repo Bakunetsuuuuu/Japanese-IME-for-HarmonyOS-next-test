@@ -32667,10 +32667,29 @@ interface MozcNumeralRun {
 // tools/vocab_packs/*.pack から rawfile/pack_manifest.json として生成し、
 // KeyboardController.loadVocabPackManifest がそのまま読む。
 // suppress は 読み -> 出したくない表記の一覧 (.pack の行頭 - 指定)。
+// ConjugationEngine.UserPosEntry と同じ形 (このファイルは import を持たない
+// のでここに再宣言してある)。pos は 'verb'|'adjective'|'person'|'place'、
+// group は動詞のときだけ 'godan'|'ichidan'。
+export interface VocabPackPos {
+  pos: string;
+  group?: string;
+}
+
 export interface VocabPackInfo {
   id: string;
   name: string;
   description: string;
+  // 読み -> 表記の一覧 (.pack の優先度順で並んでいる)
+  entries: Record<string, string[]>;
+  // "読み\t表記" -> 品詞。動詞・形容詞・人名・地名だけ入る。ConjugationEngine
+  // の UserPosEntry と同じ形だが、このファイルは import を持たない方針
+  // (先頭のコメント参照 -- Node からそのまま読めるようにしてある) なので
+  // 構造だけ再宣言してある。実際に活用展開するのは import を持てる
+  // KeyboardController 側。
+  pos: Record<string, VocabPackPos>;
+  // 読み -> [左クラス, 右クラス]。品詞名や @ 指定による接続行列クラスの上書き。
+  classes: Record<string, number[]>;
+  // 読み -> 出したくない表記 (.pack の行頭 - 指定)
   suppress: Record<string, string[]>;
 }
 
@@ -33633,7 +33652,12 @@ export class KanaKanjiConverter {
   // tools/build_vocab_packs.py で他の辞書と同じパック形式に固めたもの。
   // ロードは KeyboardController 側で有効なパックだけ遅延読み込みする
   // (mozcエンジンと同じ考え方 -- 使わない人にメモリを払わせない)。
-  private static vocabPacks: Record<string, PackedDict> = {};
+  // パックID -> 読み -> 表記の一覧。活用展開済み (KeyboardController が
+  // ConjugationEngine に通した結果) を入れる。パックは「界隈の定番語彙」と
+  // いう性質上小さいので、dict/global_dict のようなバイナリ化はしていない。
+  private static vocabPacks: Record<string, Record<string, string[]>> = {};
+  // パックID -> 読み -> [左クラス, 右クラス]。接続行列のクラス上書き。
+  private static vocabPackClasses: Record<string, Record<string, number[]>> = {};
   private static enabledPacks: Set<string> = new Set<string>();
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
   // No external file dependency — rules ported from tools/gen_matrix_default.py.
@@ -33980,15 +34004,28 @@ export class KanaKanjiConverter {
     return kept.length > 0 ? kept : cands;
   }
 
-  static setVocabPackPacked(id: string, keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
-      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
-    const d = new PackedDict();
-    d.setPacked(keyBlob, keyLens, keyBase, valBlob, valLens, valBase, idx);
-    KanaKanjiConverter.vocabPacks[id] = d;
+  // 活用展開まで済ませた語彙 (KeyboardController.loadVocabPacks が
+  // ConjugationEngine.buildUserExpansion に通した結果) を受け取る。
+  static setVocabPackEntries(id: string, entries: Record<string, string[]>,
+      classes: Record<string, number[]>): void {
+    KanaKanjiConverter.vocabPacks[id] = entries;
+    KanaKanjiConverter.vocabPackClasses[id] = classes;
   }
 
   static isVocabPackLoaded(id: string): boolean {
     return KanaKanjiConverter.vocabPacks[id] !== undefined;
+  }
+
+  // 有効なパックがこの読みに接続行列クラスを指定しているか。
+  // getWordInfo から VERB_CLASS / userClassMap と同じ場所で参照される。
+  static packClassFor(kana: string): number[] | undefined {
+    for (const id of KanaKanjiConverter.enabledPacks.values()) {
+      const m = KanaKanjiConverter.vocabPackClasses[id];
+      if (m === undefined) { continue; }
+      const c = m[kana];
+      if (c !== undefined) { return c; }
+    }
+    return undefined;
   }
 
   static setPackEnabled(id: string, enabled: boolean): void {
@@ -34013,7 +34050,7 @@ export class KanaKanjiConverter {
     for (const id of KanaKanjiConverter.enabledPacks.values()) {
       const d = KanaKanjiConverter.vocabPacks[id];
       if (d === undefined) { continue; }
-      const v = d.get(kana);
+      const v = d[kana];
       if (v !== undefined && v.length > 0) { return v; }
     }
     return undefined;
@@ -36972,7 +37009,12 @@ export class KanaKanjiConverter {
     // 品詞 picker, see ConjugationEngine.ets) get the same treatment as the
     // built-in VERB_CLASS table -- checked second so a collision with a
     // built-in reading keeps the built-in's (already-tuned) class.
-    const vc = VERB_CLASS[sub] ?? KanaKanjiConverter.userClassMap[sub];
+    // 語彙パックの品詞指定 (.pack の 五段/形容詞/な形容詞/@12 など) も
+    // ここに合流させる。優先順は 組み込み > ユーザー辞書 > パック --
+    // 組み込みは調整済み、ユーザー辞書は本人が明示的に登録したものなので、
+    // どちらもパックより優先する。
+    const vc = VERB_CLASS[sub] ?? KanaKanjiConverter.userClassMap[sub]
+      ?? KanaKanjiConverter.packClassFor(sub);
     if (vc !== undefined) {
       const lenBonus = Math.min((sub.length - 1) * 500, KanaKanjiConverter.VN_DEFAULT - 500);
       const commonBonus = KanaKanjiConverter.COMMON_READINGS.has(sub) ? 3000 : 0;
