@@ -777,6 +777,16 @@ export class InputHandler {
   // だったのも、5つのストアが揃って空だったのもこれ。
   // 対処は flushPendingSaves()。セッション終了時と onDestroy で必ず呼ぶ。
   //
+  // ただし flushPendingSaves() は onInputStop/onDestroy が実際に呼ばれる
+  // 正常終了の経路にしか効かない。OS がプロセスを強制終了する経路
+  // (メモリ逼迫など、onInputStop を経由しない) では、デバウンス待ちの間隔
+  // そのものが「学習が失われる窓」として残り続ける。
+  // 実データで確認済み: 「し」を選んで「志」を学習した13日後、同じ「志」を
+  // 再度選んだ記録が学習前の並び順 (18/40) から始まっていた ── その1回目の
+  // 保存がどこかで消えていたことになる。候補削除 (suppressedSaveTimer) は
+  // 元々 500ms だったのに、学習系だけ 2000ms のままだったのは単なる
+  // 不揃いで、学習が候補削除より軽視していい理由は無い。窓を揃えて縮める。
+  //
   // dirty フラグは、変化が無いのに閉じるたび4本書きに行かないためのもの。
 
   private writeLearning(): void {
@@ -792,7 +802,7 @@ export class InputHandler {
   private saveLearning(): void {
     this.learningDirty = true;
     clearTimeout(this.learningSaveTimer);
-    this.learningSaveTimer = setTimeout(() => { this.writeLearning(); }, 2000);
+    this.learningSaveTimer = setTimeout(() => { this.writeLearning(); }, 500);
   }
 
   private writeNextWord(): void {
@@ -808,7 +818,7 @@ export class InputHandler {
   private saveNextWord(): void {
     this.nextWordDirty = true;
     clearTimeout(this.nextWordSaveTimer);
-    this.nextWordSaveTimer = setTimeout(() => { this.writeNextWord(); }, 2000);
+    this.nextWordSaveTimer = setTimeout(() => { this.writeNextWord(); }, 500);
   }
 
   private writeUnknownWords(): void {
@@ -824,7 +834,7 @@ export class InputHandler {
   private saveUnknownWords(): void {
     this.unknownWordDirty = true;
     clearTimeout(this.unknownWordSaveTimer);
-    this.unknownWordSaveTimer = setTimeout(() => { this.writeUnknownWords(); }, 2000);
+    this.unknownWordSaveTimer = setTimeout(() => { this.writeUnknownWords(); }, 500);
   }
 
   // ---- 辞書登録 (キーボード内で完結させるための API) ----------------------
