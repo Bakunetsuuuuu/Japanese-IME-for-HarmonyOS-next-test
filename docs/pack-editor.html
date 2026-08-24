@@ -9,16 +9,18 @@
   :root {
     --bg: #f5f5f7; --card: #ffffff; --text: #1c1c1e; --sub: #6b6b70;
     --line: #e0e0e4; --accent: #3b6fe0; --accent-weak: #eaf0fd;
+    --head: #f0f1f5; --zebra: #fafafc;
     --warn-bg: #fff4e5; --warn-text: #8a5300; --warn-line: #f0c98a;
-    --err-bg: #fdeaea; --err-text: #a32222; --err-line: #f0a0a0;
+    --err-bg: #fdeaea; --err-text: #a32222; --err-line: #e08585;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #131316; --card: #1e1e22; --text: #eceef2; --sub: #9a9aa2;
       --line: #33333a; --accent: #7aa2f7; --accent-weak: #232a3d;
+      --head: #26262c; --zebra: #202025;
       --warn-bg: #3a2c14; --warn-text: #f0c98a; --warn-line: #6b5424;
-      --err-bg: #3a1d1d; --err-text: #f0a0a0; --err-line: #6b2b2b;
+      --err-bg: #3a1d1d; --err-text: #f0a0a0; --err-line: #7a3434;
     }
   }
   * { box-sizing: border-box; }
@@ -28,20 +30,23 @@
     font-size: 15px; line-height: 1.6;
     padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
   }
-  .wrap { max-width: 900px; margin: 0 auto; padding: 16px 14px 96px; }
+  .wrap { max-width: 1100px; margin: 0 auto; padding: 16px 14px 40px; }
   h1 { font-size: 19px; margin: 4px 0 2px; }
   .lede { color: var(--sub); font-size: 13px; margin: 0 0 18px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 16px; }
-  .card h2 { font-size: 14px; margin: 0 0 10px; letter-spacing: .02em; }
+  .card h2 { font-size: 14px; margin: 0 0 10px; letter-spacing: .02em; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   label { display: block; font-size: 12px; color: var(--sub); margin-bottom: 4px; }
   input[type=text], textarea, select {
-    width: 100%; padding: 9px 10px; font-size: 15px; color: var(--text);
-    background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
-    font-family: inherit;
+    color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 8px; font-family: inherit;
   }
-  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
-  textarea { font-family: var(--mono); font-size: 13px; line-height: 1.7; min-height: 220px; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
-  .field { margin-bottom: 10px; }
+  .meta input { width: 100%; padding: 9px 10px; font-size: 15px; }
+  .meta .field { margin-bottom: 10px; }
+  input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); outline-offset: -2px; }
+  textarea {
+    width: 100%; padding: 10px; font-family: var(--mono); font-size: 13px; line-height: 1.7;
+    min-height: 200px; white-space: pre; overflow-wrap: normal; overflow-x: auto;
+  }
   .btn {
     display: inline-flex; align-items: center; gap: 6px; justify-content: center;
     padding: 9px 14px; font-size: 14px; font-family: inherit; font-weight: 600;
@@ -52,53 +57,51 @@
   .btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
   .btn.ghost { background: transparent; }
   .btn.danger { color: var(--err-text); }
+  .btn.sm { padding: 4px 8px; min-height: 30px; font-size: 13px; font-weight: 500; }
   .btn-row { display: flex; flex-wrap: wrap; gap: 8px; }
+  .count { font-size: 12px; color: var(--sub); font-weight: 400; }
 
-  /* エントリ1件。狭い画面では縦積み、広い画面では横並び。 */
-  .rows { display: flex; flex-direction: column; gap: 10px; }
-  .row {
-    border: 1px solid var(--line); border-radius: 10px; padding: 10px;
-    background: var(--bg);
-    display: grid; gap: 8px;
-    grid-template-columns: 1fr 1fr;
-    grid-template-areas: "yomi word" "pos pri" "note note" "act act";
+  /* ── 表 (Excel風) ─────────────────────────────────────────── */
+  .grid-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; }
+  table.grid { border-collapse: separate; border-spacing: 0; width: 100%; min-width: 780px; font-size: 14px; }
+  table.grid th {
+    position: sticky; top: 0; z-index: 2; background: var(--head);
+    font-size: 11.5px; font-weight: 600; color: var(--sub); text-align: left;
+    padding: 7px 8px; border-bottom: 1px solid var(--line); white-space: nowrap;
   }
-  .row.sup { grid-template-areas: "yomi word" "note note" "act act"; }
-  .row[data-bad="1"] { border-color: var(--err-line); background: var(--err-bg); }
-  .a-yomi { grid-area: yomi; } .a-word { grid-area: word; }
-  .a-pos { grid-area: pos; } .a-pri { grid-area: pri; }
-  .a-note { grid-area: note; } .a-act { grid-area: act; }
-  .a-act { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
-  .act-btns { display: flex; gap: 6px; margin-left: auto; }
-  .act-btns .btn { padding: 8px 12px; min-height: 38px; }
-  /* 狭い画面ではクラス指定を1行占有させ、ボタンは次の行にまとめて右寄せ。
-     混在させると ↑ だけ前の行に取り残されて押しにくかった。 */
-  @media (max-width: 719px) {
-    .a-act .chk { width: 100%; }
-    .a-act .chk input { flex: 1; width: auto !important; }
+  table.grid td { border-bottom: 1px solid var(--line); padding: 0; vertical-align: middle; }
+  table.grid tr:nth-child(even) td { background: var(--zebra); }
+  table.grid tr.bad td { background: var(--err-bg); }
+  table.grid tr:last-child td { border-bottom: 0; }
+  .cell {
+    width: 100%; border: 0; border-radius: 0; background: transparent;
+    padding: 9px 8px; font-size: 14px; color: var(--text); font-family: inherit;
   }
-  .chk { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--sub); }
-  .chk input { width: 18px; height: 18px; }
-  @media (min-width: 720px) {
-    .row { grid-template-columns: 1.2fr 1.2fr .9fr .6fr; grid-template-areas: "yomi word pos pri" "note note note note" "act act act act"; }
-    .row.sup { grid-template-columns: 1.2fr 1.2fr 1.5fr; grid-template-areas: "yomi word note" "act act act"; }
-  }
-  .msg { border-radius: 8px; padding: 9px 11px; font-size: 12.5px; margin-top: 8px; }
+  .cell:focus { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--card); }
+  .cell.err { box-shadow: inset 0 0 0 2px var(--err-line); }
+  select.cell { appearance: none; cursor: pointer; }
+  td.num { text-align: right; padding: 0 8px; color: var(--sub); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.mid { text-align: center; }
+  td.act { white-space: nowrap; padding: 0 6px; }
+  td.act .btn { padding: 3px 7px; min-height: 28px; font-size: 12px; }
+  input[type=checkbox] { width: 18px; height: 18px; }
+  col.c-num { width: 30px; } col.c-yomi { width: 15%; } col.c-word { width: 15%; }
+  col.c-pos { width: 100px; } col.c-pri { width: 74px; } col.c-cls { width: 80px; }
+  col.c-note { width: 18%; } col.c-sup { width: 40px; } col.c-act { width: 92px; }
+  td.act .btn { padding: 3px 5px; }
+  .cell { padding: 9px 6px; }
+
+  .msg { border-radius: 8px; padding: 9px 11px; font-size: 12.5px; margin-top: 10px; }
   .msg.warn { background: var(--warn-bg); color: var(--warn-text); border: 1px solid var(--warn-line); }
   .msg.err { background: var(--err-bg); color: var(--err-text); border: 1px solid var(--err-line); }
-  .hint { font-size: 12px; color: var(--sub); margin-top: 6px; }
-  .count { font-size: 12px; color: var(--sub); }
-  details { margin-top: 10px; }
+  .msg ul { margin: 4px 0 0; padding-left: 18px; }
+  .msg li { margin: 2px 0; }
+  .hint { font-size: 12px; color: var(--sub); margin-top: 8px; }
+  details { margin-top: 12px; }
   summary { cursor: pointer; font-size: 13px; color: var(--accent); }
   table.ref { border-collapse: collapse; width: 100%; font-size: 12.5px; margin-top: 8px; }
   table.ref th, table.ref td { border: 1px solid var(--line); padding: 5px 7px; text-align: left; }
   table.ref th { background: var(--accent-weak); }
-  .bar {
-    position: fixed; left: 0; right: 0; bottom: 0; background: var(--card);
-    border-top: 1px solid var(--line); padding: 10px 14px;
-    padding-bottom: calc(10px + env(safe-area-inset-bottom));
-    display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; z-index: 10;
-  }
   code { font-family: var(--mono); background: var(--accent-weak); padding: 1px 5px; border-radius: 4px; font-size: 12.5px; }
 </style>
 </head>
@@ -111,7 +114,7 @@
     Pull Request を送れば、パックとして配布できます。
   </p>
 
-  <div class="card">
+  <div class="card meta">
     <h2>パックの情報</h2>
     <div class="field">
       <label for="pname">パック名 (必須) — 設定画面に出ます</label>
@@ -130,17 +133,31 @@
 
   <div class="card">
     <h2>語彙 <span class="count" id="cnt"></span></h2>
-    <div class="rows" id="rows"></div>
+    <div class="grid-wrap">
+      <table class="grid">
+        <colgroup>
+          <col class="c-num"><col class="c-yomi"><col class="c-word"><col class="c-pos">
+          <col class="c-pri"><col class="c-cls"><col class="c-note"><col class="c-sup"><col class="c-act">
+        </colgroup>
+        <thead><tr>
+          <th></th><th>読み</th><th>単語</th><th>品詞</th><th>優先度</th>
+          <th>クラス</th><th>コメント</th><th title="その読みでその表記を出さない指定">抑制</th><th></th>
+        </tr></thead>
+        <tbody id="tb"></tbody>
+      </table>
+    </div>
     <div class="btn-row" style="margin-top:12px">
-      <button class="btn primary" id="add">＋ 語を追加</button>
-      <button class="btn ghost" id="addSup">＋ 抑制を追加</button>
+      <button class="btn primary" id="add">＋ 行を追加</button>
+      <button class="btn ghost" id="paste">表計算から貼り付け</button>
     </div>
     <div class="hint">
-      「抑制」は、その読みでその表記を<strong>出さない</strong>指定です。パックを有効にしている間だけ効きます。
+      Enter で下のセルへ、Tab で右のセルへ移動します。一番下の行に入力すると自動で次の行が増えます。
+      Excel / スプレッドシートからコピーした範囲は、セルに直接貼り付けるとそのまま表に展開されます。
     </div>
+    <div id="rowMsg"></div>
 
     <details>
-      <summary>品詞のはたらき / クラスID直接指定について</summary>
+      <summary>品詞のはたらき / クラス指定について</summary>
       <p class="hint" style="margin-top:8px">
         品詞を指定すると、変換エンジンの接続コスト行列で正しい品詞として扱われ、文の途中に混ざったときの区切り方がまともになります。
         <strong>五段・一段・形容詞は活用形が自動で生えます</strong> —
@@ -148,7 +165,6 @@
       </p>
       <table class="ref">
         <tr><th>品詞</th><th>用途</th><th>活用</th></tr>
-        <tr><td>名詞</td><td>既定。指定しなくてよい</td><td>—</td></tr>
         <tr><td>五段 / 一段</td><td>動詞。る で終わる語は字面で区別できないので必須</td><td>あり</td></tr>
         <tr><td>形容詞</td><td>い形容詞 (めろい、やばい)</td><td>あり</td></tr>
         <tr><td>な形容詞</td><td>静か、ぐう聖</td><td>—</td></tr>
@@ -157,8 +173,11 @@
         <tr><td>その他</td><td>代名詞 / 数 / 助数詞 / 非自立名詞 / 副詞可能 / 外来語 / 副詞 / 感動詞 / 接頭辞 / 接尾辞 / 記号</td><td>—</td></tr>
       </table>
       <p class="hint">
-        品詞で足りないときは「クラス指定」に <code>@34</code> (左右とも34) や <code>@0,10</code> (左0・右10) と書くと、
+        品詞で足りないときは「クラス」欄に <code>@34</code> (左右とも34) や <code>@0,10</code> (左0・右10) と書くと、
         接続行列のクラスIDを直接指定できます。左右で分けられるのは、活用語が「前から見た顔」と「次へ渡す顔」で別のクラスを持つためです。
+      </p>
+      <p class="hint">
+        優先度は 1〜10 で、小さいほど候補の前に出ます。1=最優先 / 5=3〜4番目あたり (既定) / 10=一番右でいい。
       </p>
     </details>
   </div>
@@ -166,6 +185,10 @@
   <div class="card">
     <h2>出来上がり (.pack)</h2>
     <textarea id="out" spellcheck="false" readonly></textarea>
+    <div class="btn-row" style="margin-top:10px">
+      <button class="btn primary" id="download">ファイルを保存</button>
+      <button class="btn" id="copy">コピー</button>
+    </div>
     <div id="outMsg"></div>
     <div class="hint">
       区切りはタブです。この内容をそのまま <code>tools/vocab_packs/&lt;ファイル名&gt;.pack</code> として保存してください。
@@ -176,17 +199,12 @@
     <h2>読み込み</h2>
     <div class="btn-row">
       <button class="btn" id="openFile">ファイルを開く</button>
-      <button class="btn" id="pasteIn">テキストから読み込む</button>
+      <button class="btn" id="pasteIn">.pack を貼り付けて読み込む</button>
       <button class="btn danger ghost" id="clearAll">全部消す</button>
     </div>
     <input type="file" id="file" accept=".pack,.txt,.tsv,text/plain" hidden>
     <div class="hint">既存の .pack を開いて続きから編集できます。作業内容はこの端末に自動保存されます。</div>
   </div>
-</div>
-
-<div class="bar">
-  <button class="btn primary" id="download">ファイルを保存</button>
-  <button class="btn" id="copy">コピー</button>
 </div>
 
 <script>
@@ -199,74 +217,67 @@ const POS = ['', '名詞', 'サ変名詞', 'な形容詞', '形容動詞', '代�
   '五段', '一段', '形容詞', '副詞', '感動詞', '接頭辞', '接尾辞', '記号'];
 // 活用が自動で生える品詞。入力の形を検査して警告を出す対象。
 const EXPANDING = { '五段': 'verb', '一段': 'verb', '形容詞': 'adj' };
-// 五段で連用形などを作れる語尾 (ConjugationEngine.detectGodanRow と同じ)。
+// 五段の語尾 (ConjugationEngine.detectGodanRow と同じ)。
 const GODAN_TAIL = 'うくぐすつぬぶむる';
-const STORE_KEY = 'shunti-pack-editor-v1';
+const STORE_KEY = 'shunti-pack-editor-v2';
+// 表の列。貼り付け展開とキー移動の順序もこれに従う。
+const COLS = ['yomi', 'word', 'pos', 'pri', 'cls', 'note'];
 
 let state = { name: '', desc: '', file: 'mypack', rows: [] };
 
 const $ = (id) => document.getElementById(id);
 const el = (tag, cls) => { const e = document.createElement(tag); if (cls) e.className = cls; return e; };
-
-function newRow(sup) {
-  return { yomi: '', word: '', pri: '', pos: '', cls: '', note: '', sup: !!sup };
-}
+const newRow = (sup) => ({ yomi: '', word: '', pri: '', pos: '', cls: '', note: '', sup: !!sup });
 
 // ---- 検証 (build_vocab_packs.py の parse_pack と同じ規則) ----------------
 
 function checkRow(r) {
-  const errs = [];
-  const warns = [];
+  const errs = [];   // {field, msg} 直さないとビルドで弾かれる
+  const warns = [];  // 弾かれはしないが意図どおりに効かない
   const y = r.yomi.trim(), w = r.word.trim();
   if (!y && !w) return { errs, warns, empty: true };
-  if (!y) errs.push('読みが空です');
-  if (!w) errs.push('単語が空です');
-  // 読み・単語に区切り文字が入るとビルド時に列がずれる。
-  if (/\t/.test(y) || /\t/.test(w)) errs.push('読み・単語にタブは使えません');
-  if (/ {2,}/.test(y) || / {2,}/.test(w)) errs.push('読み・単語に半角スペース2個以上は使えません(区切りとして解釈されます)');
-  if (y && !/^[ぁ-んー―]+$/.test(y)) warns.push('読みはひらがなで書きます');
+  if (!y) errs.push({ field: 'yomi', msg: '読みが空です' });
+  if (!w) errs.push({ field: 'word', msg: '単語が空です' });
+  if (/\t/.test(y) || /\t/.test(w)) errs.push({ field: 'yomi', msg: '読み・単語にタブは使えません' });
+  if (/ {2,}/.test(y) || / {2,}/.test(w)) errs.push({ field: 'yomi', msg: '読み・単語に半角スペース2個以上は使えません (区切りとして解釈されます)' });
+  if (y && !/^[ぁ-んー―]+$/.test(y)) warns.push({ field: 'yomi', msg: '読みはひらがなで書きます' });
 
   if (r.sup) {
-    if (r.pri || r.pos || r.cls) errs.push('抑制指定に優先度・品詞・クラスは書けません');
+    if (r.pri || r.pos || r.cls) errs.push({ field: 'pos', msg: '抑制指定に優先度・品詞・クラスは書けません' });
     return { errs, warns };
   }
 
   if (r.pri !== '') {
     const n = Number(r.pri);
-    if (!Number.isInteger(n)) errs.push('優先度は整数で書きます');
-    else if (n < 1 || n > 10) errs.push('優先度は 1〜10 の範囲です (1=最優先, 10=一番右でいい)');
+    if (!Number.isInteger(n)) errs.push({ field: 'pri', msg: '優先度は整数で書きます' });
+    else if (n < 1 || n > 10) errs.push({ field: 'pri', msg: '優先度は 1〜10 の範囲です' });
   }
   if (r.cls) {
     // 桁数はここで縛らない。@120 のような範囲外は「形式が違う」ではなく
     // 「範囲外」と言ってもらうほうが直しやすいので、下の範囲検査に回す。
     const m = /^@(\d+)(?:,(\d+))?$/.exec(r.cls.trim());
-    if (!m) errs.push('クラス指定は @12 か @0,10 の形で書きます');
+    if (!m) errs.push({ field: 'cls', msg: 'クラスは @12 か @0,10 の形で書きます' });
     else {
       for (const v of [m[1], m[2]]) {
         if (v === undefined) continue;
         const n = Number(v);
-        if (n < 0 || n > 99) errs.push('クラスIDは 0〜99 の範囲です');
+        if (n < 0 || n > 99) { errs.push({ field: 'cls', msg: 'クラスIDは 0〜99 の範囲です' }); break; }
       }
     }
   }
-  // 活用展開の前提を満たしているか。満たさないと端末側で黙って
-  // 展開されない (エラーにならないぶん気付きにくい) ので、ここで出す。
+  // 活用展開の前提。満たさないと端末側で黙って展開されない (エラーに
+  // ならないぶん気付きにくい) ので、ここで出す。
   const kind = EXPANDING[r.pos];
   if (kind && y && w) {
-    if (y.length < 2 || w.length < 2) {
-      warns.push('活用させるには読み・単語とも2文字以上必要です');
-    } else if (kind === 'adj' && !y.endsWith('い')) {
-      warns.push('形容詞は「い」で終わる読みにしてください (例: めろい)');
-    } else if (r.pos === '五段' && !GODAN_TAIL.includes(y[y.length - 1])) {
-      warns.push('五段の読みは ' + GODAN_TAIL.split('').join('/') + ' のどれかで終わります');
-    } else if (r.pos === '一段' && !y.endsWith('る')) {
-      warns.push('一段の読みは「る」で終わります (例: たべる)');
-    }
+    if (y.length < 2 || w.length < 2) warns.push({ field: 'pos', msg: '活用させるには読み・単語とも2文字以上必要です' });
+    else if (kind === 'adj' && !y.endsWith('い')) warns.push({ field: 'pos', msg: '形容詞は「い」で終わる読みにします (例: めろい)' });
+    else if (r.pos === '五段' && !GODAN_TAIL.includes(y[y.length - 1])) warns.push({ field: 'pos', msg: '五段の読みは ' + GODAN_TAIL.split('').join('/') + ' のどれかで終わります' });
+    else if (r.pos === '一段' && !y.endsWith('る')) warns.push({ field: 'pos', msg: '一段の読みは「る」で終わります (例: たべる)' });
   }
   return { errs, warns };
 }
 
-// ---- .pack の生成 -------------------------------------------------------
+// ---- .pack の生成 / 読み込み --------------------------------------------
 
 function build() {
   const lines = [];
@@ -290,8 +301,6 @@ function build() {
   return lines.join('\n') + '\n';
 }
 
-// ---- .pack の読み込み ---------------------------------------------------
-
 function parse(text) {
   const rows = [];
   let name = '', desc = '', inBody = false;
@@ -304,8 +313,7 @@ function parse(text) {
       const i = s.indexOf(':');
       if (i < 0) continue;
       const k = s.slice(0, i).trim(), v = s.slice(i + 1).trim();
-      if (k === 'name') name = v;
-      else if (k === 'description') desc = v;
+      if (k === 'name') name = v; else if (k === 'description') desc = v;
       continue;
     }
     if (s.startsWith('#')) continue;
@@ -315,11 +323,7 @@ function parse(text) {
     // 3列目以降の # から先はコメント (読み・単語は切らない)。
     let note = '';
     for (let i = 2; i < cols.length; i++) {
-      if (cols[i].startsWith('#')) {
-        note = cols.slice(i).join(' ').replace(/^#\s*/, '');
-        cols = cols.slice(0, i);
-        break;
-      }
+      if (cols[i].startsWith('#')) { note = cols.slice(i).join(' ').replace(/^#\s*/, ''); cols = cols.slice(0, i); break; }
     }
     if (cols.length < 2) continue;
     const r = newRow(sup);
@@ -334,114 +338,201 @@ function parse(text) {
   return { name, desc, rows };
 }
 
-// ---- 描画 ---------------------------------------------------------------
+// ---- 表の描画 -----------------------------------------------------------
+//
+// 入力のたびに表を作り直すと日本語入力が確定前に切れてしまうので、
+// DOM を組み直すのは行の増減・並べ替え・読み込みのときだけにして、
+// 打っている間は出力と検証表示だけを更新する (refresh)。
 
-function render() {
-  const box = $('rows');
-  box.textContent = '';
-  let bad = 0, entries = 0, sups = 0;
+function cellInput(r, field, ph) {
+  const i = el('input', 'cell');
+  i.type = 'text'; i.value = r[field]; i.placeholder = ph || '';
+  i.dataset.field = field;
+  i.addEventListener('input', () => { r[field] = i.value; refresh(); });
+  return i;
+}
 
+function renderRows() {
+  const tb = $('tb');
+  tb.textContent = '';
   state.rows.forEach((r, idx) => {
+    const tr = el('tr');
+    tr.dataset.idx = String(idx);
+
+    const num = el('td', 'num'); num.textContent = String(idx + 1); tr.appendChild(num);
+
+    const tdY = el('td'); tdY.appendChild(cellInput(r, 'yomi', 'がばる')); tr.appendChild(tdY);
+    const tdW = el('td'); tdW.appendChild(cellInput(r, 'word', 'ガバる')); tr.appendChild(tdW);
+
+    const tdP = el('td');
+    const sel = el('select', 'cell'); sel.dataset.field = 'pos';
+    for (const p of POS) {
+      const o = el('option'); o.value = p; o.textContent = p === '' ? '名詞' : p;
+      if (p === r.pos) o.selected = true; sel.appendChild(o);
+    }
+    sel.addEventListener('change', () => { r.pos = sel.value; refresh(); });
+    tdP.appendChild(sel); tr.appendChild(tdP);
+
+    const tdPr = el('td');
+    const pri = el('select', 'cell'); pri.dataset.field = 'pri';
+    const priOpts = ['', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+    // 読み込み・貼り付けで範囲外の値が入ることがある。選択肢に無いと
+    // select が黙って先頭 (既定) を表示してしまい、出力には元の値が残るので
+    // 画面と出来上がりが食い違う。その値もそのまま見せて、検証で弾く。
+    if (r.pri !== '' && !priOpts.includes(String(r.pri))) priOpts.push(String(r.pri));
+    for (const v of priOpts) {
+      const o = el('option'); o.value = v; o.textContent = v === '' ? '5 (既定)' : v;
+      if (v === String(r.pri)) o.selected = true; pri.appendChild(o);
+    }
+    pri.addEventListener('change', () => { r.pri = pri.value; refresh(); });
+    tdPr.appendChild(pri); tr.appendChild(tdPr);
+
+    const tdC = el('td'); tdC.appendChild(cellInput(r, 'cls', '@34')); tr.appendChild(tdC);
+    const tdN = el('td'); tdN.appendChild(cellInput(r, 'note', '語源など')); tr.appendChild(tdN);
+
+    const tdS = el('td', 'mid');
+    const cb = el('input'); cb.type = 'checkbox'; cb.checked = r.sup; cb.title = 'この表記を出さない';
+    cb.addEventListener('change', () => { r.sup = cb.checked; renderRows(); refresh(); });
+    tdS.appendChild(cb); tr.appendChild(tdS);
+
+    const tdA = el('td', 'act');
+    const mk = (t, title, fn) => { const b = el('button', 'btn ghost'); b.textContent = t; b.title = title; b.addEventListener('click', fn); return b; };
+    tdA.appendChild(mk('↑', '上へ', () => { if (idx > 0) { const t = state.rows[idx - 1]; state.rows[idx - 1] = r; state.rows[idx] = t; renderRows(); refresh(); } }));
+    tdA.appendChild(mk('↓', '下へ', () => { if (idx < state.rows.length - 1) { const t = state.rows[idx + 1]; state.rows[idx + 1] = r; state.rows[idx] = t; renderRows(); refresh(); } }));
+    tdA.appendChild(mk('✕', '削除', () => { state.rows.splice(idx, 1); if (!state.rows.length) state.rows.push(newRow(false)); renderRows(); refresh(); }));
+    tr.appendChild(tdA);
+
+    // 抑制行では品詞・優先度・クラスを使わないので触れないようにする。
+    if (r.sup) { for (const s of [sel, pri, tdC.firstChild]) { s.disabled = true; s.style.opacity = '.35'; } }
+    tb.appendChild(tr);
+  });
+}
+
+// 出力・件数・検証表示だけを更新する (DOM は組み直さない)。
+function refresh() {
+  save();
+  const msgs = [];
+  let entries = 0, sups = 0, bad = 0;
+
+  Array.from($('tb').children).forEach((tr, idx) => {
+    const r = state.rows[idx];
+    if (!r) return;
     const { errs, warns, empty } = checkRow(r);
+    tr.classList.toggle('bad', errs.length > 0);
     if (errs.length) bad++;
     if (!empty && r.yomi.trim() && r.word.trim()) { r.sup ? sups++ : entries++; }
-
-    const row = el('div', 'row' + (r.sup ? ' sup' : ''));
-    if (errs.length) row.dataset.bad = '1';
-
-    const mk = (area, labelText, node) => {
-      const c = el('div', area);
-      const l = el('label'); l.textContent = labelText;
-      c.appendChild(l); c.appendChild(node); return c;
-    };
-    const txt = (val, ph, on) => {
-      const i = el('input'); i.type = 'text'; i.value = val; i.placeholder = ph;
-      i.addEventListener('input', () => { on(i.value); save(); });
-      // 入力のたびに全体を描き直すと日本語入力が途切れるので、
-      // 検証表示の更新だけ遅らせて行う。
-      i.addEventListener('blur', render);
-      return i;
-    };
-
-    row.appendChild(mk('a-yomi', r.sup ? '読み (抑制)' : '読み', txt(r.yomi, 'がばる', (v) => r.yomi = v)));
-    row.appendChild(mk('a-word', r.sup ? '出したくない表記' : '単語', txt(r.word, 'ガバる', (v) => r.word = v)));
-
-    if (!r.sup) {
-      const sel = el('select');
-      for (const p of POS) {
-        const o = el('option'); o.value = p; o.textContent = p === '' ? '名詞 (既定)' : p;
-        if (p === r.pos) o.selected = true;
-        sel.appendChild(o);
-      }
-      sel.addEventListener('change', () => { r.pos = sel.value; save(); render(); });
-      row.appendChild(mk('a-pos', '品詞', sel));
-
-      const pri = el('select');
-      const opts = [['', '5 (既定)'], ['1', '1 最優先'], ['2', '2'], ['3', '3'], ['4', '4'],
-        ['5', '5'], ['6', '6'], ['7', '7'], ['8', '8'], ['9', '9'], ['10', '10 一番右']];
-      for (const [v, t] of opts) {
-        const o = el('option'); o.value = v; o.textContent = t;
-        if (v === String(r.pri)) o.selected = true;
-        pri.appendChild(o);
-      }
-      pri.addEventListener('change', () => { r.pri = pri.value; save(); render(); });
-      row.appendChild(mk('a-pri', '優先度', pri));
+    const flagged = new Set(errs.map((e) => e.field));
+    for (const inp of tr.querySelectorAll('.cell')) {
+      inp.classList.toggle('err', flagged.has(inp.dataset.field));
     }
-
-    row.appendChild(mk('a-note', 'コメント (任意)', txt(r.note, '語源など。ファイルに # で残ります', (v) => r.note = v)));
-
-    const act = el('div', 'a-act');
-    if (!r.sup) {
-      const cw = el('label', 'chk');
-      const cb = el('input'); cb.type = 'text'; cb.placeholder = '@34 / @0,10';
-      cb.value = r.cls; cb.style.width = '130px'; cb.style.padding = '5px 8px'; cb.style.fontSize = '13px';
-      cb.addEventListener('input', () => { r.cls = cb.value; save(); });
-      cb.addEventListener('blur', render);
-      const cl = el('span'); cl.textContent = 'クラス指定';
-      cw.appendChild(cl); cw.appendChild(cb);
-      act.appendChild(cw);
-    }
-    const btns = el('div', 'act-btns');
-    const up = el('button', 'btn ghost'); up.textContent = '↑'; up.title = '上へ';
-    up.addEventListener('click', () => { if (idx > 0) { const t = state.rows[idx - 1]; state.rows[idx - 1] = r; state.rows[idx] = t; save(); render(); } });
-    const dn = el('button', 'btn ghost'); dn.textContent = '↓'; dn.title = '下へ';
-    dn.addEventListener('click', () => { if (idx < state.rows.length - 1) { const t = state.rows[idx + 1]; state.rows[idx + 1] = r; state.rows[idx] = t; save(); render(); } });
-    const del = el('button', 'btn ghost danger'); del.textContent = '削除';
-    del.addEventListener('click', () => { state.rows.splice(idx, 1); save(); render(); });
-    btns.appendChild(up); btns.appendChild(dn); btns.appendChild(del);
-    act.appendChild(btns);
-    row.appendChild(act);
-
-    for (const e of errs) { const m = el('div', 'msg err'); m.style.gridColumn = '1/-1'; m.textContent = '⚠ ' + e; row.appendChild(m); }
-    for (const w of warns) { const m = el('div', 'msg warn'); m.style.gridColumn = '1/-1'; m.textContent = 'ⓘ ' + w; row.appendChild(m); }
-
-    box.appendChild(row);
+    for (const e of errs) msgs.push({ kind: 'err', text: (idx + 1) + '行目: ' + e.msg });
+    for (const w of warns) msgs.push({ kind: 'warn', text: (idx + 1) + '行目: ' + w.msg });
   });
 
   $('cnt').textContent = entries + ' 語' + (sups ? ' / 抑制 ' + sups : '') + (bad ? ' / 要修正 ' + bad : '');
 
+  const box = $('rowMsg'); box.textContent = '';
+  const errList = msgs.filter((m) => m.kind === 'err');
+  const warnList = msgs.filter((m) => m.kind === 'warn');
+  const addList = (cls, head, list) => {
+    if (!list.length) return;
+    const d = el('div', 'msg ' + cls);
+    d.appendChild(document.createTextNode(head));
+    const ul = el('ul');
+    for (const m of list) { const li = el('li'); li.textContent = m.text; ul.appendChild(li); }
+    d.appendChild(ul); box.appendChild(d);
+  };
+  addList('err', '⚠ 直さないとビルドで弾かれます', errList);
+  addList('warn', 'ⓘ 弾かれはしませんが、意図どおりに効きません', warnList);
+
   const mm = $('metaMsg'); mm.textContent = '';
-  if (!state.name.trim()) {
-    const m = el('div', 'msg err'); m.textContent = '⚠ パック名は必須です (ヘッダの name:)';
-    mm.appendChild(m);
-  }
-  if (!/^[A-Za-z0-9_-]+$/.test(state.file.trim())) {
-    const m = el('div', 'msg err'); m.textContent = '⚠ ファイル名は半角英数・ハイフン・アンダースコアだけにしてください';
-    mm.appendChild(m);
-  }
+  if (!state.name.trim()) { const m = el('div', 'msg err'); m.textContent = '⚠ パック名は必須です (ヘッダの name:)'; mm.appendChild(m); }
+  if (!/^[A-Za-z0-9_-]+$/.test(state.file.trim())) { const m = el('div', 'msg err'); m.textContent = '⚠ ファイル名は半角英数・ハイフン・アンダースコアだけにしてください'; mm.appendChild(m); }
 
   $('out').value = build();
   const om = $('outMsg'); om.textContent = '';
-  if (bad) { const m = el('div', 'msg err'); m.textContent = '⚠ ' + bad + ' 件に修正が必要です。直さないとビルドで弾かれます。'; om.appendChild(m); }
-  else if (entries === 0 && sups === 0) { const m = el('div', 'msg warn'); m.textContent = 'ⓘ まだ語がありません。'; om.appendChild(m); }
+  if (entries === 0 && sups === 0) { const m = el('div', 'msg warn'); m.textContent = 'ⓘ まだ語がありません。'; om.appendChild(m); }
 }
+
+// ---- キー移動 / 貼り付け (Excel風) --------------------------------------
+
+function focusCell(rowIdx, field) {
+  const tr = $('tb').children[rowIdx];
+  if (!tr) return;
+  const c = tr.querySelector('.cell[data-field="' + field + '"]');
+  if (c && !c.disabled) { c.focus(); if (c.select) c.select(); }
+}
+
+$('tb').addEventListener('keydown', (ev) => {
+  const cell = ev.target.closest ? ev.target.closest('.cell') : null;
+  if (!cell) return;
+  // 変換中の Enter は確定なので横取りしない。
+  if (ev.isComposing) return;
+  const tr = cell.closest('tr');
+  const idx = Number(tr.dataset.idx);
+  const field = cell.dataset.field;
+  if (ev.key === 'Enter') {
+    ev.preventDefault();
+    if (idx === state.rows.length - 1) { state.rows.push(newRow(false)); renderRows(); refresh(); }
+    focusCell(idx + 1, field);
+  } else if (ev.key === 'ArrowDown' && cell.tagName === 'INPUT') {
+    ev.preventDefault(); focusCell(idx + 1, field);
+  } else if (ev.key === 'ArrowUp' && cell.tagName === 'INPUT') {
+    ev.preventDefault(); focusCell(idx - 1, field);
+  }
+});
+
+// 一番下の行に打ち始めたら次の行を用意する (Excel風の伸び方)。
+$('tb').addEventListener('input', (ev) => {
+  const cell = ev.target.closest ? ev.target.closest('.cell') : null;
+  if (!cell || !cell.value) return;
+  const idx = Number(cell.closest('tr').dataset.idx);
+  if (idx === state.rows.length - 1) {
+    state.rows.push(newRow(false));
+    const field = cell.dataset.field;
+    const pos = cell.selectionStart;
+    renderRows(); refresh();
+    // 組み直しで失われたフォーカス位置を戻す。
+    const back = $('tb').children[idx].querySelector('.cell[data-field="' + field + '"]');
+    if (back) { back.focus(); try { back.setSelectionRange(pos, pos); } catch (e) {} }
+  }
+});
+
+// 表計算からコピーした範囲 (TSV) をセルに貼ると、そのまま表に展開する。
+$('tb').addEventListener('paste', (ev) => {
+  const cell = ev.target.closest ? ev.target.closest('.cell') : null;
+  if (!cell || cell.tagName !== 'INPUT') return;
+  const text = (ev.clipboardData || window.clipboardData).getData('text');
+  if (!text || (!text.includes('\t') && !/\r?\n/.test(text.trim()))) return;  // 単一セルは通常動作
+  ev.preventDefault();
+  const startRow = Number(cell.closest('tr').dataset.idx);
+  const startCol = COLS.indexOf(cell.dataset.field);
+  const lines = text.replace(/\r/g, '').split('\n').filter((l) => l.length > 0);
+  lines.forEach((line, dy) => {
+    const cells = line.split('\t');
+    const ri = startRow + dy;
+    while (state.rows.length <= ri) state.rows.push(newRow(false));
+    cells.forEach((v, dx) => {
+      const ci = startCol + dx;
+      if (ci >= COLS.length) return;
+      const f = COLS[ci];
+      const val = v.trim();
+      if (f === 'pos') state.rows[ri][f] = POS.includes(val) ? val : '';
+      else if (f === 'pri') state.rows[ri][f] = /^\d+$/.test(val) ? val : '';
+      else state.rows[ri][f] = val;
+    });
+  });
+  if (state.rows.length === 0 || (state.rows[state.rows.length - 1].yomi || state.rows[state.rows.length - 1].word)) {
+    state.rows.push(newRow(false));
+  }
+  renderRows(); refresh();
+});
 
 // ---- 保存・入出力 -------------------------------------------------------
 
 function save() {
   state.name = $('pname').value; state.desc = $('pdesc').value; state.file = $('pfile').value;
   try { localStorage.setItem(STORE_KEY, JSON.stringify(state)); } catch (e) {}
-  $('out').value = build();
 }
 
 function load() {
@@ -455,21 +546,39 @@ function load() {
 
 function adopt(p) {
   state.name = p.name; state.desc = p.desc;
-  state.rows = p.rows.length ? p.rows : [newRow(false)];
+  state.rows = p.rows.length ? p.rows.slice() : [];
+  state.rows.push(newRow(false));   // 末尾に空行を1つ残して続けて打てるようにする
   $('pname').value = state.name; $('pdesc').value = state.desc;
-  save(); render();
+  renderRows(); refresh();
 }
 
-$('pname').addEventListener('input', () => { save(); render(); });
-$('pdesc').addEventListener('input', save);
-$('pfile').addEventListener('input', () => { save(); render(); });
-$('add').addEventListener('click', () => { state.rows.push(newRow(false)); save(); render(); });
-$('addSup').addEventListener('click', () => { state.rows.push(newRow(true)); save(); render(); });
+$('pname').addEventListener('input', refresh);
+$('pdesc').addEventListener('input', refresh);
+$('pfile').addEventListener('input', refresh);
+$('add').addEventListener('click', () => { state.rows.push(newRow(false)); renderRows(); refresh(); focusCell(state.rows.length - 1, 'yomi'); });
+$('paste').addEventListener('click', () => {
+  const t = prompt('表計算からコピーした範囲を貼り付けてください (列の順は 読み / 単語 / 品詞 / 優先度 / クラス / コメント)');
+  if (!t) return;
+  const lines = t.replace(/\r/g, '').split('\n').filter((l) => l.trim().length > 0);
+  for (const line of lines) {
+    const cells = line.split('\t');
+    const r = newRow(false);
+    COLS.forEach((f, i) => {
+      const v = (cells[i] || '').trim();
+      if (f === 'pos') r[f] = POS.includes(v) ? v : '';
+      else if (f === 'pri') r[f] = /^\d+$/.test(v) ? v : '';
+      else r[f] = v;
+    });
+    if (r.yomi || r.word) state.rows.push(r);
+  }
+  state.rows.push(newRow(false));
+  renderRows(); refresh();
+});
 $('clearAll').addEventListener('click', () => {
   if (!confirm('入力内容をすべて消します。よろしいですか?')) return;
   state = { name: '', desc: '', file: 'mypack', rows: [newRow(false)] };
   $('pname').value = ''; $('pdesc').value = ''; $('pfile').value = 'mypack';
-  save(); render();
+  renderRows(); refresh();
 });
 $('openFile').addEventListener('click', () => $('file').click());
 $('file').addEventListener('change', (ev) => {
@@ -479,7 +588,7 @@ $('file').addEventListener('change', (ev) => {
   rd.onload = () => {
     adopt(parse(String(rd.result)));
     const base = f.name.replace(/\.[^.]+$/, '');
-    if (/^[A-Za-z0-9_-]+$/.test(base)) { state.file = base; $('pfile').value = base; save(); render(); }
+    if (/^[A-Za-z0-9_-]+$/.test(base)) { state.file = base; $('pfile').value = base; refresh(); }
   };
   rd.readAsText(f, 'utf-8');
   ev.target.value = '';
@@ -498,10 +607,8 @@ $('download').addEventListener('click', () => {
 });
 $('copy').addEventListener('click', async () => {
   const text = build();
-  try {
-    await navigator.clipboard.writeText(text);
-    alert('コピーしました');
-  } catch (e) {
+  try { await navigator.clipboard.writeText(text); alert('コピーしました'); }
+  catch (e) {
     // クリップボードAPIが使えない環境 (file:// など) 向け。
     const ta = $('out');
     ta.removeAttribute('readonly'); ta.select();
@@ -512,7 +619,8 @@ $('copy').addEventListener('click', async () => {
 });
 
 load();
-render();
+renderRows();
+refresh();
 </script>
 </body>
 </html>
