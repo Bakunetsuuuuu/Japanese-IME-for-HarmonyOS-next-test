@@ -263,6 +263,17 @@ export class UnknownWordLearner {
     const surfaces = UnknownWordLearner.runSurfaces;
     if (surfaces.length === 0) { return false; }
     const tail = surfaces[surfaces.length - 1];
+    // 末尾が全部ひらがな (生のかな確定・助詞など、漢字の手がかりが一切無い)
+    // なら、1回のbackspaceが表記の何文字に対応するか保証できない。実機で
+    // 大量発生した「〜して」のバグはまさにこれで、読みは削られないまま
+    // 表記だけ削れて対応が壊れていた。
+    // 翔ける (漢字+送り仮名) のようにひらがなが混じっていても、漢字が
+    // 1文字でも残っていれば手がかりがあるので安全に末尾から削れる --
+    // まさにこの関数が存在する理由 (かける→翔ける→⌫⌫→翔)。危険なのは
+    // 「全部ひらがな」の場合だけなので、そこだけ呼び出し側
+    // (KeyboardController) が代わりに abandonRun() へ回せるよう false を
+    // 返す (run はそのまま残す -- まだ捨てるべきと決まったわけではない)。
+    if (UnknownWordLearner.isAllHiragana(tail)) { return false; }
     if (tail.length <= 1) {
       // The whole fragment is gone: the run can't describe the text any more.
       UnknownWordLearner.clearRun();

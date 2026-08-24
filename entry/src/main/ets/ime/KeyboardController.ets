@@ -1686,10 +1686,16 @@ export class InputHandler {
       const deleted = this.insertedBuffer.pop() ?? '';
       if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
       this.inputClient?.deleteForward(1);
-      // 削除が入ったら組み立て中の run は捨てる。以前は truncate() で表記の
-      // 末尾だけを削っていたが、読みは削られないので対応が壊れる
-      // (abandonRun のコメント参照)。
-      UnknownWordLearner.abandonRun();
+      // 直前の確定 (熟語など) をバックスペースで削っていく間、漢字の手がかりが
+      // 残っている限り truncate() で末尾を追う (かける→翔ける→⌫⌫→翔 のような、
+      // 熟語や活用語尾の一部だけを残すケースを検出するため)。全部ひらがな
+      // (生のかな確定・助詞など、対応が保証できない) まで削り込んだら
+      // truncate() 自身が false を返すので、そこから先は以前と同じ
+      // abandonRun() で run ごと捨てる (「〜して」のバグの再発防止 --
+      // UnknownWordLearner.truncate のコメント参照)。
+      if (!UnknownWordLearner.truncate()) {
+        UnknownWordLearner.abandonRun();
+      }
       // The committed word the next-word strip was keyed on is being edited
       // away -- retire the strip so a now-stale prediction can't be tapped.
       if (this.recentWords.length > 0) {

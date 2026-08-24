@@ -74,6 +74,44 @@ function main() {
     UW.candidates('かける').join(',') === '翔',
     JSON.stringify(UW.candidates('かける')));
 
+  // ---- signal 2b: extracting one kanji out of a jukugo (熟語), not just a
+  // conjugated verb stem -- 学校 -> ⌫ -> 学 ----
+  UW.setLearned({});
+  const buildGaku = () => {
+    UW.observe('がっこう', '学校', NEVER_KNOWN);
+    UW.truncate(); // deletes 校, leaving 学 (still content-only: kanji)
+    UW.endRun(NEVER_KNOWN);
+  };
+  for (let i = 0; i < LEARN_THRESHOLD; i++) { buildGaku(); }
+  check('truncated: one kanji trimmed out of a jukugo is learned under the full reading',
+    UW.candidates('がっこう').join(',') === '学',
+    JSON.stringify(UW.candidates('がっこう')));
+
+  // truncate() refuses (returns false, run left untouched) once the tail is
+  // ALL hiragana -- no kanji anchor left to trust the character-count
+  // correspondence, exactly the historical "〜して" bug (see truncate()'s
+  // own comment). KeyboardController falls back to abandonRun() in that case.
+  UW.setLearned({});
+  UW.observe('して', 'して', NEVER_KNOWN); // raw kana commit, no kanji
+  check('truncate() refuses an all-hiragana tail',
+    UW.truncate() === false);
+  // the run is intentionally left as-is for the caller to decide; simulate
+  // KeyboardController's fallback and confirm nothing bogus gets learned.
+  UW.abandonRun();
+  UW.observe('がっこう', '学校', NEVER_KNOWN);
+  UW.endRun(NEVER_KNOWN);
+  check('no bogus reading/surface pair survives an all-hiragana truncation attempt',
+    UW.candidates('して').length === 0 && UW.candidates('してがっこう').length === 0,
+    JSON.stringify(UW.getLearned()));
+
+  // A mixed kanji+hiragana tail (翔ける) is safe to truncate through even
+  // though it contains hiragana, as long as a kanji anchor remains --
+  // confirms the guard is "not ALL hiragana", not "no hiragana at all".
+  UW.setLearned({});
+  UW.observe('かける', '翔ける', NEVER_KNOWN);
+  check('truncate() accepts a mixed kanji+hiragana tail (kanji anchor present)',
+    UW.truncate() === true);
+
   // A single UNtrimmed commit is just ordinary typing, never a learned word.
   UW.setLearned({});
   for (let i = 0; i < 6; i++) {
