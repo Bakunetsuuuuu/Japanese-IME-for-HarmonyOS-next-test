@@ -8,6 +8,12 @@
 // 逆に、印の無い InputLog / DEBUG_INPUT_LOG の参照が1つでもあると、その行は
 // 消し忘れる。それを検出するのがこのスクリプトの本題で、単なる grep との違い。
 //
+// 入力内容を記録する機能なので、これが有効なまま配信すると審査で確実に
+// 問題になる。「見落としても気付ける」ことがこのスクリプトの存在理由で、
+// 出力がノイズで埋まったら役目を果たしていない (実際、生成物を除外して
+// いなかったせいで .preview のコンパイル済みコピーが117行の「未マーク」
+// として出ており、本物が埋もれていた)。
+//
 // Usage:
 //   node tools/check_debug_log.js          収集地点の一覧
 //   node tools/check_debug_log.js --strict  1件でもあれば exit 1 (リリース確認用)
@@ -26,15 +32,34 @@ const DEBUG_ONLY_FILES = [
 // 収集機構に触れている名前。これが印の無い行に出てきたら消し忘れ候補。
 const SYMBOLS = /\bInputLog\b|\bDEBUG_INPUT_LOG\b|\bINPUT_LOG_FILE\b|\bLearnedWordFn\b|\bonLearn\b/;
 
+// ビルド生成物。個別に列挙する形だと次に増えた生成物でまた同じ穴が開くので、
+// ドットで始まるディレクトリ (.preview / .hvigor / .idea …) はまとめて捨てる。
+const SKIP_DIRS = new Set(['node_modules', 'oh_modules', 'build', 'dist', 'out']);
+
 function walk(dir, out) {
   for (const name of fs.readdirSync(dir)) {
-    if (name === 'node_modules' || name === '.git' || name === 'oh_modules' || name === 'build') { continue; }
+    if (SKIP_DIRS.has(name) || name.startsWith('.')) { continue; }
     const p = path.join(dir, name);
     const st = fs.statSync(p);
     if (st.isDirectory()) { walk(p, out); }
     else if (/\.(ets|ts|json|json5)$/.test(name)) { out.push(p); }
   }
   return out;
+}
+
+// 行の波括弧の増減。文字列と行コメントの中は数えない。完全なパーサでは
+// ないが、印の付いた宣言行からその閉じ括弧までを拾えれば足りる。
+function netBraces(line) {
+  const code = line
+    .replace(/\/\/.*$/, '')
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``');
+  let n = 0;
+  for (const ch of code) {
+    if (ch === '{') { n++; } else if (ch === '}') { n--; }
+  }
+  return n;
 }
 
 function main() {
@@ -49,10 +74,33 @@ function main() {
     const rel = path.relative(ROOT, file);
     const isDebugOnly = debugOnly.indexOf(file) >= 0;
     const lines = fs.readFileSync(file, 'utf-8').split('\n');
+    // 印の付いた行がブロックを開いていたら、閉じ括弧までは中身ごと削除対象。
+    // デバッグ専用メソッドは宣言行にだけ印を付ける運用なので、本体の1行ずつに
+    // 印を求めると、消すときに宣言だけ消えて本体が残り、逆に壊れる。
+    let depth = 0;
+    // 印はコメント塊の先頭行にだけ付ける。続き行にも1つずつ付けるのは
+    // 読みづらいだけなので、連続する // 行はまとめて同じ塊として扱う。
+    let inComment = false;
+    const isComment = (l) => l.trim().startsWith('//');
     lines.forEach((line, i) => {
       const m = /const DEBUG_INPUT_LOG:\s*boolean\s*=\s*(true|false)/.exec(line);
       if (m) { flagValue = m[1] === 'true'; }
-      if (line.indexOf(MARK) >= 0) { marked.push([rel, i + 1, line.trim()]); return; }
+      if (depth > 0) {
+        marked.push([rel, i + 1, line.trim(), true]);
+        depth += netBraces(line);
+        return;
+      }
+      if (inComment && isComment(line)) {
+        marked.push([rel, i + 1, line.trim(), true]);
+        return;
+      }
+      inComment = false;
+      if (line.indexOf(MARK) >= 0) {
+        marked.push([rel, i + 1, line.trim(), false]);
+        const n = netBraces(line);
+        if (n > 0) { depth = n; } else if (isComment(line)) { inComment = true; }
+        return;
+      }
       if (isDebugOnly) { return; }         // ファイルごと消すので行単位では数えない
       if (SYMBOLS.test(line)) { unmarked.push([rel, i + 1, line.trim()]); }
     });
@@ -65,7 +113,8 @@ function main() {
 
   const present = fs.existsSync(debugOnly[0]) || fs.existsSync(debugOnly[1]);
 
-  if (!present && marked.length === 0 && unmarked.length === 0 && !pagesRegistered) {
+  if (!present && marked.length === 0 && unmarked.length === 0 && !pagesRegistered
+      && flagValue === null) {
     console.log('[DEBUG-LOG] 収集コードはありません（リリース可）');
     return;
   }
@@ -80,10 +129,12 @@ function main() {
   }
 
   console.log(`\n■ 行ごと削除するもの (${marked.length} 行)`);
+  console.log('   | が付いた行は、直前の印付き宣言のブロック内。宣言ごとまとめて消す。');
   let last = '';
-  for (const [rel, ln, text] of marked) {
+  for (const [rel, ln, text, inBlock] of marked) {
     if (rel !== last) { console.log(`   ${rel}`); last = rel; }
-    console.log(`     ${String(ln).padStart(5)}  ${text.length > 100 ? text.slice(0, 97) + '...' : text}`);
+    const body = text.length > 100 ? text.slice(0, 97) + '...' : text;
+    console.log(`     ${String(ln).padStart(5)} ${inBlock ? '|' : ' '} ${body}`);
   }
 
   if (unmarked.length > 0) {
@@ -96,6 +147,11 @@ function main() {
 
   console.log(`\n合計: ファイル ${DEBUG_ONLY_FILES.length} + 行 ${marked.length}` +
     (unmarked.length > 0 ? ` (未マーク ${unmarked.length} ★要対応)` : ''));
+
+  if (flagValue === true) {
+    console.log('\n★ DEBUG_INPUT_LOG = true のままです。この状態で配信すると、');
+    console.log('  入力内容を記録するコードが有効なまま出ます。リリース前に落とすこと。');
+  }
 
   if (unmarked.length > 0) { process.exit(1); }
   if (process.argv.includes('--strict')) { process.exit(1); }

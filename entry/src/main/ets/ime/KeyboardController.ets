@@ -46,6 +46,36 @@ interface ComposeAlignment {
   prefixText: string;        // prefixSurfaces joined
 }
 
+// ホスト側(確定済み)テキストへの1回の操作。hostUndoStack の要素。
+// 詳しい設計意図は hostUndoStack のフィールドコメント参照。
+interface InsertTextOptions {
+  raw: boolean;
+}
+
+interface HostEditOp {
+  kind: 'insert' | 'delete';
+  text: string;
+  at: number;   // IME自己完結の相対座標(ホストの絶対indexではない)
+}
+
+// 開き括弧 -> 閉じ括弧。pendingBracketClose の元ネタ。
+//
+// 以前は「（）」のように開き・閉じを1つの候補として丸ごと確定し、確定後に
+// カーソルだけ内側へ戻す実装だったが、moveCursor/selectByRange のどちらも
+// 実機で信用できないことが分かり撤去した (コミット 7328e504 参照)。
+//
+// 今回は発想を変え、カーソルを一切動かさない: 開きだけを確定し、閉じは
+// 「次に確定される内容の直後」まで保留する。ユーザーは括弧の中を普通に
+// 打ち進めるだけで、次の確定のたびに保留中の閉じがその直後へ続けて出る
+// ので、結果的に (内容) の形になる。カーソル移動プリミティブを一切
+// 使わないので、上記の実機不具合と無縁になる。
+const BRACKET_PAIRS: Record<string, string> = {
+  '（': '）', '「': '」', '『': '』', '【': '】',
+  '〖': '〗', '〔': '〕', '〈': '〉', '《': '》',
+  '(': ')', '[': ']', '{': '}',
+  '［': '］', '｛': '｝', '〝': '〟',
+};
+
 // Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
 const MAX_KB_VP = 620;
 
@@ -75,15 +105,24 @@ export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boo
   // mode/enter — the row would overflow if it were sized on top of them
   // instead of space giving up the room). Same space:4 as kwVp above.
   const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 20), 60);
-  // Flick keys: 5 columns + 4 gaps × 4vp (FlickKeyboardView's Row({space:4}))
-  // + 0vp H-padding (its Column has no left/right padding) = 16vp overhead --
-  // same total as the old "4 gaps × 3vp + 4vp H-padding" comment assumed, by
-  // coincidence, so this one was never actually broken.
-  const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
+  // Flick keys: 5 columns (左特殊・中央3列・右特殊) + 4 gaps × 4vp
+  // (FlickKeyboardView's Row({space:4})) + 0vp H-padding (its Column has no
+  // left/right padding) = 16vp overhead -- same total as the old "4 gaps ×
+  // 3vp + 4vp H-padding" comment assumed, by coincidence, so this one was
+  // never actually broken.
+  //
+  // flickSideColumnRatio (設定 → レイアウト調整) は「左右の特殊キー1列の
+  // 幅 / 中央の かなキー1列の幅」。既定 1.0 で今までどおり5列均等になる。
+  // available = 2*side + 3*mid, side = ratio*mid という連立から解く。
+  const available = screenVp - 16;
+  const sideRatio = Math.min(2.0, Math.max(0.4, AppStorage.get<number>('flickSideColumnRatio') ?? 1.0));
+  const flickKwVp = Math.max(Math.floor(available / (3 + 2 * sideRatio)), 40);
+  const flickSideKwVp = Math.max(Math.floor(flickKwVp * sideRatio), 32);
   AppStorage.setOrCreate('keyWidthVp', kwVp);
   AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
   AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
   AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
+  AppStorage.setOrCreate('flickSideKeyWidthVp', flickSideKwVp);
   // Symbol panel: 8 columns + 7 gaps × 4vp (SymbolView's Row({space:4})) +
   // 8vp H-padding (left:4 + right:4) = 36vp overhead -- was assuming 2vp
   // gaps + 6vp padding (20vp) here too, same class of bug as kwVp above.
@@ -190,9 +229,12 @@ export class InputHandler {
   // prefix. Lets a whole-sentence commit learn each 文節 individually (see
   // learnCommit / KanaKanjiConverter.recordSegmentedChoice).
   private lastAlignment: ComposeAlignment | undefined = undefined;
-  private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
-  private restoreStack: string[] = [];
+  // 変換前のかな組み立て中(COMPOSING)にbackspaceで消した文字のLIFO。この
+  // バッファは常に末尾でしか編集できない(カーソルが途中へ移動する経路が
+  // 無い)ので、位置のズレが起きようがない。確定するとその回の組み立ては
+  // 終わりなので resetComposition で空にする(handleDirectKana 参照)。
+  private composingUndoStack: string[] = [];
   private conversionEnd: number = 0;
   // composingText の「今回の入力で一番長く伸びた時点」の値。updateCandidates
   // のたびに更新し (打っている間は常に候補が見えているので、これが伸びる=
@@ -210,11 +252,35 @@ export class InputHandler {
   // 入力中のかなをどこに出すかの設定 (SettingsStore、独立した2つのトグル)。
   private composingInPanel: boolean = true;
   private composingInField: boolean = true;
-  // Cap for the persistent deleted-character log (recordDeletedChar) --
-  // unlike restoreStack above (a short-lived undo stack wiped by the next
-  // keystroke, see insertText), this survives typing and is only capped by
-  // size. Powers the 取消 key's sequential undo (undoLastDeletion).
-  private static readonly MAX_DELETED_CHAR_HISTORY = 100;
+  // ホスト側(確定済み、IDLE状態)テキストに対する操作の履歴。挿入・削除
+  // どちらも1本のスタックに積み、取消キーは最新のものから本当のctrl+zと
+  // 同じ順序で戻す。insertText() を経由するものは全部ここに乗るので、
+  // 変換確定・生かな確定・記号/絵文字タップ・予測変換タップ・
+  // クリップボード貼り付け...どの経路で入っても等しく取り消せる。
+  //
+  // at は「このIME自身が動かした分」だけを積算した自己完結の座標で、
+  // ホストの絶対カーソル位置とは対応しない。inputClient.getTextIndexAtCursor
+  // は実機で誤った値(カーソル後方にテキストがあると文末寄りの値)を返すこと
+  // が分かっている(括弧カーソル自動移動機能で実証・撤去済み、コミット
+  // 7328e504 参照)ため、ホストの絶対座標には一切頼らない。矢印キー(◄►)
+  // による移動は hostCursor に反映して追従できるが、ユーザーが入力欄を
+  // 直接タップしてカーソルを動かした場合は検知できずズレる。それでも
+  // 「常に今のカーソル位置で実行する」だった以前より、追跡できる範囲では
+  // 確実に正しくなる。
+  private hostUndoStack: HostEditOp[] = [];
+  private hostCursor: number = 0;
+  private static readonly MAX_HOST_UNDO = 100;
+  // 括弧の自動閉じで「次の確定の直後に出す」ぶんの閉じ括弧。空なら保留無し。
+  // 詳しい設計意図は BRACKET_PAIRS のコメント参照。AppStorage にも流して
+  // いるのは、保留中であることを画面に出すため (KeyboardPage の候補バー
+  // 行のバッジ参照) -- 見た目に何も変化が無いと、閉じ括弧がいつ出るのか
+  // 利用者から分からず不安になる。
+  private pendingBracketClose: string = '';
+
+  private setPendingBracketClose(v: string): void {
+    this.pendingBracketClose = v;
+    AppStorage.setOrCreate('pendingBracketClose', v);
+  }
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
@@ -338,8 +404,10 @@ export class InputHandler {
     // 読み全体をひとつの文字列として打つことが無いので recordChoice も一切
     // 呼ばれず、いつまでも埋もれたままになる穴があった。通常の学習ブーストに
     // 回すことでこの穴を塞ぐ。
-    // ★ デバッグ専用ではない (リリースでも効くべき機能) ので、下の
-    // setupInputLog とは違い [DEBUG-LOG] タグを付けないこと。
+    // ★ デバッグ専用ではない (リリースでも効くべき機能) なので、下の
+    // setupInputLog とは違い収集用の印を付けないこと。
+    // (印の文字列をここに書くと、check_debug_log の
+    //  削除対象一覧にこの説明文自体が混ざる)
     UnknownWordLearner.onKnownAssembly = (r: string, s: string) => {
       KanaKanjiConverter.recordChoice(r, s);
       this.saveLearning();
@@ -492,12 +560,20 @@ export class InputHandler {
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
-        AppStorage.setOrCreate('enabledVocabPacks', s.enabledVocabPacks);
-        KanaKanjiConverter.setEnabledPackIds(s.enabledVocabPacks);
+        AppStorage.setOrCreate('flickHintsEnabled', s.flickHintsEnabled);
+        this.applyVocabPacks(s.vocabPackOverrides);
         this.applyComposingDisplay(s.composingInPanel, s.composingInField);
         this.hapticEnabled = s.hapticEnabled;
         this.applyConversionEngine(s.conversionEngine);
         this.applyThemeMode(s.themeMode);
+        // computeKeyHeight/applyKeyboardWidthsForVp は AppStorage の
+        // keyboardHeightScale/flickSideColumnRatio を読むが、起動直後の
+        // initPanel はこの読み込みより先に (既定値のまま) 一度走っている
+        // ことがある。ここで値を入れたうえで resizePanel を呼び直し、
+        // 保存済みの調整を確実に反映させる。
+        AppStorage.setOrCreate('keyboardHeightScale', s.keyboardHeightScale);
+        AppStorage.setOrCreate('flickSideColumnRatio', s.flickSideColumnRatio);
+        this.kbCtrlRef?.resizePanel();
       });
   }
 
@@ -751,6 +827,15 @@ export class InputHandler {
     }
   }
 
+  // フリックキーの十字ヒント表示。フリック自体はタッチのジェスチャで判定
+  // しており見た目だけの設定なので、切り替えても即座に反映すればよい。
+  setFlickHintsEnabled(enabled: boolean): void {
+    AppStorage.setOrCreate('flickHintsEnabled', enabled);
+    if (this.imeContext) {
+      SettingsStore.saveFlickHintsEnabled(this.imeContext, enabled);
+    }
+  }
+
   setNumericPadEnabled(enabled: boolean): void {
     AppStorage.setOrCreate('numericPadEnabled', enabled);
     if (!enabled && AppStorage.get<string>('keyboardSubMode') === 'numeric') {
@@ -811,19 +896,118 @@ export class InputHandler {
     this.publishPreviewMode();
   }
 
+  // レイアウト調整モード (設定 → レイアウト調整) からの参照。パネルの
+  // 実サイズ変更 (panel.resize) はこのクラスからはできず、それを持っている
+  // KeyboardController (拡張本体) へ委譲する必要があるので、生成時に
+  // 向こうから自分を渡してもらう (KeyboardController.onCreate 参照)。
+  private kbCtrlRef: KeyboardController | undefined = undefined;
+
+  setKeyboardControllerRef(ctrl: KeyboardController): void {
+    this.kbCtrlRef = ctrl;
+  }
+
+  // 縦の長さの調整ハンドル (LayoutAdjustBar) からドラッグ中に毎フレーム
+  // 呼ばれる想定。保存は別 (saveKeyboardHeightScale) にして、ここは
+  // AppStorage の書き換えとパネルの実リサイズだけをその場でやる。
+  // 連打の間引きは resizePanel 側 (KeyboardController、setTimeoutベースで
+  // 詰まらないよう組んである) が引き受けるので、ここでは毎回呼んでよい。
+  applyKeyboardHeightScaleLive(scale: number): void {
+    AppStorage.setOrCreate('keyboardHeightScale', scale);
+    this.kbCtrlRef?.resizePanel();
+  }
+
+  saveKeyboardHeightScale(scale: number): void {
+    AppStorage.setOrCreate('keyboardHeightScale', scale);
+    this.kbCtrlRef?.resizePanel();
+    if (this.imeContext) {
+      SettingsStore.saveKeyboardHeightScale(this.imeContext, scale);
+    }
+  }
+
+  // 中央3列 : 左右特殊キー1列 の比率スライダー。パネル自体のサイズは
+  // 変わらないので、幅の再計算 (applyKeyboardWidthsForVp) だけで足りる。
+  applyFlickSideRatioLive(ratio: number): void {
+    AppStorage.setOrCreate('flickSideColumnRatio', ratio);
+    const vp = AppStorage.get<number>('keyboardContentVp') ?? 0;
+    if (vp <= 0) { return; }
+    const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
+    applyKeyboardWidthsForVp(vp, isTabletClass);
+  }
+
+  saveFlickSideRatio(ratio: number): void {
+    this.applyFlickSideRatioLive(ratio);
+    if (this.imeContext) {
+      SettingsStore.saveFlickSideRatio(this.imeContext, ratio);
+    }
+  }
+
+  // 設定画面のリセットボタン。両方とも既定 (1.0 = 今までどおり) へ戻す。
+  resetLayoutAdjust(): void {
+    this.saveKeyboardHeightScale(1.0);
+    this.saveFlickSideRatio(1.0);
+  }
+
+  // 語彙パックの明示的な ON/OFF (利用者が自分で触ったものだけ)。
+  // ここに無いパックは .pack の default: ヘッダに従う。
+  private vocabPackOverrides: Record<string, boolean> = {};
+
+  // manifest が届いたあとに呼ばれる。保存済みの指定でもう一度反映する。
+  refreshVocabPacks(): void {
+    this.applyVocabPacks(this.vocabPackOverrides);
+  }
+
+  // 有効なパックの語彙バイナリだけを読む。
+  //
+  // 地名パックは1つで最大8千語あるので、無効なものまで読むとパックに分けた
+  // 意味が無くなる。読み込みは一度きり (isVocabPackLoaded) で、以後の
+  // ON/OFF は enabledPacks の出し入れだけで済む -- 一度読んだものを捨てて
+  // また読み直すほうが、切り替えのたびに待たされて体感が悪い。
+  private loadEnabledPackData(ids: string[]): void {
+    const ctx = this.imeContext;
+    if (!ctx) { return; }
+    const rm = ctx.resourceManager;
+    const toU32 = (d: Uint8Array): Uint32Array =>
+      new Uint32Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
+    for (const id of ids) {
+      if (KanaKanjiConverter.isVocabPackLoaded(id)) { continue; }
+      const base = 'pack_' + id;
+      const names: string[] = [
+        base + '.keys.blob', base + '.keys.len', base + '.keys.base',
+        base + '.vals.blob', base + '.vals.len', base + '.vals.base',
+        base + '.idx.bin',
+      ];
+      Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
+        .then((all: Uint8Array[]) => {
+          KanaKanjiConverter.setVocabPackPacked(id, all[0], all[1], toU32(all[2]),
+            all[3], all[4], toU32(all[5]), toU32(all[6]));
+        })
+        .catch((e: Error) => {
+          console.error('shuntiIME vocab pack load failed: ' + id, JSON.stringify(e));
+        });
+    }
+  }
+
+  // 明示指定 (overrides) と .pack の既定から実際に有効なパックを決めて反映する。
+  private applyVocabPacks(overrides: Record<string, boolean>): void {
+    this.vocabPackOverrides = overrides;
+    const enabled = KanaKanjiConverter.resolveEnabledPacks(overrides);
+    KanaKanjiConverter.setEnabledPackIds(enabled);
+    AppStorage.setOrCreate('enabledVocabPacks', enabled);
+    AppStorage.setOrCreate('vocabPackOverrides', overrides);
+    this.loadEnabledPackData(enabled);
+  }
+
   // 語彙パックのON/OFF切替 (設定画面 → SettingsBar)。パック自体の中身は
   // loadVocabPacks で既に読み込み済み (どのパックもロードだけでは効かない)
   // なので、ここは有効/無効の集合を切り替えて保存するだけで即座に候補へ
   // 反映される。
   setVocabPackEnabled(id: string, enabled: boolean): void {
-    const current = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
-    const next = enabled
-      ? (current.includes(id) ? current : [...current, id])
-      : current.filter((x: string) => x !== id);
-    AppStorage.setOrCreate('enabledVocabPacks', next);
-    KanaKanjiConverter.setEnabledPackIds(next);
+    const next: Record<string, boolean> = {};
+    for (const k of Object.keys(this.vocabPackOverrides)) { next[k] = this.vocabPackOverrides[k]; }
+    next[id] = enabled;
+    this.applyVocabPacks(next);
     if (this.imeContext) {
-      SettingsStore.saveEnabledVocabPacks(this.imeContext, next);
+      SettingsStore.saveVocabPackOverrides(this.imeContext, next);
     }
   }
 
@@ -1599,7 +1783,7 @@ export class InputHandler {
     if (index < 0 || index >= preds.length) { return; }
     const text = preds[index];
     if (text.length === 0) { return; }
-    this.insertText(text);
+    this.insertText(text, { raw: true } as InsertTextOptions);
     KanaKanjiConverter.addContext(text);
     const words = index < this.predictionWordGroups.length && this.predictionWordGroups[index].length > 0
       ? this.predictionWordGroups[index]
@@ -1645,9 +1829,13 @@ export class InputHandler {
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
-    this.lastDeletedChar = '';
     this.insertedBuffer = [];
-    this.restoreStack = [];
+    this.composingUndoStack = [];
+    // 新しい入力欄 = 別のドキュメント/別のアプリの可能性があるので、hostCursor
+    // が指す座標系ごと無効になる。持ち越すと別の場所を編集しかねない。
+    this.hostUndoStack = [];
+    this.hostCursor = 0;
+    this.setPendingBracketClose('');
     this.conversionEnd = 0;
     AppStorage.setOrCreate('convEnd', 0);
     if (!AppStorage.has('inputMode')) {
@@ -1665,9 +1853,11 @@ export class InputHandler {
     this.kbController = undefined;
     this.inputClient = undefined;
     this.converter.reset();
-    this.lastDeletedChar = '';
     this.insertedBuffer = [];
-    this.restoreStack = [];
+    this.composingUndoStack = [];
+    this.hostUndoStack = [];
+    this.hostCursor = 0;
+    this.setPendingBracketClose('');
     this.conversionEnd = 0;
     this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
@@ -1775,8 +1965,23 @@ export class InputHandler {
         this.backspaceCaptured();
         return;
       }
-      const deleted = this.insertedBuffer.pop() ?? '';
-      if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
+      // 消す文字は「直前に自分が打ち込んだ文字」ではなく「今カーソルの
+      // 直前に実際にある文字」を読む。矢印キーでカーソルを動かした後の
+      // backspace は別の文字を消すので、insertedBuffer.pop() だけに
+      // 頼ると取消キーへ誤った文字を記録してしまう (今回の修正対象)。
+      // getBackwardSync が使えない/失敗する欄向けに従来の推測へ落とす。
+      let deleted = '';
+      try {
+        deleted = this.inputClient?.getBackwardSync(1) ?? '';
+      } catch (_e) {
+        deleted = '';
+      }
+      if (deleted.length === 0) { deleted = this.insertedBuffer.pop() ?? ''; }
+      else { this.insertedBuffer.pop(); }
+      if (deleted.length > 0) { this.pushHostOp('delete', deleted); }
+      // 括弧を開いた直後に取り消された等、何かを消したら保留中の自動閉じは
+      // 前提が崩れているので破棄する (賢く追おうとはしない)。
+      this.setPendingBracketClose('');
       this.inputClient?.deleteForward(1);
       // 直前の確定 (熟語など) をバックスペースで削っていく間、漢字の手がかりが
       // 残っている限り truncate() で末尾を追う (かける→翔ける→⌫⌫→翔 のような、
@@ -1828,8 +2033,9 @@ export class InputHandler {
       } else {
         const composing = AppStorage.get<string>('composingText') ?? '';
         if (composing.length > 0) {
-          this.lastDeletedChar = composing.slice(-1);
-          this.recordDeletedChar(this.lastDeletedChar);
+          const ch = composing.slice(-1);
+          this.composingUndoStack.push(ch);
+          InputLog.recordDeleteChar(ch, InputState.COMPOSING); // [DEBUG-LOG]
           AppStorage.setOrCreate('composingText', composing.slice(0, -1));
         }
       }
@@ -1852,6 +2058,12 @@ export class InputHandler {
     } else if (state === InputState.COMPOSING) {
       this.commitRaw();
     } else {
+      // IDLE で Enter を押すのは insertText を一切経由しないので、括弧を
+      // 開いたまま中身を確定せずに送信/改行すると保留中の閉じ括弧が
+      // 出る機会を永遠に失う。送信の直前に閉じておく。
+      if (this.pendingBracketClose.length > 0) {
+        this.insertText(this.pendingBracketClose);
+      }
       this.inputClient?.getEditorAttribute().then((attr: inputMethodEngine.EditorAttribute) => {
         this.inputClient?.sendKeyFunction(attr.enterKeyType);
       }).catch((_e: Error) => {
@@ -2045,8 +2257,7 @@ export class InputHandler {
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
-    this.lastDeletedChar = '';
-    this.restoreStack = [];
+    this.composingUndoStack = [];
     this.conversionEnd = tail.length;
     AppStorage.setOrCreate('composingText', tail);
     AppStorage.setOrCreate('pendingRomaji', '');
@@ -2068,16 +2279,20 @@ export class InputHandler {
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
-    this.lastDeletedChar = '';
     // NOTE: insertedBuffer is deliberately NOT cleared here. It is a rolling
     // log of characters actually inserted into the field (capped at 50), used
-    // by the IDLE backspace to know which char it is deleting so the 取消 key
-    // can restore it. resetComposition runs after every commit, so clearing it
-    // here threw away the just-committed word's characters -- backspacing a
-    // committed word then recorded nothing, and 取消 kept replaying whatever
-    // stale history remained. It is cleared only on field start/stop
-    // (onInputStart / onInputStop), which is the correct scope for it.
-    this.restoreStack = [];
+    // by the IDLE backspace as a fallback when getBackwardSync can't read the
+    // field. resetComposition runs after every commit, so clearing it here
+    // threw away the just-committed word's characters -- backspacing a
+    // committed word then had no fallback available. It is cleared only on
+    // field start/stop (onInputStart / onInputStop), which is the correct
+    // scope for it.
+    //
+    // composingUndoStack (この回のCOMPOSING中backspace履歴) はここで空にする
+    // -- 確定したらその読みの組み立て直しは終わりなので。hostUndoStack
+    // (確定済みホストテキストの履歴) はここでは触らない。別の対象なので
+    // commit のたびに消す理由が無い。
+    this.composingUndoStack = [];
     this.conversionEnd = 0;
     this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
@@ -2269,7 +2484,7 @@ export class InputHandler {
     if (text.length === 0) {
       return 'none';
     }
-    this.insertText(text);
+    this.insertText(text, { raw: true } as InsertTextOptions);
     // Hide the paste chip now that it's been used, and remember this content so
     // subsequent refreshes keep it hidden until the user copies something new.
     InputHandler.dismissedClipSig = InputHandler.clipSig(text, '', false);
@@ -2303,48 +2518,95 @@ export class InputHandler {
     const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
     const text = history[index];
     if (text === undefined || text.length === 0) { return; }
-    this.insertText(text);
+    this.insertText(text, { raw: true } as InsertTextOptions);
   }
 
   clearClipboardHistory(): void {
     AppStorage.setOrCreate('clipboardHistory', [] as string[]);
   }
 
-  // Newest-first, capped-size log of individually deleted characters --
-  // called from both handleBackspace branches that know exactly which
-  // character just disappeared (IDLE's own-typed-char pop, COMPOSING's
-  // pre-commit slice). Deliberately never cleared by subsequent typing
-  // (unlike restoreStack, wiped on the next insertText) so it survives across
-  // a whole typing session -- consumed newest-first by the 取消 key's
-  // sequential undo (undoLastDeletion).
-  private recordDeletedChar(ch: string): void {
-    if (ch.length === 0) { return; }
-    InputLog.recordDeleteChar(ch, AppStorage.get<string>('inputState') ?? InputState.IDLE); // [DEBUG-LOG]
-    const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
-    const next = [ch, ...history].slice(0, InputHandler.MAX_DELETED_CHAR_HISTORY);
-    AppStorage.setOrCreate('deletedCharHistory', next);
+  // ホスト側(確定済み、IDLE状態)テキストへの1回の操作を記録する。
+  // insertText() の末尾(挿入)と handleBackspace の IDLE 分岐(削除)から
+  // 呼ばれる。at はその時点の hostCursor から自己完結で決まる (フィールド
+  // コメント参照)。
+  private pushHostOp(kind: 'insert' | 'delete', text: string): void {
+    if (text.length === 0) { return; }
+    if (kind === 'delete') {
+      InputLog.recordDeleteChar(text, InputState.IDLE); // [DEBUG-LOG]
+    }
+    const at = kind === 'insert' ? this.hostCursor : this.hostCursor - text.length;
+    this.hostUndoStack.push({ kind, text, at });
+    if (this.hostUndoStack.length > InputHandler.MAX_HOST_UNDO) {
+      this.hostUndoStack = this.hostUndoStack.slice(-InputHandler.MAX_HOST_UNDO);
+    }
+    this.hostCursor += kind === 'insert' ? text.length : -text.length;
   }
 
-  // Restore the most recently deleted character (or whole composing chunk),
-  // consuming it from the log. Pressing 取消 N times right after deleting too
-  // much brings back the last N deleted characters in order, as if they were
-  // never deleted -- a simple sequential undo of over-deletion, not a
-  // pick-any-past-character panel. handleBackspace pushes newest-first, so
-  // history[0] is always the last thing removed; restoring and popping it in
-  // turn replays the deletions in reverse, reconstructing the original text.
+  // hostCursor を target まで動かす。1歩ずつ moveCursor の確定を待ってから
+  // 次を出す -- insertText 直後に間を置かず moveCursor を出すと、ホスト側が
+  // まだ編集を反映していない状態に対して移動が発行され無視される実機バグが
+  // あった (コミット 39f4147)。取消キーはユーザーが最後の編集から間を置いて
+  // 押す操作なのでこの経路そのものは起きないが、複数歩を連続で出すときの
+  // 相互干渉を避けるため、ここでも律儀に1歩ずつ待つ。
+  private async moveHostCursorTo(target: number): Promise<void> {
+    const dir = target > this.hostCursor
+      ? inputMethodEngine.Direction.CURSOR_RIGHT
+      : inputMethodEngine.Direction.CURSOR_LEFT;
+    const steps = Math.abs(target - this.hostCursor);
+    for (let i = 0; i < steps; i++) {
+      try {
+        await this.inputClient?.moveCursor(dir);
+      } catch (_e) {
+        break; // 動かせなかった。これ以上ズレを広げずここで諦める。
+      }
+      this.hostCursor += dir === inputMethodEngine.Direction.CURSOR_RIGHT ? 1 : -1;
+    }
+  }
+
+  // ホスト側テキストの直近の操作(挿入でも削除でも)を1件取り消す。本当の
+  // ctrl+zと同じ順序 -- 挿入の取り消しは削除、削除の取り消しは打ち戻し。
+  // 公開の insertText() ラッパーは使わない (それを呼ぶと今の取り消し自体が
+  // 新しい操作として hostUndoStack に積まれてしまい、スタックが正しく
+  // 縮まなくなる)。
+  private async undoLastHostEdit(): Promise<void> {
+    const op = this.hostUndoStack.pop();
+    if (op === undefined) { return; }
+    InputLog.recordUndo(op.text); // [DEBUG-LOG]
+    if (op.kind === 'insert') {
+      // 挿入の取り消し = その範囲を削除。挿入直後の位置までカーソルを
+      // 動かしてから、その直前を deleteForward で削る。
+      await this.moveHostCursorTo(op.at + op.text.length);
+      try {
+        await this.inputClient?.deleteForward(op.text.length);
+        this.hostCursor -= op.text.length;
+        for (let i = 0; i < op.text.length; i++) { this.insertedBuffer.pop(); }
+      } catch (_e) { /* 欄が外れた等。ここで失敗しても入力は続けられる。 */ }
+    } else {
+      // 削除の取り消し = 元あった位置へ打ち戻す。
+      await this.moveHostCursorTo(op.at);
+      try {
+        await this.inputClient?.insertText(op.text);
+        this.hostCursor += op.text.length;
+        for (const ch of op.text) { this.insertedBuffer.push(ch); }
+      } catch (_e) { /* 同上。 */ }
+    }
+  }
+
+  // 取消キー。COMPOSING(変換前のかな組み立て中)ならその場で1文字ずつ復元
+  // する (このバッファは常に末尾でしか編集できないので位置のズレが起きない)。
+  // IDLE(確定済みのホスト側テキスト)なら、直近の操作を実際に起きた位置まで
+  // 戻ってから取り消す -- 挿入も削除も貼り付けも区別せず、本当のctrl+zと
+  // 同じ順序で遡る。
   undoLastDeletion(): void {
-    const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
-    if (history.length === 0) { return; }
-    const ch = history[0];
-    AppStorage.setOrCreate('deletedCharHistory', history.slice(1));
-    if (ch.length === 0) { return; }
-    InputLog.recordUndo(ch); // [DEBUG-LOG]
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.IDLE) {
-      this.insertText(ch);
-    } else {
-      this.handleDirectKana(ch);
+      this.undoLastHostEdit();
+      return;
     }
+    const ch = this.composingUndoStack.pop();
+    if (ch === undefined || ch.length === 0) { return; }
+    InputLog.recordUndo(ch); // [DEBUG-LOG]
+    this.handleDirectKana(ch);
   }
 
   // Launches the main app (settings / user dictionary screen) from the
@@ -2783,7 +3045,13 @@ export class InputHandler {
         this.updateCandidates();
       }
     } else {
+      // 実際に動いた分だけ hostCursor に反映する。取消キーの位置追跡は
+      // このIME自身が動かした分の自己申告なので、ここを飲むと矢印キーでの
+      // 移動後に取消を押しても正しい位置へ戻れる (hostUndoStack のコメント
+      // 参照)。動かせたかどうか確認できないので、成功した(=例外が出なかった)
+      // ときだけ加算する。
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+        .then(() => { this.hostCursor -= 1; })
         .catch((_e: Error) => {});
     }
   }
@@ -2804,6 +3072,7 @@ export class InputHandler {
       }
     } else {
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
+        .then(() => { this.hostCursor += 1; })
         .catch((_e: Error) => {});
     }
   }
@@ -2814,7 +3083,13 @@ export class InputHandler {
 
     if (mode === InputMode.ALPHANUMERIC) {
       this.commitPending();
-      this.insertText(kana);
+      // raw: true -- 英数モードは1打鍵ごとに insertText が飛ぶ (かなモード
+      // のように単語単位でまとまらない)。素のまま扱わないと、括弧を開いた
+      // 直後に "t" を1文字打っただけで閉じ括弧が確定してしまい、続く
+      // "est" が閉じの外側に出てしまう。保留中の閉じは英数入力では
+      // 消費も生成もしない(消さずに残す -- 後で かな側の確定があれば
+      // そちらで正しく閉じられる)。
+      this.insertText(kana, { raw: true } as InsertTextOptions);
       return;
     }
 
@@ -2828,8 +3103,10 @@ export class InputHandler {
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
     this.conversionEnd = (current + kana).length;
     AppStorage.setOrCreate('convEnd', this.conversionEnd);
-    this.lastDeletedChar = '';
-    this.restoreStack = [];
+    // composingUndoStack はここで消さない -- 「けす→ら足す→やっぱりさっき
+    // 消した方を戻したい」のように、この回の組み立て中はbackspace履歴を
+    // 保ったまま何度でも取消キーで遡れるようにする (resetComposition で
+    // 確定したときだけ、その回の組み立ては終わりとして空にする)。
     this.updateCandidates();
   }
 
@@ -2946,45 +3223,11 @@ export class InputHandler {
     }
   }
 
-  handleUndo(): void {
-    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state === InputState.BUNSETSU) {
-      const composing = this.bSegs.join('');
-      this.bSegs = [];
-      this.bChosen = [];
-      this.bCur = 0;
-      AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
-      AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
-      AppStorage.setOrCreate('bunsetsuDisplay', '');
-      AppStorage.setOrCreate('bunsetsuCurrent', 0);
-      AppStorage.setOrCreate('composingText', composing);
-      AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-      this.updateCandidates();
-      return;
-    }
-    if (state === InputState.SELECTING) {
-      AppStorage.setOrCreate('candidates', [] as string[]);
-      AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-      return;
-    }
-    if (state === InputState.COMPOSING) {
-      if (this.lastDeletedChar.length === 0) { return; }
-      const composing = AppStorage.get<string>('composingText') ?? '';
-      AppStorage.setOrCreate('composingText', composing + this.lastDeletedChar);
-      this.lastDeletedChar = '';
-      this.updateCandidates();
-      return;
-    }
-    if (state === InputState.IDLE) {
-      const ch = this.restoreStack.pop() ?? '';
-      if (ch.length > 0) {
-        this.inputClient?.insertText(ch);
-        this.insertedBuffer.push(ch);
-      }
-    }
-  }
-
-  insertText(text: string): void {
+  // raw: true は括弧の自動閉じを掛けない (貼り付け・予測タップなど、
+  // 「打ち込んだ通りそのまま出したい」文字列専用)。ユーザーがコピーした
+  // 内容がたまたま "()" のような2文字と一致しても、括弧機能に横取りされて
+  // 別の場所へ送られては困るため。
+  insertText(text: string, opts?: InsertTextOptions): void {
     // 辞書の自由入力中は、確定した文字をホストアプリではなくパネル内の欄に送る。
     //
     // キーボードのパネルに TextInput を置いても、キーボード自身が入力対象に
@@ -2995,6 +3238,43 @@ export class InputHandler {
       this.appendCaptured(text);
       return;
     }
+
+    // 括弧の自動閉じ (設計意図は BRACKET_PAIRS のコメント参照)。
+    // カーソルは一切動かさず、開きだけを今確定して、閉じは次の確定の
+    // 直後まで保留する。
+    let finalText = text;
+    if (opts?.raw !== true) {
+      let newOpen: string | undefined;
+      let newClose: string | undefined;
+      if (text.length === 2 && BRACKET_PAIRS[text[0]] === text[1]) {
+        // 「（）」のように開き+閉じ1組で確定された(かっこ等の変換候補)。
+        newOpen = text[0];
+        newClose = text[1];
+      } else if (text.length === 1 && BRACKET_PAIRS[text] !== undefined) {
+        // 記号パネルで開き括弧を単体でタップした場合も同様に扱う。
+        newOpen = text;
+        newClose = BRACKET_PAIRS[text];
+      }
+      if (newOpen !== undefined && newClose !== undefined) {
+        // 保留中の古い閉じがあれば、入れ子にはせず先に閉じてしまう。次の
+        // 確定が古い括弧の中身か新しい括弧の中身か区別する手段が無いため、
+        // 単純に「前のは前ので完結させ、新しい括弧を開く」にしてある。
+        finalText = this.pendingBracketClose + newOpen;
+        this.setPendingBracketClose(newClose);
+      } else if (this.pendingBracketClose.length > 0) {
+        if (text === this.pendingBracketClose) {
+          // ユーザーが閉じ括弧を自分で打った。保留分と合わせて二重に
+          // 出すのではなく、保留を消費してそのまま1つだけ出す
+          // (「自分で閉じた」として扱う)。これが無いと "）" が
+          // "））" になって出ていた (実際の不具合報告の原因)。
+          this.setPendingBracketClose('');
+        } else {
+          finalText = text + this.pendingBracketClose;
+          this.setPendingBracketClose('');
+        }
+      }
+    }
+
     // 入力欄プレビューが出ているときは insertText を使わない。
     //
     // finishTextPreviewSync() は「プレビューを消す」のではなく「プレビューの
@@ -3004,7 +3284,7 @@ export class InputHandler {
     let previewCommitted = false;
     if (this.previewActive) {
       try {
-        this.inputClient?.setPreviewTextSync(text, { start: -1, end: -1 });
+        this.inputClient?.setPreviewTextSync(finalText, { start: -1, end: -1 });
         this.inputClient?.finishTextPreviewSync();
         this.previewActive = false;
         previewCommitted = true;
@@ -3013,21 +3293,19 @@ export class InputHandler {
         this.cancelPreviewText();
       }
     }
-    // Brackets used to auto-place the caret between the pair (「|」), but no
-    // caret-move primitive worked reliably across the editors this IME runs in
-    // -- moveCursor was a no-op on some, and the absolute-index selectByRange
-    // overshot on others -- so the pair is now inserted plainly and the caret
-    // stays after it, same as any other committed text.
-    if (!previewCommitted) { this.inputClient?.insertText(text); }
-    if (text.length > 0) {
-      for (let i = 0; i < text.length; i++) {
-        this.insertedBuffer.push(text[i]);
+    if (!previewCommitted) { this.inputClient?.insertText(finalText); }
+    if (finalText.length > 0) {
+      for (let i = 0; i < finalText.length; i++) {
+        this.insertedBuffer.push(finalText[i]);
       }
       if (this.insertedBuffer.length > 50) {
         this.insertedBuffer = this.insertedBuffer.slice(-50);
       }
-      this.restoreStack = [];
-      KanaKanjiConverter.setLastCommitText(text);
+      // 変換確定・生かな確定・記号/絵文字タップ・予測変換タップ・
+      // クリップボード貼り付け...どの経路で来ても、ホストへ実際に文字が
+      // 出た時点はここ1箇所なので、取消キー用の記録もここで行う。
+      this.pushHostOp('insert', finalText);
+      KanaKanjiConverter.setLastCommitText(finalText);
     }
   }
 
@@ -3061,6 +3339,7 @@ export class KeyboardController {
     // initPanel/setUiContent hasn't run yet, so there is no UI instance to
     // register into (see components/JpFont.ets).
     this.inputHandle.setContext(this.context);
+    this.inputHandle.setKeyboardControllerRef(this);
     this.applyColorMode();
     this.initPanel();
     this.registerListeners();
@@ -3176,29 +3455,36 @@ export class KeyboardController {
         const list = JSON.parse(text) as VocabPackInfo[];
         KanaKanjiConverter.setVocabPackManifest(list);
         for (const p of list) {
-          // 動詞・形容詞・人名・地名は ConjugationEngine に通して活用形まで
-          // 展開する -- ユーザー辞書とまったく同じ関数を使う。「がばる 五段」
-          // と1行書けば がばって/がばった/がばらない … まで生えるのはこれ。
-          // 品詞指定が1つも無いパックでも、buildUserExpansion は素通しで
-          // 元の語彙をそのまま返すので分岐は要らない。
+          // 活用展開 (五段/一段/形容詞) は品詞が付いた語だけの話で、その語は
+          // manifest の pos に読みと表記の両方が入っている。そこから最小限の
+          // 入力を組み立てて ConjugationEngine に通す -- ユーザー辞書と
+          // まったく同じ関数なので活用ロジックの二重実装は無い。
+          // 語彙本体 (バイナリ) を JS へ展開する必要はない。
+          const seed: Record<string, string[]> = {};
           const posMap: Record<string, UserPosEntry> = {};
           for (const key of Object.keys(p.pos)) {
             const v = p.pos[key];
             posMap[key] = { pos: v.pos as PosKind, group: v.group as VerbGroup | undefined };
+            const parts = key.split('	');
+            if (parts.length === 2) {
+              const cur = seed[parts[0]];
+              if (cur === undefined) { seed[parts[0]] = [parts[1]]; }
+              else if (!cur.includes(parts[1])) { cur.push(parts[1]); }
+            }
           }
-          const expanded = buildUserExpansion(p.entries, posMap);
+          const expanded = buildUserExpansion(seed, posMap);
           // 活用展開で得たクラス (がばって→[14,17] など) の上に、.pack の
-          // 品詞名/@指定を重ねる。明示指定のほうが後勝ちで強い。
+          // @指定を重ねる。明示指定のほうが後勝ちで強い。
           const classes: Record<string, number[]> = {};
           for (const k of Object.keys(expanded.classMap)) { classes[k] = expanded.classMap[k]; }
           for (const k of Object.keys(p.classes)) { classes[k] = p.classes[k]; }
-          KanaKanjiConverter.setVocabPackEntries(p.id, expanded.dict, classes);
+          KanaKanjiConverter.setVocabPackOverlay(p.id, expanded.dict, classes);
         }
-        // 設定より先に manifest が来るとは限らないので、既に読み込み済みの
-        // 有効IDをここでもう一度適用する (順序に依存させない)。
-        const enabled = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
-        KanaKanjiConverter.setEnabledPackIds(enabled);
         AppStorage.setOrCreate('vocabPackIds', list.map((p: VocabPackInfo) => p.id));
+        // 設定より先に manifest が来るとは限らないので、ここでもう一度
+        // 有効なパックを決め直す (順序に依存させない)。有効判定と読み込みは
+        // 設定を持っている InputHandler 側が担当する。
+        this.inputHandle.refreshVocabPacks();
       })
       .catch((e: Error) => {
         // 語彙パックが読めなくても変換自体は動く (全部OFFと同じ状態)。
@@ -3260,10 +3546,21 @@ export class KeyboardController {
     // shrinking rows down — portrait: clamp 25–60%; landscape: allow up to 80%.
     const contentPx = Math.ceil((isLandscape ? 420 : 360) * density);
     const maxFrac = isLandscape ? 0.80 : 0.60;
-    return Math.max(
+    const base = Math.max(
       Math.floor(dis.height * 0.25),
       Math.min(contentPx, Math.floor(dis.height * maxFrac))
     );
+    // 設定 → レイアウト調整 の縦の長さハンドル。既定 1.0 で今までどおり。
+    // 上限は向きによらず +30% (それ以上は画面の大半を覆ってしまう)。
+    // 下限は向きで分けてある -- 横向きは maxFrac/contentPx が縦向きより
+    // 大きく (80%・420px相当) 既定の背が高くなりがちなので、縮める側の
+    // 余地をもっと残す必要があった (実際の指摘: 「横向き時、70%より
+    // 小さくできた方が良い」)。縦向きは 70% でもキーの当たり判定が
+    // 厳しくなり始めるので、下限はそのまま。LayoutAdjustBar のドラッグ
+    // 範囲もこれと同じ値を使っている (isLandscape で分岐)。
+    const minScale = isLandscape ? 0.4 : 0.7;
+    const scale = Math.min(1.3, Math.max(minScale, AppStorage.get<number>('keyboardHeightScale') ?? 1.0));
+    return Math.floor(base * scale);
   }
 
   private initPanel(): void {
@@ -3296,7 +3593,41 @@ export class KeyboardController {
     }
   }
 
-  private resizePanel(): void {
+  // resize() → moveTo() の間、パネルは「新しい高さ・古い位置」の状態を
+  // 一瞬とる (このAPIは1回で両方を変える手段が無い)。ドラッグ中に連打すると
+  // 前の組が終わる前に次を投げてしまい、複数組が競合して下辺が「プルプル」
+  // 揺れる (レイアウト調整の縦ハンドルで実際に発生)。
+  //
+  // 1組が完了するまで次を間引く、という発想自体は正しいが、"完了" を
+  // panel.resize()/moveTo() のPromiseで判定する版は実機で別の問題を
+  // 起こした: この環境ではその2つのPromiseが確実に解決/拒否するとは
+  // 限らないらしく (getTextIndexAtCursorの値が信用できない、insertText
+  // 直後のmoveCursorが無視される等、このコードベースの他のハマりどころと
+  // 同じ傾向)、1回でも解決が来ないと「保留中」のまま永久に固まり、
+  // レイアウト調整が丸ごと反応しなくなった。
+  //
+  // そこで "完了" の判定をネイティブ側のPromiseに頼らず、setTimeoutの
+  // 固定時間 (RESIZE_BUSY_MS) だけで決める。ネイティブ呼び出しが実際に
+  // 何秒かかろうと、この時間が来れば必ず「次を投げてよい」に戻るので、
+  // 前回のように永久に詰まることが原理的に起きない。
+  private static readonly RESIZE_BUSY_MS = 80;
+  private resizeBusyUntil: number = 0;
+  private resizePendingRequest: boolean = false;
+
+  // 設定 → レイアウト調整 のハンドルからライブに呼ばれるので公開している
+  // (InputHandler.applyKeyboardHeightScaleLive 参照)。パネルの実サイズは
+  // panel.resize() でしか変えられず、それを持っているのはこのクラスだけ。
+  resizePanel(): void {
+    const now = Date.now();
+    if (now < this.resizeBusyUntil) {
+      this.resizePendingRequest = true;
+      return;
+    }
+    this.doResizePanelNow();
+  }
+
+  private doResizePanelNow(): void {
+    this.resizeBusyUntil = Date.now() + KeyboardController.RESIZE_BUSY_MS;
     try {
       const dis = display.getDefaultDisplaySync();
       const isLandscape = dis.width > dis.height;
@@ -3308,10 +3639,21 @@ export class KeyboardController {
       this.computeKeyWidths(dis);
 
       this.panel?.resize(dis.width, keyHeight)
-        .then(() => this.panel?.moveTo(0, dis.height - keyHeight));
+        .then(() => this.panel?.moveTo(0, dis.height - keyHeight))
+        .catch((err: Error) => console.error('shuntiIME resizePanel resize/moveTo error', err));
     } catch (err) {
       console.error('shuntiIME resizePanel error', err);
     }
+    // busy期間が明けた時点で、その間に来ていた要求があれば最新の状態で
+    // 1回だけやり直す。resizePanel() 自身が毎回 computeKeyHeight を
+    // AppStorage の最新値から作るので、間引かれた個々の値ではなく
+    // 「その時点でのライブな値」がここで反映される。
+    setTimeout(() => {
+      if (this.resizePendingRequest) {
+        this.resizePendingRequest = false;
+        this.doResizePanelNow();
+      }
+    }, KeyboardController.RESIZE_BUSY_MS);
   }
 
   private registerListeners(): void {

@@ -33,6 +33,7 @@ export struct SettingsBar {
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
+  @StorageLink('flickHintsEnabled') flickHintsEnabled: boolean = true;
   // 入力中のかなの表示先 (独立した2トグル、組み合わせは4通り)。
   @StorageLink('composingInPanel') composingInPanel: boolean = true;
   @StorageLink('composingInField') composingInField: boolean = true;
@@ -320,8 +321,8 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textPrimary)
             .width('100%')
           Text(this.enabledVocabPacks.length > 0
-            ? this.enabledVocabPacks.length + '件を使用中'
-            : '界隈語をまとめて追加できます')
+            ? this.enabledVocabPacks.length + ' / ' + this.vocabPackIds.length + ' 個を使用中'
+            : '地名や界隈語をまとめて切り替えられます')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(11)
             .fontColor(kbTheme(this.isDark).textSecondary)
@@ -359,94 +360,6 @@ export struct SettingsBar {
         .padding({ top: 14, bottom: 14 }) // [DEBUG-LOG]
         .onClick(() => { this.openLog(); }) // [DEBUG-LOG]
       } // [DEBUG-LOG]
-    }
-    .backgroundColor(kbTheme(this.isDark).cardBg)
-    .borderRadius(CARD_RADIUS)
-    .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
-
-    this.SectionLabel('入力中のかなの表示')
-    Column() {
-      Row() {
-        Column({ space: 2 }) {
-          Text('キーボード内に表示')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .width('100%')
-          Text('候補バーの上に入力中のかなを出します')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .width('100%')
-        }
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.composingInPanel })
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setComposingDisplay(isOn, this.composingInField);
-          })
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: 13 })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      Row() {
-        Column({ space: 2 }) {
-          Text('入力欄に表示')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .width('100%')
-          Text('アプリの入力欄に直接出します。キーボード内の表示を切ると1行ぶん低くなります')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .width('100%')
-        }
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.composingInField })
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setComposingDisplay(this.composingInPanel, isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: 13 })
-
-      // 両方OFFにもできるようにしてあるが、打っているかながどこにも
-      // 見えなくなるので、そうと分かるように出す。
-      if (!this.composingInPanel && !this.composingInField) {
-        Row({ space: 6 }) {
-          Text('⚠')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(13)
-          Text('入力中のかながどこにも表示されません。変換候補だけを見て打つことになります。')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ top: 10, bottom: 12 })
-        .alignItems(VerticalAlign.Top)
-      } else if (this.composingInField && !this.previewInField) {
-        // 設定はONだが、いま開いている入力欄が setPreviewText 非対応。
-        Row({ space: 6 }) {
-          Text('ⓘ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(13)
-          Text('この入力欄は入力欄への表示に対応していないため、キーボード内に表示しています。')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ top: 10, bottom: 12 })
-        .alignItems(VerticalAlign.Top)
-      }
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
@@ -591,52 +504,6 @@ export struct SettingsBar {
       Divider().color(kbTheme(this.isDark).divider)
 
       Row() {
-        Text('片手モード')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.oneHandedMode })
-          .width(44)
-          .height(26)
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setOneHandedMode(isOn, this.oneHandedSide);
-          })
-      }
-      .width('100%')
-      .padding({ top: 12, bottom: this.oneHandedMode ? 8 : 12 })
-
-      if (this.oneHandedMode) {
-        Row({ space: 8 }) {
-          Text('左寄せ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-            .fontColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'left'); })
-
-          Text('右寄せ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-            .fontColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'right'); })
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .padding({ bottom: 14 })
-      }
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      Row() {
         Text('変換エンジン')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(14)
@@ -710,6 +577,201 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 10, bottom: 12 })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
+    // キーボードの見た目・大きさ・位置に関わる調整をまとめた区分。
+    // 「入力」(かな入力レイアウト・変換エンジン等、打鍵の挙動そのもの)とは
+    // 分けてある。レイアウト調整・片手モードはどちらも「文字の変換や
+    // 打鍵の仕方」ではなく「キーボードの形をどう見せるか」の調整なので
+    // ここに移した。
+    this.SectionLabel('ビジュアル調整')
+    Column() {
+      Row() {
+        Column({ space: 2 }) {
+          Text('レイアウト調整')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('キーボードを見ながら縦の長さや幅の比率を調整できます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+      .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'layoutAdjust'); })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Text('片手モード')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.oneHandedMode })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setOneHandedMode(isOn, this.oneHandedSide);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: this.oneHandedMode ? 8 : 13 })
+
+      if (this.oneHandedMode) {
+        Row({ space: 8 }) {
+          Text('左寄せ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+            .fontColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'left'); })
+
+          Text('右寄せ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+            .fontColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'right'); })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .padding({ bottom: 14 })
+      }
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Column({ space: 2 }) {
+          Text('フリックの十字ヒント')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text('上下左右の小さいかな表示を消します。フリック自体はそのまま使えます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.flickHintsEnabled })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setFlickHintsEnabled(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
+    this.SectionLabel('入力中のかなの表示')
+    Column() {
+      Row() {
+        Column({ space: 2 }) {
+          Text('キーボード内に表示')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('候補バーの上に入力中のかなを出します')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.composingInPanel })
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setComposingDisplay(isOn, this.composingInField);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Column({ space: 2 }) {
+          Text('入力欄に表示')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('アプリの入力欄に直接出します。キーボード内の表示を切ると1行ぶん低くなります')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.composingInField })
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setComposingDisplay(this.composingInPanel, isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      // 両方OFFにもできるようにしてあるが、打っているかながどこにも
+      // 見えなくなるので、そうと分かるように出す。
+      if (!this.composingInPanel && !this.composingInField) {
+        Row({ space: 6 }) {
+          Text('⚠')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(13)
+          Text('入力中のかながどこにも表示されません。変換候補だけを見て打つことになります。')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ top: 10, bottom: 12 })
+        .alignItems(VerticalAlign.Top)
+      } else if (this.composingInField && !this.previewInField) {
+        // 設定はONだが、いま開いている入力欄が setPreviewText 非対応。
+        Row({ space: 6 }) {
+          Text('ⓘ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(13)
+          Text('この入力欄は入力欄への表示に対応していないため、キーボード内に表示しています。')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ top: 10, bottom: 12 })
+        .alignItems(VerticalAlign.Top)
+      }
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
@@ -1063,6 +1125,13 @@ export struct SettingsBar {
                   .fontColor(kbTheme(this.isDark).textSecondary)
                   .width('100%')
               }
+              // 語数を出す。地名パックは地方ごとに規模がかなり違うので、
+              // どれを切ると効くのかが分かるようにしておく。
+              Text(KanaKanjiConverter.vocabPackCount(id).toLocaleString() + ' 語')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(10)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .width('100%')
             }
             .alignItems(HorizontalAlign.Start)
             .layoutWeight(1)

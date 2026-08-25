@@ -22,7 +22,7 @@ function buildFrom(srcText) {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'sw-'));
   const ts = path.join(tmp, 'K.ts');
   fs.writeFileSync(ts, '// @ts-nocheck\n' + srcText);
-  execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS', '--skipLibCheck', ts], { stdio: 'inherit' });
+  execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS', '--skipLibCheck', ts], { stdio: 'inherit', shell: true });
   return path.join(tmp, 'K.js');
 }
 function load(mod) {

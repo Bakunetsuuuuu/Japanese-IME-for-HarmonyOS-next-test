@@ -57,7 +57,7 @@ function build() {
   const src = fs.readFileSync(SRC, 'utf-8').replace("from '@ohos.file.fs'", "from './fakefs'");
   fs.writeFileSync(tsPath, '// @ts-nocheck\n' + src);
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
-    '--skipLibCheck', tsPath], { stdio: 'inherit' });
+    '--skipLibCheck', tsPath], { stdio: 'inherit', shell: true });
   return tmp;
 }
 

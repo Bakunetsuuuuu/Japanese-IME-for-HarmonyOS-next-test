@@ -57,11 +57,24 @@ export interface KeyboardSettings {
   // field は入力欄側が setPreviewText に対応している場合のみ実際に効く。
   composingInPanel: boolean;
   composingInField: boolean;
-  // 有効化した語彙パックのID一覧 (KanaKanjiConverter.VOCAB_PACK_NAMES参照)。
-  // 「界隈の人はめちゃくちゃ使うが全員には要らない」ニッチ語彙 (淫夢語録・
-  // なんJ語など) を、既定でOFFの追加インストール的な単位に分けたもの。
-  // 既定は空 (全部OFF)。
-  enabledVocabPacks: string[];
+  // 語彙パックのうち、利用者が自分で切り替えたものだけの ON/OFF。
+  //
+  // 「有効なIDの一覧」ではなく「明示的に触ったものだけ」を持つのが要点。
+  // 一覧方式だと、載っていない = OFF になるので、あとから既定ONのパック
+  // (地名など) を足しても既存利用者には一生届かない。ここに無いパックは
+  // .pack の default: ヘッダに従う (KanaKanjiConverter.resolveEnabledPacks)。
+  vocabPackOverrides: Record<string, boolean>;
+  // 設定 → レイアウト調整。どちらも既定 1.0 で今までどおりの見た目になる。
+  // keyboardHeightScale: キーボード全体の縦の長さの倍率 (0.7〜1.3)。
+  // flickSideColumnRatio: フリック5列の「左右特殊キー1列 / 中央かなキー1列」
+  // の幅比 (0.4〜2.0)。QWERTY側の特殊キー幅には影響しない。
+  keyboardHeightScale: number;
+  flickSideColumnRatio: number;
+  // フリックキーの上下左右に出す小さいかなヒント(十字表示)。フリック自体は
+  // タッチのジェスチャで判定しており、このヒントを消しても機能は一切
+  // 変わらない (FlickKeyboardView の isLandscape 分岐と同じ仕組みを流用)。
+  // 使い慣れた人には邪魔になるという要望向けのオフスイッチ。既定はオン。
+  flickHintsEnabled: boolean;
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -76,7 +89,10 @@ const DEFAULTS: KeyboardSettings = {
   keyChromeEnabled: true,
   composingInPanel: true,
   composingInField: true,
-  enabledVocabPacks: [],
+  vocabPackOverrides: {},
+  keyboardHeightScale: 1.0,
+  flickSideColumnRatio: 1.0,
+  flickHintsEnabled: true,
 };
 
 export class SettingsStore {
@@ -104,12 +120,24 @@ export class SettingsStore {
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
       const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
       const inField = await prefs.get('composingInField', DEFAULTS.composingInField);
-      const packsRaw = await prefs.get('enabledVocabPacks', '[]');
-      let packs: string[] = [];
+      const heightScale = await prefs.get('keyboardHeightScale', DEFAULTS.keyboardHeightScale);
+      const flickRatio = await prefs.get('flickSideColumnRatio', DEFAULTS.flickSideColumnRatio);
+      const flickHints = await prefs.get('flickHintsEnabled', DEFAULTS.flickHintsEnabled);
+      const ovRaw = await prefs.get('vocabPackOverrides', '');
+      let packs: Record<string, boolean> = {};
       try {
-        const parsed = JSON.parse(String(packsRaw)) as string[];
-        if (Array.isArray(parsed)) { packs = parsed; }
-      } catch (_e) { packs = []; }
+        const parsed = JSON.parse(String(ovRaw)) as Record<string, boolean>;
+        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) { packs = parsed; }
+      } catch (_e) { packs = {}; }
+      if (String(ovRaw).length === 0) {
+        // 旧形式 (有効なIDの配列) からの移行。載っていたものは本人が明示的に
+        // ONにしたものなので override として引き継ぐ。載っていなかったものは
+        // 触っていない扱いにして、パック側の既定に従わせる。
+        try {
+          const legacy = JSON.parse(String(await prefs.get('enabledVocabPacks', '[]'))) as string[];
+          if (Array.isArray(legacy)) { for (const id of legacy) { packs[id] = true; } }
+        } catch (_e) {}
+      }
       console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, themeMode, keyChrome, packs, forceReload }));
       return {
         kanaKeyboardLayout: String(kanaLayout),
@@ -123,7 +151,10 @@ export class SettingsStore {
         keyChromeEnabled: keyChrome !== false,
         composingInPanel: inPanel !== false,
         composingInField: inField !== false,
-        enabledVocabPacks: packs,
+        vocabPackOverrides: packs,
+        keyboardHeightScale: Number(heightScale),
+        flickSideColumnRatio: Number(flickRatio),
+        flickHintsEnabled: flickHints !== false,
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
@@ -139,7 +170,10 @@ export class SettingsStore {
         keyChromeEnabled: DEFAULTS.keyChromeEnabled,
         composingInPanel: DEFAULTS.composingInPanel,
         composingInField: DEFAULTS.composingInField,
-        enabledVocabPacks: DEFAULTS.enabledVocabPacks,
+        vocabPackOverrides: DEFAULTS.vocabPackOverrides,
+        keyboardHeightScale: DEFAULTS.keyboardHeightScale,
+        flickSideColumnRatio: DEFAULTS.flickSideColumnRatio,
+        flickHintsEnabled: DEFAULTS.flickHintsEnabled,
       };
     }
   }
@@ -230,14 +264,39 @@ export class SettingsStore {
     } catch (_e) {}
   }
 
-  static async saveEnabledVocabPacks(context: common.Context, ids: string[]): Promise<void> {
+  static async saveKeyboardHeightScale(context: common.Context, scale: number): Promise<void> {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('enabledVocabPacks', JSON.stringify(ids));
+      await prefs.put('keyboardHeightScale', scale);
       await prefs.flush();
-      console.info('shuntiIME SettingsStore.saveEnabledVocabPacks ok', JSON.stringify(ids));
+    } catch (_e) {}
+  }
+
+  static async saveFlickSideRatio(context: common.Context, ratio: number): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('flickSideColumnRatio', ratio);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveFlickHintsEnabled(context: common.Context, enabled: boolean): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('flickHintsEnabled', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveVocabPackOverrides(context: common.Context,
+      overrides: Record<string, boolean>): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('vocabPackOverrides', JSON.stringify(overrides));
+      await prefs.flush();
+      console.info('shuntiIME SettingsStore.saveVocabPackOverrides ok', JSON.stringify(overrides));
     } catch (e) {
-      console.error('shuntiIME SettingsStore.saveEnabledVocabPacks error', JSON.stringify(e));
+      console.error('shuntiIME SettingsStore.saveVocabPackOverrides error', JSON.stringify(e));
     }
   }
 }

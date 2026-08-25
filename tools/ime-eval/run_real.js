@@ -34,7 +34,7 @@ function build() {
   fs.writeFileSync(ts, '// @ts-nocheck\n' +
     fs.readFileSync(path.join(ROOT, 'entry/src/main/ets/ime/KanaKanjiConverter.ets'), 'utf-8'));
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
-    '--skipLibCheck', ts], { stdio: 'inherit' });
+    '--skipLibCheck', ts], { stdio: 'inherit', shell: true });
   return path.join(tmp, 'KKC.js');
 }
 

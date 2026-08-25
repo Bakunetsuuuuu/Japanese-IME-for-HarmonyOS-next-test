@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""tools/vocab_packs/*.pack を、アプリが読む rawfile/pack_manifest.json にする。
+"""tools/vocab_packs/*.pack を、アプリが読むバイナリ辞書 + manifest にする。
 
 なぜ独自形式か
 --------------
@@ -8,18 +8,28 @@ DICTIONARY (KanaKanjiConverter.ets 内の巨大オブジェクトリテラル) �
 パック名・説明文までファイルの中に持たせることで、.ets を一切触らずに
 「ファイルを1つ足す」だけで新しいパックが増えるようにしてある。
 
-なぜ他の辞書と違って JSON のままか
-----------------------------------
-dict/global_dict は10万〜28万読みあるのでバイナリにパックしないと
-ArkTSヒープが持たない (pack_dicts.py の説明参照)。語彙パックは「界隈の
-定番語彙」という性質上そこまで大きくならないうえ、動詞・形容詞の活用展開を
-実行時に ConjugationEngine で行う (下記) 関係でどのみち JS オブジェクトに
-展開する必要がある。1ファイルで済むほうが中身も確認しやすい。
+語彙そのものは他の辞書と同じバイナリ形式
+----------------------------------------
+最初は「パックは小さいから JSON のままでいい」としていたが、地名を
+地方別に分ける段になって 2万件規模のパックが出てきたため、dict/global_dict
+と同じパック形式 (pack_dicts.py) に載せ替えた。JSON のままだと有効・無効に
+関わらず全パックが JS オブジェクトとして展開され、パック化した意味が無く
+なる (むしろ元より重くなる)。
+
+manifest には語彙そのものは入れず、名前・説明・既定のON/OFF・品詞・
+クラス・抑制だけを置く。端末側は manifest を読んで一覧を出し、
+**有効なパックのバイナリだけ**を後から読む。
+
+活用展開 (五段/一段/形容詞) は品詞が付いた語だけの話で、その語は
+manifest の pos に読みと表記の両方が入っているので、そこから最小限の
+入力を組み立てて ConjugationEngine に通せる。バイナリを JS へ展開する
+必要はない。
 
 フォーマットの詳細は tools/vocab_packs/README.md を参照。要点:
 
     name: 表示名
     description: 一行説明
+    default: on          ← 省略時は off (既定で有効にしたいパックだけ書く)
     ---
     読み<TAB>単語[<TAB>オプション...]
 
@@ -44,6 +54,15 @@ import sys
 HERE = os.path.dirname(os.path.abspath(__file__))
 PACKS_DIR = os.path.join(HERE, 'vocab_packs')
 RAWFILE = os.path.join(HERE, '..', 'entry', 'src', 'main', 'resources', 'rawfile')
+SRCDIR = os.path.join(HERE, 'dict_src')
+
+# この値以上の優先度が付いた語は、基本辞書の候補より後ろに回す。
+# KanaKanjiConverter 側にも同じ考え方の実装があるが、閾値の判定は
+# ここ (ビルド時) だけで行い、端末には結果 (tailDefault/flip) を渡す。
+TAIL_THRESHOLD = 6
+
+sys.path.insert(0, HERE)
+from pack_dicts import pack  # noqa: E402  (再利用: 辞書と同じバイナリ形式で書き出す)
 
 DEFAULT_PRIORITY = 5
 MIN_PRIORITY = 1
@@ -67,8 +86,11 @@ POS_TABLE = {
     'な形容詞':   ('class', [2, 2]),      # 静か/便利
     '形容動詞':   ('class', [2, 2]),      # な形容詞の別名
     '代名詞':     ('class', [3, 3]),
-    '人名':       ('expand', 'person', None),
-    '地名':       ('expand', 'place', None),
+    # 人名・地名は ConjugationEngine 側でも活用せずクラスを付けるだけなので
+    # 'class' で扱う。'expand' にすると1語ごとに manifest の pos へ載り、
+    # 地名パック(2万語)で manifest が 1.6MB に膨らんだ。
+    '人名':       ('class', [4, 4]),      # N_PROPER_P
+    '地名':       ('class', [5, 5]),      # N_PROPER_L
     '組織':       ('class', [6, 6]),
     '数':         ('class', [7, 7]),
     '助数詞':     ('class', [8, 8]),
@@ -154,6 +176,9 @@ def _parse_options(tokens, where):
 def parse_pack(path):
     name = None
     description = ''
+    default_on = False
+    default_class = None   # パック全体の既定品詞 (pos: ヘッダ)
+    default_priority = DEFAULT_PRIORITY  # パック全体の既定優先度 (priority: ヘッダ)
     in_body = False
     rows = []        # (reading, word, priority, order)
     pos_map = {}     # "読み\t単語" -> {"pos":..., "group":...}
@@ -180,6 +205,35 @@ def parse_pack(path):
                     name = value
                 elif key == 'description':
                     description = value
+                elif key == 'pos':
+                    # パック全体の既定品詞。全語が同じ品詞のパック(地名など)で
+                    # 1語ずつ書くと manifest が語数ぶん膨らむので、ここで1回だけ
+                    # 指定できるようにしてある。個別指定があればそちらが勝つ。
+                    if value not in POS_TABLE:
+                        raise SystemExit(f'{where}: 品詞名として解釈できない: {value!r}')
+                    kind = POS_TABLE[value]
+                    if kind[0] != 'class':
+                        raise SystemExit(
+                            f'{where}: pos: に活用する品詞 ({value}) は指定できない '
+                            f'(語ごとに書くこと)')
+                    default_class = kind[1]
+                elif key == 'priority':
+                    # パック全体の既定優先度。全語が同じ優先度のパック(地名など)で
+                    # 1語ずつ書くと生成物が語数ぶん膨らむので、ここで1回だけ指定
+                    # できるようにしてある。個別指定があればそちらが勝つ。
+                    try:
+                        default_priority = int(value)
+                    except ValueError:
+                        raise SystemExit(f'{where}: priority は整数で書く: {value!r}')
+                    if not (MIN_PRIORITY <= default_priority <= MAX_PRIORITY):
+                        raise SystemExit(
+                            f'{where}: priority は {MIN_PRIORITY}〜{MAX_PRIORITY} '
+                            f'の範囲で書く: {default_priority}')
+                elif key == 'default':
+                    v = value.lower()
+                    if v not in ('on', 'off'):
+                        raise SystemExit(f'{where}: default は on か off で書く: {value!r}')
+                    default_on = (v == 'on')
                 else:
                     raise SystemExit(f'{where}: 未知のヘッダキー: {key!r}')
                 continue
@@ -203,7 +257,8 @@ def parse_pack(path):
                 continue
 
             priority, pos_name, classes = _parse_options(cols[2:], where)
-            rows.append((reading, word, priority if priority is not None else DEFAULT_PRIORITY, order))
+            rows.append((reading, word,
+                         priority if priority is not None else default_priority, order))
             order += 1
 
             if classes is not None:
@@ -225,6 +280,23 @@ def parse_pack(path):
     if not name:
         raise SystemExit(f'{path}: ヘッダに name: が無い')
 
+    # 優先度は「パック内での並び順」だけでなく「基本辞書に対して前に出るか
+    # 後ろに回るか」も決める。閾値 (TAIL_THRESHOLD) 以上の語は、基本辞書の
+    # 候補より後ろ・ただし かな/カナ のフォールバックよりは前に差し込まれる。
+    # これが無いと優先度10と書いても基本辞書を押しのけてしまい、
+    # 「（確信） は 確信 の後ろでいい」のような指定が効かなかった。
+    #
+    # 端末側には「パック既定が後ろ回しか (tail_default)」と「既定と逆側に
+    # 置く語だけ (flip)」を渡す。全語が同じ優先度のパック(地名は priority: 8)
+    # では flip が空になり、語数ぶん膨らまない。
+    tail_default = default_priority >= TAIL_THRESHOLD
+    flip = {}
+    for reading, word, priority, _idx in rows:
+        if (priority >= TAIL_THRESHOLD) != tail_default:
+            flip.setdefault(reading, [])
+            if word not in flip[reading]:
+                flip[reading].append(word)
+
     by_reading = {}
     for reading, word, priority, idx in rows:
         by_reading.setdefault(reading, []).append((priority, idx, word))
@@ -240,6 +312,11 @@ def parse_pack(path):
     return {
         'name': name,
         'description': description,
+        'default_on': default_on,
+        'default_class': default_class,
+        'default_priority': default_priority,
+        'tail_default': tail_default,
+        'flip': flip,
         'entries': entries,
         'pos': pos_map,
         'classes': class_map,
@@ -251,8 +328,11 @@ def main():
     report_only = '--report' in sys.argv
     if not os.path.isdir(PACKS_DIR):
         raise SystemExit('missing ' + PACKS_DIR)
+    if not report_only:
+        os.makedirs(SRCDIR, exist_ok=True)
 
     manifest = []
+    total_bytes = 0
     for fname in sorted(os.listdir(PACKS_DIR)):
         if not fname.endswith('.pack'):
             continue
@@ -260,20 +340,37 @@ def main():
         p = parse_pack(os.path.join(PACKS_DIR, fname))
 
         n_words = sum(len(v) for v in p['entries'].values())
-        print(f'== {pack_id} ({p["name"]}) ==')
-        print(f'   {p["description"]}')
-        print(f'   読み {len(p["entries"])} / 表記 {n_words} / 活用展開 {len(p["pos"])} '
+        print(f'== {pack_id} ({p["name"]}) {"[既定ON]" if p["default_on"] else ""}')
+        print(f'   読み {len(p["entries"]):,} / 表記 {n_words:,} / 活用展開 {len(p["pos"])} '
               f'/ クラス指定 {len(p["classes"])} / 抑制 {sum(len(v) for v in p["suppress"].values())}')
-        for reading, words in list(p['entries'].items())[:5]:
-            print(f'   {reading} -> {words}')
-        if len(p['entries']) > 5:
-            print(f'   ... 他 {len(p["entries"]) - 5} 件')
+        n_flip = sum(len(v) for v in p['flip'].values())
+        print(f'   基本辞書より{"前" if p["tail_default"] else "後ろ"}に置く語 {n_flip:,} '
+              f'(既定は{"後ろ" if p["tail_default"] else "前"})')
+
+        if report_only:
+            continue
+
+        # 語彙そのものは dict/global_dict と同じバイナリ形式で書き出す。
+        # manifest には入れない -- 入れると有効・無効に関わらず全部が
+        # JS オブジェクトへ展開されてしまい、パックにした意味が無くなる。
+        json_path = os.path.join(SRCDIR, f'pack_{pack_id}.json')
+        with open(json_path, 'w', encoding='utf-8') as f:
+            json.dump(p['entries'], f, ensure_ascii=False, separators=(',', ':'))
+        _, out_bytes = pack(f'pack_{pack_id}')
+        total_bytes += out_bytes
 
         manifest.append({
             'id': pack_id,
             'name': p['name'],
             'description': p['description'],
-            'entries': p['entries'],
+            'defaultOn': p['default_on'],
+            'defaultClass': p['default_class'],
+            # 優先度による前後の振り分け (parse_pack のコメント参照)
+            'tailDefault': p['tail_default'],
+            'flip': p['flip'],
+            'count': len(p['entries']),
+            # 品詞・クラス・抑制は語彙全体に比べて小さく、一覧表示や
+            # 活用展開のために有効化前から要るので manifest に置く。
             'pos': p['pos'],
             'classes': p['classes'],
             'suppress': p['suppress'],
@@ -286,7 +383,9 @@ def main():
     with open(manifest_path, 'w', encoding='utf-8') as f:
         json.dump(manifest, f, ensure_ascii=False, separators=(',', ':'))
     size = os.path.getsize(manifest_path)
-    print(f'pack_manifest.json: {[m["id"] for m in manifest]} ({size:,} バイト)')
+    print('-' * 62)
+    print(f'pack_manifest.json {size:,} バイト / 語彙バイナリ計 {total_bytes/1048576:.2f} MB')
+    print('パック:', ', '.join(m['id'] + ('(ON)' if m['defaultOn'] else '') for m in manifest))
 
 
 if __name__ == '__main__':

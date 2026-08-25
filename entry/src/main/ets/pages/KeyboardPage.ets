@@ -14,6 +14,7 @@ import { NumericPadView } from '../components/NumericPadView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
 import { ExpandedCandidateView } from '../components/ExpandedCandidateView';
 import { SettingsBar } from '../components/SettingsBar';
+import { LayoutAdjustBar } from '../components/LayoutAdjustBar';
 import { DictEditBar } from '../components/DictEditBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
@@ -33,10 +34,36 @@ struct KeyboardPage {
   @StorageLink('pendingRomaji') pendingRomaji: string = '';
   // 入力中のかなをホストアプリの入力欄側に出せているか。出せているときは
   // パネル内の composing 表示を畳んでキーボードを低くする。
-  @StorageLink('previewInField') previewInField: boolean = false;
+  @StorageLink('previewInField') @Watch('checkFallbackBanner') previewInField: boolean = false;
   // かな表示の行をキーボード内に出すか (設定。入力欄側が非対応のときの
   // 保険もここに含めて KeyboardController が決める)。
   @StorageLink('showComposingPanel') showComposingPanel: boolean = true;
+  // 「キーボード内表示」をOFFにしたつもりでも、今の入力欄が入力欄側表示
+  // (setPreviewText) に非対応だと保険でキーボード内表示に戻る。設定画面
+  // だけに説明を置いていたら気づかれなかったので、実際に打っている
+  // キーボード側にもトースト風のバナーで出す (checkFallbackBanner 参照)。
+  // 常時出しっぱなしだと逆に分かりにくい(実際の指摘)ので、切り替わった
+  // 瞬間だけ出して1秒ほどでフェードアウトする。
+  @StorageLink('composingInPanel') @Watch('checkFallbackBanner') composingInPanel: boolean = true;
+  @StorageLink('composingInField') @Watch('checkFallbackBanner') composingInField: boolean = true;
+  @State fallbackBannerOpacity: number = 0;
+  @State fallbackBannerShown: boolean = false;
+  private prevFallbackActive: boolean = false;
+  private fallbackFadeTimer: number = -1;
+
+  private checkFallbackBanner(): void {
+    const active = !this.composingInPanel && this.composingInField && !this.previewInField;
+    if (active && !this.prevFallbackActive) {
+      clearTimeout(this.fallbackFadeTimer);
+      this.fallbackBannerShown = true;
+      this.fallbackBannerOpacity = 1;
+      this.fallbackFadeTimer = setTimeout(() => {
+        animateTo({ duration: 400 }, () => { this.fallbackBannerOpacity = 0; });
+        setTimeout(() => { this.fallbackBannerShown = false; }, 450);
+      }, 1000);
+    }
+    this.prevFallbackActive = active;
+  }
   @StorageLink('candidates') candidates: string[] = [];
   @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
@@ -44,6 +71,9 @@ struct KeyboardPage {
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   @StorageLink('keyboardSubMode') keyboardSubMode: string = 'kana';
+  // 括弧の自動閉じ (KeyboardController の insertText 参照)。空でなければ
+  // 「この文字が確定のたびに出るのを待っている」ことを候補バー行に出す。
+  @StorageLink('pendingBracketClose') pendingBracketClose: string = '';
   // 辞書の登録欄をキーボードの上に出しているか (DictEditBar 参照)。
   @StorageLink('dictEditMode') dictEditMode: boolean = false;
   @StorageLink('bunsetsuTexts') bunsetsuTexts: string[] = [];
@@ -139,6 +169,7 @@ struct KeyboardPage {
       AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
       AppStorage.setOrCreate('themeMode', s.themeMode);
       AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
+      AppStorage.setOrCreate('flickHintsEnabled', s.flickHintsEnabled);
       // かなの表示先は「設定値そのまま」ではなく入力欄の対応状況も混ぜて
       // 決まるので、AppStorage を直接書かず InputHandler に計算させる。
       InputHandler.getInstance().applyComposingDisplay(s.composingInPanel, s.composingInField);
@@ -151,11 +182,76 @@ struct KeyboardPage {
       // app (a different process) actually applies the mozc engine switch
       // here too, not just update the SettingsBar toggle's own display value.
       InputHandler.getInstance().setConversionEngine(s.conversionEngine);
+      InputHandler.getInstance().applyKeyboardHeightScaleLive(s.keyboardHeightScale);
+      InputHandler.getInstance().applyFlickSideRatioLive(s.flickSideColumnRatio);
     });
+  }
+
+  // 実際のキーボード本体を選ぶ部分。通常の入力画面と、レイアウト調整モード
+  // (下の layoutAdjust 分岐、LayoutAdjustBar の帯の下にこれをそのまま表示
+  // して見ながら調整できるようにする) の両方から呼ぶための @Builder。
+  @Builder KeyboardArea() {
+    Column() {
+      if (this.keyboardSubMode === 'numeric') {
+        // 'numeric' と 'layoutAdjust' は同じ keyboardSubMode の別値なので
+        // この分岐にいる間は adjustMode になり得ない (無効化は不要)。
+        NumericPadView()
+      } else if (this.alphabetKeyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
+        // レイアウト調整中は文字が打てないようにする -- キーボードは見た目
+        // どおりに見せつつ (打とうとして誤操作するより、押しても反応しない
+        // ほうが分かりやすい)、タップだけ通す。FlickKeyboardView は境界
+        // ハンドルを adjustMode 中も動かしたいので、自分自身でキー部分だけを
+        // 無効化する (下のコメント参照)。この2つは境界ハンドルが無いので
+        // ここで丸ごと無効化してよい。
+        AlphabetFlickKeyboardView({
+          inputMode: this.inputMode,
+          isLandscape: this.isLandscape
+        })
+          .hitTestBehavior(this.keyboardSubMode === 'layoutAdjust' ? HitTestMode.None : HitTestMode.Default)
+      } else if (this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
+        FlickKeyboardView({
+          inputMode: this.inputMode,
+          isLandscape: this.isLandscape,
+          adjustMode: this.keyboardSubMode === 'layoutAdjust'
+        })
+      } else {
+        KeyboardView({
+          inputMode: this.inputMode,
+          isLandscape: this.isLandscape
+        })
+          .hitTestBehavior(this.keyboardSubMode === 'layoutAdjust' ? HitTestMode.None : HitTestMode.Default)
+      }
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .opacity(this.keyboardSubMode === 'layoutAdjust' ? 0.6 : 1)
+    .scale(this.oneHandedMode ?
+      { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
+      { x: 1, y: 1 })
   }
 
   build() {
     Stack() {
+      // 「キーボード内表示」をOFFにしても、今の入力欄が入力欄側表示に
+      // 非対応だと保険で戻ってくることの説明。切り替わった瞬間だけ出して
+      // 1秒ほどでフェードアウトするトースト風バナー (checkFallbackBanner
+      // 参照)。常時出しっぱなしのバッジは目に入らなかった(実際の指摘)ので
+      // 短時間だけはっきり出す方針に変えた。
+      if (this.fallbackBannerShown) {
+        Text('この入力欄は入力欄内への表示に対応していないため、\nキーボード内に表示しています')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12)
+          .fontColor(kbTheme(this.isDark).onAccent)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(kbTheme(this.isDark).accent)
+          .borderRadius(10)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .opacity(this.fallbackBannerOpacity)
+          .position({ x: '10%', y: 6 })
+          .width('80%')
+          .zIndex(100)
+          .hitTestBehavior(HitTestMode.Transparent)
+      }
       Column() {
         // Symbol/Emoji/Settings views take the full panel (no preview bar).
         // Numeric keeps the preview bar — without it the pad's rows stretch to
@@ -166,6 +262,16 @@ struct KeyboardPage {
           EmojiView()
         } else if (this.keyboardSubMode === 'settings') {
           SettingsBar()
+        } else if (this.keyboardSubMode === 'layoutAdjust') {
+          // 他の設定画面と違ってキーボード全体を占有しない -- 帯だけを
+          // 上に出し、実物のキーボードをそのまま下に残して見ながら
+          // 調整できるようにする (LayoutAdjustBar のコメント参照)。
+          Column() {
+            LayoutAdjustBar({ isLandscape: this.isLandscape })
+            this.KeyboardArea()
+          }
+          .width('100%')
+          .height('100%')
         } else {
           // 辞書の登録欄。キーボードは下にそのまま残す (全面を占有する設定
           // パネル内では打つキーが無く入力できないため、ここに出している)。
@@ -326,6 +432,21 @@ struct KeyboardPage {
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
 
+                // 括弧を開いた直後、閉じが保留中であることを示すバッジ。
+                // 見た目に何も変化が無いと「閉じ括弧が出ない」と誤解される
+                // (実際に不具合報告があった)。次の確定でこの文字が出ることを
+                // 一目で分かるようにする。
+                if (this.pendingBracketClose.length > 0) {
+                  Text(this.pendingBracketClose + ' 待ち')
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(this.isLandscape ? 10 : 12)
+                    .fontColor(kbTheme(this.isDark).onAccent)
+                    .backgroundColor(kbTheme(this.isDark).accent)
+                    .borderRadius(10)
+                    .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                    .margin({ right: 6 })
+                }
+
                 // かな表示の行を出していないときは「設定」の置き場がここしか
                 // 無いので、候補バーの右端に寄せる。
                 if (!this.showComposingPanel
@@ -358,31 +479,7 @@ struct KeyboardPage {
           // applyKeyboardWidthsForVp system: each inner view still measures and
           // lays out its keys at full intended size, then this wrapper visually
           // (and for hit-testing) scales the whole thing down toward one side.
-          Column() {
-            if (this.keyboardSubMode === 'numeric') {
-              NumericPadView()
-            } else if (this.alphabetKeyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
-              AlphabetFlickKeyboardView({
-                inputMode: this.inputMode,
-                isLandscape: this.isLandscape
-              })
-            } else if (this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
-              FlickKeyboardView({
-                inputMode: this.inputMode,
-                isLandscape: this.isLandscape
-              })
-            } else {
-              KeyboardView({
-                inputMode: this.inputMode,
-                isLandscape: this.isLandscape
-              })
-            }
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .scale(this.oneHandedMode ?
-            { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
-            { x: 1, y: 1 })
+          this.KeyboardArea()
         }
       }
       .width('100%')

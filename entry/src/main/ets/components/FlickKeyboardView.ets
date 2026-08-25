@@ -49,11 +49,33 @@ const FLICK_GRID: FlickKeyDef[][] = [
 // Flick cell corner radius (design tokens: "flick cells 8px").
 const CELL_RADIUS = 8;
 
+// フリック中央3列との幅比調整ハンドル。このぶんドラッグすると比率の
+// 全域 (0.4〜2.0) を動く。
+const RATIO_DRAG_RANGE_VP = 140;
+const RATIO_MIN = 0.4;
+const RATIO_MAX = 2.0;
+
 @Component
 export struct FlickKeyboardView {
   @Prop inputMode: string = InputMode.HIRAGANA;
   @Prop isLandscape: boolean = false;
+  // 設定 → レイアウト調整 → このキーボードを見ながら調整、のときだけ true。
+  // 左右特殊キー列との境界に、幅比を変えるドラッグハンドルを重ねて出す。
+  @Prop adjustMode: boolean = false;
+  @StorageLink('flickSideColumnRatio') sideRatio: number = 1.0;
+  private dragStartRatio: number = 1.0;
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
+  // 境界ハンドルの位置計算用 (ColumnHandle 参照)。行の幅そのものには
+  // 使わない (それは各キーの .width() 側で既に反映済み)。
+  @StorageLink('keyboardContentVp') keyboardContentVp: number = 360;
+  // 左右端(取消/◄/記号…と ►/スペース…)の特殊キー1列の幅。中央3列の
+  // flickKeyWidthVp とは独立 -- 設定 → レイアウト調整の比率スライダーで
+  // 両者の比を変えられる (既定は同じ幅で今までどおり)。
+  @StorageLink('flickSideKeyWidthVp') flickSideKeyWidthVp: number = 72;
+  // 上下左右の小さいかなヒント(十字表示)を出すか。フリック自体は
+  // dirFrom() がタッチのジェスチャで判定しており、このヒントを消しても
+  // 機能は一切変わらない (isLandscape のときの表示と同じ仕組みを流用)。
+  @StorageLink('flickHintsEnabled') flickHintsEnabled: boolean = true;
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
@@ -237,6 +259,64 @@ export struct FlickKeyboardView {
       .padding({ left: 14, right: 14, top: 6, bottom: 6 })
   }
 
+  // 左右特殊キー列と中央3列の境界の、幅比調整ハンドル。行ごとに1本ずつ
+  // 生やして4本を縦に並べる (Column の gap:4 を挟んで並ぶだけなので、
+  // 見た目にはほぼ1本の連続した線に見える)。left/right どちらの境界かで
+  // ドラッグの向きと符号を変える -- 掴んだ側の列を、引っ張った方向へ
+  // 実際に伸び縮みさせる感覚に合わせてある。
+  // 行の幅に子として差し込むと、その分だけ行が伸びて画面端をはみ出す
+  // (実際にこれで発生した不具合)。通常のキー配置には一切手を触れず、
+  // その上に絶対位置で重ねるだけにしてある -- レイアウトへの影響ゼロ。
+  // 行は Row({space:4}) が [左特殊][中央×3][右特殊] を中央寄せで並べる
+  // ので、位置はそこから逆算する。
+  private rowStartX(): number {
+    const gap = 4;
+    const contentTotal = 2 * this.flickSideKeyWidthVp + 3 * this.flickKeyWidthVp + 4 * gap;
+    return Math.max(0, (this.keyboardContentVp - contentTotal) / 2);
+  }
+
+  private boundaryX(side: 'left' | 'right'): number {
+    const gap = 4;
+    const start = this.rowStartX();
+    if (side === 'left') {
+      // 左特殊キーと中央1列目の間 (gap1 の中央)。
+      return start + this.flickSideKeyWidthVp + gap / 2;
+    }
+    // 中央3列目と右特殊キーの間 (gap4 の中央)。
+    return start + this.flickSideKeyWidthVp + 3 * this.flickKeyWidthVp + 3 * gap + gap / 2;
+  }
+
+  @Builder ColumnHandle(side: 'left' | 'right') {
+    Row() {
+      Row().width(3).height('50%').borderRadius(1.5).backgroundColor(kbTheme(this.isDark).accent)
+    }
+    .width(18)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .position({ x: this.boundaryX(side) - 9, y: 0 })
+    .gesture(
+      PanGesture({ direction: PanDirection.Horizontal })
+        .onActionStart(() => {
+          this.dragStartRatio = this.sideRatio;
+        })
+        .onActionUpdate((event: GestureEvent) => {
+          // 境界線そのものを掴んで動かす感覚に合わせる: 指を動かした方向に
+          // 境界を押すと、押した側の特殊キー列がその分だけ伸びる。
+          // 左の境界を右へ押す(offsetX>0)→左の特殊キー列が伸びる(比率↑)。
+          // 右の境界を右へ押す(offsetX>0)→右の特殊キー列は縮む(比率↓)。
+          // 以前は符号が逆で、ドラッグ方向と伸縮が逆になっていた
+          // (「操作が左右反転してる」の実体)。
+          const dir = side === 'left' ? 1 : -1;
+          const delta = dir * event.offsetX / RATIO_DRAG_RANGE_VP * (RATIO_MAX - RATIO_MIN);
+          const next = Math.min(RATIO_MAX, Math.max(RATIO_MIN, this.dragStartRatio + delta));
+          this.h().applyFlickSideRatioLive(next);
+        })
+        .onActionEnd(() => {
+          this.h().saveFlickSideRatio(this.sideRatio);
+        })
+    )
+  }
+
   build() {
     Stack() {
       Column({ space: 4 }) {
@@ -256,7 +336,18 @@ export struct FlickKeyboardView {
       .width('100%')
       .height('100%')
       .padding({ bottom: 8, top: 4 })
+      // レイアウト調整中はキー自体を無効化する (文字が打ててしまうと
+      // 誤操作のもと)。境界ハンドルはこの Column の外の兄弟要素なので
+      // ここで無効化しても影響しない -- ドラッグは adjustMode 中こそ
+      // 使いたい操作なので、キーだけを選んで止める。
+      .hitTestBehavior(this.adjustMode ? HitTestMode.None : HitTestMode.Default)
 
+      // 行の幅には一切影響しない絶対位置オーバーレイ。全4行の高さぶんを
+      // 1本の縦線として重ねる (行ごとに4本出すより「1本の境界線」に見える)。
+      if (this.adjustMode) {
+        this.ColumnHandle('left')
+        this.ColumnHandle('right')
+      }
     }
     .width('100%')
     .height('100%')
@@ -271,7 +362,7 @@ export struct FlickKeyboardView {
       Text('取消')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(14).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
@@ -284,7 +375,7 @@ export struct FlickKeyboardView {
           .fontSize(16)
           .fontColor([kbTheme(this.isDark).textPrimary])
       }
-      .width(this.flickKeyWidthVp).height('100%')
+      .width(this.flickSideKeyWidthVp).height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .backgroundColor(kbTheme(this.isDark).specialBg)
@@ -300,7 +391,7 @@ export struct FlickKeyboardView {
       Text('記号')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(14).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         // Long-press to reveal the 左手モード hint, then flick up to switch.
@@ -338,7 +429,7 @@ export struct FlickKeyboardView {
         : (this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ'))
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(12).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
@@ -357,7 +448,7 @@ export struct FlickKeyboardView {
           .fontSize(16)
           .fontColor([kbTheme(this.isDark).textPrimary])
       }
-      .width(this.flickKeyWidthVp).height('100%')
+      .width(this.flickSideKeyWidthVp).height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .backgroundColor(kbTheme(this.isDark).specialBg)
@@ -376,7 +467,7 @@ export struct FlickKeyboardView {
           .fontSize(16)
           .fontColor([kbTheme(this.isDark).textPrimary])
       }
-      .width(this.flickKeyWidthVp).height('100%')
+      .width(this.flickSideKeyWidthVp).height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .backgroundColor(kbTheme(this.isDark).specialBg)
@@ -393,7 +484,7 @@ export struct FlickKeyboardView {
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(this.inputState === 'COMPOSING' ? 14 : 12)
         .textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         // Long-press the space key to reveal the 右手モード hint, then flick up
@@ -438,7 +529,7 @@ export struct FlickKeyboardView {
           .fontSize(16)
           .fontColor([kbTheme(this.isDark).onAccent])
       }
-      .width(this.flickKeyWidthVp).height('100%')
+      .width(this.flickSideKeyWidthVp).height('100%')
       .justifyContent(FlexAlign.Center)
       .alignItems(VerticalAlign.Center)
       .backgroundColor(kbTheme(this.isDark).accent)
@@ -460,7 +551,7 @@ export struct FlickKeyboardView {
   }
 
   @Builder KeyCell(rowIdx: number, colIdx: number, key: FlickKeyDef) {
-    if (this.isLandscape) {
+    if (this.isLandscape || !this.flickHintsEnabled) {
       // Landscape rows are short on height; drop the flick-direction hints and
       // just show the center glyph. Flicking itself is unaffected — dirFrom()
       // reads the touch gesture, not this label.

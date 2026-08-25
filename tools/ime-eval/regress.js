@@ -27,16 +27,22 @@ const GDICT = path.join(ROOT, 'tools/dict_src/global_dict.json');
 const EVAL = __dirname;
 
 function build(useHead) {
-  const rel = (f) => path.relative(ROOT, f);
+  // git show HEAD:<path> は常にフォワードスラッシュのパスspecを要求する。
+  // Windows の path.relative はバックスラッシュを返すので、そのまま渡すと
+  // execFileSync (シェルを経由しないので \ は展開されない) 経由の
+  // git show が「HEAD に存在しない」と誤判定して落ちる。
+  const rel = (f) => path.relative(ROOT, f).split(path.sep).join('/');
   const readF = (f) => useHead
     ? execFileSync('git', ['show', 'HEAD:' + rel(f)], { cwd: ROOT, maxBuffer: 1e9 }).toString('utf-8')
     : fs.readFileSync(f, 'utf-8');
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'regress-'));
   const tsPath = path.join(tmp, 'KKC.ts');
   fs.writeFileSync(tsPath, '// @ts-nocheck\n' + readF(SRC));
-  execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
-    '--skipLibCheck', tsPath], { stdio: 'inherit' });
-  return { js: path.join(tmp, 'KKC.js'), dict: JSON.parse(readF(DICT)), gdict: JSON.parse(readF(GDICT)) };
+  // typescript がこの環境にインストールされておらず npx tsc が使えない
+  // (グローバルにも node_modules にも無い)。bun は .ts を tsc 無しで直接
+  // require できるので、コンパイル自体を省いてそちらへ寄せる。
+  // node で動かす場合は別途 typescript を用意すること。
+  return { js: tsPath, dict: JSON.parse(readF(DICT)), gdict: JSON.parse(readF(GDICT)) };
 }
 
 function mk(useHead) {

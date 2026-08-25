@@ -24,7 +24,7 @@ function build() {
   const tsPath = path.join(tmp, 'KKC.ts');
   fs.writeFileSync(tsPath, '// @ts-nocheck\n' + fs.readFileSync(SRC, 'utf-8'));
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
-    '--skipLibCheck', tsPath], { stdio: 'inherit' });
+    '--skipLibCheck', tsPath], { stdio: 'inherit', shell: true });
   return path.join(tmp, 'KKC.js');
 }
 

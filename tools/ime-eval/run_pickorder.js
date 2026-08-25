@@ -36,7 +36,7 @@ function build() {
     outs.push(ts);
   }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
-    '--skipLibCheck', ...outs], { stdio: 'inherit' });
+    '--skipLibCheck', ...outs], { stdio: 'inherit', shell: true });
   return (m) => require(path.join(tmp, `${m}.js`));
 }
 

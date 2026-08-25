@@ -671,7 +671,11 @@ const DICTIONARY: Record<string, string[]> = {
   'やばい': ['やばい', 'ヤバい'],
   'かわいい': ['可愛い', 'かわいい'],
   'かっこいい': ['格好いい', 'かっこいい'],
-  'かっこ': ['()', '（）', '「」'],
+  // 優先度は低くていいので末尾にまとめて足す (よく使う () （） 「」 は
+  // 従来どおり先頭)。ここに並べた表記は KeyboardController.BRACKET_PAIRS
+  // にも開き→閉じの対応が登録済みなので、候補として確定すると開きだけが
+  // 出て閉じは自動で保留される (括弧の自動閉じ機能)。
+  'かっこ': ['()', '（）', '「」', '『』', '【】', '[]', '〔〕', '〈〉', '《》', '｛｝', '{}'],
   'まるかっこ': ['()', '（）'],
   'かぎかっこ': ['「」', '『』'],
   'にじゅうかぎかっこ': ['『』'],
@@ -32679,8 +32683,24 @@ export interface VocabPackInfo {
   id: string;
   name: string;
   description: string;
-  // 読み -> 表記の一覧 (.pack の優先度順で並んでいる)
-  entries: Record<string, string[]>;
+  // 既定で有効にするか (.pack の default: ヘッダ)。地名のように「今まで
+  // 普通に引けていたもの」は true にして、更新しただけで引けなくなる
+  // 後退が起きないようにする。
+  defaultOn: boolean;
+  // 収録語数 (設定画面の表示用)。語彙そのものは manifest に入れず、
+  // rawfile/pack_<id>.* のバイナリを有効化時に読む。
+  count: number;
+  // パック全体の既定品詞のクラス (.pack の pos: ヘッダ)。全語が同じ品詞の
+  // パック(地名など)で1語ずつ持つと manifest が語数ぶん膨らむため。
+  defaultClass: number[] | null;
+  // 優先度による前後の振り分け。tailDefault が true なら、このパックの語は
+  // 既定で「基本辞書の候補より後ろ・かな/カナのフォールバックより前」に
+  // 差し込まれる。flip はその既定と逆側に置く語 (読み -> 表記)。
+  // どちらの向きでも「例外だけ」を持つので、地名のように2万語すべてが
+  // 同じ優先度のパックでも manifest が膨らまない。
+  // 閾値の判定は tools/build_vocab_packs.py (ビルド時) で済ませてある。
+  tailDefault: boolean;
+  flip: Record<string, string[]>;
   // "読み\t表記" -> 品詞。動詞・形容詞・人名・地名だけ入る。ConjugationEngine
   // の UserPosEntry と同じ形だが、このファイルは import を持たない方針
   // (先頭のコメント参照 -- Node からそのまま読めるようにしてある) なので
@@ -33652,11 +33672,14 @@ export class KanaKanjiConverter {
   // tools/build_vocab_packs.py で他の辞書と同じパック形式に固めたもの。
   // ロードは KeyboardController 側で有効なパックだけ遅延読み込みする
   // (mozcエンジンと同じ考え方 -- 使わない人にメモリを払わせない)。
-  // パックID -> 読み -> 表記の一覧。活用展開済み (KeyboardController が
-  // ConjugationEngine に通した結果) を入れる。パックは「界隈の定番語彙」と
-  // いう性質上小さいので、dict/global_dict のようなバイナリ化はしていない。
-  private static vocabPacks: Record<string, Record<string, string[]>> = {};
-  // パックID -> 読み -> [左クラス, 右クラス]。接続行列のクラス上書き。
+  // パックID -> 語彙 (dict/global_dict と同じパック済みバイナリ)。
+  // 地名を地方別に分けた時点で1パック2万語規模になったため、JS オブジェクト
+  // での保持をやめてバイナリに載せ替えた。有効なパックのぶんだけ読む。
+  private static vocabPacks: Record<string, PackedDict> = {};
+  // パックID -> 読み -> 表記。活用展開 (五段/一段/形容詞) で増えた読みだけの
+  // 小さな上乗せ。品詞が付いた語しか対象にならないので件数は少ない。
+  private static vocabPackExtra: Record<string, Record<string, string[]>> = {};
+  // パックID -> 読み -> [左クラス, 右クラス]。個別指定ぶん。
   private static vocabPackClasses: Record<string, Record<string, number[]>> = {};
   private static enabledPacks: Set<string> = new Set<string>();
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
@@ -33979,6 +34002,30 @@ export class KanaKanjiConverter {
     return id;
   }
 
+  static vocabPackCount(id: string): number {
+    const m = KanaKanjiConverter.packMetaOf(id);
+    return m === undefined ? 0 : m.count;
+  }
+
+  // 利用者が一度も触っていないパックの初期状態。.pack の default: ヘッダ。
+  static vocabPackDefaultOn(id: string): boolean {
+    const m = KanaKanjiConverter.packMetaOf(id);
+    return m !== undefined && m.defaultOn === true;
+  }
+
+  // 保存済みの明示指定 (overrides) と manifest の既定から、実際に有効な
+  // パックIDを決める。overrides に無いパックは既定に従う -- こうしないと
+  // 新しく既定ONのパックを足しても、既存利用者には一生届かない。
+  static resolveEnabledPacks(overrides: Record<string, boolean>): string[] {
+    const out: string[] = [];
+    for (const p of KanaKanjiConverter.vocabPackMeta) {
+      const ov = overrides[p.id];
+      const on = (ov === undefined) ? (p.defaultOn === true) : ov;
+      if (on) { out.push(p.id); }
+    }
+    return out;
+  }
+
   static vocabPackDescription(id: string): string {
     for (const p of KanaKanjiConverter.vocabPackMeta) {
       if (p.id === id) { return p.description; }
@@ -34004,11 +34051,19 @@ export class KanaKanjiConverter {
     return kept.length > 0 ? kept : cands;
   }
 
-  // 活用展開まで済ませた語彙 (KeyboardController.loadVocabPacks が
-  // ConjugationEngine.buildUserExpansion に通した結果) を受け取る。
-  static setVocabPackEntries(id: string, entries: Record<string, string[]>,
+  // パックの語彙本体 (バイナリ) を受け取る。有効化されたときだけ呼ばれる。
+  static setVocabPackPacked(id: string, keyBlob: Uint8Array, keyLens: Uint8Array,
+      keyBase: Uint32Array, valBlob: Uint8Array, valLens: Uint8Array,
+      valBase: Uint32Array, idx: Uint32Array): void {
+    const d = new PackedDict();
+    d.setPacked(keyBlob, keyLens, keyBase, valBlob, valLens, valBase, idx);
+    KanaKanjiConverter.vocabPacks[id] = d;
+  }
+
+  // 活用展開で増えた読みと、クラス指定。バイナリとは別に持つ。
+  static setVocabPackOverlay(id: string, extra: Record<string, string[]>,
       classes: Record<string, number[]>): void {
-    KanaKanjiConverter.vocabPacks[id] = entries;
+    KanaKanjiConverter.vocabPackExtra[id] = extra;
     KanaKanjiConverter.vocabPackClasses[id] = classes;
   }
 
@@ -34021,10 +34076,25 @@ export class KanaKanjiConverter {
   static packClassFor(kana: string): number[] | undefined {
     for (const id of KanaKanjiConverter.enabledPacks.values()) {
       const m = KanaKanjiConverter.vocabPackClasses[id];
-      if (m === undefined) { continue; }
-      const c = m[kana];
-      if (c !== undefined) { return c; }
+      if (m !== undefined) {
+        const c = m[kana];
+        if (c !== undefined) { return c; }
+      }
+      // パック全体の既定品詞 (.pack の pos: ヘッダ)。地名パックのように
+      // 全語が同じ品詞のとき、1語ずつ持たずここで解決する。
+      const meta = KanaKanjiConverter.packMetaOf(id);
+      if (meta === undefined || meta.defaultClass === undefined
+          || meta.defaultClass === null || meta.defaultClass.length < 2) { continue; }
+      const d = KanaKanjiConverter.vocabPacks[id];
+      if (d !== undefined && d.has(kana)) { return meta.defaultClass; }
+      const ex = KanaKanjiConverter.vocabPackExtra[id];
+      if (ex !== undefined && ex[kana] !== undefined) { return meta.defaultClass; }
     }
+    return undefined;
+  }
+
+  private static packMetaOf(id: string): VocabPackInfo | undefined {
+    for (const p of KanaKanjiConverter.vocabPackMeta) { if (p.id === id) { return p; } }
     return undefined;
   }
 
@@ -34047,13 +34117,76 @@ export class KanaKanjiConverter {
   // 有効なパックの中からこの読みに一致する最初の候補列を返す。複数の
   // パックが同じ読みを持っていても構わない (どれかが有効ならヒットする)。
   private static packEntry(kana: string): string[] | undefined {
+    return KanaKanjiConverter.packEntrySide(kana, false);
+  }
+
+  // 優先度が低い (数値が大きい) ために後ろへ回す語。lookup() の最後で
+  // 基本辞書の候補の後ろ・かな/カナのフォールバックの前に差し込まれる。
+  private static packTailEntry(kana: string): string[] | undefined {
+    return KanaKanjiConverter.packEntrySide(kana, true);
+  }
+
+  // 有効なパックの中からこの読みに一致する候補を、前に出すもの (tail=false)
+  // と後ろへ回すもの (tail=true) に分けて返す。複数のパックが同じ読みを
+  // 持っていても構わない (どれかが有効ならヒットする)。
+  private static packEntrySide(kana: string, tail: boolean): string[] | undefined {
     for (const id of KanaKanjiConverter.enabledPacks.values()) {
+      let words: string[] | undefined = undefined;
       const d = KanaKanjiConverter.vocabPacks[id];
-      if (d === undefined) { continue; }
-      const v = d[kana];
-      if (v !== undefined && v.length > 0) { return v; }
+      if (d !== undefined) {
+        const v = d.get(kana);
+        if (v !== undefined && v.length > 0) { words = v; }
+      }
+      if (words === undefined) {
+        const ex = KanaKanjiConverter.vocabPackExtra[id];
+        if (ex !== undefined) {
+          const v2 = ex[kana];
+          if (v2 !== undefined && v2.length > 0) { words = v2; }
+        }
+      }
+      if (words === undefined) { continue; }
+      const meta = KanaKanjiConverter.packMetaOf(id);
+      // manifest が古い (振り分け情報が無い) ときは今まで通り全部を前に出す。
+      if (meta === undefined || meta.tailDefault === undefined) {
+        return tail ? undefined : words;
+      }
+      const flipped = (meta.flip === undefined ? undefined : meta.flip[kana]) ?? [];
+      const picked = words.filter((w: string) =>
+        ((flipped.includes(w) ? !meta.tailDefault : meta.tailDefault) === tail));
+      return picked.length > 0 ? picked : undefined;
     }
     return undefined;
+  }
+
+  // 後ろへ回す語を、基本辞書の候補より後ろ・かな/カナのフォールバックより
+  // 前に差し込む。末尾に足すだけだと、他に候補が無い読み (地名がまさに
+  // これ) で ひらがな・カタカナの下に沈んでしまうため。
+  private static withPackTail(kana: string, cands: string[]): string[] {
+    if (KanaKanjiConverter.enabledPacks.size === 0) { return cands; }
+    const tailWords = KanaKanjiConverter.packTailEntry(kana);
+    if (tailWords === undefined) { return cands; }
+    const add = tailWords.filter((w: string) => !cands.includes(w));
+    if (add.length === 0) { return cands; }
+    // パック以外のどの辞書もこの読みを知らないなら、後ろへ回す意味が無い。
+    // 押しのける相手が居らず、残っているのは かな/カナ か、セグメンタが
+    // 無理やり繋いだ列 (あいたにちょう -> 開いたに長) だけなので、そちらの
+    // 下に沈めると地名が実質引けなくなる。
+    if (!KanaKanjiConverter.knownOutsidePacks(kana)) { return [...add, ...cands]; }
+    const kata = KanaKanjiConverter.toKatakana(kana);
+    let at = cands.length;
+    for (let i = 0; i < cands.length; i++) {
+      if (cands[i] === kana || cands[i] === kata) { at = i; break; }
+    }
+    return [...cands.slice(0, at), ...add, ...cands.slice(at)];
+  }
+
+  private static knownOutsidePacks(kana: string): boolean {
+    const e = DICTIONARY[kana];
+    if (e !== undefined && e.length > 0) { return true; }
+    const u = KanaKanjiConverter.userDict[kana];
+    if (u !== undefined && u.length > 0) { return true; }
+    return KanaKanjiConverter.globalDict.has(kana)
+      || KanaKanjiConverter.supplementaryDict.has(kana);
   }
 
   // Build and store the connection matrix from inline grammar rules (no JSON file needed).
@@ -34246,24 +34379,6 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.learned = remaining;
   }
 
-  private static readonly BRACKET_DICT: Record<string, string[]> = {
-    '（': ['（）', '（', '「」', '『』', '【】', '〖〗', '〔〕', '〈〉', '《》'],
-    '）': ['）', '（）', '」', '』', '】', '〗', '〕', '〉', '》'],
-  };
-
-  static isBracketChar(c: string): boolean {
-    return c.length === 1 && KanaKanjiConverter.BRACKET_DICT[c] !== undefined;
-  }
-
-  static lookupBracket(kana: string): string[] | null {
-    if (kana.length === 0) { return null; }
-    const first = kana[0];
-    const entry = KanaKanjiConverter.BRACKET_DICT[first];
-    if (entry === undefined) { return null; }
-    const result: string[] = [...entry];
-    if (!result.includes(kana)) { result.push(kana); }
-    return result;
-  }
   // Per-segment ("文節") learning for the ordinary whole-sentence commit path.
   // Committing a multi-segment candidate used to record only the entire
   // reading→surface pair (recordChoice(wholeReading, wholeSurface)), a key
@@ -35672,7 +35787,17 @@ export class KanaKanjiConverter {
           KanaKanjiConverter.isReduplicated(kana) &&
           authored.indexOf(kana) >= 0 &&
           authored.some((c: string) => KanaKanjiConverter.isPureKatakana(c));
-      if (mixedKana || writableBothWays) {
+      // mixedKana は「マジか」のような表記交ざりを既定ではひらがなへ戻す
+      // 救済。DICTIONARY 本体には「まじかよ」→[マジかよ]のように、まさに
+      // この救済で普段はひらがなへ戻る前提で書かれた項目があるため、
+      // entry (DICTIONARY 直接のエントリ) がある読みには今までどおり適用する。
+      // 一方、語彙パックだけが持つ語 (entry が無く ext だけにある) は話が
+      // 別で、パック作者が優先度1で明示した表記は「分割ミス」ではなく
+      // 意図的な表記交ざり(ありがと+ナス 等)であることが多い。ここだけ
+      // 例外にする (優先度1でも後ろに出ていた不具合の実体)。
+      const packOnlyTop = (entry === undefined || entry.length === 0)
+          && ext !== undefined && ext.indexOf(top) >= 0;
+      if ((mixedKana && !packOnlyTop) || writableBothWays) {
         result = [kana, ...result.filter((c: string) => c !== kana)];
       }
     }
@@ -35781,7 +35906,9 @@ export class KanaKanjiConverter {
   // 呼び出し側の突き合わせが壊れるため、最終結果にだけ効かせる。
   lookup(kana: string, fromNorm: boolean = false): string[] {
     const result = this.lookupInner(kana, fromNorm);
-    return fromNorm ? result : KanaKanjiConverter.dropPackSuppressed(kana, result);
+    if (fromNorm) { return result; }
+    return KanaKanjiConverter.dropPackSuppressed(kana,
+      KanaKanjiConverter.withPackTail(kana, result));
   }
 
   private lookupInner(kana: string, fromNorm: boolean): string[] {
@@ -35907,11 +36034,25 @@ export class KanaKanjiConverter {
       const registeredInTrackA = !!(DICTIONARY[kana]
         || KanaKanjiConverter.globalDict.has(kana)
         || KanaKanjiConverter.supplementaryDict.has(kana)
-        || KanaKanjiConverter.packEntry(kana) !== undefined);
+        || KanaKanjiConverter.packEntry(kana) !== undefined
+      || KanaKanjiConverter.packTailEntry(kana) !== undefined);
+      // 重複除去は trackA 側でなく kanaFallback 側から行う。
+      //
+      // 以前は逆 (trackA を kanaFallback で filter) だった。語彙パックの
+      // 優先度1の語が「カタカナに変換しただけの表記」(あーいきそ→アーイキソ
+      // 等、ネットスラングにありがち) のとき、その文字列は kata===kana の
+      // 素のカタカナ変換とたまたま完全一致する。すると trackA 側で正しく
+      // 先頭に並んでいたその語が「もう kanaFallback にある重複」として
+      // 削られ、パックの優先度を無視して kanaFallback 側の並び順 (優先度と
+      // 無関係、単なるかな/カタカナのフォールバック順) に落ちていた --
+      // 「優先度1でも3,4番目に出る」不具合の実体。
+      // trackA (singleWordTrackAOrder = lookupCore、パック優先度込み) の
+      // 並びをそのまま残し、kanaFallback 側は trackA に無い形だけを補う。
       const trackA = (KanaKanjiConverter.engine === 'hybrid' && registeredInTrackA)
-        ? this.singleWordTrackAOrder(kana).filter((c: string) => !kanaFallback.includes(c))
+        ? this.singleWordTrackAOrder(kana)
         : [];
-      list = trackA.length > 0 ? [...trackA, ...kanaFallback] : kanaFallback;
+      const tailFallback = kanaFallback.filter((c: string) => !trackA.includes(c));
+      list = trackA.length > 0 ? [...trackA, ...tailFallback] : kanaFallback;
     }
     // Same user-intent layering as track A's lookupCore (and in the same
     // priority order): the user's learned candidate choices outrank raw
