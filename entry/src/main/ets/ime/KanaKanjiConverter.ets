@@ -237,6 +237,54 @@ const KAOMOJI_MAP: Record<string, string[]> = {
 };
 
 const DICTIONARY: Record<string, string[]> = {
+  // ネットスラング・ミーム語彙 (2026年時点)。一般的な言語資源には出てこない
+  // 表記なので、独自辞書ならではの手入れ対象。「淫夢語録」由来のフレーズは
+  // 意味が薄れて一般的な驚き表現として定着したものだけに絞ってある
+  // (露骨な由来が残るものは対象外)。
+  'うまかく': ['うま確'],
+  'ちゃっぴー': ['チャッピー'],
+  'いんぷれぞんび': ['インプレゾンビ'],
+  'けんちゃな': ['ケンチャナ'],
+  'ふろきゃんせるかいわい': ['風呂キャンセル界隈'],
+  'きゃぱい': ['キャパい'],
+  'わかりみがふかい': ['わかりみが深い'],
+  'おじさんこうぶん': ['おじさん構文'],
+  'すきすぎてめつ': ['好きすぎて滅'],
+  'ふれねみー': ['フレネミー'],
+  'ぎゅん': ['ギュン'],
+  'めろい': ['メロい'],
+  'ぴきる': ['ピキる'],
+  // てぇてぇ→尊い は読みと表記の対応が一見して分からない、辞書の手入れが
+  // 一番効く典型例。
+  'てぇてぇ': ['尊い', 'てぇてぇ'],
+  'げんかいおたく': ['限界オタク'],
+  'かえるかげんしょう': ['蛙化現象'],
+  'しかかたん': ['しか勝たん'],
+  'ちるする': ['チルする'],
+  'わんちゃん': ['ワンちゃん'],
+  'げきおこぷんぷんまる': ['激おこぷんぷん丸'],
+  'でぃする': ['ディスる'],
+  // 淫夢語録・なんJ語のうち niche な語彙本体は tools/vocab_packs/ 側の
+  // 語彙パック (デフォルトOFF、設定画面で有効化) に移した。ここに残すのは
+  // 「もともと存在する読みの1位が不自然な誤変換になっている」バグ修正
+  // だけ -- パックを入れない人にとっても直っているべきものだから。
+  // せやかて工藤 のコピペで有名な猛虎弁のツッコミ表現。かな確定が自然なのに
+  // mozc側は「瀬谷勝て」のような無関係な地名+命令形を1位に出していたので
+  // 直す。
+  'せやかて': ['せやかて'],
+  // 猛虎弁の「〜やな」(や+終助詞な、「〜だよな」の意) は単独で変換すると
+  // 梁(やな, 川の漁具) 等の稀な単漢字読みが1位に来ていた。文中では
+  // Viterbi分割がや/なを正しく別々に切るので問題は起きないが、単独確定
+  // (文節モードでの手動区切りなど) では梁が先に出てしまう。
+  'やな': ['やな'],
+  // 同じ穴が他の猛虎弁の語尾・一人称にもあった。
+  'せや': ['せや'],                 // 瀬谷(地名)が1位に来ていた
+  'ねん': ['ねん'],                 // 年 が1位に来ていた (「せやねん」等)
+  // わい はなんJ・猛虎弁の一人称そのもの。「沸い」が1位に来ていたのは
+  // このIMEのターゲット層にとって一番目立つ形の不自然さだった。
+  'わい': ['わい', 'ワイ'],
+  'でや': ['でや'],                 // 出屋(姓)が1位に来ていた
+
   'いち': ['一', '１'],
   // さん as bare kana is typed almost exclusively for the honorific suffix
   // (田中さん, 店員さん, 屋さん…) — the numeral 三 is usually entered as a
@@ -16925,15 +16973,19 @@ const DICTIONARY: Record<string, string[]> = {
   'GPU': ['GPU'],
   'じーぴーゆー': ['GPU'],
   'RAM': ['RAM'],
-  'らむ': ['RAM', 'ラム'],
+  // らん/わん/らむ は「読みを全部略語で打つ」ITスペル読み(えすえすでぃー等)
+  // とは違い、日常語としても普通に使う読みなので、略語が先頭に来ると
+  // 日常語の方が埋もれる (らん→LANが1位で蘭/欄/乱/卵より先、等)。
+  // 局所的にしか出番のない略語を先頭に置かない。
+  'らむ': ['ラム', 'RAM'],
   'SSD': ['SSD'],
   'えすえすでぃー': ['SSD'],
   'HDD': ['HDD'],
   'えいちでぃーでぃー': ['HDD'],
   'LAN': ['LAN'],
-  'らん': ['LAN', '蘭', '欄'],
+  'らん': ['蘭', '欄', '乱', '卵', 'LAN'],
   'WAN': ['WAN'],
-  'わん': ['WAN', '湾'],
+  'わん': ['湾', '椀', 'WAN'],
   'VPN': ['VPN'],
   'ぶいぴーえぬ': ['VPN'],
   'HTML': ['HTML'],
@@ -32611,6 +32663,36 @@ interface MozcNumeralRun {
   surface: string;
 }
 
+// 語彙パック1つ分のメタ情報。tools/build_vocab_packs.py が
+// tools/vocab_packs/*.pack から rawfile/pack_manifest.json として生成し、
+// KeyboardController.loadVocabPackManifest がそのまま読む。
+// suppress は 読み -> 出したくない表記の一覧 (.pack の行頭 - 指定)。
+// ConjugationEngine.UserPosEntry と同じ形 (このファイルは import を持たない
+// のでここに再宣言してある)。pos は 'verb'|'adjective'|'person'|'place'、
+// group は動詞のときだけ 'godan'|'ichidan'。
+export interface VocabPackPos {
+  pos: string;
+  group?: string;
+}
+
+export interface VocabPackInfo {
+  id: string;
+  name: string;
+  description: string;
+  // 読み -> 表記の一覧 (.pack の優先度順で並んでいる)
+  entries: Record<string, string[]>;
+  // "読み\t表記" -> 品詞。動詞・形容詞・人名・地名だけ入る。ConjugationEngine
+  // の UserPosEntry と同じ形だが、このファイルは import を持たない方針
+  // (先頭のコメント参照 -- Node からそのまま読めるようにしてある) なので
+  // 構造だけ再宣言してある。実際に活用展開するのは import を持てる
+  // KeyboardController 側。
+  pos: Record<string, VocabPackPos>;
+  // 読み -> [左クラス, 右クラス]。品詞名や @ 指定による接続行列クラスの上書き。
+  classes: Record<string, number[]>;
+  // 読み -> 出したくない表記 (.pack の行頭 - 指定)
+  suppress: Record<string, string[]>;
+}
+
 export interface MozcMatrixData {
   size: number;
   bosClass: number;
@@ -33563,6 +33645,20 @@ export class KanaKanjiConverter {
   private static userClassMap: Record<string, number[]> = {};
   // Developer-curated dictionary bundled as rawfile/global_dict.json. Highest priority.
   private static globalDict: PackedDict = new PackedDict();
+  // 語彙パック: 「界隈の人はめちゃくちゃ使うが全員には要らない」ニッチ語彙
+  // (淫夢語録・なんJ語など) を、既定でOFFの追加インストール的な単位に
+  // 分けたもの。ソースは tools/vocab_packs/*.tsv (読み/単語/優先度の3列
+  // だけなので、コードを読めない人でもPRで語彙を足せる) を
+  // tools/build_vocab_packs.py で他の辞書と同じパック形式に固めたもの。
+  // ロードは KeyboardController 側で有効なパックだけ遅延読み込みする
+  // (mozcエンジンと同じ考え方 -- 使わない人にメモリを払わせない)。
+  // パックID -> 読み -> 表記の一覧。活用展開済み (KeyboardController が
+  // ConjugationEngine に通した結果) を入れる。パックは「界隈の定番語彙」と
+  // いう性質上小さいので、dict/global_dict のようなバイナリ化はしていない。
+  private static vocabPacks: Record<string, Record<string, string[]>> = {};
+  // パックID -> 読み -> [左クラス, 右クラス]。接続行列のクラス上書き。
+  private static vocabPackClasses: Record<string, Record<string, number[]>> = {};
+  private static enabledPacks: Set<string> = new Set<string>();
   // 100×100 Phase-2.5 connection cost matrix, built at startup via buildConnectionMatrix().
   // No external file dependency — rules ported from tools/gen_matrix_default.py.
   private static connectionMatrix: number[][] = [];
@@ -33853,6 +33949,111 @@ export class KanaKanjiConverter {
       valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
     KanaKanjiConverter.globalDict.setPacked(keyBlob, keyLens, keyBase,
       valBlob, valLens, valBase, idx);
+  }
+
+  // ---- 語彙パック ---------------------------------------------------------
+
+  // パックの一覧・表示名・説明・抑制指定は、すべて
+  // tools/build_vocab_packs.py が tools/vocab_packs/*.pack から生成する
+  // rawfile/pack_manifest.json から来る。ここにハードコードは持たない --
+  // 持つと「パックを1つ足すのに .ets の編集が要る」ことになり、
+  // 「誰でも語彙を足せる」という語彙パックの目的そのものが崩れる。
+  private static vocabPackMeta: VocabPackInfo[] = [];
+
+  static setVocabPackManifest(list: VocabPackInfo[]): void {
+    KanaKanjiConverter.vocabPackMeta = list;
+  }
+
+  static listVocabPacks(): VocabPackInfo[] {
+    return KanaKanjiConverter.vocabPackMeta;
+  }
+
+  static listVocabPackIds(): string[] {
+    return KanaKanjiConverter.vocabPackMeta.map((p: VocabPackInfo) => p.id);
+  }
+
+  static vocabPackDisplayName(id: string): string {
+    for (const p of KanaKanjiConverter.vocabPackMeta) {
+      if (p.id === id) { return p.name; }
+    }
+    return id;
+  }
+
+  static vocabPackDescription(id: string): string {
+    for (const p of KanaKanjiConverter.vocabPackMeta) {
+      if (p.id === id) { return p.description; }
+    }
+    return '';
+  }
+
+  // 有効なパックが「この読みのこの表記は出すな」と言っているか
+  // (.pack の行頭 - 指定)。パックを有効にしている間だけ効く。
+  static isSuppressedByPack(kana: string, surface: string): boolean {
+    for (const p of KanaKanjiConverter.vocabPackMeta) {
+      if (!KanaKanjiConverter.enabledPacks.has(p.id)) { continue; }
+      const words = p.suppress[kana];
+      if (words !== undefined && words.includes(surface)) { return true; }
+    }
+    return false;
+  }
+
+  private static dropPackSuppressed(kana: string, cands: string[]): string[] {
+    if (KanaKanjiConverter.enabledPacks.size === 0) { return cands; }
+    const kept = cands.filter((c: string) => !KanaKanjiConverter.isSuppressedByPack(kana, c));
+    // 全部消えるくらいなら抑制しない (打っても何も出ない読みを作らない)。
+    return kept.length > 0 ? kept : cands;
+  }
+
+  // 活用展開まで済ませた語彙 (KeyboardController.loadVocabPacks が
+  // ConjugationEngine.buildUserExpansion に通した結果) を受け取る。
+  static setVocabPackEntries(id: string, entries: Record<string, string[]>,
+      classes: Record<string, number[]>): void {
+    KanaKanjiConverter.vocabPacks[id] = entries;
+    KanaKanjiConverter.vocabPackClasses[id] = classes;
+  }
+
+  static isVocabPackLoaded(id: string): boolean {
+    return KanaKanjiConverter.vocabPacks[id] !== undefined;
+  }
+
+  // 有効なパックがこの読みに接続行列クラスを指定しているか。
+  // getWordInfo から VERB_CLASS / userClassMap と同じ場所で参照される。
+  static packClassFor(kana: string): number[] | undefined {
+    for (const id of KanaKanjiConverter.enabledPacks.values()) {
+      const m = KanaKanjiConverter.vocabPackClasses[id];
+      if (m === undefined) { continue; }
+      const c = m[kana];
+      if (c !== undefined) { return c; }
+    }
+    return undefined;
+  }
+
+  static setPackEnabled(id: string, enabled: boolean): void {
+    if (enabled) { KanaKanjiConverter.enabledPacks.add(id); } else { KanaKanjiConverter.enabledPacks.delete(id); }
+  }
+
+  static isPackEnabled(id: string): boolean {
+    return KanaKanjiConverter.enabledPacks.has(id);
+  }
+
+  static getEnabledPackIds(): string[] {
+    return Array.from(KanaKanjiConverter.enabledPacks.values());
+  }
+
+  static setEnabledPackIds(ids: string[]): void {
+    KanaKanjiConverter.enabledPacks = new Set<string>(ids);
+  }
+
+  // 有効なパックの中からこの読みに一致する最初の候補列を返す。複数の
+  // パックが同じ読みを持っていても構わない (どれかが有効ならヒットする)。
+  private static packEntry(kana: string): string[] | undefined {
+    for (const id of KanaKanjiConverter.enabledPacks.values()) {
+      const d = KanaKanjiConverter.vocabPacks[id];
+      if (d === undefined) { continue; }
+      const v = d[kana];
+      if (v !== undefined && v.length > 0) { return v; }
+    }
+    return undefined;
   }
 
   // Build and store the connection matrix from inline grammar rules (no JSON file needed).
@@ -35055,6 +35256,10 @@ export class KanaKanjiConverter {
   // rather than inventing a second one. Among detours that clear it, the
   // cheapest by the same getWordInfo()-sum metric the ALT_SEG_WORDS branch
   // already uses wins.
+  // 迂回を試す文節数の上限 (末尾から数えて)。4 は「直前の文節とその周辺」を
+  // 十分カバーし、かつ実行回数を文長から切り離せる値。
+  private static readonly MAX_DETOUR_EDGES = 4;
+
   private findBoundaryDetourAlternate(kana: string, primary: string[]): string | null {
     const primaryResult = this.joinSegs(primary);
     if (primaryResult === null) { return null; }
@@ -35063,7 +35268,20 @@ export class KanaKanjiConverter {
     let best: string[] | null = null;
     let bestResult = '';
     let bestCost = Infinity;
-    for (let e = 0; e < primary.length; e++) {
+    // 迂回は末尾側の数文節だけ試す。
+    //
+    // ここは「1文節ぶん禁止して segment() をやり直す」を文節の数だけ繰り返す
+    // ので、文が伸びるほど フル Viterbi の実行回数がそのまま増える。実測で
+    // 43文字/26文節のとき segment() を26回まわしており、変換1回あたり
+    // 41ms(全体50msのうち)をここだけで使っていた -- 打鍵ごとに走るので
+    // 体感のラグはほぼこれ。
+    //
+    // 打っている最中に人が直したいのは常に入力の末尾側で、既に確定的に
+    // 切れている前方の境界の代替はその場では使わない。末尾から
+    // MAX_DETOUR_EDGES 本だけ試せば、実用上の当たりは保ったまま実行回数が
+    // 文長に依存しなくなる。
+    const first = Math.max(0, primary.length - KanaKanjiConverter.MAX_DETOUR_EDGES);
+    for (let e = first; e < primary.length; e++) {
       const start = bounds[e];
       const len = primary[e].length;
       const detour = this.segment(kana, [start, len]);
@@ -35285,7 +35503,15 @@ export class KanaKanjiConverter {
     }
 
     const entry = DICTIONARY[kana];
-    const ext = KanaKanjiConverter.supplementaryDict.get(kana);
+    // 語彙パック (設定で個別に有効化するニッチ語彙) は補助辞書と同じ扱いに
+    // する -- entry/ext どちらのカスケードでも既存のマージ処理にそのまま
+    // 乗る。有効なパックが無ければ packHit は undefined で ext は今まで
+    // 通り。
+    const packHit = KanaKanjiConverter.packEntry(kana);
+    const suppHit = KanaKanjiConverter.supplementaryDict.get(kana);
+    const ext = packHit !== undefined
+      ? [...packHit, ...(suppHit ?? []).filter((c: string) => !packHit.includes(c))]
+      : suppHit;
     const user = KanaKanjiConverter.userDict[kana];
     const global = KanaKanjiConverter.globalDict.get(kana);
     const kata = KanaKanjiConverter.toKatakana(kana);
@@ -35316,7 +35542,13 @@ export class KanaKanjiConverter {
       // the as-typed hiragana is the better default. A true loanword lists only
       // its katakana (パソコン), never the ぱそこん hiragana.
       const dictHasHiragana = ext.some((c: string) => c === kana);
-      if (!hasKanji && dictHasKatakana && !dictHasHiragana && kata !== kana && cands[0] !== kata) {
+      // 語彙パック由来のときはこの推測を効かせない。パックの並びは .pack に
+      // 書かれた優先度そのもの (作者が「1=最優先」で明示したもの) なので、
+      // 外来語向けのカタカナ推測で上書きすると指定を無視することになる。
+      // 実例: ふぁっ は パック側で ファッ!?(1) → ファッ(5) の順なのに、
+      // この昇格でカタカナの ファッ が先頭に出ていた。
+      if (packHit === undefined
+          && !hasKanji && dictHasKatakana && !dictHasHiragana && kata !== kana && cands[0] !== kata) {
         cands = [kata, ...cands.filter((c: string) => c !== kata)];
       }
     } else if ((user && user.length > 0) || (global && global.length > 0)) {
@@ -35541,7 +35773,18 @@ export class KanaKanjiConverter {
   // global-only readings, colloquial forms, and out-of-dict fallbacks, and
   // those would otherwise miss the pictographs. Skipped for fromNorm (internal
   // recursive) calls so intermediate results don't accrue duplicates.
+  // 語彙パックの抑制指定 (.pack の行頭 -) をここで一括して落とす。
+  // lookup() の出口は3つあり、mozc/track A/絵文字ありなしで分かれているので、
+  // 個別に書くと将来どれかを直し忘れる。実処理は lookupInner に移して、
+  // ここは「最終結果から抑制対象を落とす」だけの薄い包みにしてある。
+  // fromNorm (内部の再帰呼び出し) では触らない -- 中間結果を削ると
+  // 呼び出し側の突き合わせが壊れるため、最終結果にだけ効かせる。
   lookup(kana: string, fromNorm: boolean = false): string[] {
+    const result = this.lookupInner(kana, fromNorm);
+    return fromNorm ? result : KanaKanjiConverter.dropPackSuppressed(kana, result);
+  }
+
+  private lookupInner(kana: string, fromNorm: boolean): string[] {
     // Track B bypasses lookupCore() and everything below (dakuten
     // enrichment, EMOJI_MAP/KAOMOJI_MAP) entirely -- all of that is
     // track-A-specific hand-tuning layered onto the hand-built dictionary,
@@ -35640,17 +35883,35 @@ export class KanaKanjiConverter {
         : entry;
     } else {
       const kata = KanaKanjiConverter.toKatakana(kana);
-      if (kata === kana) {
-        list = [kana];
-      } else {
-        // Unknown reading: katakana leads only when the reading carries a
-        // long-vowel mark ー (a strong loanword signal -- こんさーと etc.);
-        // otherwise plain kana leads. The old unconditional katakana-first
-        // fallback turned ordinary casual contractions the dictionary happens
-        // to miss (それって, あれって, ほんまに) into gratuitous katakana
-        // (ソレッテ...) at the top of the candidate list.
-        list = kana.indexOf('ー') >= 0 ? [kata, kana] : [kana, kata];
-      }
+      // Unknown reading: katakana leads only when the reading carries a
+      // long-vowel mark ー (a strong loanword signal -- こんさーと etc.);
+      // otherwise plain kana leads. The old unconditional katakana-first
+      // fallback turned ordinary casual contractions the dictionary happens
+      // to miss (それって, あれって, ほんまに) into gratuitous katakana
+      // (ソレッテ...) at the top of the candidate list.
+      const kanaFallback = kata === kana ? [kana] : (kana.indexOf('ー') >= 0 ? [kata, kana] : [kana, kata]);
+      // mozc の辞書にこの読みが一切無いとき (entry が空) の最終フォールバック。
+      // 単語単体の変換でも track A (独自辞書) にしか無い語を拾えるようにする --
+      // これが無いと、mozc に対応語義が1つも無いというだけで DICTIONARY の
+      // 中身は一度も参照されず、かな/カタカナへ即フォールバックしていた。
+      // ネットスラング・ミーム語彙のように mozc の一般辞書には無い語を
+      // DICTIONARY に足しても、hybrid のデフォルトでは永久に出てこない穴
+      // だった (2026-08-24、実際に追加した語で発覚)。上の entry-ありの
+      // 分岐と同じ singleWordTrackAOrder を再利用する。
+      // この読みが track A (独自辞書) に実際に登録されている場合だけ通す。
+      // singleWordTrackAOrder (= lookupCore) は完全に未知の読み (「ぬぽわきゅ」
+      // のような雑音) にも独自の分割・当て推量フォールバックを返すことがあり、
+      // それをそのまま混ぜるとかな確定より先に出て悪化した (実機で確認)。
+      // DICTIONARY/補助辞書に本当に載っている語だけを通すことで、雑音を
+      // 混ぜずに実在のネットスラング等だけを拾う。
+      const registeredInTrackA = !!(DICTIONARY[kana]
+        || KanaKanjiConverter.globalDict.has(kana)
+        || KanaKanjiConverter.supplementaryDict.has(kana)
+        || KanaKanjiConverter.packEntry(kana) !== undefined);
+      const trackA = (KanaKanjiConverter.engine === 'hybrid' && registeredInTrackA)
+        ? this.singleWordTrackAOrder(kana).filter((c: string) => !kanaFallback.includes(c))
+        : [];
+      list = trackA.length > 0 ? [...trackA, ...kanaFallback] : kanaFallback;
     }
     // Same user-intent layering as track A's lookupCore (and in the same
     // priority order): the user's learned candidate choices outrank raw
@@ -36765,7 +37026,12 @@ export class KanaKanjiConverter {
     // 品詞 picker, see ConjugationEngine.ets) get the same treatment as the
     // built-in VERB_CLASS table -- checked second so a collision with a
     // built-in reading keeps the built-in's (already-tuned) class.
-    const vc = VERB_CLASS[sub] ?? KanaKanjiConverter.userClassMap[sub];
+    // 語彙パックの品詞指定 (.pack の 五段/形容詞/な形容詞/@12 など) も
+    // ここに合流させる。優先順は 組み込み > ユーザー辞書 > パック --
+    // 組み込みは調整済み、ユーザー辞書は本人が明示的に登録したものなので、
+    // どちらもパックより優先する。
+    const vc = VERB_CLASS[sub] ?? KanaKanjiConverter.userClassMap[sub]
+      ?? KanaKanjiConverter.packClassFor(sub);
     if (vc !== undefined) {
       const lenBonus = Math.min((sub.length - 1) * 500, KanaKanjiConverter.VN_DEFAULT - 500);
       const commonBonus = KanaKanjiConverter.COMMON_READINGS.has(sub) ? 3000 : 0;

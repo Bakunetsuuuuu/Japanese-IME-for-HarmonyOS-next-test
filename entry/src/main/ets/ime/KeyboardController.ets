@@ -9,7 +9,7 @@ import vibrator from '@ohos.vibrator';
 import bundleManager from '@ohos.bundle.bundleManager';
 
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
-import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables } from './KanaKanjiConverter';
+import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables, VocabPackInfo } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
 import type { UserPosEntry, PosKind, VerbGroup } from './ConjugationEngine';
@@ -200,6 +200,16 @@ export class InputHandler {
   // UnknownWordLearner.noteAbandonedReading へ渡す。確定すれば
   // resetComposition で捨てる (諦めたのではなく使われたため)。
   private composingWatermark: string = '';
+  // この入力欄が setPreviewTextSync に対応しているか (onInputStart で判定)。
+  private previewSupported: boolean = false;
+  // 実際に入力欄へプレビューを出している最中か。出していないのに
+  // finishTextPreviewSync を呼ぶと無駄な IPC になるので状態を持つ。
+  private previewActive: boolean = false;
+  // いまプレビューとして出している文字数 (取り消し時の削除長に使う)。
+  private previewLen: number = 0;
+  // 入力中のかなをどこに出すかの設定 (SettingsStore、独立した2つのトグル)。
+  private composingInPanel: boolean = true;
+  private composingInField: boolean = true;
   // Cap for the persistent deleted-character log (recordDeletedChar) --
   // unlike restoreStack above (a short-lived undo stack wiped by the next
   // keystroke, see insertText), this survives typing and is only capped by
@@ -322,6 +332,19 @@ export class InputHandler {
       .catch((e: Error) => { InputLog.recordInit('shunti_symbol_freq', e); }); // [DEBUG-LOG]
     this.reloadUserDict();
     this.reloadSettings();
+    // 単漢字ずつ組み立て直した語が、実は辞書のどこかに(埋もれて)もう存在した
+    // ときの合図。「志岐」のように読み全体では一発で出てこないくらい埋もれて
+    // いる語は、UnknownWordLearner からは isKnown()=true で毎回捨てられる一方、
+    // 読み全体をひとつの文字列として打つことが無いので recordChoice も一切
+    // 呼ばれず、いつまでも埋もれたままになる穴があった。通常の学習ブーストに
+    // 回すことでこの穴を塞ぐ。
+    // ★ デバッグ専用ではない (リリースでも効くべき機能) ので、下の
+    // setupInputLog とは違い [DEBUG-LOG] タグを付けないこと。
+    UnknownWordLearner.onKnownAssembly = (r: string, s: string) => {
+      KanaKanjiConverter.recordChoice(r, s);
+      this.saveLearning();
+      InputLog.recordKnownAssembly(r, s); // [DEBUG-LOG]
+    };
     this.setupInputLog(ctx); // [DEBUG-LOG] 必ず最後。上の初期化を壊さないため
   }
 
@@ -469,6 +492,9 @@ export class InputHandler {
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
+        AppStorage.setOrCreate('enabledVocabPacks', s.enabledVocabPacks);
+        KanaKanjiConverter.setEnabledPackIds(s.enabledVocabPacks);
+        this.applyComposingDisplay(s.composingInPanel, s.composingInField);
         this.hapticEnabled = s.hapticEnabled;
         this.applyConversionEngine(s.conversionEngine);
         this.applyThemeMode(s.themeMode);
@@ -763,6 +789,44 @@ export class InputHandler {
     }
   }
 
+  // 入力中のかなの表示先の切替 (設定画面 → SettingsBar)。2つは独立で、
+  // 両方OFFにもできる (どこにも出なくなるので設定画面側で警告を出す)。
+  setComposingDisplay(inPanel: boolean, inField: boolean): void {
+    this.applyComposingDisplay(inPanel, inField);
+    if (this.imeContext) {
+      SettingsStore.saveComposingDisplay(this.imeContext, inPanel, inField);
+    }
+  }
+
+  // 保存せずに反映だけする。設定の読み直しは拡張側 (reloadSettings) と
+  // パネル側 (KeyboardPage.reloadSettingsIntoStorage) の両方から走るので、
+  // 読み直しのたびに書き戻さないよう保存と分けてある。
+  applyComposingDisplay(inPanel: boolean, inField: boolean): void {
+    this.composingInPanel = inPanel;
+    this.composingInField = inField;
+    AppStorage.setOrCreate('composingInPanel', inPanel);
+    AppStorage.setOrCreate('composingInField', inField);
+    // 入力欄側をOFFにした瞬間、出したままのプレビューを消す。
+    if (!inField) { this.cancelPreviewText(); }
+    this.publishPreviewMode();
+  }
+
+  // 語彙パックのON/OFF切替 (設定画面 → SettingsBar)。パック自体の中身は
+  // loadVocabPacks で既に読み込み済み (どのパックもロードだけでは効かない)
+  // なので、ここは有効/無効の集合を切り替えて保存するだけで即座に候補へ
+  // 反映される。
+  setVocabPackEnabled(id: string, enabled: boolean): void {
+    const current = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
+    const next = enabled
+      ? (current.includes(id) ? current : [...current, id])
+      : current.filter((x: string) => x !== id);
+    AppStorage.setOrCreate('enabledVocabPacks', next);
+    KanaKanjiConverter.setEnabledPackIds(next);
+    if (this.imeContext) {
+      SettingsStore.saveEnabledVocabPacks(this.imeContext, next);
+    }
+  }
+
   // 学習系の保存はどれもデバウンスされている。打鍵のたびに数万件の JSON を
   // 書き出すわけにいかないので、それ自体は正しい。問題は「予約したまま消える」
   // 経路が塞がれていなかったこと。
@@ -775,6 +839,16 @@ export class InputHandler {
   // 正常に見えて、次の起動には何も残っていない ── 「削除した候補」がずっと空
   // だったのも、5つのストアが揃って空だったのもこれ。
   // 対処は flushPendingSaves()。セッション終了時と onDestroy で必ず呼ぶ。
+  //
+  // ただし flushPendingSaves() は onInputStop/onDestroy が実際に呼ばれる
+  // 正常終了の経路にしか効かない。OS がプロセスを強制終了する経路
+  // (メモリ逼迫など、onInputStop を経由しない) では、デバウンス待ちの間隔
+  // そのものが「学習が失われる窓」として残り続ける。
+  // 実データで確認済み: 「し」を選んで「志」を学習した13日後、同じ「志」を
+  // 再度選んだ記録が学習前の並び順 (18/40) から始まっていた ── その1回目の
+  // 保存がどこかで消えていたことになる。候補削除 (suppressedSaveTimer) は
+  // 元々 500ms だったのに、学習系だけ 2000ms のままだったのは単なる
+  // 不揃いで、学習が候補削除より軽視していい理由は無い。窓を揃えて縮める。
   //
   // dirty フラグは、変化が無いのに閉じるたび4本書きに行かないためのもの。
 
@@ -791,7 +865,7 @@ export class InputHandler {
   private saveLearning(): void {
     this.learningDirty = true;
     clearTimeout(this.learningSaveTimer);
-    this.learningSaveTimer = setTimeout(() => { this.writeLearning(); }, 2000);
+    this.learningSaveTimer = setTimeout(() => { this.writeLearning(); }, 500);
   }
 
   private writeNextWord(): void {
@@ -807,7 +881,7 @@ export class InputHandler {
   private saveNextWord(): void {
     this.nextWordDirty = true;
     clearTimeout(this.nextWordSaveTimer);
-    this.nextWordSaveTimer = setTimeout(() => { this.writeNextWord(); }, 2000);
+    this.nextWordSaveTimer = setTimeout(() => { this.writeNextWord(); }, 500);
   }
 
   private writeUnknownWords(): void {
@@ -823,7 +897,7 @@ export class InputHandler {
   private saveUnknownWords(): void {
     this.unknownWordDirty = true;
     clearTimeout(this.unknownWordSaveTimer);
-    this.unknownWordSaveTimer = setTimeout(() => { this.writeUnknownWords(); }, 2000);
+    this.unknownWordSaveTimer = setTimeout(() => { this.writeUnknownWords(); }, 500);
   }
 
   // ---- 辞書登録 (キーボード内で完結させるための API) ----------------------
@@ -1543,9 +1617,24 @@ export class InputHandler {
     // a password field is never logged even for the few ms before the async
     // answer lands.
     InputLog.beginField(); // [DEBUG-LOG]
-    client.getEditorAttribute() // [DEBUG-LOG]
-      .then((attr: inputMethodEngine.EditorAttribute) => { InputLog.setFieldPattern(attr.inputPattern); }) // [DEBUG-LOG]
-      .catch((_e: Error) => { InputLog.setFieldPattern(0); }); // [DEBUG-LOG]
+    // 入力中のかなを、キーボード内ではなくホストアプリの入力欄に直接
+    // 下線付きで出せるか (setPreviewTextSync)。対応は入力欄ごとに違い、
+    // 非対応の欄で呼ぶと 12800011 で失敗するので、必ずここで確認してから使う。
+    // 対応していればパネル内の composing 表示を畳んで、その分キーボードを
+    // 低くできる (publishPreviewMode)。
+    this.previewSupported = false;
+    this.publishPreviewMode();
+    client.getEditorAttribute()
+      .then((attr: inputMethodEngine.EditorAttribute) => {
+        this.previewSupported = attr.isTextPreviewSupported === true;
+        this.publishPreviewMode();
+        InputLog.setFieldPattern(attr.inputPattern); // [DEBUG-LOG]
+      })
+      .catch((_e: Error) => {
+        this.previewSupported = false;
+        this.publishPreviewMode();
+        InputLog.setFieldPattern(0); // [DEBUG-LOG]
+      });
     this.converter.reset();
     this.reloadUserDict();
     this.reloadSettings();
@@ -1569,6 +1658,10 @@ export class InputHandler {
 
   onInputStop(): void {
     InputLog.beginField(); // [DEBUG-LOG] flushes, then pauses until the next field is known
+    // 欄を離れる前にプレビューを畳む (inputClient を捨てた後では解除できない)。
+    this.cancelPreviewText();
+    this.previewSupported = false;
+    this.publishPreviewMode();
     this.kbController = undefined;
     this.inputClient = undefined;
     this.converter.reset();
@@ -1968,6 +2061,9 @@ export class InputHandler {
   }
 
   private resetComposition(): void {
+    // 入力欄に残っているプレビューを必ず消す。insertText を経ない経路
+    // (取消・欄の切り替えなど) でもここを通るので、消し忘れの受け皿になる。
+    this.cancelPreviewText();
     this.converter.reset();
     this.bSegs = [];
     this.bChosen = [];
@@ -2337,7 +2433,75 @@ export class InputHandler {
     return this.shareUrl('https://github.com/sponsors/shuntilettuce');
   }
 
+  // 入力中のかなの表示先を UI 側へ配る。
+  //
+  // 入力欄側 (previewInField) は「設定でONかつ入力欄が対応している」ときだけ
+  // 実際に効く。パネル側 (showComposingPanel) は設定そのままだが、入力欄側を
+  // 選んでいるのに入力欄が非対応で、かつパネルもOFFだと、打っているかなが
+  // どこにも出なくなる。それは設定の意図(入力欄に出す)ではなく端末側の都合
+  // なので、その場合だけパネルに戻して見えなくならないようにする。
+  // 両方を自分でOFFにした場合は意図どおり何も出さない (設定画面で警告済み)。
+  private publishPreviewMode(): void {
+    const fieldActive = this.composingInField && this.previewSupported;
+    AppStorage.setOrCreate('previewInField', fieldActive);
+    AppStorage.setOrCreate('showComposingPanel',
+      this.composingInPanel || (this.composingInField && !fieldActive));
+  }
+
+  // 入力中のかなをホストアプリの入力欄へ反映する。composing が空になったら
+  // プレビューを終了する。updateCandidates の入口/出口から呼ぶので、
+  // composing を変える経路すべてがここを通る。
+  private syncPreviewText(): void {
+    if (!this.previewSupported || !this.composingInField) { return; }
+    const text = (AppStorage.get<string>('composingText') ?? '')
+      + (AppStorage.get<string>('pendingRomaji') ?? '');
+    if (text.length === 0) {
+      this.cancelPreviewText();
+      return;
+    }
+    try {
+      // range は「置き換える範囲」。-1/-1 で現在のプレビュー(無ければ
+      // カーソル位置)を差し替える指定になる。
+      this.inputClient?.setPreviewTextSync(text, { start: -1, end: -1 });
+      this.previewActive = true;
+      this.previewLen = text.length;
+    } catch (e) {
+      // 12800011 = この入力欄はプレビュー非対応。以後は呼ばずパネル内表示へ
+      // 戻す (対応可否は欄ごとなので、ここで諦めても次の欄でまた試される)。
+      this.previewSupported = false;
+      this.previewActive = false;
+      this.previewLen = 0;
+      this.publishPreviewMode();
+      console.info('shuntiIME setPreviewText unsupported, falling back ' + JSON.stringify(e));
+    }
+  }
+
+  // プレビューを「中身を残さずに」取り消す。
+  //
+  // finishTextPreviewSync() はプレビューを消すのではなく確定するので、
+  // 単に呼ぶと打っていたかながそのまま入力欄に残ってしまう (全消ししたのに
+  // 文字が残る)。空文字で置き換えてから確定するのが正しい取り消し方。
+  // 空文字を拒否する入力欄向けに、確定してから同じ長さを消す経路も用意する。
+  private cancelPreviewText(): void {
+    if (!this.previewActive) { return; }
+    const len = this.previewLen;
+    this.previewActive = false;
+    this.previewLen = 0;
+    try {
+      this.inputClient?.setPreviewTextSync('', { start: -1, end: -1 });
+      this.inputClient?.finishTextPreviewSync();
+    } catch (_e) {
+      try {
+        this.inputClient?.finishTextPreviewSync();
+        if (len > 0) { this.inputClient?.deleteForward(len); }
+      } catch (_e2) {
+        // 欄が外れた等。ここで失敗しても入力は続けられる。
+      }
+    }
+  }
+
   private updateCandidates(): void {
+    this.syncPreviewText();
     const composing = AppStorage.get<string>('composingText') ?? '';
     if (composing.length === 0) {
       // 打っていた読みを変換せず全部消して諦めた (resetComposition 経由の
@@ -2831,12 +2995,30 @@ export class InputHandler {
       this.appendCaptured(text);
       return;
     }
+    // 入力欄プレビューが出ているときは insertText を使わない。
+    //
+    // finishTextPreviewSync() は「プレビューを消す」のではなく「プレビューの
+    // 内容をその場で確定する」API だった。そのため 解除 → insertText の順に
+    // 呼ぶと、確定したかな + 変換結果 で入力欄に二重に残る (実機で確認)。
+    // 正しくは、プレビュー自体を最終的な文字列で置き換えてから確定する。
+    let previewCommitted = false;
+    if (this.previewActive) {
+      try {
+        this.inputClient?.setPreviewTextSync(text, { start: -1, end: -1 });
+        this.inputClient?.finishTextPreviewSync();
+        this.previewActive = false;
+        previewCommitted = true;
+      } catch (_e) {
+        // 置き換えに失敗したらプレビューを畳んで通常の挿入に落とす。
+        this.cancelPreviewText();
+      }
+    }
     // Brackets used to auto-place the caret between the pair (「|」), but no
     // caret-move primitive worked reliably across the editors this IME runs in
     // -- moveCursor was a no-op on some, and the absolute-index selectByRange
     // overshot on others -- so the pair is now inserted plainly and the caret
     // stays after it, same as any other committed text.
-    this.inputClient?.insertText(text);
+    if (!previewCommitted) { this.inputClient?.insertText(text); }
     if (text.length > 0) {
       for (let i = 0; i < text.length; i++) {
         this.insertedBuffer.push(text[i]);
@@ -2884,6 +3066,7 @@ export class KeyboardController {
     this.registerListeners();
     this.loadDictionary();
     this.loadGlobalDictionary();
+    this.loadVocabPacks();
     this.loadViterbiData();
   }
 
@@ -2971,6 +3154,56 @@ export class KeyboardController {
       (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
        vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
         KanaKanjiConverter.setGlobalDictPacked(kb, kl, kbase, vb, vl, vbase, idx);
+      });
+  }
+
+  // 語彙パック (淫夢語録・なんJ語など、既定OFFの追加インストール的な
+  // ニッチ語彙)。どのパックが存在するかはアプリ側にハードコードせず、
+  // rawfile/pack_manifest.json (tools/build_vocab_packs.py が
+  // tools/vocab_packs/*.pack から生成) を読んで決める -- こうしないと
+  // 「パックを1つ足すのに .ets の編集が要る」ことになり、語彙パックの
+  // 目的 (誰でも語彙を足せる) が崩れる。
+  //
+  // 各パックは数十件しかないので mozc のような遅延読み込みはせず、
+  // manifest が読めた時点で全部バイナリを読んでおく -- ロードしただけでは
+  // まだ何も変換に効かない (KanaKanjiConverter.enabledPacks が空のまま)。
+  // 実際に候補へ混ざるかどうかは reloadSettings 側で setEnabledPackIds を
+  // 呼んだときだけ決まる。
+  private loadVocabPacks(): void {
+    this.context.resourceManager.getRawFileContent('pack_manifest.json')
+      .then((data: Uint8Array) => {
+        const text = util.TextDecoder.create('utf-8').decodeToString(data);
+        const list = JSON.parse(text) as VocabPackInfo[];
+        KanaKanjiConverter.setVocabPackManifest(list);
+        for (const p of list) {
+          // 動詞・形容詞・人名・地名は ConjugationEngine に通して活用形まで
+          // 展開する -- ユーザー辞書とまったく同じ関数を使う。「がばる 五段」
+          // と1行書けば がばって/がばった/がばらない … まで生えるのはこれ。
+          // 品詞指定が1つも無いパックでも、buildUserExpansion は素通しで
+          // 元の語彙をそのまま返すので分岐は要らない。
+          const posMap: Record<string, UserPosEntry> = {};
+          for (const key of Object.keys(p.pos)) {
+            const v = p.pos[key];
+            posMap[key] = { pos: v.pos as PosKind, group: v.group as VerbGroup | undefined };
+          }
+          const expanded = buildUserExpansion(p.entries, posMap);
+          // 活用展開で得たクラス (がばって→[14,17] など) の上に、.pack の
+          // 品詞名/@指定を重ねる。明示指定のほうが後勝ちで強い。
+          const classes: Record<string, number[]> = {};
+          for (const k of Object.keys(expanded.classMap)) { classes[k] = expanded.classMap[k]; }
+          for (const k of Object.keys(p.classes)) { classes[k] = p.classes[k]; }
+          KanaKanjiConverter.setVocabPackEntries(p.id, expanded.dict, classes);
+        }
+        // 設定より先に manifest が来るとは限らないので、既に読み込み済みの
+        // 有効IDをここでもう一度適用する (順序に依存させない)。
+        const enabled = AppStorage.get<string[]>('enabledVocabPacks') ?? [];
+        KanaKanjiConverter.setEnabledPackIds(enabled);
+        AppStorage.setOrCreate('vocabPackIds', list.map((p: VocabPackInfo) => p.id));
+      })
+      .catch((e: Error) => {
+        // 語彙パックが読めなくても変換自体は動く (全部OFFと同じ状態)。
+        // ただし黙って消えると原因が分からないので必ず残す。
+        console.error('shuntiIME vocab pack manifest load failed', JSON.stringify(e));
       });
   }
 

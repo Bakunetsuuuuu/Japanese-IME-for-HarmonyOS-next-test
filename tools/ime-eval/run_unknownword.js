@@ -151,6 +151,45 @@ function main() {
     UW.candidates('おとまちうな').length === 0,
     JSON.stringify(UW.candidates('おとまちうな')));
 
+  // ---- onKnownAssembly: a piecewise/truncated assembly that resolves to a
+  // word the engine ALREADY produces (just buried deep in the candidate list,
+  // e.g. 志岐 for しき) is not an "unknown word" -- but the act of building it
+  // one kanji at a time is still a real signal the whole-reading lookup never
+  // sees on its own, since the user never types "しき" as one string. Without
+  // this hook that signal went nowhere: not learned as unknown (isKnown=true
+  // correctly excludes it) and not boosted via recordChoice either (nothing
+  // ever calls recordChoice('しき','志岐') if the user always builds it as
+  // し+き). onKnownAssembly is the bridge. ----
+  UW.setLearned({});
+  const knownAssemblyCalls = [];
+  UW.onKnownAssembly = (r, s) => { knownAssemblyCalls.push([r, s]); };
+  const KNOWN_SHIKI = (r, s) => r === 'しき' && s === '志岐';
+  UW.observe('し', '志', KNOWN_SHIKI);
+  UW.observe('き', '岐', KNOWN_SHIKI);
+  UW.endRun(KNOWN_SHIKI);
+  check('onKnownAssembly fires for a piecewise build that resolves to an already-known word',
+    knownAssemblyCalls.length === 1
+      && knownAssemblyCalls[0][0] === 'しき' && knownAssemblyCalls[0][1] === '志岐',
+    JSON.stringify(knownAssemblyCalls));
+  check('a known assembly is still not counted as an unknown word (candidates stays empty)',
+    UW.candidates('しき').length === 0,
+    JSON.stringify(UW.candidates('しき')));
+  UW.onKnownAssembly = undefined;
+
+  // truncation reaching an already-known single kanji fires the same hook.
+  UW.setLearned({});
+  knownAssemblyCalls.length = 0;
+  UW.onKnownAssembly = (r, s) => { knownAssemblyCalls.push([r, s]); };
+  const KNOWN_KAN = (r, s) => r === 'かん' && s === '官';
+  UW.observe('かん', '官僚', KNOWN_KAN); // pretend 官僚 -> then trimmed to 官
+  UW.truncate(); // deletes 僚, leaving 官
+  UW.endRun(KNOWN_KAN);
+  check('onKnownAssembly also fires for a truncated assembly resolving to an already-known word',
+    knownAssemblyCalls.length === 1
+      && knownAssemblyCalls[0][0] === 'かん' && knownAssemblyCalls[0][1] === '官',
+    JSON.stringify(knownAssemblyCalls));
+  UW.onKnownAssembly = undefined;
+
   // ---- shape guards ----
   // Too long to be a term (9 chars of surface).
   UW.setLearned({});

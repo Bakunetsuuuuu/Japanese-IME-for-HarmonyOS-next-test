@@ -74,8 +74,23 @@ interface Ranked {
 // deleting the two [DEBUG-LOG] lines here, nothing else.
 export type LearnedWordFn = (reading: string, surface: string, confirmed: boolean) => void; // [DEBUG-LOG]
 
+// 組み立てた語が isKnown() 的には「もう変換できる」語だった (辞書のどこかに
+// ある) ときに呼ばれる。呼び出し側 (KeyboardController) はこれを
+// KanaKanjiConverter.recordChoice(reading, surface) に繋いで、通常の
+// 学習ブーストにかける。
+//
+// 「志岐」(しき) のような、辞書には存在するが読み全体で一発では出てこない
+// くらい埋もれている語がここに当てはまる。この語を「し」「き」で分けて
+// 単漢字ずつ組み立てる打ち方を続けている限り、UnknownWordLearner は
+// isKnown()=true で毎回黙って捨て (「もう変換できるので未知語ではない」
+// という判定自体は正しい)、かつ recordChoice も「しき」をひとつの読みと
+// して一度も打っていないので一切呼ばれず、埋もれたままいつまでも学習
+// されない、という穴があった。
+export type KnownAssemblyFn = (reading: string, surface: string) => void;
+
 export class UnknownWordLearner {
   static onLearn: LearnedWordFn | undefined = undefined; // [DEBUG-LOG]
+  static onKnownAssembly: KnownAssemblyFn | undefined = undefined;
 
   // reading -> (surface -> times assembled)
   private static counts: Record<string, Record<string, number>> = {};
@@ -157,7 +172,15 @@ export class UnknownWordLearner {
     if (reading.length < MIN_READING_LEN || reading.length > MAX_READING_LEN) { return; }
     if (!UnknownWordLearner.isAllHiragana(reading)) { return; }
     if (!UnknownWordLearner.isContentOnly(surface)) { return; }
-    if (isKnown(reading, surface)) { return; }
+    if (isKnown(reading, surface)) {
+      // 未知語ではないが、単漢字ずつ組み立て直しているという行動自体が
+      // 「読み全体で一発では出てこないくらい埋もれている」ことの合図。
+      // 通常の学習ブースト (KanaKanjiConverter.recordChoice) に回す。
+      if (UnknownWordLearner.onKnownAssembly !== undefined) {
+        UnknownWordLearner.onKnownAssembly(reading, surface);
+      }
+      return;
+    }
     // ABANDONED との一致判定。一度きりの合図なので判定した時点で必ず消す
     // (一致しなかった場合も、もう別の語に対する古い合図でしかないため)。
     // 強い合図ではあるが、いきなり本採用まで飛ばすと外れたときに目立つ位置に

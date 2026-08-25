@@ -31,6 +31,12 @@ struct KeyboardPage {
   @StorageLink('inputMode') inputMode: string = InputMode.HIRAGANA;
   @StorageLink('composingText') composingText: string = '';
   @StorageLink('pendingRomaji') pendingRomaji: string = '';
+  // 入力中のかなをホストアプリの入力欄側に出せているか。出せているときは
+  // パネル内の composing 表示を畳んでキーボードを低くする。
+  @StorageLink('previewInField') previewInField: boolean = false;
+  // かな表示の行をキーボード内に出すか (設定。入力欄側が非対応のときの
+  // 保険もここに含めて KeyboardController が決める)。
+  @StorageLink('showComposingPanel') showComposingPanel: boolean = true;
   @StorageLink('candidates') candidates: string[] = [];
   @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
@@ -133,6 +139,9 @@ struct KeyboardPage {
       AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
       AppStorage.setOrCreate('themeMode', s.themeMode);
       AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
+      // かなの表示先は「設定値そのまま」ではなく入力欄の対応状況も混ぜて
+      // 決まるので、AppStorage を直接書かず InputHandler に計算させる。
+      InputHandler.getInstance().applyComposingDisplay(s.composingInPanel, s.composingInField);
       InputHandler.getInstance().setThemeMode(s.themeMode);
       // This panel and the extension's InputHandler share the same process/
       // KanaKanjiConverter static state (see setConversionEngine's own
@@ -186,6 +195,15 @@ struct KeyboardPage {
               // Composing kana strip — always visible to prevent layout shifts.
               // Landscape has much less vertical room to spare for the keys below,
               // so this strip and the candidate row underneath both run compact.
+              //
+              // 入力欄プレビューが効いているときは、この行ごと出さない。
+              // かなは入力欄側に出ているので、ここに空の帯を残す意味が無く、
+              // その分キーボードを低くできる。行が消えると「設定」の置き場が
+              // 無くなるので、候補バーの右端へ移す (下の previewInField 分岐)。
+              // ただし変換範囲を ◀▶ で変えている最中だけは、どこまでを変換
+              // するかが入力欄側では分からないのでこの行を出す。
+              if (this.showComposingPanel
+                  || (this.convEnd > 0 && this.convEnd < this.composingText.length)) {
               Row() {
                 if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
                   if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
@@ -231,6 +249,7 @@ struct KeyboardPage {
               .backgroundColor(kbTheme(this.isDark).panelBg)
               .alignItems(VerticalAlign.Center)
               .padding({ left: 12, right: 8 })
+              }
 
               // Candidate bar row + layout toggle
               Row() {
@@ -292,10 +311,24 @@ struct KeyboardPage {
                     PredictionBar({ predictions: this.predictions })
                   }
                 }
-                .width('100%')
+                .layoutWeight(1)
                 .height(this.isLandscape ? 22 : 48)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
+
+                // かな表示の行を出していないときは「設定」の置き場がここしか
+                // 無いので、候補バーの右端に寄せる。
+                if (!this.showComposingPanel
+                    && !(this.convEnd > 0 && this.convEnd < this.composingText.length)) {
+                  SymbolGlyph($r('sys.symbol.gearshape'))
+                    .fontSize(this.isLandscape ? 12 : 18)
+                    .fontColor([kbTheme(this.isDark).textSecondary])
+                    .width(this.isLandscape ? 20 : 28)
+                    .height('100%')
+                    .onClick(() => {
+                      AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                    })
+                }
               }
               .width('100%')
               .height(this.isLandscape ? 22 : 48)

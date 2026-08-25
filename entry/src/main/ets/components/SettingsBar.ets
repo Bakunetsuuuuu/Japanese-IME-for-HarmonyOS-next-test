@@ -1,4 +1,5 @@
 import { InputHandler } from '../ime/KeyboardController';
+import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from './JpFont';
@@ -32,10 +33,26 @@ export struct SettingsBar {
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
+  // 入力中のかなの表示先 (独立した2トグル、組み合わせは4通り)。
+  @StorageLink('composingInPanel') composingInPanel: boolean = true;
+  @StorageLink('composingInField') composingInField: boolean = true;
+  // 入力欄側に実際に出せているか (設定ONでも入力欄が非対応なら false)。
+  @StorageLink('previewInField') previewInField: boolean = false;
+  // 語彙パック (淫夢語録・なんJ語など、既定OFFのニッチ語彙)。有効なIDだけの
+  // 配列。切替のたびに新しい配列で置き換える (setVocabPackEnabled 側で
+  // フィルタ/スプレッドして新しい参照を作っている) ので @StorageLink の
+  // 更新検知に乗る。
+  @StorageLink('enabledVocabPacks') enabledVocabPacks: string[] = [];
+  // 存在するパックのID一覧。rawfile/pack_manifest.json を非同期に読んだ
+  // KeyboardController.loadVocabPacks が入れる。
+  @StorageLink('vocabPackIds') vocabPackIds: string[] = [];
   // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。
   @StorageLink('hapticUnavailable') hapticUnavailable: boolean = false;
   @State showHistory: boolean = false;
   @State showDict: boolean = false;
+  // 語彙パックの一覧。設定の本体に並べると項目が多すぎるので、辞書と同じく
+  // 下位画面に切り出してある。
+  @State showPacks: boolean = false;
   // ユーザー辞書の中の下位画面。'' = 入口のメニュー / 'suggest' = 登録候補 /
   // 'registered' = 登録済み。どちらも件数が多くなるので画面を分けている。
   @State dictSub: string = '';
@@ -75,6 +92,7 @@ export struct SettingsBar {
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
     this.showHistory = false;
     this.showDict = false;
+    this.showPacks = false;
     this.dictSub = '';
   }
 
@@ -104,7 +122,7 @@ export struct SettingsBar {
       // regardless of which side has a control (design tokens). ──
       Row() {
         Row() {
-          if (this.showHistory || this.showDict || this.showLog) {
+          if (this.showHistory || this.showDict || this.showLog || this.showPacks) {
             Row({ space: 2 }) {
               SymbolGlyph($r('sys.symbol.chevron_left'))
                 .fontSize(16)
@@ -127,6 +145,7 @@ export struct SettingsBar {
               }
               this.showHistory = false;
               this.showDict = false;
+              this.showPacks = false;
               this.showLog = false; // [DEBUG-LOG]
             })
           }
@@ -142,7 +161,7 @@ export struct SettingsBar {
             ? (this.dictSub === 'suggest' ? '登録候補'
               : (this.dictSub === 'registered' ? '登録済み'
                 : (this.dictSub === 'suppressed' ? '削除した候補' : 'ユーザー辞書')))
-            : (this.showLog ? '入力ログ' : '設定')))
+            : (this.showPacks ? '語彙パック' : (this.showLog ? '入力ログ' : '設定'))))
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
@@ -196,6 +215,8 @@ export struct SettingsBar {
             this.SuppressedView()
           } else if (this.showDict) {
             this.DictView()
+          } else if (this.showPacks) {
+            this.PackView()
           } else if (this.showLog) {
             this.LogView() // [DEBUG-LOG]
           } else {
@@ -290,6 +311,32 @@ export struct SettingsBar {
       .padding({ top: 14, bottom: 14 })
       .onClick(() => { this.openDict(); })
 
+      Divider().color(kbTheme(this.isDark).divider)
+      Row() {
+        Column({ space: 2 }) {
+          Text('語彙パック')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text(this.enabledVocabPacks.length > 0
+            ? this.enabledVocabPacks.length + '件を使用中'
+            : '界隈語をまとめて追加できます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => { this.showPacks = true; })
+
       // [DEBUG-LOG] リリース前に削除する。収集した内容は本体アプリからは
       // 読めない (サンドボックスが別) ので、書いた側であるここから見る。
       // DEBUG_INPUT_LOG が false のときは入口ごと消える (InputLog.ets の
@@ -312,6 +359,94 @@ export struct SettingsBar {
         .padding({ top: 14, bottom: 14 }) // [DEBUG-LOG]
         .onClick(() => { this.openLog(); }) // [DEBUG-LOG]
       } // [DEBUG-LOG]
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
+    this.SectionLabel('入力中のかなの表示')
+    Column() {
+      Row() {
+        Column({ space: 2 }) {
+          Text('キーボード内に表示')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('候補バーの上に入力中のかなを出します')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.composingInPanel })
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setComposingDisplay(isOn, this.composingInField);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Column({ space: 2 }) {
+          Text('入力欄に表示')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('アプリの入力欄に直接出します。キーボード内の表示を切ると1行ぶん低くなります')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.composingInField })
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setComposingDisplay(this.composingInPanel, isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      // 両方OFFにもできるようにしてあるが、打っているかながどこにも
+      // 見えなくなるので、そうと分かるように出す。
+      if (!this.composingInPanel && !this.composingInField) {
+        Row({ space: 6 }) {
+          Text('⚠')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(13)
+          Text('入力中のかながどこにも表示されません。変換候補だけを見て打つことになります。')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ top: 10, bottom: 12 })
+        .alignItems(VerticalAlign.Top)
+      } else if (this.composingInField && !this.previewInField) {
+        // 設定はONだが、いま開いている入力欄が setPreviewText 非対応。
+        Row({ space: 6 }) {
+          Text('ⓘ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(13)
+          Text('この入力欄は入力欄への表示に対応していないため、キーボード内に表示しています。')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .layoutWeight(1)
+        }
+        .width('100%')
+        .padding({ top: 10, bottom: 12 })
+        .alignItems(VerticalAlign.Top)
+      }
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
@@ -894,6 +1029,70 @@ export struct SettingsBar {
       .padding({ left: 14, right: 14 })
       .divider({ strokeWidth: 1, color: kbTheme(this.isDark).divider })
     }
+  }
+
+  // 語彙パック。「一般語彙ではないが、ある界隈の人はめちゃくちゃ使う」語彙を
+  // 既定OFFの単位でまとめたもの (tools/vocab_packs/*.pack)。
+  @Builder PackView() {
+    Column() {
+      Text('界隈でしか使わないような語彙をまとめて追加できます。使うものだけONにしてください。')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(11)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .width('100%')
+        .padding({ left: 2, bottom: 10 })
+
+      Column() {
+        // 一覧は rawfile/pack_manifest.json 由来 (KanaKanjiConverter に
+        // ハードコードは無い)。manifest は非同期に読まれるので、その完了を
+        // vocabPackIds への @StorageLink で受けて再描画する -- ここで
+        // KanaKanjiConverter.listVocabPackIds() を直接呼ぶと、まだ空の
+        // タイミングで描画されたきり更新されない。
+        ForEach(this.vocabPackIds, (id: string) => {
+          Row() {
+            Column({ space: 2 }) {
+              Text(KanaKanjiConverter.vocabPackDisplayName(id))
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(14)
+                .fontColor(kbTheme(this.isDark).textPrimary)
+                .width('100%')
+              if (KanaKanjiConverter.vocabPackDescription(id).length > 0) {
+                Text(KanaKanjiConverter.vocabPackDescription(id))
+                  .fontFamily(JP_FONT_FAMILY)
+                  .fontSize(11)
+                  .fontColor(kbTheme(this.isDark).textSecondary)
+                  .width('100%')
+              }
+            }
+            .alignItems(HorizontalAlign.Start)
+            .layoutWeight(1)
+            Toggle({ type: ToggleType.Switch, isOn: this.enabledVocabPacks.includes(id) })
+              .selectedColor(kbTheme(this.isDark).accent)
+              .onChange((isOn: boolean) => {
+                InputHandler.getInstance().setVocabPackEnabled(id, isOn);
+              })
+          }
+          .width('100%')
+          .padding({ top: 13, bottom: 13 })
+          .borderWidth({ bottom: 1 })
+          .borderColor(kbTheme(this.isDark).divider)
+        }, (id: string) => id)
+      }
+      .backgroundColor(kbTheme(this.isDark).cardBg)
+      .borderRadius(CARD_RADIUS)
+      .padding({ left: 14, right: 14 })
+
+      if (this.vocabPackIds.length === 0) {
+        Text('語彙パックがありません')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 24, bottom: 24 })
+      }
+    }
+    .width('100%')
   }
 
   // ユーザー辞書。上段が「登録候補」(打った語のうち辞書に無いものを

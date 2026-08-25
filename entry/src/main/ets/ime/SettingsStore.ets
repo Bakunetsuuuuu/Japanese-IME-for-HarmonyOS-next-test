@@ -49,6 +49,19 @@ export interface KeyboardSettings {
   // 通常キー（英数・かな）の背景／影。既定はオン（現状どおり）。オフにすると
   // 文字キーだけ背景が消え、シフト／スペース／切り替え／エンター等は残る。
   keyChromeEnabled: boolean;
+  // 入力中のかなをどこに出すか。2つは独立していて、組み合わせは4通り。
+  //   panel=true  field=false : 従来どおりキーボード内だけに出す
+  //   panel=false field=true  : 入力欄だけに出す (キーボードが1行ぶん低くなる)
+  //   panel=true  field=true  : 両方に出す
+  //   panel=false field=false : どちらにも出さない (設定画面で警告を出す)
+  // field は入力欄側が setPreviewText に対応している場合のみ実際に効く。
+  composingInPanel: boolean;
+  composingInField: boolean;
+  // 有効化した語彙パックのID一覧 (KanaKanjiConverter.VOCAB_PACK_NAMES参照)。
+  // 「界隈の人はめちゃくちゃ使うが全員には要らない」ニッチ語彙 (淫夢語録・
+  // なんJ語など) を、既定でOFFの追加インストール的な単位に分けたもの。
+  // 既定は空 (全部OFF)。
+  enabledVocabPacks: string[];
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -61,6 +74,9 @@ const DEFAULTS: KeyboardSettings = {
   hapticEnabled: false,
   themeMode: 'system',
   keyChromeEnabled: true,
+  composingInPanel: true,
+  composingInField: true,
+  enabledVocabPacks: [],
 };
 
 export class SettingsStore {
@@ -86,7 +102,15 @@ export class SettingsStore {
       const haptic = await prefs.get('hapticEnabled', DEFAULTS.hapticEnabled);
       const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, themeMode, keyChrome, forceReload }));
+      const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
+      const inField = await prefs.get('composingInField', DEFAULTS.composingInField);
+      const packsRaw = await prefs.get('enabledVocabPacks', '[]');
+      let packs: string[] = [];
+      try {
+        const parsed = JSON.parse(String(packsRaw)) as string[];
+        if (Array.isArray(parsed)) { packs = parsed; }
+      } catch (_e) { packs = []; }
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, themeMode, keyChrome, packs, forceReload }));
       return {
         kanaKeyboardLayout: String(kanaLayout),
         alphabetKeyboardLayout: String(alphabetLayout),
@@ -97,6 +121,9 @@ export class SettingsStore {
         hapticEnabled: haptic === true,
         themeMode: String(themeMode),
         keyChromeEnabled: keyChrome !== false,
+        composingInPanel: inPanel !== false,
+        composingInField: inField !== false,
+        enabledVocabPacks: packs,
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
@@ -110,6 +137,9 @@ export class SettingsStore {
         hapticEnabled: DEFAULTS.hapticEnabled,
         themeMode: DEFAULTS.themeMode,
         keyChromeEnabled: DEFAULTS.keyChromeEnabled,
+        composingInPanel: DEFAULTS.composingInPanel,
+        composingInField: DEFAULTS.composingInField,
+        enabledVocabPacks: DEFAULTS.enabledVocabPacks,
       };
     }
   }
@@ -188,6 +218,26 @@ export class SettingsStore {
       console.info('shuntiIME SettingsStore.saveThemeMode ok', mode);
     } catch (e) {
       console.error('shuntiIME SettingsStore.saveThemeMode error', JSON.stringify(e));
+    }
+  }
+
+  static async saveComposingDisplay(context: common.Context, inPanel: boolean, inField: boolean): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('composingInPanel', inPanel);
+      await prefs.put('composingInField', inField);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveEnabledVocabPacks(context: common.Context, ids: string[]): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('enabledVocabPacks', JSON.stringify(ids));
+      await prefs.flush();
+      console.info('shuntiIME SettingsStore.saveEnabledVocabPacks ok', JSON.stringify(ids));
+    } catch (e) {
+      console.error('shuntiIME SettingsStore.saveEnabledVocabPacks error', JSON.stringify(e));
     }
   }
 }
