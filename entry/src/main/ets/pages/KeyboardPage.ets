@@ -45,6 +45,9 @@ struct KeyboardPage {
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   @StorageLink('keyboardSubMode') keyboardSubMode: string = 'kana';
+  // 括弧の自動閉じ (KeyboardController の insertText 参照)。空でなければ
+  // 「この文字が確定のたびに出るのを待っている」ことを候補バー行に出す。
+  @StorageLink('pendingBracketClose') pendingBracketClose: string = '';
   // 辞書の登録欄をキーボードの上に出しているか (DictEditBar 参照)。
   @StorageLink('dictEditMode') dictEditMode: boolean = false;
   @StorageLink('bunsetsuTexts') bunsetsuTexts: string[] = [];
@@ -359,6 +362,21 @@ struct KeyboardPage {
                 .height(this.isLandscape ? 22 : 48)
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
+
+                // 括弧を開いた直後、閉じが保留中であることを示すバッジ。
+                // 見た目に何も変化が無いと「閉じ括弧が出ない」と誤解される
+                // (実際に不具合報告があった)。次の確定でこの文字が出ることを
+                // 一目で分かるようにする。
+                if (this.pendingBracketClose.length > 0) {
+                  Text(this.pendingBracketClose + ' 待ち')
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(this.isLandscape ? 10 : 12)
+                    .fontColor(kbTheme(this.isDark).onAccent)
+                    .backgroundColor(kbTheme(this.isDark).accent)
+                    .borderRadius(10)
+                    .padding({ left: 8, right: 8, top: 3, bottom: 3 })
+                    .margin({ right: 6 })
+                }
 
                 // かな表示の行を出していないときは「設定」の置き場がここしか
                 // 無いので、候補バーの右端に寄せる。

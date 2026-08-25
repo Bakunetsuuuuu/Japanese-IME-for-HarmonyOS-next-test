@@ -272,8 +272,16 @@ export class InputHandler {
   private hostCursor: number = 0;
   private static readonly MAX_HOST_UNDO = 100;
   // 括弧の自動閉じで「次の確定の直後に出す」ぶんの閉じ括弧。空なら保留無し。
-  // 詳しい設計意図は BRACKET_PAIRS のコメント参照。
+  // 詳しい設計意図は BRACKET_PAIRS のコメント参照。AppStorage にも流して
+  // いるのは、保留中であることを画面に出すため (KeyboardPage の候補バー
+  // 行のバッジ参照) -- 見た目に何も変化が無いと、閉じ括弧がいつ出るのか
+  // 利用者から分からず不安になる。
   private pendingBracketClose: string = '';
+
+  private setPendingBracketClose(v: string): void {
+    this.pendingBracketClose = v;
+    AppStorage.setOrCreate('pendingBracketClose', v);
+  }
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
@@ -1828,7 +1836,7 @@ export class InputHandler {
     // が指す座標系ごと無効になる。持ち越すと別の場所を編集しかねない。
     this.hostUndoStack = [];
     this.hostCursor = 0;
-    this.pendingBracketClose = '';
+    this.setPendingBracketClose('');
     this.conversionEnd = 0;
     AppStorage.setOrCreate('convEnd', 0);
     if (!AppStorage.has('inputMode')) {
@@ -1850,7 +1858,7 @@ export class InputHandler {
     this.composingUndoStack = [];
     this.hostUndoStack = [];
     this.hostCursor = 0;
-    this.pendingBracketClose = '';
+    this.setPendingBracketClose('');
     this.conversionEnd = 0;
     this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
@@ -1974,7 +1982,7 @@ export class InputHandler {
       if (deleted.length > 0) { this.pushHostOp('delete', deleted); }
       // 括弧を開いた直後に取り消された等、何かを消したら保留中の自動閉じは
       // 前提が崩れているので破棄する (賢く追おうとはしない)。
-      this.pendingBracketClose = '';
+      this.setPendingBracketClose('');
       this.inputClient?.deleteForward(1);
       // 直前の確定 (熟語など) をバックスペースで削っていく間、漢字の手がかりが
       // 残っている限り truncate() で末尾を追う (かける→翔ける→⌫⌫→翔 のような、
@@ -3253,17 +3261,17 @@ export class InputHandler {
         // 確定が古い括弧の中身か新しい括弧の中身か区別する手段が無いため、
         // 単純に「前のは前ので完結させ、新しい括弧を開く」にしてある。
         finalText = this.pendingBracketClose + newOpen;
-        this.pendingBracketClose = newClose;
+        this.setPendingBracketClose(newClose);
       } else if (this.pendingBracketClose.length > 0) {
         if (text === this.pendingBracketClose) {
           // ユーザーが閉じ括弧を自分で打った。保留分と合わせて二重に
           // 出すのではなく、保留を消費してそのまま1つだけ出す
           // (「自分で閉じた」として扱う)。これが無いと "）" が
           // "））" になって出ていた (実際の不具合報告の原因)。
-          this.pendingBracketClose = '';
+          this.setPendingBracketClose('');
         } else {
           finalText = text + this.pendingBracketClose;
-          this.pendingBracketClose = '';
+          this.setPendingBracketClose('');
         }
       }
     }

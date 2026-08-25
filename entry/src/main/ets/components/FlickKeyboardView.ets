@@ -65,6 +65,9 @@ export struct FlickKeyboardView {
   @StorageLink('flickSideColumnRatio') sideRatio: number = 1.0;
   private dragStartRatio: number = 1.0;
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
+  // 境界ハンドルの位置計算用 (ColumnHandle 参照)。行の幅そのものには
+  // 使わない (それは各キーの .width() 側で既に反映済み)。
+  @StorageLink('keyboardContentVp') keyboardContentVp: number = 360;
   // 左右端(取消/◄/記号…と ►/スペース…)の特殊キー1列の幅。中央3列の
   // flickKeyWidthVp とは独立 -- 設定 → レイアウト調整の比率スライダーで
   // 両者の比を変えられる (既定は同じ幅で今までどおり)。
@@ -257,13 +260,36 @@ export struct FlickKeyboardView {
   // 見た目にはほぼ1本の連続した線に見える)。left/right どちらの境界かで
   // ドラッグの向きと符号を変える -- 掴んだ側の列を、引っ張った方向へ
   // 実際に伸び縮みさせる感覚に合わせてある。
+  // 行の幅に子として差し込むと、その分だけ行が伸びて画面端をはみ出す
+  // (実際にこれで発生した不具合)。通常のキー配置には一切手を触れず、
+  // その上に絶対位置で重ねるだけにしてある -- レイアウトへの影響ゼロ。
+  // 行は Row({space:4}) が [左特殊][中央×3][右特殊] を中央寄せで並べる
+  // ので、位置はそこから逆算する。
+  private rowStartX(): number {
+    const gap = 4;
+    const contentTotal = 2 * this.flickSideKeyWidthVp + 3 * this.flickKeyWidthVp + 4 * gap;
+    return Math.max(0, (this.keyboardContentVp - contentTotal) / 2);
+  }
+
+  private boundaryX(side: 'left' | 'right'): number {
+    const gap = 4;
+    const start = this.rowStartX();
+    if (side === 'left') {
+      // 左特殊キーと中央1列目の間 (gap1 の中央)。
+      return start + this.flickSideKeyWidthVp + gap / 2;
+    }
+    // 中央3列目と右特殊キーの間 (gap4 の中央)。
+    return start + this.flickSideKeyWidthVp + 3 * this.flickKeyWidthVp + 3 * gap + gap / 2;
+  }
+
   @Builder ColumnHandle(side: 'left' | 'right') {
     Row() {
-      Row().width(3).height('60%').borderRadius(1.5).backgroundColor(kbTheme(this.isDark).accent)
+      Row().width(3).height('50%').borderRadius(1.5).backgroundColor(kbTheme(this.isDark).accent)
     }
-    .width(14)
+    .width(18)
     .height('100%')
     .justifyContent(FlexAlign.Center)
+    .position({ x: this.boundaryX(side) - 9, y: 0 })
     .gesture(
       PanGesture({ direction: PanDirection.Horizontal })
         .onActionStart(() => {
@@ -287,11 +313,9 @@ export struct FlickKeyboardView {
         ForEach([0, 1, 2, 3], (rowIdx: number) => {
           Row({ space: 4 }) {
             this.LeftKey(rowIdx)
-            if (this.adjustMode) { this.ColumnHandle('left') }
             ForEach([0, 1, 2], (colIdx: number) => {
               this.KeyCell(rowIdx, colIdx, FLICK_GRID[rowIdx][colIdx])
             }, (colIdx: number) => String(colIdx))
-            if (this.adjustMode) { this.ColumnHandle('right') }
             this.RightKey(rowIdx)
           }
           .width('100%')
@@ -303,6 +327,12 @@ export struct FlickKeyboardView {
       .height('100%')
       .padding({ bottom: 8, top: 4 })
 
+      // 行の幅には一切影響しない絶対位置オーバーレイ。全4行の高さぶんを
+      // 1本の縦線として重ねる (行ごとに4本出すより「1本の境界線」に見える)。
+      if (this.adjustMode) {
+        this.ColumnHandle('left')
+        this.ColumnHandle('right')
+      }
     }
     .width('100%')
     .height('100%')
