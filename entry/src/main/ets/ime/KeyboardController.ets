@@ -46,6 +46,14 @@ interface ComposeAlignment {
   prefixText: string;        // prefixSurfaces joined
 }
 
+// ホスト側(確定済み)テキストへの1回の操作。hostUndoStack の要素。
+// 詳しい設計意図は hostUndoStack のフィールドコメント参照。
+interface HostEditOp {
+  kind: 'insert' | 'delete';
+  text: string;
+  at: number;   // IME自己完結の相対座標(ホストの絶対indexではない)
+}
+
 // Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
 const MAX_KB_VP = 620;
 
@@ -191,9 +199,12 @@ export class InputHandler {
   // prefix. Lets a whole-sentence commit learn each 文節 individually (see
   // learnCommit / KanaKanjiConverter.recordSegmentedChoice).
   private lastAlignment: ComposeAlignment | undefined = undefined;
-  private lastDeletedChar: string = '';
   private insertedBuffer: string[] = [];
-  private restoreStack: string[] = [];
+  // 変換前のかな組み立て中(COMPOSING)にbackspaceで消した文字のLIFO。この
+  // バッファは常に末尾でしか編集できない(カーソルが途中へ移動する経路が
+  // 無い)ので、位置のズレが起きようがない。確定するとその回の組み立ては
+  // 終わりなので resetComposition で空にする(handleDirectKana 参照)。
+  private composingUndoStack: string[] = [];
   private conversionEnd: number = 0;
   // composingText の「今回の入力で一番長く伸びた時点」の値。updateCandidates
   // のたびに更新し (打っている間は常に候補が見えているので、これが伸びる=
@@ -211,11 +222,24 @@ export class InputHandler {
   // 入力中のかなをどこに出すかの設定 (SettingsStore、独立した2つのトグル)。
   private composingInPanel: boolean = true;
   private composingInField: boolean = true;
-  // Cap for the persistent deleted-character log (recordDeletedChar) --
-  // unlike restoreStack above (a short-lived undo stack wiped by the next
-  // keystroke, see insertText), this survives typing and is only capped by
-  // size. Powers the 取消 key's sequential undo (undoLastDeletion).
-  private static readonly MAX_DELETED_CHAR_HISTORY = 100;
+  // ホスト側(確定済み、IDLE状態)テキストに対する操作の履歴。挿入・削除
+  // どちらも1本のスタックに積み、取消キーは最新のものから本当のctrl+zと
+  // 同じ順序で戻す。insertText() を経由するものは全部ここに乗るので、
+  // 変換確定・生かな確定・記号/絵文字タップ・予測変換タップ・
+  // クリップボード貼り付け...どの経路で入っても等しく取り消せる。
+  //
+  // at は「このIME自身が動かした分」だけを積算した自己完結の座標で、
+  // ホストの絶対カーソル位置とは対応しない。inputClient.getTextIndexAtCursor
+  // は実機で誤った値(カーソル後方にテキストがあると文末寄りの値)を返すこと
+  // が分かっている(括弧カーソル自動移動機能で実証・撤去済み、コミット
+  // 7328e504 参照)ため、ホストの絶対座標には一切頼らない。矢印キー(◄►)
+  // による移動は hostCursor に反映して追従できるが、ユーザーが入力欄を
+  // 直接タップしてカーソルを動かした場合は検知できずズレる。それでも
+  // 「常に今のカーソル位置で実行する」だった以前より、追跡できる範囲では
+  // 確実に正しくなる。
+  private hostUndoStack: HostEditOp[] = [];
+  private hostCursor: number = 0;
+  private static readonly MAX_HOST_UNDO = 100;
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
@@ -1695,9 +1719,12 @@ export class InputHandler {
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
-    this.lastDeletedChar = '';
     this.insertedBuffer = [];
-    this.restoreStack = [];
+    this.composingUndoStack = [];
+    // 新しい入力欄 = 別のドキュメント/別のアプリの可能性があるので、hostCursor
+    // が指す座標系ごと無効になる。持ち越すと別の場所を編集しかねない。
+    this.hostUndoStack = [];
+    this.hostCursor = 0;
     this.conversionEnd = 0;
     AppStorage.setOrCreate('convEnd', 0);
     if (!AppStorage.has('inputMode')) {
@@ -1715,9 +1742,10 @@ export class InputHandler {
     this.kbController = undefined;
     this.inputClient = undefined;
     this.converter.reset();
-    this.lastDeletedChar = '';
     this.insertedBuffer = [];
-    this.restoreStack = [];
+    this.composingUndoStack = [];
+    this.hostUndoStack = [];
+    this.hostCursor = 0;
     this.conversionEnd = 0;
     this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
@@ -1825,8 +1853,20 @@ export class InputHandler {
         this.backspaceCaptured();
         return;
       }
-      const deleted = this.insertedBuffer.pop() ?? '';
-      if (deleted.length > 0) { this.restoreStack.push(deleted); this.recordDeletedChar(deleted); }
+      // 消す文字は「直前に自分が打ち込んだ文字」ではなく「今カーソンの
+      // 直前に実際にある文字」を読む。矢印キーでカーソルを動かした後の
+      // backspace は別の文字を消すので、insertedBuffer.pop() だけに
+      // 頼ると取消キーへ誤った文字を記録してしまう (今回の修正対象)。
+      // getBackwardSync が使えない/失敗する欄向けに従来の推測へ落とす。
+      let deleted = '';
+      try {
+        deleted = this.inputClient?.getBackwardSync(1) ?? '';
+      } catch (_e) {
+        deleted = '';
+      }
+      if (deleted.length === 0) { deleted = this.insertedBuffer.pop() ?? ''; }
+      else { this.insertedBuffer.pop(); }
+      if (deleted.length > 0) { this.pushHostOp('delete', deleted); }
       this.inputClient?.deleteForward(1);
       // 直前の確定 (熟語など) をバックスペースで削っていく間、漢字の手がかりが
       // 残っている限り truncate() で末尾を追う (かける→翔ける→⌫⌫→翔 のような、
@@ -1878,8 +1918,9 @@ export class InputHandler {
       } else {
         const composing = AppStorage.get<string>('composingText') ?? '';
         if (composing.length > 0) {
-          this.lastDeletedChar = composing.slice(-1);
-          this.recordDeletedChar(this.lastDeletedChar);
+          const ch = composing.slice(-1);
+          this.composingUndoStack.push(ch);
+          InputLog.recordDeleteChar(ch, InputState.COMPOSING); // [DEBUG-LOG]
           AppStorage.setOrCreate('composingText', composing.slice(0, -1));
         }
       }
@@ -2095,8 +2136,7 @@ export class InputHandler {
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
-    this.lastDeletedChar = '';
-    this.restoreStack = [];
+    this.composingUndoStack = [];
     this.conversionEnd = tail.length;
     AppStorage.setOrCreate('composingText', tail);
     AppStorage.setOrCreate('pendingRomaji', '');
@@ -2118,16 +2158,20 @@ export class InputHandler {
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
-    this.lastDeletedChar = '';
     // NOTE: insertedBuffer is deliberately NOT cleared here. It is a rolling
     // log of characters actually inserted into the field (capped at 50), used
-    // by the IDLE backspace to know which char it is deleting so the 取消 key
-    // can restore it. resetComposition runs after every commit, so clearing it
-    // here threw away the just-committed word's characters -- backspacing a
-    // committed word then recorded nothing, and 取消 kept replaying whatever
-    // stale history remained. It is cleared only on field start/stop
-    // (onInputStart / onInputStop), which is the correct scope for it.
-    this.restoreStack = [];
+    // by the IDLE backspace as a fallback when getBackwardSync can't read the
+    // field. resetComposition runs after every commit, so clearing it here
+    // threw away the just-committed word's characters -- backspacing a
+    // committed word then had no fallback available. It is cleared only on
+    // field start/stop (onInputStart / onInputStop), which is the correct
+    // scope for it.
+    //
+    // composingUndoStack (この回のCOMPOSING中backspace履歴) はここで空にする
+    // -- 確定したらその読みの組み立て直しは終わりなので。hostUndoStack
+    // (確定済みホストテキストの履歴) はここでは触らない。別の対象なので
+    // commit のたびに消す理由が無い。
+    this.composingUndoStack = [];
     this.conversionEnd = 0;
     this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
@@ -2360,41 +2404,88 @@ export class InputHandler {
     AppStorage.setOrCreate('clipboardHistory', [] as string[]);
   }
 
-  // Newest-first, capped-size log of individually deleted characters --
-  // called from both handleBackspace branches that know exactly which
-  // character just disappeared (IDLE's own-typed-char pop, COMPOSING's
-  // pre-commit slice). Deliberately never cleared by subsequent typing
-  // (unlike restoreStack, wiped on the next insertText) so it survives across
-  // a whole typing session -- consumed newest-first by the 取消 key's
-  // sequential undo (undoLastDeletion).
-  private recordDeletedChar(ch: string): void {
-    if (ch.length === 0) { return; }
-    InputLog.recordDeleteChar(ch, AppStorage.get<string>('inputState') ?? InputState.IDLE); // [DEBUG-LOG]
-    const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
-    const next = [ch, ...history].slice(0, InputHandler.MAX_DELETED_CHAR_HISTORY);
-    AppStorage.setOrCreate('deletedCharHistory', next);
+  // ホスト側(確定済み、IDLE状態)テキストへの1回の操作を記録する。
+  // insertText() の末尾(挿入)と handleBackspace の IDLE 分岐(削除)から
+  // 呼ばれる。at はその時点の hostCursor から自己完結で決まる (フィールド
+  // コメント参照)。
+  private pushHostOp(kind: 'insert' | 'delete', text: string): void {
+    if (text.length === 0) { return; }
+    if (kind === 'delete') {
+      InputLog.recordDeleteChar(text, InputState.IDLE); // [DEBUG-LOG]
+    }
+    const at = kind === 'insert' ? this.hostCursor : this.hostCursor - text.length;
+    this.hostUndoStack.push({ kind, text, at });
+    if (this.hostUndoStack.length > InputHandler.MAX_HOST_UNDO) {
+      this.hostUndoStack = this.hostUndoStack.slice(-InputHandler.MAX_HOST_UNDO);
+    }
+    this.hostCursor += kind === 'insert' ? text.length : -text.length;
   }
 
-  // Restore the most recently deleted character (or whole composing chunk),
-  // consuming it from the log. Pressing 取消 N times right after deleting too
-  // much brings back the last N deleted characters in order, as if they were
-  // never deleted -- a simple sequential undo of over-deletion, not a
-  // pick-any-past-character panel. handleBackspace pushes newest-first, so
-  // history[0] is always the last thing removed; restoring and popping it in
-  // turn replays the deletions in reverse, reconstructing the original text.
+  // hostCursor を target まで動かす。1歩ずつ moveCursor の確定を待ってから
+  // 次を出す -- insertText 直後に間を置かず moveCursor を出すと、ホスト側が
+  // まだ編集を反映していない状態に対して移動が発行され無視される実機バグが
+  // あった (コミット 39f4147)。取消キーはユーザーが最後の編集から間を置いて
+  // 押す操作なのでこの経路そのものは起きないが、複数歩を連続で出すときの
+  // 相互干渉を避けるため、ここでも律儀に1歩ずつ待つ。
+  private async moveHostCursorTo(target: number): Promise<void> {
+    const dir = target > this.hostCursor
+      ? inputMethodEngine.Direction.CURSOR_RIGHT
+      : inputMethodEngine.Direction.CURSOR_LEFT;
+    const steps = Math.abs(target - this.hostCursor);
+    for (let i = 0; i < steps; i++) {
+      try {
+        await this.inputClient?.moveCursor(dir);
+      } catch (_e) {
+        break; // 動かせなかった。これ以上ズレを広げずここで諦める。
+      }
+      this.hostCursor += dir === inputMethodEngine.Direction.CURSOR_RIGHT ? 1 : -1;
+    }
+  }
+
+  // ホスト側テキストの直近の操作(挿入でも削除でも)を1件取り消す。本当の
+  // ctrl+zと同じ順序 -- 挿入の取り消しは削除、削除の取り消しは打ち戻し。
+  // 公開の insertText() ラッパーは使わない (それを呼ぶと今の取り消し自体が
+  // 新しい操作として hostUndoStack に積まれてしまい、スタックが正しく
+  // 縮まなくなる)。
+  private async undoLastHostEdit(): Promise<void> {
+    const op = this.hostUndoStack.pop();
+    if (op === undefined) { return; }
+    InputLog.recordUndo(op.text); // [DEBUG-LOG]
+    if (op.kind === 'insert') {
+      // 挿入の取り消し = その範囲を削除。挿入直後の位置までカーソルを
+      // 動かしてから、その直前を deleteForward で削る。
+      await this.moveHostCursorTo(op.at + op.text.length);
+      try {
+        await this.inputClient?.deleteForward(op.text.length);
+        this.hostCursor -= op.text.length;
+        for (let i = 0; i < op.text.length; i++) { this.insertedBuffer.pop(); }
+      } catch (_e) { /* 欄が外れた等。ここで失敗しても入力は続けられる。 */ }
+    } else {
+      // 削除の取り消し = 元あった位置へ打ち戻す。
+      await this.moveHostCursorTo(op.at);
+      try {
+        await this.inputClient?.insertText(op.text);
+        this.hostCursor += op.text.length;
+        for (const ch of op.text) { this.insertedBuffer.push(ch); }
+      } catch (_e) { /* 同上。 */ }
+    }
+  }
+
+  // 取消キー。COMPOSING(変換前のかな組み立て中)ならその場で1文字ずつ復元
+  // する (このバッファは常に末尾でしか編集できないので位置のズレが起きない)。
+  // IDLE(確定済みのホスト側テキスト)なら、直近の操作を実際に起きた位置まで
+  // 戻ってから取り消す -- 挿入も削除も貼り付けも区別せず、本当のctrl+zと
+  // 同じ順序で遡る。
   undoLastDeletion(): void {
-    const history = AppStorage.get<string[]>('deletedCharHistory') ?? [];
-    if (history.length === 0) { return; }
-    const ch = history[0];
-    AppStorage.setOrCreate('deletedCharHistory', history.slice(1));
-    if (ch.length === 0) { return; }
-    InputLog.recordUndo(ch); // [DEBUG-LOG]
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.IDLE) {
-      this.insertText(ch);
-    } else {
-      this.handleDirectKana(ch);
+      this.undoLastHostEdit();
+      return;
     }
+    const ch = this.composingUndoStack.pop();
+    if (ch === undefined || ch.length === 0) { return; }
+    InputLog.recordUndo(ch); // [DEBUG-LOG]
+    this.handleDirectKana(ch);
   }
 
   // Launches the main app (settings / user dictionary screen) from the
@@ -2833,7 +2924,13 @@ export class InputHandler {
         this.updateCandidates();
       }
     } else {
+      // 実際に動いた分だけ hostCursor に反映する。取消キーの位置追跡は
+      // このIME自身が動かした分の自己申告なので、ここを飲むと矢印キーでの
+      // 移動後に取消を押しても正しい位置へ戻れる (hostUndoStack のコメント
+      // 参照)。動かせたかどうか確認できないので、成功した(=例外が出なかった)
+      // ときだけ加算する。
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
+        .then(() => { this.hostCursor -= 1; })
         .catch((_e: Error) => {});
     }
   }
@@ -2854,6 +2951,7 @@ export class InputHandler {
       }
     } else {
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
+        .then(() => { this.hostCursor += 1; })
         .catch((_e: Error) => {});
     }
   }
@@ -2878,8 +2976,10 @@ export class InputHandler {
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
     this.conversionEnd = (current + kana).length;
     AppStorage.setOrCreate('convEnd', this.conversionEnd);
-    this.lastDeletedChar = '';
-    this.restoreStack = [];
+    // composingUndoStack はここで消さない -- 「けす→ら足す→やっぱりさっき
+    // 消した方を戻したい」のように、この回の組み立て中はbackspace履歴を
+    // 保ったまま何度でも取消キーで遡れるようにする (resetComposition で
+    // 確定したときだけ、その回の組み立ては終わりとして空にする)。
     this.updateCandidates();
   }
 
@@ -2996,44 +3096,6 @@ export class InputHandler {
     }
   }
 
-  handleUndo(): void {
-    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state === InputState.BUNSETSU) {
-      const composing = this.bSegs.join('');
-      this.bSegs = [];
-      this.bChosen = [];
-      this.bCur = 0;
-      AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
-      AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
-      AppStorage.setOrCreate('bunsetsuDisplay', '');
-      AppStorage.setOrCreate('bunsetsuCurrent', 0);
-      AppStorage.setOrCreate('composingText', composing);
-      AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-      this.updateCandidates();
-      return;
-    }
-    if (state === InputState.SELECTING) {
-      AppStorage.setOrCreate('candidates', [] as string[]);
-      AppStorage.setOrCreate('inputState', InputState.COMPOSING);
-      return;
-    }
-    if (state === InputState.COMPOSING) {
-      if (this.lastDeletedChar.length === 0) { return; }
-      const composing = AppStorage.get<string>('composingText') ?? '';
-      AppStorage.setOrCreate('composingText', composing + this.lastDeletedChar);
-      this.lastDeletedChar = '';
-      this.updateCandidates();
-      return;
-    }
-    if (state === InputState.IDLE) {
-      const ch = this.restoreStack.pop() ?? '';
-      if (ch.length > 0) {
-        this.inputClient?.insertText(ch);
-        this.insertedBuffer.push(ch);
-      }
-    }
-  }
-
   insertText(text: string): void {
     // 辞書の自由入力中は、確定した文字をホストアプリではなくパネル内の欄に送る。
     //
@@ -3076,7 +3138,10 @@ export class InputHandler {
       if (this.insertedBuffer.length > 50) {
         this.insertedBuffer = this.insertedBuffer.slice(-50);
       }
-      this.restoreStack = [];
+      // 変換確定・生かな確定・記号/絵文字タップ・予測変換タップ・
+      // クリップボード貼り付け...どの経路で来ても、ホストへ実際に文字が
+      // 出た時点はここ1箇所なので、取消キー用の記録もここで行う。
+      this.pushHostOp('insert', text);
       KanaKanjiConverter.setLastCommitText(text);
     }
   }
