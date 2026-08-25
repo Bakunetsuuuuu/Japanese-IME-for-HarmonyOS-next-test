@@ -48,11 +48,33 @@ interface ComposeAlignment {
 
 // ホスト側(確定済み)テキストへの1回の操作。hostUndoStack の要素。
 // 詳しい設計意図は hostUndoStack のフィールドコメント参照。
+interface InsertTextOptions {
+  raw: boolean;
+}
+
 interface HostEditOp {
   kind: 'insert' | 'delete';
   text: string;
   at: number;   // IME自己完結の相対座標(ホストの絶対indexではない)
 }
+
+// 開き括弧 -> 閉じ括弧。pendingBracketClose の元ネタ。
+//
+// 以前は「（）」のように開き・閉じを1つの候補として丸ごと確定し、確定後に
+// カーソルだけ内側へ戻す実装だったが、moveCursor/selectByRange のどちらも
+// 実機で信用できないことが分かり撤去した (コミット 7328e504 参照)。
+//
+// 今回は発想を変え、カーソルを一切動かさない: 開きだけを確定し、閉じは
+// 「次に確定される内容の直後」まで保留する。ユーザーは括弧の中を普通に
+// 打ち進めるだけで、次の確定のたびに保留中の閉じがその直後へ続けて出る
+// ので、結果的に (内容) の形になる。カーソル移動プリミティブを一切
+// 使わないので、上記の実機不具合と無縁になる。
+const BRACKET_PAIRS: Record<string, string> = {
+  '（': '）', '「': '」', '『': '』', '【': '】',
+  '〖': '〗', '〔': '〕', '〈': '〉', '《': '》',
+  '(': ')', '[': ']', '{': '}',
+  '［': '］', '｛': '｝', '〝': '〟',
+};
 
 // Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
 const MAX_KB_VP = 620;
@@ -240,6 +262,9 @@ export class InputHandler {
   private hostUndoStack: HostEditOp[] = [];
   private hostCursor: number = 0;
   private static readonly MAX_HOST_UNDO = 100;
+  // 括弧の自動閉じで「次の確定の直後に出す」ぶんの閉じ括弧。空なら保留無し。
+  // 詳しい設計意図は BRACKET_PAIRS のコメント参照。
+  private pendingBracketClose: string = '';
   private imeContext: InputMethodExtensionContext | undefined = undefined;
   private learningPrefs: dataPreferences.Preferences | undefined = undefined;
   private learningSaveTimer: number = -1;
@@ -1673,7 +1698,7 @@ export class InputHandler {
     if (index < 0 || index >= preds.length) { return; }
     const text = preds[index];
     if (text.length === 0) { return; }
-    this.insertText(text);
+    this.insertText(text, { raw: true } as InsertTextOptions);
     KanaKanjiConverter.addContext(text);
     const words = index < this.predictionWordGroups.length && this.predictionWordGroups[index].length > 0
       ? this.predictionWordGroups[index]
@@ -1725,6 +1750,7 @@ export class InputHandler {
     // が指す座標系ごと無効になる。持ち越すと別の場所を編集しかねない。
     this.hostUndoStack = [];
     this.hostCursor = 0;
+    this.pendingBracketClose = '';
     this.conversionEnd = 0;
     AppStorage.setOrCreate('convEnd', 0);
     if (!AppStorage.has('inputMode')) {
@@ -1746,6 +1772,7 @@ export class InputHandler {
     this.composingUndoStack = [];
     this.hostUndoStack = [];
     this.hostCursor = 0;
+    this.pendingBracketClose = '';
     this.conversionEnd = 0;
     this.composingWatermark = '';
     AppStorage.setOrCreate('composingText', '');
@@ -1853,7 +1880,7 @@ export class InputHandler {
         this.backspaceCaptured();
         return;
       }
-      // 消す文字は「直前に自分が打ち込んだ文字」ではなく「今カーソンの
+      // 消す文字は「直前に自分が打ち込んだ文字」ではなく「今カーソルの
       // 直前に実際にある文字」を読む。矢印キーでカーソルを動かした後の
       // backspace は別の文字を消すので、insertedBuffer.pop() だけに
       // 頼ると取消キーへ誤った文字を記録してしまう (今回の修正対象)。
@@ -1867,6 +1894,9 @@ export class InputHandler {
       if (deleted.length === 0) { deleted = this.insertedBuffer.pop() ?? ''; }
       else { this.insertedBuffer.pop(); }
       if (deleted.length > 0) { this.pushHostOp('delete', deleted); }
+      // 括弧を開いた直後に取り消された等、何かを消したら保留中の自動閉じは
+      // 前提が崩れているので破棄する (賢く追おうとはしない)。
+      this.pendingBracketClose = '';
       this.inputClient?.deleteForward(1);
       // 直前の確定 (熟語など) をバックスペースで削っていく間、漢字の手がかりが
       // 残っている限り truncate() で末尾を追う (かける→翔ける→⌫⌫→翔 のような、
@@ -2363,7 +2393,7 @@ export class InputHandler {
     if (text.length === 0) {
       return 'none';
     }
-    this.insertText(text);
+    this.insertText(text, { raw: true } as InsertTextOptions);
     // Hide the paste chip now that it's been used, and remember this content so
     // subsequent refreshes keep it hidden until the user copies something new.
     InputHandler.dismissedClipSig = InputHandler.clipSig(text, '', false);
@@ -2397,7 +2427,7 @@ export class InputHandler {
     const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
     const text = history[index];
     if (text === undefined || text.length === 0) { return; }
-    this.insertText(text);
+    this.insertText(text, { raw: true } as InsertTextOptions);
   }
 
   clearClipboardHistory(): void {
@@ -2962,7 +2992,13 @@ export class InputHandler {
 
     if (mode === InputMode.ALPHANUMERIC) {
       this.commitPending();
-      this.insertText(kana);
+      // raw: true -- 英数モードは1打鍵ごとに insertText が飛ぶ (かなモード
+      // のように単語単位でまとまらない)。素のまま扱わないと、括弧を開いた
+      // 直後に "t" を1文字打っただけで閉じ括弧が確定してしまい、続く
+      // "est" が閉じの外側に出てしまう。保留中の閉じは英数入力では
+      // 消費も生成もしない(消さずに残す -- 後で かな側の確定があれば
+      // そちらで正しく閉じられる)。
+      this.insertText(kana, { raw: true } as InsertTextOptions);
       return;
     }
 
@@ -3096,7 +3132,11 @@ export class InputHandler {
     }
   }
 
-  insertText(text: string): void {
+  // raw: true は括弧の自動閉じを掛けない (貼り付け・予測タップなど、
+  // 「打ち込んだ通りそのまま出したい」文字列専用)。ユーザーがコピーした
+  // 内容がたまたま "()" のような2文字と一致しても、括弧機能に横取りされて
+  // 別の場所へ送られては困るため。
+  insertText(text: string, opts?: InsertTextOptions): void {
     // 辞書の自由入力中は、確定した文字をホストアプリではなくパネル内の欄に送る。
     //
     // キーボードのパネルに TextInput を置いても、キーボード自身が入力対象に
@@ -3107,6 +3147,35 @@ export class InputHandler {
       this.appendCaptured(text);
       return;
     }
+
+    // 括弧の自動閉じ (設計意図は BRACKET_PAIRS のコメント参照)。
+    // カーソルは一切動かさず、開きだけを今確定して、閉じは次の確定の
+    // 直後まで保留する。
+    let finalText = text;
+    if (opts?.raw !== true) {
+      let newOpen: string | undefined;
+      let newClose: string | undefined;
+      if (text.length === 2 && BRACKET_PAIRS[text[0]] === text[1]) {
+        // 「（）」のように開き+閉じ1組で確定された(かっこ等の変換候補)。
+        newOpen = text[0];
+        newClose = text[1];
+      } else if (text.length === 1 && BRACKET_PAIRS[text] !== undefined) {
+        // 記号パネルで開き括弧を単体でタップした場合も同様に扱う。
+        newOpen = text;
+        newClose = BRACKET_PAIRS[text];
+      }
+      if (newOpen !== undefined && newClose !== undefined) {
+        // 保留中の古い閉じがあれば、入れ子にはせず先に閉じてしまう。次の
+        // 確定が古い括弧の中身か新しい括弧の中身か区別する手段が無いため、
+        // 単純に「前のは前ので完結させ、新しい括弧を開く」にしてある。
+        finalText = this.pendingBracketClose + newOpen;
+        this.pendingBracketClose = newClose;
+      } else if (this.pendingBracketClose.length > 0) {
+        finalText = text + this.pendingBracketClose;
+        this.pendingBracketClose = '';
+      }
+    }
+
     // 入力欄プレビューが出ているときは insertText を使わない。
     //
     // finishTextPreviewSync() は「プレビューを消す」のではなく「プレビューの
@@ -3116,7 +3185,7 @@ export class InputHandler {
     let previewCommitted = false;
     if (this.previewActive) {
       try {
-        this.inputClient?.setPreviewTextSync(text, { start: -1, end: -1 });
+        this.inputClient?.setPreviewTextSync(finalText, { start: -1, end: -1 });
         this.inputClient?.finishTextPreviewSync();
         this.previewActive = false;
         previewCommitted = true;
@@ -3125,15 +3194,10 @@ export class InputHandler {
         this.cancelPreviewText();
       }
     }
-    // Brackets used to auto-place the caret between the pair (「|」), but no
-    // caret-move primitive worked reliably across the editors this IME runs in
-    // -- moveCursor was a no-op on some, and the absolute-index selectByRange
-    // overshot on others -- so the pair is now inserted plainly and the caret
-    // stays after it, same as any other committed text.
-    if (!previewCommitted) { this.inputClient?.insertText(text); }
-    if (text.length > 0) {
-      for (let i = 0; i < text.length; i++) {
-        this.insertedBuffer.push(text[i]);
+    if (!previewCommitted) { this.inputClient?.insertText(finalText); }
+    if (finalText.length > 0) {
+      for (let i = 0; i < finalText.length; i++) {
+        this.insertedBuffer.push(finalText[i]);
       }
       if (this.insertedBuffer.length > 50) {
         this.insertedBuffer = this.insertedBuffer.slice(-50);
@@ -3141,8 +3205,8 @@ export class InputHandler {
       // 変換確定・生かな確定・記号/絵文字タップ・予測変換タップ・
       // クリップボード貼り付け...どの経路で来ても、ホストへ実際に文字が
       // 出た時点はここ1箇所なので、取消キー用の記録もここで行う。
-      this.pushHostOp('insert', text);
-      KanaKanjiConverter.setLastCommitText(text);
+      this.pushHostOp('insert', finalText);
+      KanaKanjiConverter.setLastCommitText(finalText);
     }
   }
 
