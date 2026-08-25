@@ -300,7 +300,13 @@ export struct FlickKeyboardView {
           this.dragStartRatio = this.sideRatio;
         })
         .onActionUpdate((event: GestureEvent) => {
-          const dir = side === 'left' ? -1 : 1;
+          // 境界線そのものを掴んで動かす感覚に合わせる: 指を動かした方向に
+          // 境界を押すと、押した側の特殊キー列がその分だけ伸びる。
+          // 左の境界を右へ押す(offsetX>0)→左の特殊キー列が伸びる(比率↑)。
+          // 右の境界を右へ押す(offsetX>0)→右の特殊キー列は縮む(比率↓)。
+          // 以前は符号が逆で、ドラッグ方向と伸縮が逆になっていた
+          // (「操作が左右反転してる」の実体)。
+          const dir = side === 'left' ? 1 : -1;
           const delta = dir * event.offsetX / RATIO_DRAG_RANGE_VP * (RATIO_MAX - RATIO_MIN);
           const next = Math.min(RATIO_MAX, Math.max(RATIO_MIN, this.dragStartRatio + delta));
           this.h().applyFlickSideRatioLive(next);

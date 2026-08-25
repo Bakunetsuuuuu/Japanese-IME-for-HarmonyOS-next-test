@@ -910,19 +910,28 @@ export class InputHandler {
   // 縦の長さの調整ハンドル (LayoutAdjustBar) からドラッグ中に毎フレーム
   // 呼ばれる想定。保存は別 (saveKeyboardHeightScale) にして、ここは
   // AppStorage の書き換えとパネルの実リサイズだけをその場でやる。
-  // 連打の間引きは resizePanel 側 (KeyboardController) が完了ベースで
-  // やってくれる (resize+moveToの1組が終わるまで次を溜めて、終わったら
-  // 最新状態でやり直す) ので、ここでは何も気にせず毎回呼んでよい。
-  // 前は時間ベースの簡易スロットリングをここに置いていたが、それだと
-  // 前の組が終わる前に次を投げる余地が残り、下辺が「プルプル」揺れて
-  // いた(実際の指摘)。完了ベースの間引きに一本化した。
+  //
+  // panel.resize()/moveTo() の完了を待って連打を間引く方式を一度試したが、
+  // この環境ではその2つのPromiseが確実に解決/拒否するとは限らないらしく、
+  // 1回でも解決が来ないとレイアウト調整が丸ごと反応しなくなった
+  // (resizePanel のコメント参照)。完了に依存しない、時間ベースの簡易
+  // スロットリングに戻す -- 「プルプル」は多少残るが、動かなくなるよりは
+  // 良い。
+  private static readonly HEIGHT_RESIZE_THROTTLE_MS = 32;
+  private lastHeightResizeAt: number = 0;
   applyKeyboardHeightScaleLive(scale: number): void {
     AppStorage.setOrCreate('keyboardHeightScale', scale);
+    const now = Date.now();
+    if (now - this.lastHeightResizeAt < InputHandler.HEIGHT_RESIZE_THROTTLE_MS) { return; }
+    this.lastHeightResizeAt = now;
     this.kbCtrlRef?.resizePanel();
   }
 
   saveKeyboardHeightScale(scale: number): void {
+    // ドラッグを離した瞬間の確定値。直前のリサイズがスロットルで間引かれて
+    // いた可能性があるので、ここは間引かず確実に反映する。
     AppStorage.setOrCreate('keyboardHeightScale', scale);
+    this.lastHeightResizeAt = Date.now();
     this.kbCtrlRef?.resizePanel();
     if (this.imeContext) {
       SettingsStore.saveKeyboardHeightScale(this.imeContext, scale);
@@ -3592,38 +3601,21 @@ export class KeyboardController {
     }
   }
 
-  // resize() → moveTo() の間、パネルは「新しい高さ・古い位置」の状態を
-  // 一瞬とる (このAPIは1回で両方を変える手段が無い)。ドラッグ中は
-  // resizePanel が連打されるので、前の resize+moveTo が終わる前に次を
-  // 投げると、複数組が競合してどれが最後に反映されるか不定になり、
-  // 下辺が「プルプル」揺れて見えていた (レイアウト調整の縦ハンドルで
-  // 実際に発生)。1組が完了するまで次を溜めておき、完了したら最新の
-  // 状態で1回だけやり直す(間引き)ことで、常に高々1組しか飛ばさない
-  // ようにする。
-  private resizeInFlight: boolean = false;
-  private resizePending: boolean = false;
-
+  // 前回、resize/moveToの完了を待って次を間引く方式を試したが、実機で
+  // レイアウト調整自体が丸ごと反応しなくなった。panel.resize()/moveTo()の
+  // Promiseがこの環境では確実に解決/拒否するとは限らない (この種のAPIの
+  // Promiseがどちらも起きないことがあるのは、このコードベースの他の
+  // ハマりどころ -- getTextIndexAtCursorの値が信用できない、insertText
+  // 直後のmoveCursorが無視される等 -- と同じ傾向) らしく、1回でも解決が
+  // 来ないと resizeInFlight が真のまま固まり、以後ずっと「保留中」を
+  // 記録するだけで実際には二度と呼ばれなくなっていたとみられる。
+  // 「プルプル」より「丸ごと動かない」のほうが深刻なので、間引きは
+  // やめて毎回素直に呼ぶ形へ戻した。
+  //
   // 設定 → レイアウト調整 のハンドルからライブに呼ばれるので公開している
   // (InputHandler.applyKeyboardHeightScaleLive 参照)。パネルの実サイズは
   // panel.resize() でしか変えられず、それを持っているのはこのクラスだけ。
   resizePanel(): void {
-    if (this.resizeInFlight) {
-      this.resizePending = true;
-      return;
-    }
-    this.resizeInFlight = true;
-    this.doResizePanel();
-  }
-
-  private doResizePanel(): void {
-    const done = (): void => {
-      this.resizeInFlight = false;
-      if (this.resizePending) {
-        this.resizePending = false;
-        this.resizeInFlight = true;
-        this.doResizePanel();
-      }
-    };
     try {
       const dis = display.getDefaultDisplaySync();
       const isLandscape = dis.width > dis.height;
@@ -3636,11 +3628,9 @@ export class KeyboardController {
 
       this.panel?.resize(dis.width, keyHeight)
         .then(() => this.panel?.moveTo(0, dis.height - keyHeight))
-        .then(done)
-        .catch(done);
+        .catch((err: Error) => console.error('shuntiIME resizePanel resize/moveTo error', err));
     } catch (err) {
       console.error('shuntiIME resizePanel error', err);
-      done();
     }
   }
 
