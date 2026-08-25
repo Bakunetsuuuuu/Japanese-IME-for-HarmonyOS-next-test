@@ -227,25 +227,21 @@ Public Domain Dataです。使用・変更・配布に関しては一切の制�
 
 Source: http://sourceforge.jp/projects/o-dic/
 
-## BIZ UDPGothic (bundled font: `entry/src/main/resources/rawfile/font/
-## BIZUDPGothic-Regular.ttf`) — SIL Open Font License 1.1
+## Noto Sans JP (bundled font: `entry/src/main/resources/rawfile/font/
+## NotoSansJP-Regular.ttf`) — SIL Open Font License 1.1
 
 The app bundles a Japanese font because HarmonyOS's own system font ships
 only Simplified/Traditional Chinese regional variants — without it,
 Han-unified kanji render with Chinese glyph shapes on a China-region
 device (see `entry/src/main/ets/components/JpFont.ets`).
 
-The bundled file is a derived work of BIZ UDPGothic (a static font, no
-instancing needed): subset to the characters the app can display, by
-`tools/build_jp_font.py`. Outlines are unmodified. Switched from Noto Sans
-JP on 2026-08-25 (user feedback wanted a rounder, less dated look); the
-previous Noto Sans JP notice is kept below since the dictionary-collection
-tooling (`tools/mozc_data/`, unrelated to the UI font) still touches Noto
-Sans/Noto CJK metadata in a few places.
+The bundled file is a derived work of Noto Sans JP: instanced from the
+variable font at `wght=400` and subset to the characters the app can
+display, by `tools/build_jp_font.py`. Outlines are unmodified.
 
 ```
-Copyright 2022 The BIZ UDGothic Project Authors
-(https://github.com/googlefonts/morisawa-biz-ud-mincho)
+Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name
+'Source'. Copyright 2012 Google Inc. All Rights Reserved.
 
 This Font Software is licensed under the SIL Open Font License, Version 1.1.
 This license is copied below, and is also available with a FAQ at:
@@ -280,25 +276,6 @@ Holder(s) and the Author(s) or with their explicit written permission.
 distributed entirely under this license, and must not be distributed under
 any other license. The requirement for fonts to remain under this license
 does not apply to any document created using the Font Software.
-```
-
-Source: https://github.com/google/fonts —
-`ofl/bizudpgothic/BIZUDPGothic-Regular.ttf`
-
-### Noto Sans JP (previously bundled as the UI font; kept for history)
-
-Bundled at `entry/src/main/resources/rawfile/font/NotoSansJP-Regular.ttf`
-until 2026-08-25, when it was replaced by BIZ UDPGothic above. Removed from
-the repo; this entry stays only as a record of past distribution, per the
-OFL's requirement that the notice travel with any distributed derivative.
-
-```
-Copyright 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name
-'Source'. Copyright 2012 Google Inc. All Rights Reserved.
-
-This Font Software is licensed under the SIL Open Font License, Version 1.1.
-This license is copied below, and is also available with a FAQ at:
-https://openfontlicense.org
 ```
 
 Source: https://github.com/google/fonts —
