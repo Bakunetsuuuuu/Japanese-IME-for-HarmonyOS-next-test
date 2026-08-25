@@ -3551,10 +3551,16 @@ export class KeyboardController {
       Math.floor(dis.height * 0.25),
       Math.min(contentPx, Math.floor(dis.height * maxFrac))
     );
-    // 設定 → レイアウト調整 の縦の長さスライダー。既定 1.0 で今までどおり。
-    // ±30% にクランプ -- それ以上は行の当たり判定が崩れる/画面の大半を
-    // 覆ってしまう。
-    const scale = Math.min(1.3, Math.max(0.7, AppStorage.get<number>('keyboardHeightScale') ?? 1.0));
+    // 設定 → レイアウト調整 の縦の長さハンドル。既定 1.0 で今までどおり。
+    // 上限は向きによらず +30% (それ以上は画面の大半を覆ってしまう)。
+    // 下限は向きで分けてある -- 横向きは maxFrac/contentPx が縦向きより
+    // 大きく (80%・420px相当) 既定の背が高くなりがちなので、縮める側の
+    // 余地をもっと残す必要があった (実際の指摘: 「横向き時、70%より
+    // 小さくできた方が良い」)。縦向きは 70% でもキーの当たり判定が
+    // 厳しくなり始めるので、下限はそのまま。LayoutAdjustBar のドラッグ
+    // 範囲もこれと同じ値を使っている (isLandscape で分岐)。
+    const minScale = isLandscape ? 0.4 : 0.7;
+    const scale = Math.min(1.3, Math.max(minScale, AppStorage.get<number>('keyboardHeightScale') ?? 1.0));
     return Math.floor(base * scale);
   }
 

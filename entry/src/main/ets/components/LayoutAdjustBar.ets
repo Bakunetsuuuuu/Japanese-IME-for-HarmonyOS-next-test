@@ -11,9 +11,14 @@ import { JP_FONT_FAMILY } from './JpFont';
 // ハンドル。フリック中央3列との幅比は、ここではなくキーボード側
 // (FlickKeyboardView の adjustMode) -- 左右特殊キー列との境界線を
 // 直接ドラッグする形にしてあり、この帯には出さない。
-const MIN_SCALE = 0.7;
+// KeyboardController.computeKeyHeight と同じ値を使うこと。横向きは
+// maxFrac/contentPx が縦向きより大きく既定の背が高くなりがちなので、
+// 縮める側の下限をもっと下げてある(実際の指摘: 「横向き時、70%より
+// 小さくできた方が良い」)。
+const MIN_SCALE_PORTRAIT = 0.7;
+const MIN_SCALE_LANDSCAPE = 0.4;
 const MAX_SCALE = 1.3;
-// このぶんドラッグすると 0.7〜1.3 の全域を動く。
+// このぶんドラッグすると下限〜1.3 の全域を動く。
 const HEIGHT_DRAG_RANGE_VP = 220;
 
 @Component
@@ -48,8 +53,9 @@ export struct LayoutAdjustBar {
             this.dragStartScale = this.heightScale;
           })
           .onActionUpdate((event: GestureEvent) => {
-            const delta = -event.offsetY / HEIGHT_DRAG_RANGE_VP * (MAX_SCALE - MIN_SCALE);
-            const next = Math.min(MAX_SCALE, Math.max(MIN_SCALE, this.dragStartScale + delta));
+            const minScale = this.isLandscape ? MIN_SCALE_LANDSCAPE : MIN_SCALE_PORTRAIT;
+            const delta = -event.offsetY / HEIGHT_DRAG_RANGE_VP * (MAX_SCALE - minScale);
+            const next = Math.min(MAX_SCALE, Math.max(minScale, this.dragStartScale + delta));
             this.h().applyKeyboardHeightScaleLive(next);
           })
           .onActionEnd(() => {
