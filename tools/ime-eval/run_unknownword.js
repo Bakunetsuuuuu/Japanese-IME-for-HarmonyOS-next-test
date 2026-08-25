@@ -21,7 +21,7 @@ function build() {
   // bun なら TypeScript をそのまま require できるので tsc を挟まない。
   if (typeof Bun !== 'undefined') { return tsPath; }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
-    '--skipLibCheck', tsPath], { stdio: 'inherit' });
+    '--skipLibCheck', tsPath], { stdio: 'inherit', shell: true });
   return path.join(tmp, 'UW.js');
 }
 

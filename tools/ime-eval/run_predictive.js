@@ -20,7 +20,7 @@ function build() {
   // (tools/ime-eval/run_unknownword.js と同じ回避)。
   if (typeof Bun !== 'undefined') { return tsPath; }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS',
-    '--skipLibCheck', tsPath], { stdio: 'inherit' });
+    '--skipLibCheck', tsPath], { stdio: 'inherit', shell: true });
   return path.join(tmp, 'PC.js');
 }
 

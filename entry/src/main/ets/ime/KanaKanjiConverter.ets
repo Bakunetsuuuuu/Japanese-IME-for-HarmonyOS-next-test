@@ -35783,7 +35783,17 @@ export class KanaKanjiConverter {
           KanaKanjiConverter.isReduplicated(kana) &&
           authored.indexOf(kana) >= 0 &&
           authored.some((c: string) => KanaKanjiConverter.isPureKatakana(c));
-      if (mixedKana || writableBothWays) {
+      // mixedKana は「マジか」のような表記交ざりを既定ではひらがなへ戻す
+      // 救済。DICTIONARY 本体には「まじかよ」→[マジかよ]のように、まさに
+      // この救済で普段はひらがなへ戻る前提で書かれた項目があるため、
+      // entry (DICTIONARY 直接のエントリ) がある読みには今までどおり適用する。
+      // 一方、語彙パックだけが持つ語 (entry が無く ext だけにある) は話が
+      // 別で、パック作者が優先度1で明示した表記は「分割ミス」ではなく
+      // 意図的な表記交ざり(ありがと+ナス 等)であることが多い。ここだけ
+      // 例外にする (優先度1でも後ろに出ていた不具合の実体)。
+      const packOnlyTop = (entry === undefined || entry.length === 0)
+          && ext !== undefined && ext.indexOf(top) >= 0;
+      if ((mixedKana && !packOnlyTop) || writableBothWays) {
         result = [kana, ...result.filter((c: string) => c !== kana)];
       }
     }
@@ -36022,10 +36032,23 @@ export class KanaKanjiConverter {
         || KanaKanjiConverter.supplementaryDict.has(kana)
         || KanaKanjiConverter.packEntry(kana) !== undefined
       || KanaKanjiConverter.packTailEntry(kana) !== undefined);
+      // 重複除去は trackA 側でなく kanaFallback 側から行う。
+      //
+      // 以前は逆 (trackA を kanaFallback で filter) だった。語彙パックの
+      // 優先度1の語が「カタカナに変換しただけの表記」(あーいきそ→アーイキソ
+      // 等、ネットスラングにありがち) のとき、その文字列は kata===kana の
+      // 素のカタカナ変換とたまたま完全一致する。すると trackA 側で正しく
+      // 先頭に並んでいたその語が「もう kanaFallback にある重複」として
+      // 削られ、パックの優先度を無視して kanaFallback 側の並び順 (優先度と
+      // 無関係、単なるかな/カタカナのフォールバック順) に落ちていた --
+      // 「優先度1でも3,4番目に出る」不具合の実体。
+      // trackA (singleWordTrackAOrder = lookupCore、パック優先度込み) の
+      // 並びをそのまま残し、kanaFallback 側は trackA に無い形だけを補う。
       const trackA = (KanaKanjiConverter.engine === 'hybrid' && registeredInTrackA)
-        ? this.singleWordTrackAOrder(kana).filter((c: string) => !kanaFallback.includes(c))
+        ? this.singleWordTrackAOrder(kana)
         : [];
-      list = trackA.length > 0 ? [...trackA, ...kanaFallback] : kanaFallback;
+      const tailFallback = kanaFallback.filter((c: string) => !trackA.includes(c));
+      list = trackA.length > 0 ? [...trackA, ...tailFallback] : kanaFallback;
     }
     // Same user-intent layering as track A's lookupCore (and in the same
     // priority order): the user's learned candidate choices outrank raw

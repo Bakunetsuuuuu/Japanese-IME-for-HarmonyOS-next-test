@@ -23,7 +23,7 @@ function build() {
     fs.writeFileSync(path.join(tmp, name + '.ts'), '// @ts-nocheck\n' + fs.readFileSync(src, 'utf-8'));
   }
   execFileSync('npx', ['tsc', '--target', 'ES2020', '--module', 'CommonJS', '--skipLibCheck',
-    path.join(tmp, 'KKC.ts'), path.join(tmp, 'NW.ts')], { stdio: 'inherit' });
+    path.join(tmp, 'KKC.ts'), path.join(tmp, 'NW.ts')], { stdio: 'inherit', shell: true });
   return tmp;
 }
 
