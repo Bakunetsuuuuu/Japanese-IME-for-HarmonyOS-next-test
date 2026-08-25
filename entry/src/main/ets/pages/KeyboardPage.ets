@@ -14,6 +14,7 @@ import { NumericPadView } from '../components/NumericPadView';
 import { BunsetsuBar } from '../components/BunsetsuBar';
 import { ExpandedCandidateView } from '../components/ExpandedCandidateView';
 import { SettingsBar } from '../components/SettingsBar';
+import { LayoutAdjustBar } from '../components/LayoutAdjustBar';
 import { DictEditBar } from '../components/DictEditBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
@@ -151,7 +152,40 @@ struct KeyboardPage {
       // app (a different process) actually applies the mozc engine switch
       // here too, not just update the SettingsBar toggle's own display value.
       InputHandler.getInstance().setConversionEngine(s.conversionEngine);
+      InputHandler.getInstance().applyKeyboardHeightScaleLive(s.keyboardHeightScale);
+      InputHandler.getInstance().applyFlickSideRatioLive(s.flickSideColumnRatio);
     });
+  }
+
+  // 実際のキーボード本体を選ぶ部分。通常の入力画面と、レイアウト調整モード
+  // (下の layoutAdjust 分岐、LayoutAdjustBar の帯の下にこれをそのまま表示
+  // して見ながら調整できるようにする) の両方から呼ぶための @Builder。
+  @Builder KeyboardArea() {
+    Column() {
+      if (this.keyboardSubMode === 'numeric') {
+        NumericPadView()
+      } else if (this.alphabetKeyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
+        AlphabetFlickKeyboardView({
+          inputMode: this.inputMode,
+          isLandscape: this.isLandscape
+        })
+      } else if (this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
+        FlickKeyboardView({
+          inputMode: this.inputMode,
+          isLandscape: this.isLandscape
+        })
+      } else {
+        KeyboardView({
+          inputMode: this.inputMode,
+          isLandscape: this.isLandscape
+        })
+      }
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .scale(this.oneHandedMode ?
+      { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
+      { x: 1, y: 1 })
   }
 
   build() {
@@ -166,6 +200,16 @@ struct KeyboardPage {
           EmojiView()
         } else if (this.keyboardSubMode === 'settings') {
           SettingsBar()
+        } else if (this.keyboardSubMode === 'layoutAdjust') {
+          // 他の設定画面と違ってキーボード全体を占有しない -- 帯だけを
+          // 上に出し、実物のキーボードをそのまま下に残して見ながら
+          // 調整できるようにする (LayoutAdjustBar のコメント参照)。
+          Column() {
+            LayoutAdjustBar()
+            this.KeyboardArea()
+          }
+          .width('100%')
+          .height('100%')
         } else {
           // 辞書の登録欄。キーボードは下にそのまま残す (全面を占有する設定
           // パネル内では打つキーが無く入力できないため、ここに出している)。
@@ -343,31 +387,7 @@ struct KeyboardPage {
           // applyKeyboardWidthsForVp system: each inner view still measures and
           // lays out its keys at full intended size, then this wrapper visually
           // (and for hit-testing) scales the whole thing down toward one side.
-          Column() {
-            if (this.keyboardSubMode === 'numeric') {
-              NumericPadView()
-            } else if (this.alphabetKeyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
-              AlphabetFlickKeyboardView({
-                inputMode: this.inputMode,
-                isLandscape: this.isLandscape
-              })
-            } else if (this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
-              FlickKeyboardView({
-                inputMode: this.inputMode,
-                isLandscape: this.isLandscape
-              })
-            } else {
-              KeyboardView({
-                inputMode: this.inputMode,
-                isLandscape: this.isLandscape
-              })
-            }
-          }
-          .width('100%')
-          .layoutWeight(1)
-          .scale(this.oneHandedMode ?
-            { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
-            { x: 1, y: 1 })
+          this.KeyboardArea()
         }
       }
       .width('100%')

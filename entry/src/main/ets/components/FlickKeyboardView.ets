@@ -54,6 +54,10 @@ export struct FlickKeyboardView {
   @Prop inputMode: string = InputMode.HIRAGANA;
   @Prop isLandscape: boolean = false;
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
+  // 左右端(取消/◄/記号…と ►/スペース…)の特殊キー1列の幅。中央3列の
+  // flickKeyWidthVp とは独立 -- 設定 → レイアウト調整の比率スライダーで
+  // 両者の比を変えられる (既定は同じ幅で今までどおり)。
+  @StorageLink('flickSideKeyWidthVp') flickSideKeyWidthVp: number = 72;
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
@@ -271,7 +275,7 @@ export struct FlickKeyboardView {
       Text('取消')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
@@ -282,7 +286,7 @@ export struct FlickKeyboardView {
       Text('◄')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
@@ -296,7 +300,7 @@ export struct FlickKeyboardView {
       Text('記号')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(13).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         // Long-press to reveal the 左手モード hint, then flick up to switch.
@@ -334,7 +338,7 @@ export struct FlickKeyboardView {
         : (this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ'))
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(12).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
@@ -351,7 +355,7 @@ export struct FlickKeyboardView {
       Text('⌫')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
@@ -366,7 +370,7 @@ export struct FlickKeyboardView {
       Text('►')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onTouch((event: TouchEvent) => {
@@ -381,7 +385,7 @@ export struct FlickKeyboardView {
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
         .textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         // Long-press the space key to reveal the 右手モード hint, then flick up
@@ -424,7 +428,7 @@ export struct FlickKeyboardView {
       Text('→')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp).height('100%')
+        .width(this.flickSideKeyWidthVp).height('100%')
         .backgroundColor(kbTheme(this.isDark).accent).fontColor(kbTheme(this.isDark).onAccent)
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {

@@ -106,15 +106,24 @@ export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boo
   // instead of space giving up the room). Same space:5 vs assumed-2vp
   // mismatch as kwVp above.
   const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 25), 60);
-  // Flick keys: 5 columns + 4 gaps × 4vp (FlickKeyboardView's Row({space:4}))
-  // + 0vp H-padding (its Column has no left/right padding) = 16vp overhead --
-  // same total as the old "4 gaps × 3vp + 4vp H-padding" comment assumed, by
-  // coincidence, so this one was never actually broken.
-  const flickKwVp = Math.max(Math.floor((screenVp - 16) / 5), 60);
+  // Flick keys: 5 columns (左特殊・中央3列・右特殊) + 4 gaps × 4vp
+  // (FlickKeyboardView's Row({space:4})) + 0vp H-padding (its Column has no
+  // left/right padding) = 16vp overhead -- same total as the old "4 gaps ×
+  // 3vp + 4vp H-padding" comment assumed, by coincidence, so this one was
+  // never actually broken.
+  //
+  // flickSideColumnRatio (設定 → レイアウト調整) は「左右の特殊キー1列の
+  // 幅 / 中央の かなキー1列の幅」。既定 1.0 で今までどおり5列均等になる。
+  // available = 2*side + 3*mid, side = ratio*mid という連立から解く。
+  const available = screenVp - 16;
+  const sideRatio = Math.min(2.0, Math.max(0.4, AppStorage.get<number>('flickSideColumnRatio') ?? 1.0));
+  const flickKwVp = Math.max(Math.floor(available / (3 + 2 * sideRatio)), 40);
+  const flickSideKwVp = Math.max(Math.floor(flickKwVp * sideRatio), 32);
   AppStorage.setOrCreate('keyWidthVp', kwVp);
   AppStorage.setOrCreate('specialKeyWidthVp', skwVp);
   AppStorage.setOrCreate('spaceKeyWidthVp', spaceVp);
   AppStorage.setOrCreate('flickKeyWidthVp', flickKwVp);
+  AppStorage.setOrCreate('flickSideKeyWidthVp', flickSideKwVp);
   // Symbol panel: 8 columns + 7 gaps × 4vp (SymbolView's Row({space:4})) +
   // 8vp H-padding (left:4 + right:4) = 36vp overhead -- was assuming 2vp
   // gaps + 6vp padding (20vp) here too, same class of bug as kwVp above.
@@ -549,6 +558,14 @@ export class InputHandler {
         this.hapticEnabled = s.hapticEnabled;
         this.applyConversionEngine(s.conversionEngine);
         this.applyThemeMode(s.themeMode);
+        // computeKeyHeight/applyKeyboardWidthsForVp は AppStorage の
+        // keyboardHeightScale/flickSideColumnRatio を読むが、起動直後の
+        // initPanel はこの読み込みより先に (既定値のまま) 一度走っている
+        // ことがある。ここで値を入れたうえで resizePanel を呼び直し、
+        // 保存済みの調整を確実に反映させる。
+        AppStorage.setOrCreate('keyboardHeightScale', s.keyboardHeightScale);
+        AppStorage.setOrCreate('flickSideColumnRatio', s.flickSideColumnRatio);
+        this.kbCtrlRef?.resizePanel();
       });
   }
 
@@ -860,6 +877,54 @@ export class InputHandler {
     // 入力欄側をOFFにした瞬間、出したままのプレビューを消す。
     if (!inField) { this.cancelPreviewText(); }
     this.publishPreviewMode();
+  }
+
+  // レイアウト調整モード (設定 → レイアウト調整) からの参照。パネルの
+  // 実サイズ変更 (panel.resize) はこのクラスからはできず、それを持っている
+  // KeyboardController (拡張本体) へ委譲する必要があるので、生成時に
+  // 向こうから自分を渡してもらう (KeyboardController.onCreate 参照)。
+  private kbCtrlRef: KeyboardController | undefined = undefined;
+
+  setKeyboardControllerRef(ctrl: KeyboardController): void {
+    this.kbCtrlRef = ctrl;
+  }
+
+  // 縦の長さスライダー。ドラッグ中に毎回呼ばれる想定なので、保存は別
+  // (saveKeyboardHeightScale) にして、ここは AppStorage の書き換えと
+  // パネルの実リサイズだけをその場でやる。
+  applyKeyboardHeightScaleLive(scale: number): void {
+    AppStorage.setOrCreate('keyboardHeightScale', scale);
+    this.kbCtrlRef?.resizePanel();
+  }
+
+  saveKeyboardHeightScale(scale: number): void {
+    this.applyKeyboardHeightScaleLive(scale);
+    if (this.imeContext) {
+      SettingsStore.saveKeyboardHeightScale(this.imeContext, scale);
+    }
+  }
+
+  // 中央3列 : 左右特殊キー1列 の比率スライダー。パネル自体のサイズは
+  // 変わらないので、幅の再計算 (applyKeyboardWidthsForVp) だけで足りる。
+  applyFlickSideRatioLive(ratio: number): void {
+    AppStorage.setOrCreate('flickSideColumnRatio', ratio);
+    const vp = AppStorage.get<number>('keyboardContentVp') ?? 0;
+    if (vp <= 0) { return; }
+    const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
+    applyKeyboardWidthsForVp(vp, isTabletClass);
+  }
+
+  saveFlickSideRatio(ratio: number): void {
+    this.applyFlickSideRatioLive(ratio);
+    if (this.imeContext) {
+      SettingsStore.saveFlickSideRatio(this.imeContext, ratio);
+    }
+  }
+
+  // 設定画面のリセットボタン。両方とも既定 (1.0 = 今までどおり) へ戻す。
+  resetLayoutAdjust(): void {
+    this.saveKeyboardHeightScale(1.0);
+    this.saveFlickSideRatio(1.0);
   }
 
   // 語彙パックの明示的な ON/OFF (利用者が自分で触ったものだけ)。
@@ -3240,6 +3305,7 @@ export class KeyboardController {
     // initPanel/setUiContent hasn't run yet, so there is no UI instance to
     // register into (see components/JpFont.ets).
     this.inputHandle.setContext(this.context);
+    this.inputHandle.setKeyboardControllerRef(this);
     this.applyColorMode();
     this.initPanel();
     this.registerListeners();
@@ -3446,10 +3512,15 @@ export class KeyboardController {
     // shrinking rows down — portrait: clamp 25–60%; landscape: allow up to 80%.
     const contentPx = Math.ceil((isLandscape ? 420 : 360) * density);
     const maxFrac = isLandscape ? 0.80 : 0.60;
-    return Math.max(
+    const base = Math.max(
       Math.floor(dis.height * 0.25),
       Math.min(contentPx, Math.floor(dis.height * maxFrac))
     );
+    // 設定 → レイアウト調整 の縦の長さスライダー。既定 1.0 で今までどおり。
+    // ±30% にクランプ -- それ以上は行の当たり判定が崩れる/画面の大半を
+    // 覆ってしまう。
+    const scale = Math.min(1.3, Math.max(0.7, AppStorage.get<number>('keyboardHeightScale') ?? 1.0));
+    return Math.floor(base * scale);
   }
 
   private initPanel(): void {
@@ -3482,7 +3553,10 @@ export class KeyboardController {
     }
   }
 
-  private resizePanel(): void {
+  // 設定 → レイアウト調整 のスライダーからライブに呼ばれるので公開している
+  // (InputHandler.applyKeyboardHeightScaleLive 参照)。パネルの実サイズは
+  // panel.resize() でしか変えられず、それを持っているのはこのクラスだけ。
+  resizePanel(): void {
     try {
       const dis = display.getDefaultDisplaySync();
       const isLandscape = dis.width > dis.height;

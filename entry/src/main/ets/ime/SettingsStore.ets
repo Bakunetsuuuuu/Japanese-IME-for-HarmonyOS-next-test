@@ -64,6 +64,12 @@ export interface KeyboardSettings {
   // (地名など) を足しても既存利用者には一生届かない。ここに無いパックは
   // .pack の default: ヘッダに従う (KanaKanjiConverter.resolveEnabledPacks)。
   vocabPackOverrides: Record<string, boolean>;
+  // 設定 → レイアウト調整。どちらも既定 1.0 で今までどおりの見た目になる。
+  // keyboardHeightScale: キーボード全体の縦の長さの倍率 (0.7〜1.3)。
+  // flickSideColumnRatio: フリック5列の「左右特殊キー1列 / 中央かなキー1列」
+  // の幅比 (0.4〜2.0)。QWERTY側の特殊キー幅には影響しない。
+  keyboardHeightScale: number;
+  flickSideColumnRatio: number;
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -79,6 +85,8 @@ const DEFAULTS: KeyboardSettings = {
   composingInPanel: true,
   composingInField: true,
   vocabPackOverrides: {},
+  keyboardHeightScale: 1.0,
+  flickSideColumnRatio: 1.0,
 };
 
 export class SettingsStore {
@@ -106,6 +114,8 @@ export class SettingsStore {
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
       const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
       const inField = await prefs.get('composingInField', DEFAULTS.composingInField);
+      const heightScale = await prefs.get('keyboardHeightScale', DEFAULTS.keyboardHeightScale);
+      const flickRatio = await prefs.get('flickSideColumnRatio', DEFAULTS.flickSideColumnRatio);
       const ovRaw = await prefs.get('vocabPackOverrides', '');
       let packs: Record<string, boolean> = {};
       try {
@@ -135,6 +145,8 @@ export class SettingsStore {
         composingInPanel: inPanel !== false,
         composingInField: inField !== false,
         vocabPackOverrides: packs,
+        keyboardHeightScale: Number(heightScale),
+        flickSideColumnRatio: Number(flickRatio),
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
@@ -151,6 +163,8 @@ export class SettingsStore {
         composingInPanel: DEFAULTS.composingInPanel,
         composingInField: DEFAULTS.composingInField,
         vocabPackOverrides: DEFAULTS.vocabPackOverrides,
+        keyboardHeightScale: DEFAULTS.keyboardHeightScale,
+        flickSideColumnRatio: DEFAULTS.flickSideColumnRatio,
       };
     }
   }
@@ -237,6 +251,22 @@ export class SettingsStore {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('composingInPanel', inPanel);
       await prefs.put('composingInField', inField);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveKeyboardHeightScale(context: common.Context, scale: number): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('keyboardHeightScale', scale);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveFlickSideRatio(context: common.Context, ratio: number): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('flickSideColumnRatio', ratio);
       await prefs.flush();
     } catch (_e) {}
   }

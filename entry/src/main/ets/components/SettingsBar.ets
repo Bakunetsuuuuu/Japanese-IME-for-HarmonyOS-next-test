@@ -526,6 +526,30 @@ export struct SettingsBar {
       .padding({ top: 13, bottom: 13 })
 
       Divider().color(kbTheme(this.isDark).divider)
+      Row() {
+        Column({ space: 2 }) {
+          Text('レイアウト調整')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('キーボードを見ながら縦の長さや幅の比率を調整できます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+      .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'layoutAdjust'); })
+
+      Divider().color(kbTheme(this.isDark).divider)
 
       // 打鍵の手応え。既定はオフ (勝手に振動すると煩わしいため)。
       // オンにした瞬間に一度鳴らして、効きが分かるようにしている。
