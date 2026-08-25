@@ -49,10 +49,21 @@ const FLICK_GRID: FlickKeyDef[][] = [
 // Flick cell corner radius (design tokens: "flick cells 14px").
 const CELL_RADIUS = 14;
 
+// フリック中央3列との幅比調整ハンドル。このぶんドラッグすると比率の
+// 全域 (0.4〜2.0) を動く。
+const RATIO_DRAG_RANGE_VP = 140;
+const RATIO_MIN = 0.4;
+const RATIO_MAX = 2.0;
+
 @Component
 export struct FlickKeyboardView {
   @Prop inputMode: string = InputMode.HIRAGANA;
   @Prop isLandscape: boolean = false;
+  // 設定 → レイアウト調整 → このキーボードを見ながら調整、のときだけ true。
+  // 左右特殊キー列との境界に、幅比を変えるドラッグハンドルを重ねて出す。
+  @Prop adjustMode: boolean = false;
+  @StorageLink('flickSideColumnRatio') sideRatio: number = 1.0;
+  private dragStartRatio: number = 1.0;
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
   // 左右端(取消/◄/記号…と ►/スペース…)の特殊キー1列の幅。中央3列の
   // flickKeyWidthVp とは独立 -- 設定 → レイアウト調整の比率スライダーで
@@ -241,15 +252,46 @@ export struct FlickKeyboardView {
       .padding({ left: 14, right: 14, top: 7, bottom: 7 })
   }
 
+  // 左右特殊キー列と中央3列の境界の、幅比調整ハンドル。行ごとに1本ずつ
+  // 生やして4本を縦に並べる (Column の gap:4 を挟んで並ぶだけなので、
+  // 見た目にはほぼ1本の連続した線に見える)。left/right どちらの境界かで
+  // ドラッグの向きと符号を変える -- 掴んだ側の列を、引っ張った方向へ
+  // 実際に伸び縮みさせる感覚に合わせてある。
+  @Builder ColumnHandle(side: 'left' | 'right') {
+    Row() {
+      Row().width(3).height('60%').borderRadius(1.5).backgroundColor(kbTheme(this.isDark).accent)
+    }
+    .width(14)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .gesture(
+      PanGesture({ direction: PanDirection.Horizontal })
+        .onActionStart(() => {
+          this.dragStartRatio = this.sideRatio;
+        })
+        .onActionUpdate((event: GestureEvent) => {
+          const dir = side === 'left' ? -1 : 1;
+          const delta = dir * event.offsetX / RATIO_DRAG_RANGE_VP * (RATIO_MAX - RATIO_MIN);
+          const next = Math.min(RATIO_MAX, Math.max(RATIO_MIN, this.dragStartRatio + delta));
+          this.h().applyFlickSideRatioLive(next);
+        })
+        .onActionEnd(() => {
+          this.h().saveFlickSideRatio(this.sideRatio);
+        })
+    )
+  }
+
   build() {
     Stack() {
       Column({ space: 4 }) {
         ForEach([0, 1, 2, 3], (rowIdx: number) => {
           Row({ space: 4 }) {
             this.LeftKey(rowIdx)
+            if (this.adjustMode) { this.ColumnHandle('left') }
             ForEach([0, 1, 2], (colIdx: number) => {
               this.KeyCell(rowIdx, colIdx, FLICK_GRID[rowIdx][colIdx])
             }, (colIdx: number) => String(colIdx))
+            if (this.adjustMode) { this.ColumnHandle('right') }
             this.RightKey(rowIdx)
           }
           .width('100%')

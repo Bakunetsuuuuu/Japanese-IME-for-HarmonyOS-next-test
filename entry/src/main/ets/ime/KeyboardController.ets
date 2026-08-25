@@ -889,16 +889,29 @@ export class InputHandler {
     this.kbCtrlRef = ctrl;
   }
 
-  // 縦の長さスライダー。ドラッグ中に毎回呼ばれる想定なので、保存は別
-  // (saveKeyboardHeightScale) にして、ここは AppStorage の書き換えと
-  // パネルの実リサイズだけをその場でやる。
+  // 縦の長さの調整ハンドル (LayoutAdjustBar) からドラッグ中に毎フレーム
+  // 呼ばれる想定。保存は別 (saveKeyboardHeightScale) にして、ここは
+  // AppStorage の書き換えとパネルの実リサイズだけをその場でやる。
+  // panel.resize() はネイティブ側の実処理なので、指を動かした分だけ
+  // 律儀に毎回呼ぶと連打になりかねない -- 簡易スロットリング(16ms、
+  // だいたい60fps相当)を挟んでおく。AppStorage の書き換え自体は
+  // スロットリングしない (数字表示や下のフリックキーの追従は毎回反映)。
+  private static readonly HEIGHT_RESIZE_THROTTLE_MS = 16;
+  private lastHeightResizeAt: number = 0;
   applyKeyboardHeightScaleLive(scale: number): void {
     AppStorage.setOrCreate('keyboardHeightScale', scale);
+    const now = Date.now();
+    if (now - this.lastHeightResizeAt < InputHandler.HEIGHT_RESIZE_THROTTLE_MS) { return; }
+    this.lastHeightResizeAt = now;
     this.kbCtrlRef?.resizePanel();
   }
 
   saveKeyboardHeightScale(scale: number): void {
-    this.applyKeyboardHeightScaleLive(scale);
+    // ドラッグを離した瞬間の確定値。直前のドラッグ中のリサイズがスロットル
+    // で間引かれていた可能性があるので、ここは間引かず確実に反映する。
+    AppStorage.setOrCreate('keyboardHeightScale', scale);
+    this.lastHeightResizeAt = Date.now();
+    this.kbCtrlRef?.resizePanel();
     if (this.imeContext) {
       SettingsStore.saveKeyboardHeightScale(this.imeContext, scale);
     }

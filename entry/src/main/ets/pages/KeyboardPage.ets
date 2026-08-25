@@ -172,7 +172,8 @@ struct KeyboardPage {
       } else if (this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
         FlickKeyboardView({
           inputMode: this.inputMode,
-          isLandscape: this.isLandscape
+          isLandscape: this.isLandscape,
+          adjustMode: this.keyboardSubMode === 'layoutAdjust'
         })
       } else {
         KeyboardView({
