@@ -18,6 +18,7 @@ const HEIGHT_DRAG_RANGE_VP = 220;
 
 @Component
 export struct LayoutAdjustBar {
+  @Prop isLandscape: boolean = false;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('keyboardHeightScale') heightScale: number = 1.0;
 
@@ -29,11 +30,15 @@ export struct LayoutAdjustBar {
 
   build() {
     Row() {
-      // 縦の長さの掴みハンドル。上へ引くと長く、下へ押すと短く。
+      // 縦の長さの掴みハンドル。上へ引くと長く、下へ押すと短く。ドラッグ用の
+      // 当たり判定なので、他社IMEの「掴む」系ハンドルに合わせて指1本分
+      // (44vp前後) は確保する -- 最初の圧縮で28vpまで縮めたら今度は
+      // 小さすぎて掴みにくいという指摘を受けての調整。
       Row() {
-        Row().width(3).height(16).borderRadius(1.5).backgroundColor(kbTheme(this.isDark).onAccent)
+        Row().width(4).height(this.isLandscape ? 14 : 22).borderRadius(2)
+          .backgroundColor(kbTheme(this.isDark).onAccent)
       }
-      .width(34)
+      .width(44)
       .height('100%')
       .justifyContent(FlexAlign.Center)
       .backgroundColor(kbTheme(this.isDark).accent)
@@ -54,28 +59,31 @@ export struct LayoutAdjustBar {
 
       Text(`縦 ${Math.round(this.heightScale * 100)}%`)
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(11)
+        .fontSize(this.isLandscape ? 11 : 13)
         .fontColor(kbTheme(this.isDark).textSecondary)
-        .padding({ left: 8 })
+        .padding({ left: 10 })
         .layoutWeight(1)
 
       Text('リセット')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12)
+        .fontSize(this.isLandscape ? 11 : 13)
         .fontColor(kbTheme(this.isDark).textSecondary)
-        .padding({ left: 8, right: 8 })
+        .padding({ left: 10, right: 10, top: 8, bottom: 8 })
         .onClick(() => { this.h().resetLayoutAdjust(); })
 
       Text('完了')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12)
+        .fontSize(this.isLandscape ? 11 : 13)
         .fontWeight(FontWeight.Medium)
         .fontColor(kbTheme(this.isDark).accent)
-        .padding({ left: 8, right: 10 })
+        .padding({ left: 10, right: 12, top: 8, bottom: 8 })
         .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'settings'); })
     }
     .width('100%')
-    .height(28)
+    // かな行(28vp/14vp)より一回り大きく、候補行(48vp/22vp)よりは低く --
+    // ここは表示専用の行ではなくドラッグハンドルなので、既存のどの行にも
+    // 単純には揃えず、掴みやすさを優先した専用の高さにしてある。
+    .height(this.isLandscape ? 30 : 44)
     .alignItems(VerticalAlign.Center)
     .backgroundColor(kbTheme(this.isDark).panelBg)
     .border({ width: { bottom: 1 }, color: kbTheme(this.isDark).divider })

@@ -209,7 +209,7 @@ struct KeyboardPage {
           // 上に出し、実物のキーボードをそのまま下に残して見ながら
           // 調整できるようにする (LayoutAdjustBar のコメント参照)。
           Column() {
-            LayoutAdjustBar()
+            LayoutAdjustBar({ isLandscape: this.isLandscape })
             this.KeyboardArea()
           }
           .width('100%')
