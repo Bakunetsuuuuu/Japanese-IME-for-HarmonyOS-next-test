@@ -49,7 +49,14 @@ export const LIGHT_THEME: KbTheme = {
 };
 
 export const DARK_THEME: KbTheme = {
-  panelBg: '#1C1C1E',
+  // 実機のスクリーンショットで「キーボードの外側」(同じ画面のChromeの
+  // 検索欄まわり) と比べたところ、以前の #1C1C1E (ダークグレー) より
+  // ずっと黒に近かった。他社IME/システムのダークテーマがOLED向けの
+  // ほぼ純黒 (Material Designの「elevation」的に、パネル自体は黒く
+  // 沈めてキー面(keyBg等)だけ一段明るく浮かせる) 方向であることに合わせ、
+  // panelBg だけ黒に寄せた。keyBg/cardBg 等はパネルより明るい面として
+  // 元々機能していたので、これらは据え置きでコントラストが自然に強まる。
+  panelBg: '#020202',
   keyBg: '#2C2C2E',
   candidateBg: '#2C2C2E',
   specialBg: '#3A3A3C',
