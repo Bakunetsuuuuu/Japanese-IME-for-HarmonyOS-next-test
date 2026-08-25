@@ -55,7 +55,7 @@ shunti Japanese IME（以下「本アプリ」）は、開発者 shuntilettuce �
 | dict.json, global_dict.json | 常用漢字（文部科学省告示）／Unicode Unihan データベース／独自収録の語彙・読み | パブリックドメイン／自作 |
 | mozc_dict.json, mozc_costs.json, mozc_matrix.json | mozc（Google）の変換辞書・連接コストデータ／JMdict・SudachiDictによる漢字表記の補強 | BSD-3-Clause／CC BY-SA 4.0／Apache License 2.0 |
 
-詳細な出典・ライセンス全文は [`DATA_SOURCES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/main/DATA_SOURCES.md) および [`THIRD_PARTY_NOTICES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/main/THIRD_PARTY_NOTICES.md) を参照してください。
+詳細な出典・ライセンス全文は [`DATA_SOURCES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/claude/harmonyos-japanese-ime-app-3OaxO/DATA_SOURCES.md) および [`THIRD_PARTY_NOTICES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/claude/harmonyos-japanese-ime-app-3OaxO/THIRD_PARTY_NOTICES.md) を参照してください。
 
 ---
 
@@ -83,4 +83,4 @@ shunti Japanese IME（以下「本アプリ」）は、開発者 shuntilettuce �
 
 ---
 
-*このページは [shunti Japanese IME GitHub リポジトリ](https://github.com/shuntilettuce/japanese-ime-for-harmonyos-next) により管理されています。*
+*このページは [shunti Japanese IME GitHub リポジトリ](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next) により管理されています。*

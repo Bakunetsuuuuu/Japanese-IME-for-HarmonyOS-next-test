@@ -55,7 +55,7 @@ The App includes the following conversion dictionary data. These are **read-only
 | dict.json, global_dict.json | Jōyō kanji (MEXT notification) / Unicode Unihan database / original vocabulary & readings | Public domain / original |
 | mozc_dict.json, mozc_costs.json, mozc_matrix.json | mozc (Google) conversion dictionary & connection-cost data, augmented with kanji-spelling candidates from JMdict and SudachiDict | BSD-3-Clause / CC BY-SA 4.0 / Apache License 2.0 |
 
-See [`DATA_SOURCES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/main/DATA_SOURCES.md) and [`THIRD_PARTY_NOTICES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/main/THIRD_PARTY_NOTICES.md) for full attribution and license text.
+See [`DATA_SOURCES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/claude/harmonyos-japanese-ime-app-3OaxO/DATA_SOURCES.md) and [`THIRD_PARTY_NOTICES.md`](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/blob/claude/harmonyos-japanese-ime-app-3OaxO/THIRD_PARTY_NOTICES.md) for full attribution and license text.
 
 ---
 
@@ -83,4 +83,4 @@ For privacy-related questions, please contact the email address listed in the de
 
 ---
 
-*This page is maintained in the [shunti Japanese IME GitHub repository](https://github.com/shuntilettuce/japanese-ime-for-harmonyos-next).*
+*This page is maintained in the [shunti Japanese IME GitHub repository](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next).*
