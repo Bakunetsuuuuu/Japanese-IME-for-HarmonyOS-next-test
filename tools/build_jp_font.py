@@ -1,53 +1,47 @@
 #!/usr/bin/env python3
-"""同梱する日本語フォント (rawfile/font/NotoSansJP-Regular.ttf) を作り直す。
+"""同梱する日本語フォント (rawfile/font/*.ttf) を作り直す。
 
-Noto Sans JP の可変フォントを wght=400 で切り出し、このアプリが実際に描く文字
-だけに絞って同梱する。
+元の (可変または静的な) フォントを wght=400 の静的フォントとして切り出し、
+このアプリが実際に描く文字だけに絞って同梱する。ソースフォント自身の
+name テーブルからファミリ名を読むので、フォント自体の差し替えにも
+そのまま使える (現在の同梱フォント → 新フォント の乗り換え時は、切り出し後に
+JpFont.ets の JP_FONT_FAMILY / registerFont の呼び出し元と、rawfile 側の
+ファイル名参照も合わせて直すこと)。
 
-  元データ: https://github.com/google/fonts
-            ofl/notosansjp/NotoSansJP[wght].ttf   (SIL OFL 1.1)
+  現在のフォント: BIZ UDPGothic (Morisawa, SIL OFL 1.1)
+    元データ: https://github.com/google/fonts
+              ofl/bizudpgothic/BIZUDPGothic-Regular.ttf
+    2026-08-25、Noto Sans JP から乗り換え (「若干ダサさがある」との指摘で
+    丸み・ポップ系へ)。乗り換え時の文字カバレッジ確認: このアプリが実際に
+    使う文字 4,088 字中、BIZ UDPGothic に無いもの 106 字 (☀⛄✅ 等の記号
+    パネル用ピクトグラム系が大半、CJK は佫崈朢鿿𠮷 の5字のみ)。ピクトグラム
+    系はシステムフォントへ落ちても字形が漢字のように国・地域で変わる文字
+    ではないので実害は小さいと判断し許容した。
 
-■ なぜ作り直すか
+  过去のフォント: Noto Sans JP (Google, SIL OFL 1.1)
+    元データ: ofl/notosansjp/NotoSansJP[wght].ttf (可変フォント)
 
-同梱していたファイルは Noto Sans JP を絞ったものだったが、絞りすぎていて
-アプリが自分で描く文字まで落ちていた:
+■ なぜ絞るか
 
-  ⏎ ⇧ ← → ↑ ↓        キーボードのキーラベルそのもの
-  ① 〜 ⑳ ○ △ ★ ♪ ≦   記号パネルの ① / ◇ タブの中身そのもの
-  ｱ ｲ ｶ ｸ …           半角カタカナ ([全] タブ)
-  ㍻ ㍼ ㍽ ㍾ ㋿        元号合字
-  α β Γ Δ …          ギリシャ文字
-  𠮷 𠮟 𩸽 𥝱 兔 卄     JIS X 0213 第3・第4水準 (𠮷野, 𩸽 など実用のもの含む)
-  神 福 祥 海 梅 …      互換漢字 (人名の旧字形。通常の U+795E 等とは別コード)
+このアプリが自分で描く文字 (UI文字列・記号パネル・辞書の表記) だけに
+絞らないと、必要な文字が同梱フォントから漏れてシステムフォントに落ちる。
+記号や矢印は字形が変わるだけだが、漢字はシステムフォント = 地域によっては
+簡体字の字形になるので、日本語フォントを同梱している目的そのものが崩れる。
+逆に絞りすぎても同じ穴が開くので、「今の同梱フォントの収録字」と「アプリが
+実際に描く字」の和集合を必ずカバーするようにしてある (乗り換え時は前者が
+別フォントの収録字になるので、上のカバレッジ確認のような目視チェックが要る)。
 
-これらはシステムフォントに落ちていた。記号や矢印は字形が変わるだけだが、
-漢字はシステムフォント = 中国語字形になるので、このフォントを同梱している
-目的そのものが崩れる。
-
-■ 「日本語の文字が2,700字も足りない」は誤りだった
-
-最初この不足を数えたとき 2,777 字出てきたが、その大半は辞書側のゴミだった。
-Unihan の kJapaneseOn (全CJK文字に付いている音読み) を読みとして取り込んだ跡で、
-中国語専用字が日本語の音読みで引けてしまっていた ──「ほう」に 31件、
-「げち」に 30件、「ない」に 12件。tools/clean_nonjapanese.py で除去済み。
-除去後に本当に足りなかったのは上記の 454 字で、Noto Sans JP 本体は
-日本語をきちんと網羅している。
-
-■ サイズ
-
-対象文字は「現在の同梱フォントの収録字」∪「アプリが描く字」。前者を必ず含める
-ので、今出ている字が1つでも消えることはない。絵文字はシステムの絵文字フォントが
-描くので入れない (入れると数MB増えて、しかも白黒になる)。
-
-  4,003,068 -> 4,115,736 バイト (+112,668, +2.8%) で +454 字
-
-縦書き用の vmtx/vhea は横書きしか描かないので落とす。
+絵文字はシステムの絵文字フォントが描くので入れない (入れると数MB増えて、
+しかも大抵は白黒になる)。縦書き用の vmtx/vhea は横書きしか描かないので
+落とす。
 
 Usage:
-  # 元の可変フォントを取ってくる (一度だけ)
-  curl -sSLo /tmp/NotoSansJP.ttf \
-    'https://raw.githubusercontent.com/google/fonts/main/ofl/notosansjp/NotoSansJP%5Bwght%5D.ttf'
-  python3 tools/build_jp_font.py /tmp/NotoSansJP.ttf
+  # 元のフォントを取ってくる (一度だけ)
+  curl -sSLo /tmp/src.ttf '<Google FontsのRAWリンク>'
+  python3 tools/build_jp_font.py /tmp/src.ttf rawfile/font/<出力ファイル名>.ttf
+
+  # 今と同じフォントを再ビルドしたいだけなら (通常の再ビルド):
+  python3 tools/build_jp_font.py /tmp/src.ttf
 """
 import glob
 import json
@@ -59,12 +53,8 @@ from fontTools.varLib import instancer
 from fontTools import subset
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-BUNDLED = os.path.join(ROOT, 'entry/src/main/resources/rawfile/font/NotoSansJP-Regular.ttf')
 RAWFILE = os.path.join(ROOT, 'entry/src/main/resources/rawfile')
-
-FAMILY = 'Noto Sans JP'
-SUBFAMILY = 'Regular'
-POSTSCRIPT = 'NotoSansJP-Regular'
+DEFAULT_BUNDLED = os.path.join(RAWFILE, 'font/BIZUDPGothic-Regular.ttf')
 
 # 横書きしか描かないので不要。
 DROP_TABLES = ['vmtx', 'vhea']
@@ -102,60 +92,57 @@ def app_charset() -> set:
     return {c for c in out if not is_emoji(c) and c > 0x20}
 
 
-def fix_names(f: TTFont) -> None:
-    """可変フォントの既定インスタンス (Thin) の名残を消す。
+def read_names(f: TTFont):
+    """ソースフォント自身の name テーブルから family/subfamily/postscript を読む。"""
+    names = {r.nameID: str(r) for r in f['name'].names if r.platformID == 3}
+    family = names.get(1, 'Unknown')
+    subfamily = names.get(2, 'Regular')
+    postscript = names.get(6, family.replace(' ', '') + '-' + subfamily)
+    return family, subfamily, postscript
 
-    字形と OS/2 は Regular なのに name だけ "Noto Sans JP Thin" というファイルを
-    同梱していた。registerFont は呼び出し側のエイリアスで引くので実害は出て
-    いなかったが、内部名で引く経路に当たった瞬間に「登録したのに効かない」に化ける。
-    """
+
+def fix_names(f: TTFont, family: str, subfamily: str, postscript: str) -> None:
+    """可変フォントの既定インスタンス名の残骸や、機種依存の重複レコードを消す。"""
     name = f['name']
     for rec in list(name.names):
         if rec.nameID == 1:
-            rec.string = FAMILY
+            rec.string = family
         elif rec.nameID == 2:
-            rec.string = SUBFAMILY
+            rec.string = subfamily
         elif rec.nameID == 3:
-            rec.string = f'{FAMILY}; {POSTSCRIPT}'
+            rec.string = f'{family}; {postscript}'
         elif rec.nameID == 4:
-            rec.string = FAMILY
+            rec.string = family
         elif rec.nameID == 6:
-            rec.string = POSTSCRIPT
+            rec.string = postscript
     name.names = [r for r in name.names if r.nameID not in (16, 17, 25)]
 
 
-def verify(old_path: str, new_path: str) -> int:
-    """今出ている字が1字も消えず、字形も1点も動いていないことを確認する。"""
-    a, b = TTFont(old_path), TTFont(new_path)
-    ca, cb = a.getBestCmap(), b.getBestCmap()
-    ga, gb = a['glyf'], b['glyf']
+def report_coverage(target: set, new_cmap: set) -> None:
+    """target のうち新フォントに無い文字を一覧する (フォント乗り換え時の目視確認用)。
+
+    無くても subset 自体は失敗しない (fontTools が黙って落とすだけ) ので、
+    ここで明示的に出さないと気付かないまま欠落する。
+    """
+    missing = sorted(target - new_cmap)
+    if not missing:
+        print('  カバレッジ: 不足なし')
+        return
+    print(f'  カバレッジ: 新フォントに無い文字 {len(missing)} 字 (黙ってシステム'
+          f'フォントへ落ちる。CJK漢字が混じっていないか要確認)')
+    print('     ' + ''.join(chr(c) for c in missing[:120]))
+
+
+def verify(new_path: str, family: str, subfamily: str, postscript: str) -> int:
+    b = TTFont(new_path)
     bad = 0
-
-    lost = sorted(set(ca) - set(cb))
-    print(f'  {"OK" if not lost else "NG"} 収録字 {len(ca):,} -> {len(cb):,} '
-          f'(+{len(set(cb) - set(ca)):,}, 消えた字 {len(lost)})')
-    if lost:
-        print('     消えた:', ''.join(chr(c) for c in lost[:60]))
-        bad += 1
-
-    diff = 0
-    for cp in set(ca) & set(cb):
-        pa, pb = ga[ca[cp]], gb[cb[cp]]
-        if pa.numberOfContours <= 0 or pb.numberOfContours <= 0:
-            continue
-        if list(pa.getCoordinates(ga)[0]) != list(pb.getCoordinates(gb)[0]):
-            diff += 1
-    print(f'  {"OK" if not diff else "NG"} 共通グリフの輪郭 '
-          f'{len(set(ca) & set(cb)):,} 字中 相違 {diff}')
-    if diff:
-        bad += 1
 
     w = b['OS/2'].usWeightClass
     print(f'  {"OK" if w == 400 else "NG"} usWeightClass {w}')
     bad += (w != 400)
 
     names = {r.nameID: str(r) for r in b['name'].names}
-    for nid, want in ((1, FAMILY), (2, SUBFAMILY), (6, POSTSCRIPT)):
+    for nid, want in ((1, family), (2, subfamily), (6, postscript)):
         ok = names.get(nid) == want
         print(f'  {"OK" if ok else "NG"} name {nid} = {names.get(nid)}')
         bad += (not ok)
@@ -176,13 +163,19 @@ def main() -> None:
         print(__doc__)
         sys.exit(2)
     src = sys.argv[1]
-    tmp_static = BUNDLED + '.static.tmp'
-    tmp_out = BUNDLED + '.tmp'
-    charfile = BUNDLED + '.chars.tmp'
+    bundled = os.path.join(ROOT, sys.argv[2]) if len(sys.argv) > 2 else DEFAULT_BUNDLED
+    os.makedirs(os.path.dirname(bundled), exist_ok=True)
+
+    tmp_static = bundled + '.static.tmp'
+    tmp_out = bundled + '.tmp'
+    charfile = bundled + '.chars.tmp'
 
     want = app_charset()
-    have = set(TTFont(BUNDLED).getBestCmap()) if os.path.exists(BUNDLED) else set()
-    # 今の同梱フォントの収録字を必ず含める -> 出ている字が消えることはない
+    have = set(TTFont(bundled).getBestCmap()) if os.path.exists(bundled) else set()
+    # 今の同梱フォントの収録字を必ず含める -> 同じフォントの再ビルドなら
+    # 出ている字が1つも消えない。フォント乗り換え直後 (bundled がまだ旧
+    # フォントのまま) は「旧フォントで出ていた字」を足す形になり、新フォント
+    # 側の不足を report_coverage で洗い出せる。
     target = want | have
     print(f'現在の同梱フォント {len(have):,} 字')
     print(f'アプリが描く字 (絵文字除く) {len(want):,} 字')
@@ -191,7 +184,12 @@ def main() -> None:
     with open(charfile, 'w', encoding='utf-8') as f:
         f.write(''.join(chr(c) for c in sorted(target)))
 
-    static = instancer.instantiateVariableFont(TTFont(src), {'wght': 400}, inplace=False)
+    src_font = TTFont(src)
+    if 'fvar' in src_font:
+        static = instancer.instantiateVariableFont(src_font, {'wght': 400}, inplace=False)
+    else:
+        static = src_font
+    family, subfamily, postscript = read_names(static)
     static.save(tmp_static)
 
     subset.main([
@@ -200,22 +198,28 @@ def main() -> None:
         '--no-hinting', '--name-IDs=*', '--legacy-kern', '--notdef-outline',
     ])
     f = TTFont(tmp_out)
-    fix_names(f)
+    fix_names(f, family, subfamily, postscript)
     f.save(tmp_out)
 
-    before = os.path.getsize(BUNDLED)
+    out_font = TTFont(tmp_out)
+    new_cmap = set(out_font.getBestCmap())
+
+    before = os.path.getsize(bundled) if os.path.exists(bundled) else 0
     after = os.path.getsize(tmp_out)
-    print(f'\n{before:,} -> {after:,} バイト ({after - before:+,})')
+    print(f'\n{family} ({subfamily})')
+    print(f'{before:,} -> {after:,} バイト ({after - before:+,})')
     print('検証:')
-    bad = verify(BUNDLED, tmp_out)
+    bad = verify(tmp_out, family, subfamily, postscript)
+    report_coverage(target, new_cmap)
     for p in (tmp_static, charfile):
-        os.remove(p)
+        if os.path.exists(p):
+            os.remove(p)
     if bad:
         os.remove(tmp_out)
         print(f'\n{bad} 件の不一致。出力を破棄した。')
         sys.exit(1)
-    os.replace(tmp_out, BUNDLED)
-    print('\nOK')
+    os.replace(tmp_out, bundled)
+    print(f'\nOK -> {os.path.relpath(bundled, ROOT)}')
 
 
 if __name__ == '__main__':
