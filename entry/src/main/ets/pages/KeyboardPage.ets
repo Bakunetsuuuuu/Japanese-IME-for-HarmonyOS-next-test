@@ -38,6 +38,12 @@ struct KeyboardPage {
   // かな表示の行をキーボード内に出すか (設定。入力欄側が非対応のときの
   // 保険もここに含めて KeyboardController が決める)。
   @StorageLink('showComposingPanel') showComposingPanel: boolean = true;
+  // 「キーボード内表示」をOFFにしたつもりでも、今の入力欄が入力欄側表示
+  // (setPreviewText) に非対応だと保険でキーボード内表示に戻る。設定画面
+  // だけに説明を置いていたら気づかれなかったので、実際に打っている
+  // キーボード側にもバッジで出す (composingInPanelFallback 参照)。
+  @StorageLink('composingInPanel') composingInPanel: boolean = true;
+  @StorageLink('composingInField') composingInField: boolean = true;
   @StorageLink('candidates') candidates: string[] = [];
   @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
@@ -283,6 +289,21 @@ struct KeyboardPage {
                   }
                 }
                 Blank()
+                // 「キーボード内表示」をOFFにしたのに、今の入力欄が入力欄側
+                // 表示に非対応で保険により戻っているときの目印。設定画面の
+                // 中にだけ説明があっても、実際に打っている最中には気づかれ
+                // なかった (実際の指摘)。タップで直接その説明へ飛べるように
+                // 「設定」ボタンと同じ動きにしてある。
+                if (!this.composingInPanel && this.composingInField && !this.previewInField) {
+                  Text('ⓘ 保険で表示中')
+                    .fontFamily(JP_FONT_FAMILY)
+                    .fontSize(this.isLandscape ? 9 : 11)
+                    .fontColor(kbTheme(this.isDark).accent)
+                    .padding({ right: 8 })
+                    .onClick(() => {
+                      AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                    })
+                }
                 Text('設定')
                   .fontFamily(JP_FONT_FAMILY)
                   .fontSize(this.isLandscape ? 10 : 13)
