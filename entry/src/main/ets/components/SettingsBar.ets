@@ -526,30 +526,6 @@ export struct SettingsBar {
       .padding({ top: 13, bottom: 13 })
 
       Divider().color(kbTheme(this.isDark).divider)
-      Row() {
-        Column({ space: 2 }) {
-          Text('レイアウト調整')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .width('100%')
-          Text('キーボードを見ながら縦の長さや幅の比率を調整できます')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .width('100%')
-        }
-        .layoutWeight(1)
-        Text('›')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: 13 })
-      .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'layoutAdjust'); })
-
-      Divider().color(kbTheme(this.isDark).divider)
 
       // 打鍵の手応え。既定はオフ (勝手に振動すると煩わしいため)。
       // オンにした瞬間に一度鳴らして、効きが分かるようにしている。
@@ -608,54 +584,6 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 13, bottom: 13 })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      Row() {
-        Text('片手モード')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.oneHandedMode })
-          .width(44)
-          .height(26)
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setOneHandedMode(isOn, this.oneHandedSide);
-          })
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: this.oneHandedMode ? 8 : 13 })
-
-      if (this.oneHandedMode) {
-        Row({ space: 8 }) {
-          Text('左寄せ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-            .fontColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.oneHandedSide === 'left' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'left'); })
-
-          Text('右寄せ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-            .fontColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.oneHandedSide === 'right' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'right'); })
-        }
-        .width('100%')
-        .justifyContent(FlexAlign.Center)
-        .padding({ bottom: 14 })
-      }
 
       Divider().color(kbTheme(this.isDark).divider)
 
@@ -735,6 +663,89 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 10, bottom: 13 })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ bottom: 22 })
+
+    // キーボードの見た目・大きさ・位置に関わる調整をまとめた区分。
+    // 「入力」(かな入力レイアウト・変換エンジン等、打鍵の挙動そのもの)とは
+    // 分けてある。レイアウト調整・片手モードはどちらも「文字の変換や
+    // 打鍵の仕方」ではなく「キーボードの形をどう見せるか」の調整なので
+    // ここに移した。
+    this.SectionLabel('ビジュアル調整')
+    Column() {
+      Row() {
+        Column({ space: 2 }) {
+          Text('レイアウト調整')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text('キーボードを見ながら縦の長さや幅の比率を調整できます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+        Text('›')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(15)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+      .onClick(() => { AppStorage.setOrCreate('keyboardSubMode', 'layoutAdjust'); })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Text('片手モード')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.oneHandedMode })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setOneHandedMode(isOn, this.oneHandedSide);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: this.oneHandedMode ? 8 : 13 })
+
+      if (this.oneHandedMode) {
+        Row({ space: 8 }) {
+          Text('左寄せ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+            .fontColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.oneHandedSide === 'left' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'left'); })
+
+          Text('右寄せ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
+            .fontColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.oneHandedSide === 'right' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'right'); })
+        }
+        .width('100%')
+        .justifyContent(FlexAlign.Center)
+        .padding({ bottom: 14 })
+      }
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)

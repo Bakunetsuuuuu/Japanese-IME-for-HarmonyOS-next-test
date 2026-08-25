@@ -326,6 +326,11 @@ export struct FlickKeyboardView {
       .width('100%')
       .height('100%')
       .padding({ bottom: 8, top: 4 })
+      // レイアウト調整中はキー自体を無効化する (文字が打ててしまうと
+      // 誤操作のもと)。境界ハンドルはこの Column の外の兄弟要素なので
+      // ここで無効化しても影響しない -- ドラッグは adjustMode 中こそ
+      // 使いたい操作なので、キーだけを選んで止める。
+      .hitTestBehavior(this.adjustMode ? HitTestMode.None : HitTestMode.Default)
 
       // 行の幅には一切影響しない絶対位置オーバーレイ。全4行の高さぶんを
       // 1本の縦線として重ねる (行ごとに4本出すより「1本の境界線」に見える)。

@@ -34,16 +34,36 @@ struct KeyboardPage {
   @StorageLink('pendingRomaji') pendingRomaji: string = '';
   // 入力中のかなをホストアプリの入力欄側に出せているか。出せているときは
   // パネル内の composing 表示を畳んでキーボードを低くする。
-  @StorageLink('previewInField') previewInField: boolean = false;
+  @StorageLink('previewInField') @Watch('checkFallbackBanner') previewInField: boolean = false;
   // かな表示の行をキーボード内に出すか (設定。入力欄側が非対応のときの
   // 保険もここに含めて KeyboardController が決める)。
   @StorageLink('showComposingPanel') showComposingPanel: boolean = true;
   // 「キーボード内表示」をOFFにしたつもりでも、今の入力欄が入力欄側表示
   // (setPreviewText) に非対応だと保険でキーボード内表示に戻る。設定画面
   // だけに説明を置いていたら気づかれなかったので、実際に打っている
-  // キーボード側にもバッジで出す (composingInPanelFallback 参照)。
-  @StorageLink('composingInPanel') composingInPanel: boolean = true;
-  @StorageLink('composingInField') composingInField: boolean = true;
+  // キーボード側にもトースト風のバナーで出す (checkFallbackBanner 参照)。
+  // 常時出しっぱなしだと逆に分かりにくい(実際の指摘)ので、切り替わった
+  // 瞬間だけ出して1秒ほどでフェードアウトする。
+  @StorageLink('composingInPanel') @Watch('checkFallbackBanner') composingInPanel: boolean = true;
+  @StorageLink('composingInField') @Watch('checkFallbackBanner') composingInField: boolean = true;
+  @State fallbackBannerOpacity: number = 0;
+  @State fallbackBannerShown: boolean = false;
+  private prevFallbackActive: boolean = false;
+  private fallbackFadeTimer: number = -1;
+
+  private checkFallbackBanner(): void {
+    const active = !this.composingInPanel && this.composingInField && !this.previewInField;
+    if (active && !this.prevFallbackActive) {
+      clearTimeout(this.fallbackFadeTimer);
+      this.fallbackBannerShown = true;
+      this.fallbackBannerOpacity = 1;
+      this.fallbackFadeTimer = setTimeout(() => {
+        animateTo({ duration: 400 }, () => { this.fallbackBannerOpacity = 0; });
+        setTimeout(() => { this.fallbackBannerShown = false; }, 450);
+      }, 1000);
+    }
+    this.prevFallbackActive = active;
+  }
   @StorageLink('candidates') candidates: string[] = [];
   @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
@@ -172,12 +192,21 @@ struct KeyboardPage {
   @Builder KeyboardArea() {
     Column() {
       if (this.keyboardSubMode === 'numeric') {
+        // 'numeric' と 'layoutAdjust' は同じ keyboardSubMode の別値なので
+        // この分岐にいる間は adjustMode になり得ない (無効化は不要)。
         NumericPadView()
       } else if (this.alphabetKeyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) {
+        // レイアウト調整中は文字が打てないようにする -- キーボードは見た目
+        // どおりに見せつつ (打とうとして誤操作するより、押しても反応しない
+        // ほうが分かりやすい)、タップだけ通す。FlickKeyboardView は境界
+        // ハンドルを adjustMode 中も動かしたいので、自分自身でキー部分だけを
+        // 無効化する (下のコメント参照)。この2つは境界ハンドルが無いので
+        // ここで丸ごと無効化してよい。
         AlphabetFlickKeyboardView({
           inputMode: this.inputMode,
           isLandscape: this.isLandscape
         })
+          .hitTestBehavior(this.keyboardSubMode === 'layoutAdjust' ? HitTestMode.None : HitTestMode.Default)
       } else if (this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC) {
         FlickKeyboardView({
           inputMode: this.inputMode,
@@ -189,10 +218,12 @@ struct KeyboardPage {
           inputMode: this.inputMode,
           isLandscape: this.isLandscape
         })
+          .hitTestBehavior(this.keyboardSubMode === 'layoutAdjust' ? HitTestMode.None : HitTestMode.Default)
       }
     }
     .width('100%')
     .layoutWeight(1)
+    .opacity(this.keyboardSubMode === 'layoutAdjust' ? 0.6 : 1)
     .scale(this.oneHandedMode ?
       { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
       { x: 1, y: 1 })
@@ -200,6 +231,26 @@ struct KeyboardPage {
 
   build() {
     Stack() {
+      // 「キーボード内表示」をOFFにしても、今の入力欄が入力欄側表示に
+      // 非対応だと保険で戻ってくることの説明。切り替わった瞬間だけ出して
+      // 1秒ほどでフェードアウトするトースト風バナー (checkFallbackBanner
+      // 参照)。常時出しっぱなしのバッジは目に入らなかった(実際の指摘)ので
+      // 短時間だけはっきり出す方針に変えた。
+      if (this.fallbackBannerShown) {
+        Text('この入力欄は入力欄内への表示に対応していないため、\nキーボード内に表示しています')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12)
+          .fontColor(kbTheme(this.isDark).onAccent)
+          .textAlign(TextAlign.Center)
+          .backgroundColor(kbTheme(this.isDark).accent)
+          .borderRadius(10)
+          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
+          .opacity(this.fallbackBannerOpacity)
+          .position({ x: '10%', y: 6 })
+          .width('80%')
+          .zIndex(100)
+          .hitTestBehavior(HitTestMode.Transparent)
+      }
       Column() {
         // Symbol/Emoji/Settings views take the full panel (no preview bar).
         // Numeric keeps the preview bar — without it the pad's rows stretch to
@@ -289,21 +340,6 @@ struct KeyboardPage {
                   }
                 }
                 Blank()
-                // 「キーボード内表示」をOFFにしたのに、今の入力欄が入力欄側
-                // 表示に非対応で保険により戻っているときの目印。設定画面の
-                // 中にだけ説明があっても、実際に打っている最中には気づかれ
-                // なかった (実際の指摘)。タップで直接その説明へ飛べるように
-                // 「設定」ボタンと同じ動きにしてある。
-                if (!this.composingInPanel && this.composingInField && !this.previewInField) {
-                  Text('ⓘ 保険で表示中')
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(this.isLandscape ? 9 : 11)
-                    .fontColor(kbTheme(this.isDark).accent)
-                    .padding({ right: 8 })
-                    .onClick(() => {
-                      AppStorage.setOrCreate('keyboardSubMode', 'settings');
-                    })
-                }
                 Text('設定')
                   .fontFamily(JP_FONT_FAMILY)
                   .fontSize(this.isLandscape ? 10 : 13)
