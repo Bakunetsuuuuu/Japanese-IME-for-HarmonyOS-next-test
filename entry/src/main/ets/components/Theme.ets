@@ -31,44 +31,46 @@ export interface KbTheme {
   shadowColor: ResourceColor;
 }
 
+// 2026-08-25、Huawei純正キーボードの背景色のスクリーンショット(単色の
+// 切り抜き2枚、ライト/ダーク)をもらって panelBg を合わせた。前回
+// (「キーボードの外側」= 同じ画面のChrome側と見比べた版) はダークを
+// #020202 まで黒に寄せすぎていた -- 今回の直接の色指定でほぼ元の
+// #1C1C1E 付近が正解だったと判明。panelBg のズレ量をそのまま他の面
+// (keyBg/specialBg/funcBg/cardBg/divider) にも同じだけ足し引きして、
+// 手つかずの旧パレットが持っていた相対関係 (パネルより一段明るいキー面、
+// さらに明るい特殊キー面…) を保ったまま合わせてある。accent系(Enter等の
+// 青)とテキスト色は背景合わせの対象外なので触っていない。
 export const LIGHT_THEME: KbTheme = {
-  panelBg: '#EEF1F5',
-  keyBg: '#FFFFFF',
-  candidateBg: '#FFFFFF',
-  specialBg: '#E3E7EC',
-  funcBg: '#DFE3E9',
-  cardBg: '#FFFFFF',
+  panelBg: '#E1E4E9',
+  keyBg: '#F2F2F3',
+  candidateBg: '#F2F2F3',
+  specialBg: '#D6DAE0',
+  funcBg: '#D2D6DD',
+  cardBg: '#F2F2F3',
   accent: '#2F6FED',
   accentSoft: '#DCE7FD',
   accentStrong: '#1E54C7',
   textPrimary: '#1C1C1E',
   textSecondary: '#7A7F87',
   onAccent: '#FFFFFF',
-  divider: '#E2E5EA',
+  divider: '#D5D8DE',
   shadowColor: '#0F142B0F', // rgba(20,20,43,0.06)
 };
 
 export const DARK_THEME: KbTheme = {
-  // 実機のスクリーンショットで「キーボードの外側」(同じ画面のChromeの
-  // 検索欄まわり) と比べたところ、以前の #1C1C1E (ダークグレー) より
-  // ずっと黒に近かった。他社IME/システムのダークテーマがOLED向けの
-  // ほぼ純黒 (Material Designの「elevation」的に、パネル自体は黒く
-  // 沈めてキー面(keyBg等)だけ一段明るく浮かせる) 方向であることに合わせ、
-  // panelBg だけ黒に寄せた。keyBg/cardBg 等はパネルより明るい面として
-  // 元々機能していたので、これらは据え置きでコントラストが自然に強まる。
-  panelBg: '#020202',
-  keyBg: '#2C2C2E',
-  candidateBg: '#2C2C2E',
-  specialBg: '#3A3A3C',
-  funcBg: '#333336',
-  cardBg: '#232325',
+  panelBg: '#1E1E20',
+  keyBg: '#2E2E30',
+  candidateBg: '#2E2E30',
+  specialBg: '#3C3C3E',
+  funcBg: '#353538',
+  cardBg: '#252527',
   accent: '#4C8DFF',
   accentSoft: '#274070',
   accentStrong: '#5B9BFF',
   textPrimary: '#F2F2F7',
   textSecondary: '#9A9AA0',
   onAccent: '#FFFFFF',
-  divider: '#3A3A3C',
+  divider: '#3C3C3E',
   shadowColor: '#0F142B1F',
 };
 
