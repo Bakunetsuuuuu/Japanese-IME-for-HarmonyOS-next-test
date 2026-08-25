@@ -205,50 +205,60 @@ struct KeyboardPage {
               if (this.showComposingPanel
                   || (this.convEnd > 0 && this.convEnd < this.composingText.length)) {
               Row() {
-                if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
-                  if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
-                    Text(this.composingText.slice(0, this.convEnd))
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 12 : 16)
-                      .fontWeight(FontWeight.Medium)
-                      .fontColor(kbTheme(this.isDark).textPrimary)
-                      .maxLines(1)
-                      .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
-                    Text(this.composingText.slice(this.convEnd))
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 12 : 16)
-                      .fontColor(kbTheme(this.isDark).textSecondary)
-                      .maxLines(1)
-                  } else {
-                    Text(this.composingText + this.pendingRomaji)
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 12 : 16)
-                      .fontWeight(FontWeight.Medium)
-                      .fontColor(kbTheme(this.isDark).textPrimary)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .padding({ left: 12, right: 8 })
-                      .border((this.composingText + this.pendingRomaji).length > 0 ?
-                        { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
-                        { width: { bottom: 0 } })
-                      .layoutWeight(1)
+                Row() {
+                  if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
+                    if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
+                      Text(this.composingText.slice(0, this.convEnd))
+                        .fontFamily(JP_FONT_FAMILY)
+                        .fontSize(this.isLandscape ? 12 : 16)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(kbTheme(this.isDark).textPrimary)
+                        .maxLines(1)
+                        .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
+                      Text(this.composingText.slice(this.convEnd))
+                        .fontFamily(JP_FONT_FAMILY)
+                        .fontSize(this.isLandscape ? 12 : 16)
+                        .fontColor(kbTheme(this.isDark).textSecondary)
+                        .maxLines(1)
+                    } else {
+                      Text(this.composingText + this.pendingRomaji)
+                        .fontFamily(JP_FONT_FAMILY)
+                        .fontSize(this.isLandscape ? 12 : 16)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(kbTheme(this.isDark).textPrimary)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .padding({ left: 12, right: 8 })
+                        .border((this.composingText + this.pendingRomaji).length > 0 ?
+                          { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
+                          { width: { bottom: 0 } })
+                        .layoutWeight(1)
+                    }
                   }
+                  Blank()
                 }
-                Blank()
-                SymbolGlyph($r('sys.symbol.gearshape'))
-                  .fontSize(this.isLandscape ? 12 : 18)
-                  .fontColor([kbTheme(this.isDark).textSecondary])
-                  .width(this.isLandscape ? 20 : 28)
-                  .height('100%')
-                  .onClick(() => {
-                    AppStorage.setOrCreate('keyboardSubMode', 'settings');
-                  })
+                .layoutWeight(1)
+                .height('100%')
+                .alignItems(VerticalAlign.Center)
+                .padding({ left: 12 })
+
+                Row() {
+                  SymbolGlyph($r('sys.symbol.gearshape'))
+                    .fontSize(this.isLandscape ? 12 : 18)
+                    .fontColor([kbTheme(this.isDark).textSecondary])
+                }
+                .width(this.isLandscape ? 24 : 36)
+                .height('100%')
+                .justifyContent(FlexAlign.Center)
+                .alignItems(VerticalAlign.Center)
+                .onClick(() => {
+                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                })
               }
               .width('100%')
               .height(this.isLandscape ? 14 : 28)
               .backgroundColor(kbTheme(this.isDark).panelBg)
               .alignItems(VerticalAlign.Center)
-              .padding({ left: 12, right: 8 })
               }
 
               // Candidate bar row + layout toggle
@@ -320,14 +330,18 @@ struct KeyboardPage {
                 // 無いので、候補バーの右端に寄せる。
                 if (!this.showComposingPanel
                     && !(this.convEnd > 0 && this.convEnd < this.composingText.length)) {
-                  SymbolGlyph($r('sys.symbol.gearshape'))
-                    .fontSize(this.isLandscape ? 12 : 18)
-                    .fontColor([kbTheme(this.isDark).textSecondary])
-                    .width(this.isLandscape ? 20 : 28)
-                    .height('100%')
-                    .onClick(() => {
-                      AppStorage.setOrCreate('keyboardSubMode', 'settings');
-                    })
+                  Row() {
+                    SymbolGlyph($r('sys.symbol.gearshape'))
+                      .fontSize(this.isLandscape ? 12 : 18)
+                      .fontColor([kbTheme(this.isDark).textSecondary])
+                  }
+                  .width(this.isLandscape ? 24 : 36)
+                  .height('100%')
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(VerticalAlign.Center)
+                  .onClick(() => {
+                    AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                  })
                 }
               }
               .width('100%')
