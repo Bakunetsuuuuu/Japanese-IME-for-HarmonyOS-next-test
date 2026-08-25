@@ -2038,6 +2038,12 @@ export class InputHandler {
     } else if (state === InputState.COMPOSING) {
       this.commitRaw();
     } else {
+      // IDLE で Enter を押すのは insertText を一切経由しないので、括弧を
+      // 開いたまま中身を確定せずに送信/改行すると保留中の閉じ括弧が
+      // 出る機会を永遠に失う。送信の直前に閉じておく。
+      if (this.pendingBracketClose.length > 0) {
+        this.insertText(this.pendingBracketClose);
+      }
       this.inputClient?.getEditorAttribute().then((attr: inputMethodEngine.EditorAttribute) => {
         this.inputClient?.sendKeyFunction(attr.enterKeyType);
       }).catch((_e: Error) => {
@@ -3236,8 +3242,16 @@ export class InputHandler {
         finalText = this.pendingBracketClose + newOpen;
         this.pendingBracketClose = newClose;
       } else if (this.pendingBracketClose.length > 0) {
-        finalText = text + this.pendingBracketClose;
-        this.pendingBracketClose = '';
+        if (text === this.pendingBracketClose) {
+          // ユーザーが閉じ括弧を自分で打った。保留分と合わせて二重に
+          // 出すのではなく、保留を消費してそのまま1つだけ出す
+          // (「自分で閉じた」として扱う)。これが無いと "）" が
+          // "））" になって出ていた (実際の不具合報告の原因)。
+          this.pendingBracketClose = '';
+        } else {
+          finalText = text + this.pendingBracketClose;
+          this.pendingBracketClose = '';
+        }
       }
     }
 
