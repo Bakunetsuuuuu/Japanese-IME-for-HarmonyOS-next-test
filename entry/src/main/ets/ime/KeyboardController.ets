@@ -561,6 +561,7 @@ export class InputHandler {
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
+        AppStorage.setOrCreate('flickHintsEnabled', s.flickHintsEnabled);
         this.applyVocabPacks(s.vocabPackOverrides);
         this.applyComposingDisplay(s.composingInPanel, s.composingInField);
         this.hapticEnabled = s.hapticEnabled;
@@ -827,6 +828,15 @@ export class InputHandler {
     }
   }
 
+  // フリックキーの十字ヒント表示。フリック自体はタッチのジェスチャで判定
+  // しており見た目だけの設定なので、切り替えても即座に反映すればよい。
+  setFlickHintsEnabled(enabled: boolean): void {
+    AppStorage.setOrCreate('flickHintsEnabled', enabled);
+    if (this.imeContext) {
+      SettingsStore.saveFlickHintsEnabled(this.imeContext, enabled);
+    }
+  }
+
   setNumericPadEnabled(enabled: boolean): void {
     AppStorage.setOrCreate('numericPadEnabled', enabled);
     if (!enabled && AppStorage.get<string>('keyboardSubMode') === 'numeric') {
@@ -900,25 +910,19 @@ export class InputHandler {
   // 縦の長さの調整ハンドル (LayoutAdjustBar) からドラッグ中に毎フレーム
   // 呼ばれる想定。保存は別 (saveKeyboardHeightScale) にして、ここは
   // AppStorage の書き換えとパネルの実リサイズだけをその場でやる。
-  // panel.resize() はネイティブ側の実処理なので、指を動かした分だけ
-  // 律儀に毎回呼ぶと連打になりかねない -- 簡易スロットリング(16ms、
-  // だいたい60fps相当)を挟んでおく。AppStorage の書き換え自体は
-  // スロットリングしない (数字表示や下のフリックキーの追従は毎回反映)。
-  private static readonly HEIGHT_RESIZE_THROTTLE_MS = 16;
-  private lastHeightResizeAt: number = 0;
+  // 連打の間引きは resizePanel 側 (KeyboardController) が完了ベースで
+  // やってくれる (resize+moveToの1組が終わるまで次を溜めて、終わったら
+  // 最新状態でやり直す) ので、ここでは何も気にせず毎回呼んでよい。
+  // 前は時間ベースの簡易スロットリングをここに置いていたが、それだと
+  // 前の組が終わる前に次を投げる余地が残り、下辺が「プルプル」揺れて
+  // いた(実際の指摘)。完了ベースの間引きに一本化した。
   applyKeyboardHeightScaleLive(scale: number): void {
     AppStorage.setOrCreate('keyboardHeightScale', scale);
-    const now = Date.now();
-    if (now - this.lastHeightResizeAt < InputHandler.HEIGHT_RESIZE_THROTTLE_MS) { return; }
-    this.lastHeightResizeAt = now;
     this.kbCtrlRef?.resizePanel();
   }
 
   saveKeyboardHeightScale(scale: number): void {
-    // ドラッグを離した瞬間の確定値。直前のドラッグ中のリサイズがスロットル
-    // で間引かれていた可能性があるので、ここは間引かず確実に反映する。
     AppStorage.setOrCreate('keyboardHeightScale', scale);
-    this.lastHeightResizeAt = Date.now();
     this.kbCtrlRef?.resizePanel();
     if (this.imeContext) {
       SettingsStore.saveKeyboardHeightScale(this.imeContext, scale);
@@ -3588,10 +3592,38 @@ export class KeyboardController {
     }
   }
 
-  // 設定 → レイアウト調整 のスライダーからライブに呼ばれるので公開している
+  // resize() → moveTo() の間、パネルは「新しい高さ・古い位置」の状態を
+  // 一瞬とる (このAPIは1回で両方を変える手段が無い)。ドラッグ中は
+  // resizePanel が連打されるので、前の resize+moveTo が終わる前に次を
+  // 投げると、複数組が競合してどれが最後に反映されるか不定になり、
+  // 下辺が「プルプル」揺れて見えていた (レイアウト調整の縦ハンドルで
+  // 実際に発生)。1組が完了するまで次を溜めておき、完了したら最新の
+  // 状態で1回だけやり直す(間引き)ことで、常に高々1組しか飛ばさない
+  // ようにする。
+  private resizeInFlight: boolean = false;
+  private resizePending: boolean = false;
+
+  // 設定 → レイアウト調整 のハンドルからライブに呼ばれるので公開している
   // (InputHandler.applyKeyboardHeightScaleLive 参照)。パネルの実サイズは
   // panel.resize() でしか変えられず、それを持っているのはこのクラスだけ。
   resizePanel(): void {
+    if (this.resizeInFlight) {
+      this.resizePending = true;
+      return;
+    }
+    this.resizeInFlight = true;
+    this.doResizePanel();
+  }
+
+  private doResizePanel(): void {
+    const done = (): void => {
+      this.resizeInFlight = false;
+      if (this.resizePending) {
+        this.resizePending = false;
+        this.resizeInFlight = true;
+        this.doResizePanel();
+      }
+    };
     try {
       const dis = display.getDefaultDisplaySync();
       const isLandscape = dis.width > dis.height;
@@ -3603,9 +3635,12 @@ export class KeyboardController {
       this.computeKeyWidths(dis);
 
       this.panel?.resize(dis.width, keyHeight)
-        .then(() => this.panel?.moveTo(0, dis.height - keyHeight));
+        .then(() => this.panel?.moveTo(0, dis.height - keyHeight))
+        .then(done)
+        .catch(done);
     } catch (err) {
       console.error('shuntiIME resizePanel error', err);
+      done();
     }
   }
 

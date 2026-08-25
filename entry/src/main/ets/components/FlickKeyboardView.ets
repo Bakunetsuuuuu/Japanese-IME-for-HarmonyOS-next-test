@@ -72,6 +72,10 @@ export struct FlickKeyboardView {
   // flickKeyWidthVp とは独立 -- 設定 → レイアウト調整の比率スライダーで
   // 両者の比を変えられる (既定は同じ幅で今までどおり)。
   @StorageLink('flickSideKeyWidthVp') flickSideKeyWidthVp: number = 72;
+  // 上下左右の小さいかなヒント(十字表示)を出すか。フリック自体は
+  // dirFrom() がタッチのジェスチャで判定しており、このヒントを消しても
+  // 機能は一切変わらない (isLandscape のときの表示と同じ仕組みを流用)。
+  @StorageLink('flickHintsEnabled') flickHintsEnabled: boolean = true;
   @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
@@ -525,7 +529,7 @@ export struct FlickKeyboardView {
   }
 
   @Builder KeyCell(rowIdx: number, colIdx: number, key: FlickKeyDef) {
-    if (this.isLandscape) {
+    if (this.isLandscape || !this.flickHintsEnabled) {
       // Landscape rows are short on height; drop the flick-direction hints and
       // just show the center glyph. Flicking itself is unaffected — dirFrom()
       // reads the touch gesture, not this label.

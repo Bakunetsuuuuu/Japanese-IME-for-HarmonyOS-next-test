@@ -169,6 +169,7 @@ struct KeyboardPage {
       AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
       AppStorage.setOrCreate('themeMode', s.themeMode);
       AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
+      AppStorage.setOrCreate('flickHintsEnabled', s.flickHintsEnabled);
       // かなの表示先は「設定値そのまま」ではなく入力欄の対応状況も混ぜて
       // 決まるので、AppStorage を直接書かず InputHandler に計算させる。
       InputHandler.getInstance().applyComposingDisplay(s.composingInPanel, s.composingInField);

@@ -70,6 +70,11 @@ export interface KeyboardSettings {
   // の幅比 (0.4〜2.0)。QWERTY側の特殊キー幅には影響しない。
   keyboardHeightScale: number;
   flickSideColumnRatio: number;
+  // フリックキーの上下左右に出す小さいかなヒント(十字表示)。フリック自体は
+  // タッチのジェスチャで判定しており、このヒントを消しても機能は一切
+  // 変わらない (FlickKeyboardView の isLandscape 分岐と同じ仕組みを流用)。
+  // 使い慣れた人には邪魔になるという要望向けのオフスイッチ。既定はオン。
+  flickHintsEnabled: boolean;
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -87,6 +92,7 @@ const DEFAULTS: KeyboardSettings = {
   vocabPackOverrides: {},
   keyboardHeightScale: 1.0,
   flickSideColumnRatio: 1.0,
+  flickHintsEnabled: true,
 };
 
 export class SettingsStore {
@@ -116,6 +122,7 @@ export class SettingsStore {
       const inField = await prefs.get('composingInField', DEFAULTS.composingInField);
       const heightScale = await prefs.get('keyboardHeightScale', DEFAULTS.keyboardHeightScale);
       const flickRatio = await prefs.get('flickSideColumnRatio', DEFAULTS.flickSideColumnRatio);
+      const flickHints = await prefs.get('flickHintsEnabled', DEFAULTS.flickHintsEnabled);
       const ovRaw = await prefs.get('vocabPackOverrides', '');
       let packs: Record<string, boolean> = {};
       try {
@@ -147,6 +154,7 @@ export class SettingsStore {
         vocabPackOverrides: packs,
         keyboardHeightScale: Number(heightScale),
         flickSideColumnRatio: Number(flickRatio),
+        flickHintsEnabled: flickHints !== false,
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
@@ -165,6 +173,7 @@ export class SettingsStore {
         vocabPackOverrides: DEFAULTS.vocabPackOverrides,
         keyboardHeightScale: DEFAULTS.keyboardHeightScale,
         flickSideColumnRatio: DEFAULTS.flickSideColumnRatio,
+        flickHintsEnabled: DEFAULTS.flickHintsEnabled,
       };
     }
   }
@@ -267,6 +276,14 @@ export class SettingsStore {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('flickSideColumnRatio', ratio);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveFlickHintsEnabled(context: common.Context, enabled: boolean): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('flickHintsEnabled', enabled);
       await prefs.flush();
     } catch (_e) {}
   }
