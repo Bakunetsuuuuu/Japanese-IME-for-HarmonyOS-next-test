@@ -25,7 +25,19 @@ const HEIGHT_DRAG_RANGE_VP = 220;
 export struct LayoutAdjustBar {
   @Prop isLandscape: boolean = false;
   @StorageLink('isDark') isDark: boolean = false;
-  @StorageLink('keyboardHeightScale') heightScale: number = 1.0;
+  // 縦横で別の値を持つ (StorageLink はキー名を静的にしか束縛できないため、
+  // 両方を保持して isLandscape で読み書き先を切り替える)。
+  @StorageLink('keyboardHeightScalePortrait') heightScalePortrait: number = 1.0;
+  @StorageLink('keyboardHeightScaleLandscape') heightScaleLandscape: number = 1.0;
+
+  // get アクセサではなくメソッドにしてある -- ArkTS の @Component 内では
+  // @StorageLink を組み合わせた get プロパティが実行時に正しく評価されず
+  // (undefined を返す)、ドラッグ量の計算が NaN に化けて「サイズ調整が
+  // 効かなくなる」不具合の原因になった。通常のメソッド呼び出しなら
+  // この状態管理の仕組みと衝突しない。
+  private heightScale(): number {
+    return this.isLandscape ? this.heightScaleLandscape : this.heightScalePortrait;
+  }
 
   // ドラッグ開始時点の値。onActionUpdate の offsetY はジェスチャ開始からの
   // 累積オフセットなので、開始時の値に対して足し引きする。
@@ -50,20 +62,20 @@ export struct LayoutAdjustBar {
       .gesture(
         PanGesture({ direction: PanDirection.Vertical })
           .onActionStart(() => {
-            this.dragStartScale = this.heightScale;
+            this.dragStartScale = this.heightScale();
           })
           .onActionUpdate((event: GestureEvent) => {
             const minScale = this.isLandscape ? MIN_SCALE_LANDSCAPE : MIN_SCALE_PORTRAIT;
             const delta = -event.offsetY / HEIGHT_DRAG_RANGE_VP * (MAX_SCALE - minScale);
             const next = Math.min(MAX_SCALE, Math.max(minScale, this.dragStartScale + delta));
-            this.h().applyKeyboardHeightScaleLive(next);
+            this.h().applyKeyboardHeightScaleLive(next, this.isLandscape);
           })
           .onActionEnd(() => {
-            this.h().saveKeyboardHeightScale(this.heightScale);
+            this.h().saveKeyboardHeightScale(this.heightScale(), this.isLandscape);
           })
       )
 
-      Text(`縦 ${Math.round(this.heightScale * 100)}%`)
+      Text(`縦 ${Math.round(this.heightScale() * 100)}%`)
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(this.isLandscape ? 11 : 13)
         .fontColor(kbTheme(this.isDark).textSecondary)

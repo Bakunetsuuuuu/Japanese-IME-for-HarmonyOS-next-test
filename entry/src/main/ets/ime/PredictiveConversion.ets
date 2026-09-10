@@ -2,21 +2,28 @@
 // the full common words whose reading STARTS WITH what's typed so far, so the
 // user can pick 会社 after typing かいし instead of finishing かいしゃ. The
 // keystroke-saving half of modern-IME typing (the other half, next-word, lives
-// in NextWordPredictor). Two sources, learned first:
+// in NextWordPredictor). Sources, learned first:
 //
-//   1. LEARNED  - scan the conversion learning store (reading→{surface:count})
-//                 for readings that extend the typed prefix; the user's own
-//                 previously-committed words, ranked by how often they picked
-//                 them. Personalises with zero configuration.
-//   2. CURATED  - a table of high-frequency everyday words so completion works
-//                 from the first use, before anything is learned. Every entry's
-//                 reading→surface is an ordinary correct conversion (all present
-//                 in dict.json); this table only makes them reachable from a
-//                 prefix, it never invents a spelling.
+//   1. LEARNED     - scan the conversion learning store (reading→{surface:count})
+//                     for readings that extend the typed prefix; the user's own
+//                     previously-committed words, ranked by how often they picked
+//                     them. Personalises with zero configuration.
+//   1.5 SHORT-TERM  - ShortTermMemory: words picked a couple of times THIS
+//                     session, before long-term learning has caught up
+//                     (Gboard has a similar "recently used" boost). Not
+//                     persisted; see ShortTermMemory.ets.
+//   2. CURATED      - a table of high-frequency everyday words so completion
+//                     works from the first use, before anything is learned.
+//                     Every entry's reading→surface is an ordinary correct
+//                     conversion (all present in dict.json); this table only
+//                     makes them reachable from a prefix, it never invents a
+//                     spelling.
 //
 // Distinct from PredictivePhrases (fixed long set-phrases like greetings): this
 // is ordinary vocabulary, and it is inserted as an ALTERNATIVE (never candidate
 // [0], which stays the exact conversion of exactly what was typed).
+
+import type { ShortTermHit } from './ShortTermMemory';
 
 interface Completion {
   reading: string;
@@ -28,6 +35,13 @@ interface Completion {
 // floor where a prefix starts to be discriminating.
 const MIN_PREFIX = 2;
 const MAX_COMPLETIONS = 3;
+// dictHits (辞書全体からの前方一致) は CURATED と違って中身が玉石混淆で、
+// 「レーニン主義」のようなマイナー語も含まれている。短い prefix では
+// たまたま辞書に他の候補が無いだけで pool.size===1 になり、頻度を無視した
+// 語がいきなり一発候補として出てしまっていた(「れ→レーニン主義」)。
+// CURATED (少数の厳選語) はそのまま MIN_PREFIX で許可するが、dictHits に
+// しか無い一致は、もう少し長く打って絞られてから初めて許可する。
+const DICT_ONLY_MIN_PREFIX = 4;
 
 // High-frequency everyday words, roughly most-common-first (ties broken by
 // generality). Kept to words a user types constantly, so a 2-3 kana prefix
@@ -129,6 +143,12 @@ const CURATED: Completion[] = [
 // 語をここで確実扱いするとノイズに逆戻りするので、複数回選んだ語だけ通す。
 const LEARNED_CONFIDENT_MIN = 2;
 
+// 短期記憶 (ShortTermMemory) がこの回数以上選ばれていれば「強い」とみなし、
+// learned と同じ扱い (決まり字を無視して許可) にする。ShortTermMemory.
+// STRONG_MIN と同じ値。型だけ import している (実処理は依然として
+// 引数で受け取る値だけを見ており、ShortTermMemory の状態には触れない)。
+const SHORT_TERM_STRONG_MIN = 2;
+
 export class PredictiveConversion {
   // Completions of `prefix`, best first: the user's learned words (by pick
   // count) then curated/dictionary words, deduped by surface, capped. `learned`
@@ -149,7 +169,7 @@ export class PredictiveConversion {
   //     あり得る語がちょうど1つに絞られたとき (=決まり字に達したとき) だけ、
   //     その1語だけを出す。2つ以上あり得るうちはまだ確実ではないので出さない。
   static predict(prefix: string, learned: Record<string, Record<string, number>>,
-      dictHits?: string[]): string[] {
+      dictHits?: string[], shortTermHits?: ShortTermHit[]): string[] {
     if (prefix.length < MIN_PREFIX) { return []; }
     const out: string[] = [];
     const seen = new Set<string>();
@@ -181,19 +201,45 @@ export class PredictiveConversion {
       }
     }
 
+    // 1.5 短期記憶 (このセッション中に何度か選んだ語)。SHORT_TERM_STRONG_MIN
+    //     回以上選ばれていれば learned と同じ「確実」枠として扱い、決まり字を
+    //     無視して許可する。まだ弱い(1回だけ)ものはここでは出さず、後段の
+    //     「1番目には出さない」ガード付きの枠に回す。
+    const weakShortTerm: string[] = [];
+    if (shortTermHits !== undefined) {
+      for (const h of shortTermHits) {
+        if (h.count >= SHORT_TERM_STRONG_MIN) {
+          push(h.surface);
+        } else {
+          weakShortTerm.push(h.surface);
+        }
+      }
+    }
+
     // 2+3. curated + 辞書全体からの前方一致をまとめて集め、この prefix の続きと
     //      してあり得る語(表記)がちょうど1つだけに絞れているときだけ採用する。
     if (out.length < MAX_COMPLETIONS) {
-      const pool = new Set<string>();
+      const curatedPool = new Set<string>();
       for (const c of CURATED) {
-        if (c.reading.length > prefix.length && c.reading.startsWith(prefix)) { pool.add(c.surface); }
+        if (c.reading.length > prefix.length && c.reading.startsWith(prefix)) { curatedPool.add(c.surface); }
       }
+      const pool = new Set<string>();
+      for (const s of curatedPool) { pool.add(s); }
       if (dictHits !== undefined) {
         for (const d of dictHits) { if (d.length > 0) { pool.add(d); } }
       }
       if (pool.size === 1) {
-        for (const s of pool) { push(s); }
+        for (const s of pool) {
+          if (curatedPool.has(s) || prefix.length >= DICT_ONLY_MIN_PREFIX) { push(s); }
+        }
       }
+    }
+
+    // 4. 短期記憶の弱い方 (1回だけ選ばれた語)。ここまでに何か1つでも出て
+    //    いれば足してよいが、これしか無い(out が空のまま)場合はまだ確証が
+    //    無いので出さない -- 「1番目には出さないようにしよう」の実体。
+    if (out.length > 0) {
+      for (const s of weakShortTerm) { push(s); }
     }
     return out;
   }

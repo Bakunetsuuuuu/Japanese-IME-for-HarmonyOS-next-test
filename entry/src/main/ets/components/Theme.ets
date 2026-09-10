@@ -12,7 +12,14 @@
 
 export interface KbTheme {
   // Backgrounds
-  panelBg: ResourceColor;        // outer keyboard panel + preview/candidate row
+  panelBg: ResourceColor;        // outer keyboard panel
+  // 変換中のかな表示帯・候補バーの「帯そのもの」の背景。以前は panelBg を
+  // そのまま使っていたので、候補チップ(candidateBg)を変えても帯自体は
+  // 変わらず、ユーザーが「変換バー」として見ているのはこちらの帯全体
+  // だったため「色が変わってない」に見えていた (「変える場所を間違えて
+  // るのでは」の指摘どおり)。パネル本体・帯・チップの3段で見分けが付く
+  // ようにする。
+  previewBg: ResourceColor;
   keyBg: ResourceColor;          // normal character keys
   candidateBg: ResourceColor;    // candidate/bunsetsu chip background (unselected)
   specialBg: ResourceColor;      // shift / backspace / mode / enter-adjacent keys
@@ -31,46 +38,49 @@ export interface KbTheme {
   shadowColor: ResourceColor;
 }
 
-// 2026-08-25、Huawei純正キーボードの背景色のスクリーンショット(単色の
-// 切り抜き2枚、ライト/ダーク)をもらって panelBg を合わせた。前回
-// (「キーボードの外側」= 同じ画面のChrome側と見比べた版) はダークを
-// #020202 まで黒に寄せすぎていた -- 今回の直接の色指定でほぼ元の
-// #1C1C1E 付近が正解だったと判明。panelBg のズレ量をそのまま他の面
-// (keyBg/specialBg/funcBg/cardBg/divider) にも同じだけ足し引きして、
-// 手つかずの旧パレットが持っていた相対関係 (パネルより一段明るいキー面、
-// さらに明るい特殊キー面…) を保ったまま合わせてある。accent系(Enter等の
-// 青)とテキスト色は背景合わせの対象外なので触っていない。
+// 2026-08-28、ライトの panelBg を実機の正確な値 #E3E4E6 に再訂正
+// (前回 #E2E6E9 としていたが、青に寄りすぎていた)。前回同様、panelBg の
+// ズレ量 (+1,-2,-3) をそのまま他の面 (keyBg/specialBg/funcBg/cardBg/
+// divider) にも足し引きして、旧パレットが持っていた相対関係 (パネルより
+// 一段明るいキー面、さらに明るい特殊キー面…) を保ったまま合わせてある。
+// accent系(Enter等の青)とテキスト色は背景合わせの対象外なので触っていない。
+//
+// previewBg/candidateBg は当初 accent 系の青みを足していたが、
+// 「青すぎて不自然」との指摘を受けてニュートラルな無彩色寄りに変更。
+// パネル→帯→チップ の3段の明度差だけで見分けが付くようにしてある。
 export const LIGHT_THEME: KbTheme = {
-  panelBg: '#E1E4E9',
-  keyBg: '#F2F2F3',
-  candidateBg: '#F2F2F3',
-  specialBg: '#D6DAE0',
-  funcBg: '#D2D6DD',
-  cardBg: '#F2F2F3',
+  panelBg: '#E3E4E6',
+  previewBg: '#DADBDD',
+  keyBg: '#F4F2F0',
+  candidateBg: '#EDEEF0',
+  specialBg: '#D8DADD',
+  funcBg: '#D4D6DA',
+  cardBg: '#F4F2F0',
   accent: '#2F6FED',
   accentSoft: '#DCE7FD',
   accentStrong: '#1E54C7',
   textPrimary: '#1C1C1E',
   textSecondary: '#7A7F87',
   onAccent: '#FFFFFF',
-  divider: '#D5D8DE',
+  divider: '#D7D8DB',
   shadowColor: '#0F142B0F', // rgba(20,20,43,0.06)
 };
 
 export const DARK_THEME: KbTheme = {
-  panelBg: '#1E1E20',
-  keyBg: '#2E2E30',
-  candidateBg: '#2E2E30',
-  specialBg: '#3C3C3E',
-  funcBg: '#353538',
-  cardBg: '#252527',
+  panelBg: '#232323',
+  previewBg: '#1C1C1C',
+  keyBg: '#333333',
+  candidateBg: '#3A3A3C',
+  specialBg: '#414141',
+  funcBg: '#3A3A3B',
+  cardBg: '#2A2A2A',
   accent: '#4C8DFF',
   accentSoft: '#274070',
   accentStrong: '#5B9BFF',
   textPrimary: '#F2F2F7',
   textSecondary: '#9A9AA0',
   onAccent: '#FFFFFF',
-  divider: '#3C3C3E',
+  divider: '#414141',
   shadowColor: '#0F142B1F',
 };
 

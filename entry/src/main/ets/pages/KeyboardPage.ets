@@ -19,11 +19,41 @@ import { DictEditBar } from '../components/DictEditBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { kbTheme } from '../components/Theme';
 import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
-import { InputLog } from '../ime/InputLog'; // [DEBUG-LOG]
 
 let _inputStartRegistered = false;
 let _dictLoaded = false;
 const USE_DICT_JSON: boolean = true;
+
+// フローティング四隅のリサイズハンドル (L字ブラケット) の一辺の長さと太さ。
+// FloatingHandles 参照。
+const HANDLE_LEN = 22;
+const HANDLE_THICK = 4;
+// フローティング中、実際のOSパネルウィンドウをカード本体より一回り大きく
+// 取っておく余白 (vp)。KeyboardController.FLOATING_MARGIN_VP と同じ値。
+// これが無いと、窓の外側にはみ出すL字ハンドルや影がそのまま切れて見えて
+// いた (「Lのハンドル見切れてる」の実体)。
+const FLOATING_MARGIN_VP = 16;
+// 縁取りの色。テーマのアクセント色は主張が強すぎたので薄い水色に。
+const FLOATING_BORDER_COLOR = '#8ED2FF';
+// 上際の移動ハンドル(ピル)と四隅のL字ハンドルが同じ場所で同時に掴めて
+// しまわないよう、ピルの当たり判定を左右それぞれこの分だけ内側へ避ける
+// (「上の方のサイズ調整L字とハンドルが同時につかめてしまう」)。
+const HANDLE_CORNER_CLEARANCE_VP = HANDLE_LEN + 6;
+
+// 入力中のかな表示帯・候補バーの高さは、以前は縦横で2択の固定vp値だった
+// (フローティングでキーボード自体の高さが自由に変わるようになったのに、
+// これだけ固定だと小さいフローティング窓で相対的に大きすぎたり、大きい
+// 窓で小さすぎたりする)。キーボード全体の高さ(vp)に対する比率で計算し、
+// 極端なサイズでも読める/掴める範囲に収まるよう上下限だけクランプする。
+const STRIP_HEIGHT_RATIO = 0.10;
+const STRIP_MIN_VP = 14;
+const STRIP_MAX_VP = 34;
+// 縦向きはキーボード全体が横向きよりずっと背が高いので、同じ比率だと
+// 候補バーが絶対値として大きくなりすぎた(「縦長にすると候補バー長すぎる」)。
+// 上限を下げて、縦向きでも候補チップが収まる範囲でできるだけ小さく留める。
+const CANDIDATE_BAR_HEIGHT_RATIO = 0.13;
+const CANDIDATE_BAR_MIN_VP = 24;
+const CANDIDATE_BAR_MAX_VP = 44;
 
 @Entry
 @Component
@@ -46,13 +76,19 @@ struct KeyboardPage {
   // 瞬間だけ出して1秒ほどでフェードアウトする。
   @StorageLink('composingInPanel') @Watch('checkFallbackBanner') composingInPanel: boolean = true;
   @StorageLink('composingInField') @Watch('checkFallbackBanner') composingInField: boolean = true;
+  // 入力欄が入力欄側表示に対応しているかの判定待ち。onInputStart は先に
+  // 「非対応」を配ってから非同期で本当の値を配るので、この間の
+  // previewInField=false でバナーを出すと、対応している欄でも毎回出てしまう
+  // (KeyboardController.previewSupportPending 参照)。
+  @StorageLink('previewSupportPending') @Watch('checkFallbackBanner') previewSupportPending: boolean = false;
   @State fallbackBannerOpacity: number = 0;
   @State fallbackBannerShown: boolean = false;
   private prevFallbackActive: boolean = false;
   private fallbackFadeTimer: number = -1;
 
   private checkFallbackBanner(): void {
-    const active = !this.composingInPanel && this.composingInField && !this.previewInField;
+    const active = !this.previewSupportPending
+      && !this.composingInPanel && this.composingInField && !this.previewInField;
     if (active && !this.prevFallbackActive) {
       clearTimeout(this.fallbackFadeTimer);
       this.fallbackBannerShown = true;
@@ -86,19 +122,81 @@ struct KeyboardPage {
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
   @StorageLink('convEnd') convEnd: number = 0;
+  // フローティングキーボード。ONのときだけ上際ハンドル・四隅リサイズ
+  // ハンドルを重ねて出す (FloatingHandles 参照)。
+  @StorageLink('floatingMode') floatingMode: boolean = false;
+  @StorageLink('floatingXFrac') floatingXFrac: number = 0.2;
+  @StorageLink('floatingYFrac') floatingYFrac: number = 0.12;
+  @StorageLink('floatingWFrac') floatingWFrac: number = 0.6;
+  @StorageLink('floatingHFrac') floatingHFrac: number = 0.35;
+  // フローティング中のカード(見た目のキーボード本体)の実サイズ(vp)。
+  // KeyboardController.doResizePanelNow のフローティング分岐が
+  // applyKeyboardWidthsForVp/keyboardHeight にそのまま書いている値と同じ。
+  // ハンドルを窓の余白(FLOATING_MARGIN_VP)ぶん正確な位置に置くために使う。
+  @StorageLink('keyboardContentVp') floatingCardWVp: number = 360;
+  @StorageLink('keyboardHeight') floatingCardHVp: number = 260;
+  // キーボード本体の左右寄せ (horizontalOffsetVp 参照)。実際に寄せられる
+  // 余白は「画面幅(生) − 幅の上限を適用した後の幅」なので、その両方を見る。
+  @StorageLink('keyboardHorizontalOffset') keyboardHorizontalOffset: number = 0;
+  @StorageLink('keyboardRawContentVp') keyboardRawContentVp: number = 360;
+  @StorageLink('keyboardContentVp') keyboardContentVp: number = 360;
+  // 常に vp のキーボード全体の高さ (FIXED時は 'keyboardHeight' が px な
+  // ので使えない -- KeyboardController.doResizePanelNow/initPanel 参照)。
+  // 入力中のかな表示帯・候補バーの高さを固定 vp ではなく比率で決めるのに使う
+  // (「サイズ固定なのやめて、ちゃんと比率で計算しよう」)。
+  @StorageLink('keyboardHeightVp') keyboardHeightVp: number = 260;
+  // ドラッグ/リサイズ開始時点の値。開始時の値に対して足し引きする
+  // (LayoutAdjustBar 等、このコードベースの他のドラッグ系ハンドルと同じ形)。
+  private dragStartXFrac: number = 0;
+  private dragStartYFrac: number = 0;
+  private resizeStartXFrac: number = 0;
+  private resizeStartYFrac: number = 0;
+  private resizeStartWFrac: number = 0;
+  private resizeStartHFrac: number = 0;
+  // フローティングのドラッグ量は event.offsetX/Y (要素=このウィンドウ基準の
+  // 累積オフセット) ではなく、画面絶対座標 (TouchObject.displayX/Y) の
+  // 差分で計算する。ドラッグに応じてウィンドウ自体を動かしているため、
+  // 要素基準の座標系はドラッグ中に動いてしまい、「原点が指を追いかけて
+  // 引っ張り合う」形になって「元の位置に戻ろうとする力」のように感じられる
+  // 不具合の原因だった。画面絶対座標ならウィンドウが動いても基準がブレない。
+  // GestureEvent 自体の fingerList は PanGesture での可用性が不確かなので
+  // (APIコメント上は LongPress/Tap 用と書かれている)、同じ要素に張った
+  // .onTouch() から TouchObject.displayX/Y (screenX/Y の後継、API10〜) を
+  // 直接拾って使う -- こちらは種類を問わず確実に取れる。
+  private lastTouchDisplayX: number = 0;
+  private lastTouchDisplayY: number = 0;
+  private dragStartDisplayX: number = 0;
+  private dragStartDisplayY: number = 0;
+  private resizeStartDisplayX: number = 0;
+  private resizeStartDisplayY: number = 0;
+
+  // かな表示帯・候補バーの高さ (vp)。STRIP_HEIGHT_RATIO/CANDIDATE_BAR_
+  // HEIGHT_RATIO 参照。
+  private stripHeightVp(): number {
+    return Math.max(STRIP_MIN_VP, Math.min(STRIP_MAX_VP, this.keyboardHeightVp * STRIP_HEIGHT_RATIO));
+  }
+
+  private candidateBarHeightVp(): number {
+    return Math.max(CANDIDATE_BAR_MIN_VP,
+      Math.min(CANDIDATE_BAR_MAX_VP, this.keyboardHeightVp * CANDIDATE_BAR_HEIGHT_RATIO));
+  }
+
+  // 設定ボタンの長押し→上スライドでフローティング化。長押し中はヒントを
+  // 出す (Shift/Spaceキーの片手モード切替と同じ「長押し→フリックで切替」
+  // パターン)。
+  @State floatingHint: boolean = false;
+  private floatingHintTimer: number = -1;
+  // 上際ハンドルのドラッグ中、「今離すと通常のドッキング状態に戻る」位置
+  // にどれだけ近いか (0〜1)。0 なら非表示、1 で離すと実際にドックへ戻る。
+  // カードが画面下端からはみ出し始めた瞬間から連続的に増えていくので、
+  // DockPreview の帯の高さに直接使う (「下から青い範囲が這い出てくる」)。
+  @State dockPreviewProgress: number = 0;
 
   aboutToAppear(): void {
     // The IME extension is its own process/UI root, so it needs its own
     // registration -- and it has to happen from inside the UI, not from
     // KeyboardController.onCreate (see registerJpFont's comment).
     registerJpFont(this.getUIContext());
-    // [DEBUG-LOG] 収集の初期化の保険。本来は KeyboardController.setContext から
-    // 立つが、そこが走っていない実機状態が出たため、確実に走るこの場所からも
-    // 立てる。既に立っていれば何もしない (InputLog.ensureFromPanel 参照)。 // [DEBUG-LOG]
-    // アプリ単位 -> モジュール単位の順。setupInputLog と揃えること。 // [DEBUG-LOG]
-    let panelAppDir = ''; // [DEBUG-LOG]
-    try { panelAppDir = (getContext(this) as ESObject).getApplicationContext().filesDir as string; } catch (_e) { panelAppDir = ''; } // [DEBUG-LOG]
-    InputLog.ensureFromPanel([panelAppDir, getContext(this).filesDir]); // [DEBUG-LOG]
     // KeyboardController 側でも読んでいるが、そちらが走らない実機状態が出た
     // ため、確実に走るこの場所からも読む (_dictLoaded で一度きり)。
     //
@@ -182,8 +280,21 @@ struct KeyboardPage {
       // app (a different process) actually applies the mozc engine switch
       // here too, not just update the SettingsBar toggle's own display value.
       InputHandler.getInstance().setConversionEngine(s.conversionEngine);
-      InputHandler.getInstance().applyKeyboardHeightScaleLive(s.keyboardHeightScale);
-      InputHandler.getInstance().applyFlickSideRatioLive(s.flickSideColumnRatio);
+      // 縦横別の値を両方 AppStorage に入れておき (LayoutAdjustBar/
+      // FlickKeyboardView が向き問わず自分の StorageLink で読めるように)、
+      // 実リサイズ/幅再計算は今表示中の向きぶんだけ即時に反映する。
+      AppStorage.setOrCreate('keyboardHeightScalePortrait', s.keyboardHeightScalePortrait);
+      AppStorage.setOrCreate('keyboardHeightScaleLandscape', s.keyboardHeightScaleLandscape);
+      AppStorage.setOrCreate('flickSideColumnRatioPortrait', s.flickSideColumnRatioPortrait);
+      AppStorage.setOrCreate('flickSideColumnRatioLandscape', s.flickSideColumnRatioLandscape);
+      const isLandscape = AppStorage.get<boolean>('isLandscape') ?? false;
+      InputHandler.getInstance().applyKeyboardHeightScaleLive(
+        isLandscape ? s.keyboardHeightScaleLandscape : s.keyboardHeightScalePortrait, isLandscape);
+      InputHandler.getInstance().applyFlickSideRatioLive(
+        isLandscape ? s.flickSideColumnRatioLandscape : s.flickSideColumnRatioPortrait, isLandscape);
+      InputHandler.getInstance().applyKeyboardWidthScaleLive(s.keyboardWidthScale);
+      InputHandler.getInstance().applyKeyboardHorizontalOffsetLive(s.keyboardHorizontalOffset);
+      InputHandler.getInstance().syncFloatingFromSettings(s);
     });
   }
 
@@ -225,9 +336,204 @@ struct KeyboardPage {
     .width('100%')
     .layoutWeight(1)
     .opacity(this.keyboardSubMode === 'layoutAdjust' ? 0.6 : 1)
+    .offset({ x: this.horizontalOffsetVp(), y: 0 })
     .scale(this.oneHandedMode ?
       { x: 0.78, y: 0.78, centerX: this.oneHandedSide === 'left' ? '0%' : '100%', centerY: '100%' } :
       { x: 1, y: 1 })
+  }
+
+  // 幅の上限を絞ってキーボードが画面より狭くなったぶんの余白を、どちら側へ
+  // 寄せるか (keyboardHorizontalOffset: -1=左端 / 0=中央 / +1=右端)。
+  // 余白そのものが無ければ 0 -- 画面いっぱいのときに動かすと画面外へ
+  // はみ出してしまうため。
+  private horizontalOffsetVp(): number {
+    const slack = (this.keyboardRawContentVp - this.keyboardContentVp) / 2;
+    if (slack <= 0) { return 0; }
+    return Math.min(1, Math.max(-1, this.keyboardHorizontalOffset)) * slack;
+  }
+
+  // 「設定」ボタンの長押し→上スライドでフローティング化 (ON/OFFの
+  // トグル)。Shift/Spaceキーの片手モード切替と同じ「長押しでヒントを出し、
+  // そのまま上へフリックすると成立」の形。動作確認中は原因切り分けのため
+  // ShiftKey/SpaceKeyの実装と同じくインライン構成にしてあり (下の2箇所)、
+  // 共通化はまだしていない。
+
+  // 「設定」ボタン長押し中に出すヒント。bindPopup の Placement.Top は
+  // ボタンの上に十分な余白が無いと自動で下にひっくり返ってしまう
+  // (この帯自体がパネル最上部近くにあるため、上に出したくても出せない
+  // ケースがあった)。OS任せの配置をやめて、パネル最上部に固定で出す
+  // 自前のオーバーレイにしてある。
+  @Builder FloatingHintBanner() {
+    Text(this.floatingMode ? 'フローティング解除' : 'フローティング化')
+      .fontFamily(JP_FONT_FAMILY)
+      .fontSize(13)
+      .fontWeight(FontWeight.Medium)
+      .fontColor(kbTheme(this.isDark).onAccent)
+      .textAlign(TextAlign.Center)
+      .backgroundColor(kbTheme(this.isDark).accent)
+      .borderRadius(12)
+      .padding({ left: 16, right: 16, top: 8, bottom: 8 })
+      .position({ x: '50%', y: 6 })
+      .markAnchor({ x: '50%', y: 0 })
+      .zIndex(220)
+      .hitTestBehavior(HitTestMode.None)
+  }
+
+  // 上際ハンドルを画面下へ引っ張っている間、下端から青く薄い帯が
+  // 「這い出てくる」ように高さが連続的に伸びる案内。実際のドッキング先
+  // (画面の本当の下端) は今のフローティング窓の外側にあり ArkUI
+  // コンテンツはウィンドウの外を描けないため、ドッキング先そのものの
+  // ゴーストは出せない代わりに、カード自身の下端からこの帯を伸ばして
+  // 「下から迫ってきている」感触を出す。dockPreviewProgress (0〜1) が
+  // そのまま帯の高さと濃さになり、1 (離すと実際にドックへ戻る) で
+  // 案内テキストも表示される。
+  @Builder DockPreview() {
+    Column() {
+      if (this.dockPreviewProgress > 0.55) {
+        Text('離すと通常のキーボードに戻ります')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12)
+          .fontWeight(FontWeight.Medium)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .textAlign(TextAlign.Center)
+          .width('100%')
+          .padding({ top: 8 })
+      }
+    }
+    .width(this.floatingCardWVp)
+    .height(Math.max(4, this.dockPreviewProgress * this.floatingCardHVp * 0.7))
+    .justifyContent(FlexAlign.Start)
+    .backgroundColor(FLOATING_BORDER_COLOR)
+    .opacity(0.2 + this.dockPreviewProgress * 0.35)
+    .borderRadius({ topLeft: 16, topRight: 16, bottomLeft: 0, bottomRight: 0 })
+    .position({ x: FLOATING_MARGIN_VP, y: FLOATING_MARGIN_VP + this.floatingCardHVp })
+    .markAnchor({ x: 0, y: '100%' })
+    .zIndex(210)
+    .hitTestBehavior(HitTestMode.None)
+  }
+
+  // フローティング中だけ出す、上際のドラッグハンドルと四隅のリサイズ
+  // ハンドル。パネルウィンドウ自体はカード本体より FLOATING_MARGIN_VP
+  // ぶん一回り大きく確保してある (KeyboardController.FLOATING_MARGIN_VP)
+  // ので、カードの実際の位置 (marginVp, marginVp) 〜
+  // (marginVp+cardW, marginVp+cardH) を vp で直接計算してハンドルを置く
+  // -- % 指定だとウィンドウ全体に対する割合になってしまい、カードの
+  // 実際の角とずれる。通常のキーボード配置には一切影響しない絶対位置
+  // オーバーレイ (FlickKeyboardView の境界ハンドルと同じ考え方)。
+  @Builder FloatingHandles() {
+    // 上際 = ドラッグして移動。フルwidthの帯ではなく、ボトムシートの
+    // 「つまみ」のような小さいピル型にして見た目を軽くしてある
+    // (「デザイン性が低い」の指摘)。掴みやすさのため当たり判定はカード
+    // 幅ぶん確保しつつ、見えているのは中央の細いピルだけ。
+    Row() {
+      Row().width(32).height(4).borderRadius(2)
+        .backgroundColor(kbTheme(this.isDark).textSecondary)
+    }
+    // 四隅のL字ハンドルとの当たり判定の取り合いを避けるため、左右を
+    // HANDLE_CORNER_CLEARANCE_VP ぶん避けた中央部分だけを掴める範囲にする。
+    .width(Math.max(40, this.floatingCardWVp - 2 * HANDLE_CORNER_CLEARANCE_VP))
+    .height(20)
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .position({ x: FLOATING_MARGIN_VP + HANDLE_CORNER_CLEARANCE_VP, y: FLOATING_MARGIN_VP })
+    .zIndex(200)
+    .onTouch((e: TouchEvent) => {
+      if (e.touches.length > 0) {
+        this.lastTouchDisplayX = e.touches[0].displayX;
+        this.lastTouchDisplayY = e.touches[0].displayY;
+      }
+    })
+    .gesture(
+      PanGesture({ direction: PanDirection.All })
+        .onActionStart(() => {
+          this.dragStartXFrac = this.floatingXFrac;
+          this.dragStartYFrac = this.floatingYFrac;
+          this.dragStartDisplayX = this.lastTouchDisplayX;
+          this.dragStartDisplayY = this.lastTouchDisplayY;
+          InputHandler.getInstance().beginFloatingDrag();
+        })
+        .onActionUpdate(() => {
+          const dx = this.lastTouchDisplayX - this.dragStartDisplayX;
+          const dy = this.lastTouchDisplayY - this.dragStartDisplayY;
+          InputHandler.getInstance().moveFloatingPanelLive(
+            this.dragStartXFrac, this.dragStartYFrac, dx, dy);
+          // 「今離すとドックに戻る」ことをその場で分かるように、下から
+          // 青い帯が這い出てくるプレビューの高さを更新する。
+          this.dockPreviewProgress = InputHandler.getInstance().checkFloatingDockBack(
+            this.dragStartYFrac, dy);
+        })
+        .onActionEnd(() => {
+          InputHandler.getInstance().endFloatingDrag();
+          this.dockPreviewProgress = 0;
+          const dy = this.lastTouchDisplayY - this.dragStartDisplayY;
+          // 画面下へ大きくはみ出す位置まで引っ張って離したら、通常の
+          // ドッキング状態に戻す (「画面下にはみ出るように動かしたら通常の
+          // 状態にもどるようにして」)。それ以外は普通に位置を保存するだけ。
+          InputHandler.getInstance().endFloatingMoveDrag(this.dragStartYFrac, dy);
+        })
+    )
+
+    // 四隅 = ホールドしてドラッグでリサイズ。対角(掴んでいない角)が画面上で
+    // 動かないよう、角ごとに x/y も一緒に動かす (resizeFloatingPanelLive 側)。
+    // 見た目は塗りつぶし丸ではなく、カメラのフォーカス枠のような丸縁取りの
+    // L字ブラケットにしてある (「サイズ調整のハンドルも丸縁取りのL字みたいな
+    // 形状に」の指摘)。色もカードの縁取りと揃えて薄い水色に。
+    ForEach(['tl', 'tr', 'bl', 'br'], (corner: string) => {
+      Stack() {
+        // 横棒: 上の角なら上端、下の角なら下端に沿わせる。
+        Row().width(HANDLE_LEN).height(HANDLE_THICK).borderRadius(HANDLE_THICK / 2)
+          .backgroundColor(FLOATING_BORDER_COLOR)
+          .position({ x: 0, y: (corner === 'tl' || corner === 'tr') ? 0 : HANDLE_LEN - HANDLE_THICK })
+        // 縦棒: 左の角なら左端、右の角なら右端に沿わせる。
+        Row().width(HANDLE_THICK).height(HANDLE_LEN).borderRadius(HANDLE_THICK / 2)
+          .backgroundColor(FLOATING_BORDER_COLOR)
+          .position({ x: (corner === 'tl' || corner === 'bl') ? 0 : HANDLE_LEN - HANDLE_THICK, y: 0 })
+      }
+        .width(HANDLE_LEN).height(HANDLE_LEN)
+        .position({
+          x: (corner === 'tl' || corner === 'bl')
+            ? FLOATING_MARGIN_VP - HANDLE_THICK
+            : FLOATING_MARGIN_VP + this.floatingCardWVp + HANDLE_THICK,
+          y: (corner === 'tl' || corner === 'tr')
+            ? FLOATING_MARGIN_VP - HANDLE_THICK
+            : FLOATING_MARGIN_VP + this.floatingCardHVp + HANDLE_THICK,
+        })
+        .markAnchor({
+          x: corner === 'tl' || corner === 'bl' ? 0 : '100%',
+          y: corner === 'tl' || corner === 'tr' ? 0 : '100%',
+        })
+        .zIndex(200)
+        .onTouch((e: TouchEvent) => {
+          if (e.touches.length > 0) {
+            this.lastTouchDisplayX = e.touches[0].displayX;
+            this.lastTouchDisplayY = e.touches[0].displayY;
+          }
+        })
+        .gesture(
+          PanGesture({ direction: PanDirection.All })
+            .onActionStart(() => {
+              this.resizeStartXFrac = this.floatingXFrac;
+              this.resizeStartYFrac = this.floatingYFrac;
+              this.resizeStartWFrac = this.floatingWFrac;
+              this.resizeStartHFrac = this.floatingHFrac;
+              this.resizeStartDisplayX = this.lastTouchDisplayX;
+              this.resizeStartDisplayY = this.lastTouchDisplayY;
+              InputHandler.getInstance().beginFloatingDrag();
+            })
+            .onActionUpdate(() => {
+              InputHandler.getInstance().resizeFloatingPanelLive(
+                corner as 'tl' | 'tr' | 'bl' | 'br',
+                this.resizeStartXFrac, this.resizeStartYFrac,
+                this.resizeStartWFrac, this.resizeStartHFrac,
+                this.lastTouchDisplayX - this.resizeStartDisplayX,
+                this.lastTouchDisplayY - this.resizeStartDisplayY);
+            })
+            .onActionEnd(() => {
+              InputHandler.getInstance().endFloatingDrag();
+              InputHandler.getInstance().saveFloatingRect();
+            })
+        )
+    }, (corner: string) => corner)
   }
 
   build() {
@@ -268,6 +574,18 @@ struct KeyboardPage {
           // 調整できるようにする (LayoutAdjustBar のコメント参照)。
           Column() {
             LayoutAdjustBar({ isLandscape: this.isLandscape })
+            // 本番はかな表示帯+候補バーの合計ぶんだけヘッダーが占有される
+            // (比率計算)。LayoutAdjustBar 自身もヘッダー相当の帯なので、
+            // その高さぶんは既に埋め合わせ済み -- ここでダミー帯を
+            // 「かな+候補の合計」までまるごと足すと、LayoutAdjustBar の
+            // 高さと二重取りになってキー側が本番より狭くなってしまう
+            // (「今度は狭くなってしまった」の実体)。LayoutAdjustBar の
+            // 高さを差し引いた残りだけをダミー帯として補う。
+            Row()
+              .width('100%')
+              .height(Math.max(0,
+                this.stripHeightVp() + this.candidateBarHeightVp() - (this.isLandscape ? 30 : 44)))
+              .backgroundColor(kbTheme(this.isDark).previewBg)
             this.KeyboardArea()
           }
           .width('100%')
@@ -289,11 +607,12 @@ struct KeyboardPage {
               CandidateBar({
                 candidates: this.candidates,
                 selectedIndex: this.selectedIndex,
-                showExpand: true
+                showExpand: true,
+                barHeightVp: this.candidateBarHeightVp()
               })
             }
             .width('100%')
-            .backgroundColor(kbTheme(this.isDark).panelBg)
+            .backgroundColor(kbTheme(this.isDark).previewBg)
             .borderWidth({ bottom: 1 })
             .borderColor(kbTheme(this.isDark).divider)
           } else {
@@ -345,12 +664,32 @@ struct KeyboardPage {
                   .fontFamily(JP_FONT_FAMILY)
                   .fontSize(this.isLandscape ? 10 : 13)
                   .fontColor(kbTheme(this.isDark).textSecondary)
+                  .padding({ left: 10, right: 10 })
+                  // 見た目のサイズは変えず、当たり判定だけ広げる (帯自体が
+                  // 低い/狭いことがあるので、パディングを増やすと今度は
+                  // ここが原因で潰れて見えかねない)。
+                  .responseRegion({ x: '-20%', y: '-60%', width: '140%', height: '220%' })
                   .onClick(() => {
                     AppStorage.setOrCreate('keyboardSubMode', 'settings');
                   })
+                  .gesture(
+                    GestureGroup(GestureMode.Sequence,
+                      LongPressGesture({ duration: 300 })
+                        .onAction(() => {
+                          this.floatingHint = true;
+                          this.floatingHintTimer = setTimeout(() => { this.floatingHint = false; }, 1500);
+                        }),
+                      PanGesture({ direction: PanDirection.Up, distance: 20 })
+                        .onActionStart(() => {
+                          InputHandler.getInstance().toggleFloatingMode();
+                          clearTimeout(this.floatingHintTimer);
+                          this.floatingHint = false;
+                        })
+                    )
+                  )
               }
               .width('100%')
-              .height(this.isLandscape ? 14 : 28)
+              .height(this.stripHeightVp())
               .backgroundColor(kbTheme(this.isDark).panelBg)
               .alignItems(VerticalAlign.Center)
               .padding({ left: 12, right: 8 })
@@ -363,7 +702,8 @@ struct KeyboardPage {
                     CandidateBar({
                       candidates: this.candidates,
                       selectedIndex: this.selectedIndex,
-                      showExpand: true
+                      showExpand: true,
+                      barHeightVp: this.candidateBarHeightVp()
                     })
                   } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
                     this.clipboardPreview.length > 0) {
@@ -413,11 +753,11 @@ struct KeyboardPage {
                   } else if (this.composingText.length === 0 && this.pendingRomaji.length === 0 &&
                     this.predictions.length > 0) {
                     // Idle right after a commit: offer the likely next words to tap.
-                    PredictionBar({ predictions: this.predictions })
+                    PredictionBar({ predictions: this.predictions, barHeightVp: this.candidateBarHeightVp() })
                   }
                 }
                 .layoutWeight(1)
-                .height(this.isLandscape ? 22 : 48)
+                .height(this.candidateBarHeightVp())
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
 
@@ -445,14 +785,30 @@ struct KeyboardPage {
                     .fontSize(this.isLandscape ? 10 : 13)
                     .fontColor(kbTheme(this.isDark).textSecondary)
                     .padding({ left: 10, right: 10 })
+                    .responseRegion({ x: '-20%', y: '-60%', width: '140%', height: '220%' })
                     .onClick(() => {
                       AppStorage.setOrCreate('keyboardSubMode', 'settings');
                     })
+                    .gesture(
+                      GestureGroup(GestureMode.Sequence,
+                        LongPressGesture({ duration: 300 })
+                          .onAction(() => {
+                            this.floatingHint = true;
+                            this.floatingHintTimer = setTimeout(() => { this.floatingHint = false; }, 1500);
+                          }),
+                        PanGesture({ direction: PanDirection.Up, distance: 20 })
+                          .onActionStart(() => {
+                            InputHandler.getInstance().toggleFloatingMode();
+                            clearTimeout(this.floatingHintTimer);
+                            this.floatingHint = false;
+                          })
+                      )
+                    )
                 }
               }
               .width('100%')
-              .height(this.isLandscape ? 22 : 48)
-              .backgroundColor(kbTheme(this.isDark).panelBg)
+              .height(this.candidateBarHeightVp())
+              .backgroundColor(kbTheme(this.isDark).previewBg)
               .alignItems(VerticalAlign.Center)
             }
             .width('100%')
@@ -467,9 +823,29 @@ struct KeyboardPage {
           this.KeyboardArea()
         }
       }
-      .width('100%')
-      .height('100%')
+      .width(this.floatingMode ? this.floatingCardWVp : '100%')
+      .height(this.floatingMode ? this.floatingCardHVp : '100%')
+      // フローティング中はウィンドウ自体をカードより一回り大きく取ってあり
+      // (KeyboardController の FLOATING_MARGIN_VP)、四隅ハンドルや影がその
+      // 余白へはみ出せるようにしてある。カード本体はその中央に絶対配置で
+      // 収める。固定時は今までどおり通常フロー ('100%'、position無し)。
+      .position({
+        x: this.floatingMode ? FLOATING_MARGIN_VP : 0,
+        y: this.floatingMode ? FLOATING_MARGIN_VP : 0,
+      })
       .backgroundColor(kbTheme(this.isDark).panelBg)
+      // フローティング中だけ、画面下端に張り付いた通常のキーボードとは
+      // 見た目でも区別が付くよう角丸+縁取り+影を付ける (「デザインが馴染
+      // まない」の指摘)。縁取りはテーマのアクセント色だと主張が強すぎたので
+      // 薄い水色に変更。固定時は今までどおり装飾無し。
+      .borderRadius(this.floatingMode ? 18 : 0)
+      .clip(this.floatingMode)
+      .border(this.floatingMode
+        ? { width: 1.5, color: FLOATING_BORDER_COLOR }
+        : { width: 0 })
+      .shadow(this.floatingMode
+        ? { radius: 18, color: kbTheme(this.isDark).shadowColor, offsetX: 0, offsetY: 8 }
+        : { radius: 0, color: 'transparent', offsetX: 0, offsetY: 0 })
       .onAreaChange((_oldArea: Area, newArea: Area) => {
         // Confirmed via on-device diagnostics: this device's IME panel framework
         // silently shrinks the panel to a fraction of the width requested via
@@ -481,10 +857,16 @@ struct KeyboardPage {
         // is reused across show/hide, so a later resize may not be followed by
         // a fresh onAreaChange, and the learned scale lets that next guess
         // start out already corrected instead of reverting to the raw width.
+        // フローティング中はこのColumnの幅を floatingCardWVp という
+        // 「狙って設定した」vp値そのものにしてあり、画面全幅を前提にした
+        // FIXED時の学習ロジック (lastRawFullVp との比較) を通すと無関係な
+        // 値同士を比べて widthScaleLandscape/Portrait を壊してしまう。
+        // フローティング中は素通りする。
+        if (this.floatingMode) { return; }
         const measuredVp = Number(newArea.width);
         if (measuredVp > 0) {
           const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
-          applyKeyboardWidthsForVp(measuredVp, isTabletClass);
+          applyKeyboardWidthsForVp(measuredVp, isTabletClass, this.isLandscape);
           if (!isTabletClass) {
             const rawFullVp = AppStorage.get<number>('lastRawFullVp') ?? 0;
             if (rawFullVp > 0) {
@@ -513,6 +895,19 @@ struct KeyboardPage {
         })
         .width('100%')
         .height('100%')
+      }
+
+      // フローティング中だけの上際ドラッグ・四隅リサイズハンドル。通常の
+      // レイアウトには一切影響しない絶対位置オーバーレイなので、他の
+      // 分岐と関係なく最後に重ねてよい。
+      if (this.floatingMode) {
+        this.FloatingHandles()
+      }
+      if (this.dockPreviewProgress > 0) {
+        this.DockPreview()
+      }
+      if (this.floatingHint) {
+        this.FloatingHintBanner()
       }
     }
     .width('100%')

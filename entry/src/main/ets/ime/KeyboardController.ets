@@ -19,12 +19,12 @@ import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
 import { UnknownWordLearner } from './UnknownWordLearner';
+import { ShortTermMemory } from './ShortTermMemory';
 import { SuppressedCandidates, SUPPRESSED_STORE, SUPPRESSED_KEY } from './SuppressedCandidates';
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
 import { EmojiSuggest } from './EmojiSuggest';
 import { AppMaintenance } from './AppMaintenance';
-import { InputLog } from './InputLog'; // [DEBUG-LOG]
 
 interface InputMethodSubtype {
   id: string;
@@ -79,6 +79,21 @@ const BRACKET_PAIRS: Record<string, string> = {
 // Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
 const MAX_KB_VP = 620;
 
+// フローティングキーボードの位置・大きさ (vp)。KeyboardController.floatingRectVp
+// 参照。
+interface FloatingRect {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+// KeyboardController.displayForFloating の戻り値。
+interface DisplayInfo {
+  dis: display.Display;
+  density: number;
+}
+
 // Pure width math shared by the display-metrics-based initial guess (computeKeyWidths)
 // and the live layout correction (KeyboardPage.onAreaChange). display.getDefaultDisplaySync()
 // can under- or over-report the actually drawable panel width on some devices (e.g. a
@@ -86,9 +101,20 @@ const MAX_KB_VP = 620;
 // raw display metrics alone overflow past the real edge on one side while leaving a dead
 // band on the other. Recomputing from the *measured* on-screen width — whatever the true
 // source of the discrepancy — self-corrects regardless of cause.
-export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boolean): void {
-  const screenVp = isTabletClass ? Math.min(rawScreenVp, MAX_KB_VP) : rawScreenVp;
+export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boolean, isLandscape: boolean): void {
+  // タブレット/フォルダブルの展開画面 (isTabletClass) だけに効く、最大幅の
+  // 上限そのものの倍率。実機を持たない開発側では画面比率ごとの最適値が
+  // 分からないため、設定 → ビジュアル調整 で利用者本人が追い込めるように
+  // してある (既定 1.0 = 従来どおり MAX_KB_VP=620vp)。通常のスマホでは
+  // isTabletClass が false になるのでこの値自体が一切効かない。
+  const widthScale = isTabletClass ? Math.min(1.6, Math.max(0.5, AppStorage.get<number>('keyboardWidthScale') ?? 1.0)) : 1.0;
+  const screenVp = isTabletClass ? Math.min(rawScreenVp, MAX_KB_VP * widthScale) : rawScreenVp;
   AppStorage.setOrCreate('keyboardContentVp', screenVp);
+  // キーボード幅の上限スライダーのライブ反映 (applyKeyboardWidthScaleLive) が
+  // 上限を引き上げたときに実際に広がれるよう、キャップ適用前の生の値も
+  // 別キーで残しておく (keyboardContentVp は既にキャップ後の値なので、
+  // それを入力に再計算すると小さいほうに固定されて戻れなくなる)。
+  AppStorage.setOrCreate('keyboardRawContentVp', rawScreenVp);
   // 10-key rows (KeyboardView's number row / qwerty row / romaji asdfghjklー
   // row): 4vp total H-padding + 9 gaps × 5vp (KeyboardView's Row({space:5}),
   // not the 2vp this used to assume before the design-token pass bumped row
@@ -116,7 +142,8 @@ export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boo
   // 幅 / 中央の かなキー1列の幅」。既定 1.0 で今までどおり5列均等になる。
   // available = 2*side + 3*mid, side = ratio*mid という連立から解く。
   const available = screenVp - 16;
-  const sideRatio = Math.min(2.0, Math.max(0.4, AppStorage.get<number>('flickSideColumnRatio') ?? 1.0));
+  const sideRatio = Math.min(2.0, Math.max(0.4, AppStorage.get<number>(
+    isLandscape ? 'flickSideColumnRatioLandscape' : 'flickSideColumnRatioPortrait') ?? 1.0));
   const flickKwVp = Math.max(Math.floor(available / (3 + 2 * sideRatio)), 40);
   const flickSideKwVp = Math.max(Math.floor(flickKwVp * sideRatio), 32);
   AppStorage.setOrCreate('keyWidthVp', kwVp);
@@ -245,6 +272,13 @@ export class InputHandler {
   private composingWatermark: string = '';
   // この入力欄が setPreviewTextSync に対応しているか (onInputStart で判定)。
   private previewSupported: boolean = false;
+  // 対応可否がまだ分からない (getEditorAttribute の応答待ち) か。
+  // onInputStart は「まず false にして publishPreviewMode → 非同期で本当の値が
+  // 来たらもう一度」の順で走るので、対応している欄でも一瞬だけ
+  // previewInField=false が配られる。UI 側がこれを「非対応の欄に入った」と
+  // 受け取って、どんな入力欄でも毎回フォールバックのバナーを出してしまって
+  // いた。判定が確定するまでバナーを抑止するためのフラグ。
+  private previewSupportPending: boolean = false;
   // 実際に入力欄へプレビューを出している最中か。出していないのに
   // finishTextPreviewSync を呼ぶと無駄な IPC になるので状態を持つ。
   private previewActive: boolean = false;
@@ -329,8 +363,7 @@ export class InputHandler {
   // まま残る。そうなると saveLearning/saveSuppressed 等は `if (!prefs) return`
   // で黙って何もしなくなり、キーボード自体は動くのに保存だけが全部死ぬ ──
   // 画面からは「全部空」としか見えない。
-  // だから、ここに本質的でない処理を足さないこと。収集用の初期化は最後に
-  // setupInputLog() として切り出してある(それ自体も try で囲ってある)。
+  // だから、ここに本質的でない処理を足さないこと。
   setContext(ctx: InputMethodExtensionContext): void {
     if (this.imeContext !== undefined) { return; }
     this.imeContext = ctx;
@@ -345,7 +378,6 @@ export class InputHandler {
           KanaKanjiConverter.setLearned(data);
         } catch (_e) {}
       })
-      .catch((e: Error) => { InputLog.recordInit('shunti_learning', e); }); // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_nextword')
       .then((prefs: dataPreferences.Preferences) => {
         this.nextWordPrefs = prefs;
@@ -360,7 +392,6 @@ export class InputHandler {
           NextWordPredictor.setLearned(data);
         } catch (_e) {}
       })
-      .catch((e: Error) => { InputLog.recordInit('shunti_nextword', e); }); // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_unknownword')
       .then((prefs: dataPreferences.Preferences) => {
         this.unknownWordPrefs = prefs;
@@ -372,7 +403,6 @@ export class InputHandler {
           UnknownWordLearner.setLearned(data);
         } catch (_e) {}
       })
-      .catch((e: Error) => { InputLog.recordInit('shunti_unknown', e); }); // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, SUPPRESSED_STORE)
       .then((prefs: dataPreferences.Preferences) => {
         this.suppressedPrefs = prefs;
@@ -384,7 +414,6 @@ export class InputHandler {
           SuppressedCandidates.setSuppressed(data);
         } catch (_e) {}
       })
-      .catch((e: Error) => { InputLog.recordInit('shunti_suppressed', e); }); // [DEBUG-LOG]
     dataPreferences.getPreferences(this.imeContext, 'shunti_symbol_freq')
       .then((prefs: dataPreferences.Preferences) => {
         this.symbolPrefs = prefs;
@@ -396,7 +425,6 @@ export class InputHandler {
           InputHandler.publishFrequentSymbols();
         } catch (_e) {}
       })
-      .catch((e: Error) => { InputLog.recordInit('shunti_symbol_freq', e); }); // [DEBUG-LOG]
     this.reloadUserDict();
     this.reloadSettings();
     // 単漢字ずつ組み立て直した語が、実は辞書のどこかに(埋もれて)もう存在した
@@ -405,62 +433,12 @@ export class InputHandler {
     // 読み全体をひとつの文字列として打つことが無いので recordChoice も一切
     // 呼ばれず、いつまでも埋もれたままになる穴があった。通常の学習ブーストに
     // 回すことでこの穴を塞ぐ。
-    // ★ デバッグ専用ではない (リリースでも効くべき機能) なので、下の
-    // setupInputLog とは違い収集用の印を付けないこと。
-    // (印の文字列をここに書くと、check_debug_log の
-    //  削除対象一覧にこの説明文自体が混ざる)
     UnknownWordLearner.onKnownAssembly = (r: string, s: string) => {
       KanaKanjiConverter.recordChoice(r, s);
       this.saveLearning();
-      InputLog.recordKnownAssembly(r, s); // [DEBUG-LOG]
     };
-    this.setupInputLog(ctx); // [DEBUG-LOG] 必ず最後。上の初期化を壊さないため
   }
 
-  // [DEBUG-LOG] 収集の初期化。
-  //
-  // これを setContext の先頭に置き、しかも ctx.getApplicationContext() という
-  // 新しい API 依存をそこに足していた。あの位置で例外が出ると以降の
-  // getPreferences が1つも走らず、学習も削除候補も黙って保存されなくなる。
-  // デバッグ用の機能を、本体の永続化より前に立ててはいけない。
-  // 末尾に移し、全体を try で囲い、パス取得にも代替を用意した。
-  private setupInputLog(ctx: InputMethodExtensionContext): void { // [DEBUG-LOG]
-    try { // [DEBUG-LOG]
-      // 書き込み先は「実際に開けたところ」を使う。パス文字列が取れることと
-      // 拡張プロセスがそこに書けることは別なので、仮定せず試す。
-      //
-      // ★ 重要: このログは本体アプリからは読めない (別サンドボックス)。
-      //
-      // キーボードは :inputMethod という別プロセスで動いており、実機で確認した
-      // ところ、拡張のサンドボックスは本体アプリのそれと別実体だった。
-      // 根拠: 拡張は shunti_settings の保存に成功している (flush 完了後に出る
-      // "saveConversionEngine ok" が出る) のに、本体アプリ側から見える
-      // preferences には shunti_settings が存在しない。一方で本体アプリが書く
-      // shunti_userdict はそこに存在し、更新時刻も書いた瞬間に動く。
-      // モジュール単位・アプリ単位のどちらを使っても結果は同じだった。
-      //
-      // よってディレクトリの選び方では解決しない。プロセスを跨ぐには
-      // dataGroupIds + context.getGroupDir() のような別の仕組みが要る。
-      // ここでアプリ単位を先に試しているのは読み手と順序を揃えてあるだけで、
-      // 「共有されるから」ではない。 // [DEBUG-LOG]
-      let appDir = ''; // [DEBUG-LOG]
-      try { appDir = ctx.getApplicationContext().filesDir; } catch (_e) { appDir = ''; } // [DEBUG-LOG]
-      const used = InputLog.setWritableDir([appDir, ctx.filesDir]); // [DEBUG-LOG]
-      console.info('shuntiIME InputLog dir=' + used + ' (module=' + ctx.filesDir + ' app=' + appDir + ')'); // [DEBUG-LOG]
-      InputLog.recordPaths('setContext', // [DEBUG-LOG]
-        used.length > 0 ? used : '書き込めるディレクトリ無し', // [DEBUG-LOG]
-        ctx.filesDir, ctx.preferencesDir); // [DEBUG-LOG]
-      // ApplicationInfo に versionName は無い (ApplicationInfo.d.ts に存在しない
-      // フィールドだった -- BundleInfo 側にしかない)。getBundleInfoForSelfSync
-      // は追加権限なしで呼べる。 // [DEBUG-LOG]
-      let appVersion = ''; // [DEBUG-LOG]
-      try { appVersion = bundleManager.getBundleInfoForSelfSync(bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT).versionName; } catch (_e) { appVersion = ''; } // [DEBUG-LOG]
-      InputLog.recordVersion(appVersion); // [DEBUG-LOG]
-      UnknownWordLearner.onLearn = (r: string, s: string, confirmed: boolean) => { InputLog.recordUnknownWord(r, s, confirmed); }; // [DEBUG-LOG]
-    } catch (e) { // [DEBUG-LOG]
-      console.error('shuntiIME InputLog setup failed', JSON.stringify(e)); // [DEBUG-LOG]
-    } // [DEBUG-LOG]
-  } // [DEBUG-LOG]
 
   // Called whenever the user taps a symbol in SymbolView, so its "recent" tab
   // can be ranked by what this user actually reaches for instead of a fixed
@@ -517,13 +495,7 @@ export class InputHandler {
       // recurred on every restart until the store was wiped (a
       // "reinstall-only" crash). On any failure, fall back to no user
       // dictionary rather than crashing — the keyboard still works.
-      // [DEBUG-LOG] 拡張が本体アプリの書いた辞書を読めているかの切り分け用。
-      // ここが 0件 なら本体アプリ→拡張の受け渡し自体が届いていない。
-      // 件数が出るのに変換に出ないなら、原因は展開/候補側にある。
-      // 件数だけ。読みや単語そのものは hilog に出さない (端末の共有ログに
-      // ユーザーの登録内容が残るため)。
-      console.info('shuntiIME reloadUserDict loaded',
-        JSON.stringify({ dict: Object.keys(results[0]).length, pos: Object.keys(results[1]).length })); // [DEBUG-LOG]
+      console.info('shuntiIME reloadUserDict loaded');
       // 設定パネルの「登録済み」一覧が出す元データ (展開前の生の登録内容)。
       this.userDictRaw = results[0];
       try {
@@ -565,17 +537,42 @@ export class InputHandler {
         this.applyVocabPacks(s.vocabPackOverrides);
         this.applyComposingDisplay(s.composingInPanel, s.composingInField);
         this.hapticEnabled = s.hapticEnabled;
+        this.probeHapticSupportSilently();
         this.applyConversionEngine(s.conversionEngine);
         this.applyThemeMode(s.themeMode);
         // computeKeyHeight/applyKeyboardWidthsForVp は AppStorage の
-        // keyboardHeightScale/flickSideColumnRatio を読むが、起動直後の
-        // initPanel はこの読み込みより先に (既定値のまま) 一度走っている
-        // ことがある。ここで値を入れたうえで resizePanel を呼び直し、
-        // 保存済みの調整を確実に反映させる。
-        AppStorage.setOrCreate('keyboardHeightScale', s.keyboardHeightScale);
-        AppStorage.setOrCreate('flickSideColumnRatio', s.flickSideColumnRatio);
-        this.kbCtrlRef?.resizePanel();
+        // keyboardHeightScale*/flickSideColumnRatio* (縦横別) を読むが、
+        // 起動直後の initPanel はこの読み込みより先に (既定値のまま) 一度
+        // 走っていることがある。ここで両方向ぶん値を入れたうえで
+        // resizePanel を呼び直し、保存済みの調整を確実に反映させる。
+        AppStorage.setOrCreate('keyboardHeightScalePortrait', s.keyboardHeightScalePortrait);
+        AppStorage.setOrCreate('keyboardHeightScaleLandscape', s.keyboardHeightScaleLandscape);
+        AppStorage.setOrCreate('flickSideColumnRatioPortrait', s.flickSideColumnRatioPortrait);
+        AppStorage.setOrCreate('flickSideColumnRatioLandscape', s.flickSideColumnRatioLandscape);
+        AppStorage.setOrCreate('keyboardWidthScale', s.keyboardWidthScale);
+        AppStorage.setOrCreate('keyboardHorizontalOffset', s.keyboardHorizontalOffset);
+        this.syncFloatingFromSettings(s);
       });
+  }
+
+  // フローティングの位置・大きさ・ON/OFF を設定値と揃える。
+  // KeyboardController.reloadSettings (起動・inputStart毎) と
+  // KeyboardPage.reloadSettingsIntoStorage (パネルUI再構築毎) の両方から
+  // 呼ぶための共通処理 -- 別プロセスの本体アプリ側で設定が変わった場合の
+  // 反映経路が2つあるので、ロジックの二重実装を避けてここに集約した。
+  syncFloatingFromSettings(s: KeyboardSettings): void {
+    AppStorage.setOrCreate('floatingXFrac', s.floatingXFrac);
+    AppStorage.setOrCreate('floatingYFrac', s.floatingYFrac);
+    AppStorage.setOrCreate('floatingWFrac', s.floatingWFrac);
+    AppStorage.setOrCreate('floatingHFrac', s.floatingHFrac);
+    // 前回の起動/表示から floatingMode が変わっているときだけ changeFlag を
+    // 伴う setFloatingMode を呼ぶ (それ自体が内部で resizePanel 相当の
+    // 再配置もする)。変わっていなければ通常の resizePanel だけで足りる。
+    if ((AppStorage.get<boolean>('floatingMode') ?? false) !== s.floatingMode) {
+      this.kbCtrlRef?.setFloatingMode(s.floatingMode);
+    } else {
+      this.kbCtrlRef?.resizePanel();
+    }
   }
 
   // Track B (mozc-derived) is loaded lazily -- only the first time the
@@ -757,6 +754,23 @@ export class InputHandler {
   // OSが方針を変えれば以下がそのまま動くため、実装は残してある。
   private hapticMode: number = 0;
 
+  // 実際には鳴らさずに、端末が振動そのものに対応しているかだけを見る。
+  // 設定画面を開いた時点で「この端末では使えない」と分かるようにして、
+  // トグル自体をグレーアウトするために使う (「非対応機種は自動で検出して
+  // 設定自体をグレーアウトしてほしい」)。OS が IME 拡張プロセスからの振動を
+  // 許可していない場合はここでは分からないので、実際に鳴らそうとして初めて
+  // 判明する従来の経路 (probeHaptic / markHapticUnavailable) も残してある。
+  probeHapticSupportSilently(): void {
+    try {
+      if (!vibrator.isSupportEffectSync('haptic.clock.timer')) {
+        this.markHapticUnavailable();
+      }
+    } catch (_e) {
+      // 判定APIそのものが無い/失敗した端末では、従来どおり実際に鳴らして
+      // みるまで分からないものとして扱う (ここでグレーアウトはしない)。
+    }
+  }
+
   private probeHaptic(): void {
     AppStorage.setOrCreate('hapticUnavailable', false);
     // 1) プリセット効果。端末が用意している「カチッ」を借りる方式。
@@ -912,40 +926,147 @@ export class InputHandler {
   // AppStorage の書き換えとパネルの実リサイズだけをその場でやる。
   // 連打の間引きは resizePanel 側 (KeyboardController、setTimeoutベースで
   // 詰まらないよう組んである) が引き受けるので、ここでは毎回呼んでよい。
-  applyKeyboardHeightScaleLive(scale: number): void {
-    AppStorage.setOrCreate('keyboardHeightScale', scale);
+  // 縦向き/横向きで別の値を持つ (画面が横長で背が低くなりがち、特殊キー列
+  // の見え方も違うため)。呼び出し元 (LayoutAdjustBar/FlickKeyboardView) は
+  // 自分の isLandscape を @Prop/@StorageLink で既に知っているので渡す。
+  applyKeyboardHeightScaleLive(scale: number, isLandscape: boolean): void {
+    AppStorage.setOrCreate(isLandscape ? 'keyboardHeightScaleLandscape' : 'keyboardHeightScalePortrait', scale);
     this.kbCtrlRef?.resizePanel();
   }
 
-  saveKeyboardHeightScale(scale: number): void {
-    AppStorage.setOrCreate('keyboardHeightScale', scale);
+  saveKeyboardHeightScale(scale: number, isLandscape: boolean): void {
+    AppStorage.setOrCreate(isLandscape ? 'keyboardHeightScaleLandscape' : 'keyboardHeightScalePortrait', scale);
     this.kbCtrlRef?.resizePanel();
     if (this.imeContext) {
-      SettingsStore.saveKeyboardHeightScale(this.imeContext, scale);
+      SettingsStore.saveKeyboardHeightScale(this.imeContext, scale, isLandscape);
     }
   }
 
   // 中央3列 : 左右特殊キー1列 の比率スライダー。パネル自体のサイズは
   // 変わらないので、幅の再計算 (applyKeyboardWidthsForVp) だけで足りる。
-  applyFlickSideRatioLive(ratio: number): void {
-    AppStorage.setOrCreate('flickSideColumnRatio', ratio);
+  applyFlickSideRatioLive(ratio: number, isLandscape: boolean): void {
+    AppStorage.setOrCreate(isLandscape ? 'flickSideColumnRatioLandscape' : 'flickSideColumnRatioPortrait', ratio);
     const vp = AppStorage.get<number>('keyboardContentVp') ?? 0;
     if (vp <= 0) { return; }
     const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
-    applyKeyboardWidthsForVp(vp, isTabletClass);
+    applyKeyboardWidthsForVp(vp, isTabletClass, isLandscape);
   }
 
-  saveFlickSideRatio(ratio: number): void {
-    this.applyFlickSideRatioLive(ratio);
+  saveFlickSideRatio(ratio: number, isLandscape: boolean): void {
+    this.applyFlickSideRatioLive(ratio, isLandscape);
     if (this.imeContext) {
-      SettingsStore.saveFlickSideRatio(this.imeContext, ratio);
+      SettingsStore.saveFlickSideRatio(this.imeContext, ratio, isLandscape);
     }
   }
 
-  // 設定画面のリセットボタン。両方とも既定 (1.0 = 今までどおり) へ戻す。
+  // タブレット/フォルダブルの展開画面だけに効く、キーボード最大幅の倍率。
+  // isTabletClass でない (普通のスマホの) 端末では applyKeyboardWidthsForVp
+  // 側で無視されるので、ここで弾かず常に書き込んでよい。
+  applyKeyboardWidthScaleLive(scale: number): void {
+    AppStorage.setOrCreate('keyboardWidthScale', scale);
+    const rawVp = AppStorage.get<number>('keyboardRawContentVp') ?? 0;
+    if (rawVp <= 0) { return; }
+    const isTabletClass = AppStorage.get<boolean>('isTabletClass') ?? false;
+    const isLandscape = AppStorage.get<boolean>('isLandscape') ?? false;
+    applyKeyboardWidthsForVp(rawVp, isTabletClass, isLandscape);
+  }
+
+  saveKeyboardWidthScale(scale: number): void {
+    this.applyKeyboardWidthScaleLive(scale);
+    if (this.imeContext) {
+      SettingsStore.saveKeyboardWidthScale(this.imeContext, scale);
+    }
+  }
+
+  // キーボード本体の左右寄せ (-1 = 左端、0 = 中央、+1 = 右端)。パネルの
+  // 大きさもキーの幅も変わらず、余白のどちら側に寄せるかだけの話なので、
+  // 実リサイズも幅の再計算も要らない -- AppStorage を書き換えれば
+  // KeyboardPage 側が自分で位置を付け替える。
+  applyKeyboardHorizontalOffsetLive(offset: number): void {
+    AppStorage.setOrCreate('keyboardHorizontalOffset', Math.min(1, Math.max(-1, offset)));
+  }
+
+  saveKeyboardHorizontalOffset(offset: number): void {
+    this.applyKeyboardHorizontalOffsetLive(offset);
+    if (this.imeContext) {
+      SettingsStore.saveKeyboardHorizontalOffset(this.imeContext, offset);
+    }
+  }
+
+  // 設定画面のリセットボタン。縦横どちらの調整帯からでも呼べるが、
+  // 「リセット」に縦横の区別を出していないので両方向とも既定 (1.0) へ戻す。
   resetLayoutAdjust(): void {
-    this.saveKeyboardHeightScale(1.0);
-    this.saveFlickSideRatio(1.0);
+    this.saveKeyboardHeightScale(1.0, false);
+    this.saveKeyboardHeightScale(1.0, true);
+    this.saveFlickSideRatio(1.0, false);
+    this.saveFlickSideRatio(1.0, true);
+    this.saveKeyboardWidthScale(1.0);
+    this.saveKeyboardHorizontalOffset(0);
+  }
+
+  // フローティングキーボード。固定⇔フローティングの切替そのものは
+  // panel.changeFlag を持っている KeyboardController 側でしかできない
+  // (このクラスは拡張本体の参照を kbCtrlRef に持っているだけ)。
+  // 設定画面のトグルは isOn を明示的に渡す (setKeyChromeEnabled 等の他の
+  // トグルと同じ形)。設定ボタン長押し→上スライドのジェスチャは現在値を
+  // 反転させるだけでよいので toggleFloatingMode を使う。
+  setFloatingModeExplicit(enabled: boolean): void {
+    this.kbCtrlRef?.setFloatingMode(enabled);
+    if (this.imeContext) {
+      SettingsStore.saveFloatingMode(this.imeContext, enabled);
+    }
+  }
+
+  toggleFloatingMode(): void {
+    this.setFloatingModeExplicit(!(AppStorage.get<boolean>('floatingMode') ?? false));
+  }
+
+  // 上際ハンドルのドラッグ中に毎フレーム呼ばれる。保存は onActionEnd から
+  // saveFloatingRect で別に行う (他のライブ系ハンドルと同じ分担)。
+  moveFloatingPanelLive(startXFrac: number, startYFrac: number, offsetXVp: number, offsetYVp: number): void {
+    this.kbCtrlRef?.moveFloatingPanelLive(startXFrac, startYFrac, offsetXVp, offsetYVp);
+  }
+
+  // 上際ハンドルを離した瞬間。画面下へ大きくはみ出す位置まで引っ張って
+  // いたら通常のドッキング状態に戻し、そうでなければ普通に保存する
+  // (KeyboardController.endFloatingMoveDrag 参照)。
+  endFloatingMoveDrag(startYFrac: number, offsetYVp: number): void {
+    this.kbCtrlRef?.endFloatingMoveDrag(startYFrac, offsetYVp);
+  }
+
+  // ドラッグ中、いま離したらドックに戻るかを 0〜1 の連続値でライブに
+  // 問い合わせる。KeyboardPage の「下から這い出てくる」プレビュー帯の
+  // 高さにそのまま使う。
+  checkFloatingDockBack(startYFrac: number, offsetYVp: number): number {
+    return this.kbCtrlRef?.checkFloatingDockBack(startYFrac, offsetYVp) ?? 0;
+  }
+
+  // 四隅のリサイズハンドルのドラッグ中に毎フレーム呼ばれる。
+  resizeFloatingPanelLive(corner: 'tl' | 'tr' | 'bl' | 'br',
+      startXFrac: number, startYFrac: number, startWFrac: number, startHFrac: number,
+      offsetXVp: number, offsetYVp: number): void {
+    this.kbCtrlRef?.resizeFloatingPanelLive(corner, startXFrac, startYFrac, startWFrac, startHFrac, offsetXVp, offsetYVp);
+  }
+
+  // ドラッグ/リサイズが終わった時点の (クランプ済みの) 現在値を保存する。
+  saveFloatingRect(): void {
+    if (!this.imeContext) { return; }
+    const xFrac = AppStorage.get<number>('floatingXFrac') ?? 0.2;
+    const yFrac = AppStorage.get<number>('floatingYFrac') ?? 0.12;
+    const wFrac = AppStorage.get<number>('floatingWFrac') ?? 0.6;
+    const hFrac = AppStorage.get<number>('floatingHFrac') ?? 0.35;
+    SettingsStore.saveFloatingRect(this.imeContext, xFrac, yFrac, wFrac, hFrac);
+  }
+
+  // ドラッグ/リサイズの開始・終了。KeyboardController.beginFloatingDrag の
+  // コメント参照 -- 「反復横跳び」対策として、ドラッグ中は画面サイズの
+  // 読み直しを止めて固定するための区間マーカー。
+  beginFloatingDrag(): void {
+    this.kbCtrlRef?.beginFloatingDrag();
+  }
+
+  endFloatingDrag(): void {
+    this.kbCtrlRef?.endFloatingDrag();
   }
 
   // 語彙パックの明示的な ON/OFF (利用者が自分で触ったものだけ)。
@@ -1044,7 +1165,6 @@ export class InputHandler {
     this.learningDirty = false;
     prefs.put('v1', JSON.stringify(KanaKanjiConverter.getLearned()))
       .then(() => prefs.flush())
-      .catch((e: Error) => { InputLog.recordInit('shunti_learning(保存)', e); }); // [DEBUG-LOG]
   }
 
   private saveLearning(): void {
@@ -1060,7 +1180,6 @@ export class InputHandler {
     this.nextWordDirty = false;
     prefs.put('v1', JSON.stringify(NextWordPredictor.getLearned()))
       .then(() => prefs.flush())
-      .catch((e: Error) => { InputLog.recordInit('shunti_nextword(保存)', e); }); // [DEBUG-LOG]
   }
 
   private saveNextWord(): void {
@@ -1076,7 +1195,6 @@ export class InputHandler {
     this.unknownWordDirty = false;
     prefs.put('v1', JSON.stringify(UnknownWordLearner.getLearned()))
       .then(() => prefs.flush())
-      .catch((e: Error) => { InputLog.recordInit('shunti_unknown(保存)', e); }); // [DEBUG-LOG]
   }
 
   private saveUnknownWords(): void {
@@ -1371,34 +1489,7 @@ export class InputHandler {
       .catch((e: ESObject) => { console.error('shuntiIME resetAllData failed', JSON.stringify(e)); });
   }
 
-  // ---- 入力ログの閲覧 (デバッグ専用) ------------------------------------ // [DEBUG-LOG]
-  //
-  // 本体アプリからは読めない。ログを書いているのは拡張プロセスで、
-  // 本体アプリとはサンドボックスが別だから (registerUserWord のコメント参照)。
-  // 収集した内容を見るには、書いた側であるここで読むしかない。
 
-  publishInputLogRows(): void { // [DEBUG-LOG]
-    const dir = InputLog.writerDir();
-    if (dir.length === 0) {
-      AppStorage.setOrCreate('inputLogSummary', '収集先が未設定です(初期化に失敗)');
-      AppStorage.setOrCreate('inputLogRows', [] as string[]);
-      return;
-    }
-    const raw = InputLog.readRaw(dir);
-    const total = InputLog.countLines(raw);
-    const bytes = InputLog.sizeBytes(dir);
-    AppStorage.setOrCreate('inputLogSummary', `${total}件 / ${Math.round(bytes / 1024)}KB`);
-    // デバッグ専用。精度改善のために後から眺めるものなので、表示が重くなることより
-    // 「必要な行が切り捨てられていない」ことを優先して上限を大きく取る。
-    const entries = InputLog.parse(raw, 20000);
-    const rows: string[] = [];
-    for (const e of entries) {
-      // 種別・読み・確定した表記・何番目の候補か。詳細は書き出しで見る。
-      const pick = e.i >= 0 ? ` [${e.i + 1}/${e.n}]` : '';
-      rows.push(`${e.k}\t${e.r}\t${e.s}${pick}\t${e.x}`);
-    }
-    AppStorage.setOrCreate('inputLogRows', rows);
-  }
 
   // 全文を hilog へ吐き出す。クリップボードの setData (生テキスト・URI 両方)は
   // この拡張プロセスからだと常に "async call failed" で落ちることを実測で確認
@@ -1412,50 +1503,7 @@ export class InputHandler {
   // 問題になり、復元側 (PC 側スクリプト) で単純に連結してから戻せる。
   // 各行に SHUNTILOGDUMP という専用マーカーと連番/総数を入れているので、
   // hilog の他の行に紛れても grep で拾い、番号順に並べ直せる。
-  exportInputLog(): void { // [DEBUG-LOG]
-    const dir = InputLog.writerDir();
-    if (dir.length === 0) {
-      console.error('shuntiIME exportInputLog: no writerDir'); // [DEBUG-LOG]
-      return;
-    }
-    const raw = InputLog.readRaw(dir);
-    if (raw.length === 0) {
-      console.error('shuntiIME exportInputLog: empty'); // [DEBUG-LOG]
-      return;
-    }
-    const bytes = new util.TextEncoder().encodeInto(raw);
-    const b64 = new util.Base64Helper().encodeToStringSync(bytes);
-    const CHUNK = 1500;
-    const total = Math.ceil(b64.length / CHUNK);
-    console.info('shuntiIME SHUNTILOGDUMP_BEGIN total=' + String(total)
-      + ' rawLen=' + String(raw.length) + ' b64Len=' + String(b64.length)); // [DEBUG-LOG]
-    // まとめて書くと hilog 側のバースト制御に引っかかり、実測で733行中
-    // 100行前後が静かに落ちた (2回試して毎回ほぼ同じ範囲が欠けた -- ランダムな
-    // 取りこぼしではなく、書き込み速度そのものが上限を超えていた)。
-    // 1回に少数ずつ・間隔を空けて書くことで確実性を優先する。
-    const BATCH = 5;
-    const INTERVAL_MS = 120;
-    let i = 0;
-    const writeBatch = (): void => {
-      const end = Math.min(i + BATCH, total);
-      for (; i < end; i++) {
-        const chunk = b64.slice(i * CHUNK, (i + 1) * CHUNK);
-        console.info('shuntiIME SHUNTILOGDUMP ' + String(i) + '/' + String(total) + ' ' + chunk); // [DEBUG-LOG]
-      }
-      if (i < total) {
-        setTimeout(writeBatch, INTERVAL_MS);
-      } else {
-        console.info('shuntiIME SHUNTILOGDUMP_END'); // [DEBUG-LOG]
-      }
-    };
-    writeBatch();
-  }
 
-  clearInputLog(): void { // [DEBUG-LOG]
-    const dir = InputLog.writerDir();
-    if (dir.length > 0) { InputLog.clear(dir); }
-    this.publishInputLogRows();
-  }
 
   // 登録候補をすべて消す。削除を考慮していなかった頃の壊れた対応が大量に
   // 溜まっているため、1件ずつ消さずに済む手段を用意する。
@@ -1528,7 +1576,6 @@ export class InputHandler {
     this.suppressedDirty = false;
     prefs.put(SUPPRESSED_KEY, JSON.stringify(SuppressedCandidates.getSuppressed()))
       .then(() => prefs.flush())
-      .catch((e: Error) => { InputLog.recordInit('shunti_suppressed(保存)', e); }); // [DEBUG-LOG]
   }
 
   private saveSuppressed(): void {
@@ -1591,7 +1638,6 @@ export class InputHandler {
       : this.conversionTarget();
     if (reading.length === 0 || surface.length === 0) { return ''; }
     if (!SuppressedCandidates.suppress(reading, surface)) { return ''; }
-    InputLog.recordDeleteCandidate(reading, surface, index, candidates.length); // [DEBUG-LOG]
     KanaKanjiConverter.forgetChoice(reading, surface);
     UnknownWordLearner.forget(reading, surface);
     // 自分で登録した語を消した場合は登録からも外す (両方の一覧の辻褄を合わせる)。
@@ -1652,7 +1698,6 @@ export class InputHandler {
     // confirmQuasi で直接1つ進める -- これが「押されたら昇進」の実体。
     const quasi = AppStorage.get<string[]>('quasiCandidateSurfaces') ?? [];
     if (quasi.includes(surface)) {
-      InputLog.recordQuasiPick(reading, surface); // [DEBUG-LOG]
       UnknownWordLearner.confirmQuasi(reading, surface);
     }
     UnknownWordLearner.observe(reading, surface,
@@ -1798,27 +1843,24 @@ export class InputHandler {
   ): void {
     this.kbController = kbCtrl;
     this.inputClient = client;
-    // [DEBUG-LOG] Collection is paused until this field's attributes arrive, so
-    // a password field is never logged even for the few ms before the async
-    // answer lands.
-    InputLog.beginField(); // [DEBUG-LOG]
     // 入力中のかなを、キーボード内ではなくホストアプリの入力欄に直接
     // 下線付きで出せるか (setPreviewTextSync)。対応は入力欄ごとに違い、
     // 非対応の欄で呼ぶと 12800011 で失敗するので、必ずここで確認してから使う。
     // 対応していればパネル内の composing 表示を畳んで、その分キーボードを
     // 低くできる (publishPreviewMode)。
     this.previewSupported = false;
+    this.previewSupportPending = true;
     this.publishPreviewMode();
     client.getEditorAttribute()
       .then((attr: inputMethodEngine.EditorAttribute) => {
         this.previewSupported = attr.isTextPreviewSupported === true;
+        this.previewSupportPending = false;
         this.publishPreviewMode();
-        InputLog.setFieldPattern(attr.inputPattern); // [DEBUG-LOG]
       })
       .catch((_e: Error) => {
         this.previewSupported = false;
+        this.previewSupportPending = false;
         this.publishPreviewMode();
-        InputLog.setFieldPattern(0); // [DEBUG-LOG]
       });
     this.converter.reset();
     this.reloadUserDict();
@@ -1846,7 +1888,6 @@ export class InputHandler {
   }
 
   onInputStop(): void {
-    InputLog.beginField(); // [DEBUG-LOG] flushes, then pauses until the next field is known
     // 欄を離れる前にプレビューを畳む (inputClient を捨てた後では解除できない)。
     this.cancelPreviewText();
     this.previewSupported = false;
@@ -2036,7 +2077,6 @@ export class InputHandler {
         if (composing.length > 0) {
           const ch = composing.slice(-1);
           this.composingUndoStack.push(ch);
-          InputLog.recordDeleteChar(ch, InputState.COMPOSING); // [DEBUG-LOG]
           AppStorage.setOrCreate('composingText', composing.slice(0, -1));
         }
       }
@@ -2082,7 +2122,6 @@ export class InputHandler {
     const pending = this.converter.flushPending();
     const all = composing + pending;
     if (all.length > 0) { this.insertText(all); }
-    InputLog.recordRaw(composing, all); // [DEBUG-LOG]
     // Committing as raw kana is not a conversion, so it closes any word the
     // user was assembling rather than extending it.
     this.endUnknownWordRun();
@@ -2125,7 +2164,6 @@ export class InputHandler {
         this.saveLearning();
         this.observeUnknownWord(reading, text);
       }
-      InputLog.recordCommit(reading, text, index, candidates.length, candidates); // [DEBUG-LOG]
       this.insertText(text);
       KanaKanjiConverter.addContext(text);
       const words = this.committedWords(text);
@@ -2149,7 +2187,8 @@ export class InputHandler {
   // (かいし→会社 or きょう→"2026年7月23日" would both be wrong to learn).
   private isNonLearningCandidate(composing: string, text: string): boolean {
     if (PredictiveConversion.predict(composing, KanaKanjiConverter.getLearned(),
-        KanaKanjiConverter.prefixCompletions(composing, PREDICT_DICT_HITS)).indexOf(text) >= 0) {
+        KanaKanjiConverter.prefixCompletions(composing, PREDICT_DICT_HITS),
+        ShortTermMemory.hitsForPrefix(composing)).indexOf(text) >= 0) {
       return true;
     }
     if (DateTimePredictor.predict(composing, new Date()).indexOf(text) >= 0) {
@@ -2191,9 +2230,11 @@ export class InputHandler {
       // many times it was made: the one case a user most expects to stick.
       if (composing.length <= InputHandler.MAX_WHOLE_LEARN_LEN) {
         KanaKanjiConverter.recordChoice(composing, text);
+        ShortTermMemory.record(composing, text);
       }
     } else {
       KanaKanjiConverter.recordChoice(composing, text);
+      ShortTermMemory.record(composing, text);
     }
   }
 
@@ -2216,7 +2257,6 @@ export class InputHandler {
         this.saveLearning();
         this.observeUnknownWord(reading, chosen);
       }
-      InputLog.recordCommit(reading, chosen, idx, candidates.length, candidates); // [DEBUG-LOG]
       this.insertText(chosen);
       KanaKanjiConverter.addContext(chosen);
       const words = this.committedWords(chosen);
@@ -2370,6 +2410,8 @@ export class InputHandler {
   // (振動の markHapticUnavailable と同じ方針)。
   private refreshClipboardPreview(): void {
     pasteboard.getSystemPasteboard().getData().then((data: pasteboard.PasteData) => {
+      // 一度でも読めたなら、この端末ではクリップボード機能が使える。
+      AppStorage.setOrCreate('clipboardUnavailable', false);
       if (!data || data.getRecordCount() === 0) {
         InputHandler.setClipboardPreviewState('', false, false, '');
         return;
@@ -2419,6 +2461,11 @@ export class InputHandler {
       InputHandler.setClipboardPreviewState('', false, false, '');
     }).catch((err: Error) => {
       console.error('shuntiIME refreshClipboardPreview error', JSON.stringify(err));
+      // 読み出しに失敗した = 権限が下りていないか、OS がこの経路を許して
+      // いない端末。効かない項目を触れる状態で置いておくと混乱するので、
+      // 設定側でグレーアウトできるよう印を付ける (振動の hapticUnavailable
+      // と同じ扱い)。次に一度でも読めれば自動で解除される。
+      AppStorage.setOrCreate('clipboardUnavailable', true);
       InputHandler.setClipboardPreviewState('', false, false, '');
     });
   }
@@ -2522,7 +2569,19 @@ export class InputHandler {
     this.insertText(text, { raw: true } as InsertTextOptions);
   }
 
+  // 「クリップボード履歴を消しても最新の1件だけ消えない」の実体はここ。
+  // 履歴を空にしても OS 側のシステムクリップボードの中身はそのまま残って
+  // いるため、次に refreshClipboardPreview が走った瞬間 (履歴画面を開き
+  // 直す・入力欄でコミットする等) に recordClipboardHistory がその内容を
+  // また履歴の先頭へ足し戻してしまっていた。消した時点の先頭
+  // (=現在システムクリップボードにある内容とほぼ確実に一致する) を
+  // dismissedClipSig に登録しておくことで、内容が変わるまでは
+  // 足し戻されないようにする。
   clearClipboardHistory(): void {
+    const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
+    if (history.length > 0) {
+      InputHandler.dismissedClipSig = InputHandler.clipSig(history[0], '', false);
+    }
     AppStorage.setOrCreate('clipboardHistory', [] as string[]);
   }
 
@@ -2533,7 +2592,6 @@ export class InputHandler {
   private pushHostOp(kind: 'insert' | 'delete', text: string): void {
     if (text.length === 0) { return; }
     if (kind === 'delete') {
-      InputLog.recordDeleteChar(text, InputState.IDLE); // [DEBUG-LOG]
     }
     const at = kind === 'insert' ? this.hostCursor : this.hostCursor - text.length;
     this.hostUndoStack.push({ kind, text, at });
@@ -2572,7 +2630,6 @@ export class InputHandler {
   private async undoLastHostEdit(): Promise<void> {
     const op = this.hostUndoStack.pop();
     if (op === undefined) { return; }
-    InputLog.recordUndo(op.text); // [DEBUG-LOG]
     if (op.kind === 'insert') {
       // 挿入の取り消し = その範囲を削除。挿入直後の位置までカーソルを
       // 動かしてから、その直前を deleteForward で削る。
@@ -2606,7 +2663,6 @@ export class InputHandler {
     }
     const ch = this.composingUndoStack.pop();
     if (ch === undefined || ch.length === 0) { return; }
-    InputLog.recordUndo(ch); // [DEBUG-LOG]
     this.handleDirectKana(ch);
   }
 
@@ -2709,6 +2765,9 @@ export class InputHandler {
     AppStorage.setOrCreate('previewInField', fieldActive);
     AppStorage.setOrCreate('showComposingPanel',
       this.composingInPanel || (this.composingInField && !fieldActive));
+    // 判定待ちの間は UI 側のフォールバック通知を抑止する (この間の
+    // previewInField=false は「非対応」ではなく「まだ分からない」の意味)。
+    AppStorage.setOrCreate('previewSupportPending', this.previewSupportPending);
   }
 
   // 入力中のかなをホストアプリの入力欄へ反映する。composing が空になったら
@@ -2983,7 +3042,8 @@ export class InputHandler {
 
     // Common-word prefix completions (かいし→会社), after any date/time values.
     const completions = PredictiveConversion.predict(target, KanaKanjiConverter.getLearned(),
-      KanaKanjiConverter.prefixCompletions(target, PREDICT_DICT_HITS));
+      KanaKanjiConverter.prefixCompletions(target, PREDICT_DICT_HITS),
+      ShortTermMemory.hitsForPrefix(target));
     for (const c of completions) {
       if (!candidates.includes(c)) { candidates.splice(insAt, 0, c); insAt++; }
     }
@@ -3042,7 +3102,6 @@ export class InputHandler {
       if (this.conversionEnd > 1) {
         this.conversionEnd--;
         AppStorage.setOrCreate('convEnd', this.conversionEnd);
-        InputLog.recordRange(composing, this.conversionEnd); // [DEBUG-LOG]
         this.updateCandidates();
       }
     } else {
@@ -3066,7 +3125,6 @@ export class InputHandler {
       if (this.conversionEnd > 0 && this.conversionEnd < composing.length) {
         this.conversionEnd++;
         AppStorage.setOrCreate('convEnd', this.conversionEnd);
-        InputLog.recordRange(composing, this.conversionEnd); // [DEBUG-LOG]
         this.updateCandidates();
       } else if (this.conversionEnd === 0) {
         // Already at full length, no change needed
@@ -3127,7 +3185,6 @@ export class InputHandler {
     if (composing.length === 0) { return; }
     this.bSegs = this.kanjiConverter.segment(composing);
     this.bChosen = this.bSegs.map((seg: string, i: number) => this.kanjiConverter.autoConvert(seg, this.bSegs[i + 1], this.bSegs[i - 1]));
-    InputLog.recordBunsetsu(composing, this.bSegs); // [DEBUG-LOG]
     this.bCur = 0;
     this.updateBunsetsuStorage();
   }
@@ -3146,14 +3203,33 @@ export class InputHandler {
     const text = this.bChosen.join('');
     for (let i = 0; i < this.bSegs.length; i++) {
       KanaKanjiConverter.recordChoice(this.bSegs[i], this.bChosen[i]);
+      // 「足立レイ」のような、辞書が読み全体では出せず自動で2文節に割れて
+      // 毎回セグメントごとにタップし直している名前も、UnknownWordLearner
+      // から見れば PIECEWISE (音+街+ウナ 方式) と全く同じ信号のはず -- 唯一の
+      // 違いは、別々の確定を積み重ねて手で組み立てるか、1回の文節変換の中で
+      // セグメントごとに選ぶかだけ。今まではここが observeUnknownWord 系を
+      // 一切呼んでおらず、文節変換で組み立てた語がいつまで経っても
+      // 「あだちれい」→「足立レイ」の一発候補に昇格しなかった。ここで各
+      // セグメントを普通の確定と同じように observe() へ流し込む (run は
+      // markSentenceBoundary 等の既存の境界処理でそのうち flush される)。
+      UnknownWordLearner.observe(this.bSegs[i], this.bChosen[i],
+        (r: string, s: string): boolean => this.isKnownConversion(r, s));
+      ShortTermMemory.record(this.bSegs[i], this.bChosen[i]);
     }
-    InputLog.recordBunsetsuFinal(this.bSegs.join(''), text); // [DEBUG-LOG]
+    this.saveUnknownWords();
     this.insertText(text);
+    // 複数文節にまたがる文の確定はここが通り道で、commitCandidate/
+    // commitTopCandidate と違って pushPredictions() が一度も呼ばれていな
+    // かった。次単語予測の学習(NextWordPredictor.record)も予測ストリップの
+    // 更新も pushPredictions 経由なので、文節変換で文を打つ限り学習データが
+    // 全く育たず、予測が「ずっと変わってないレパートリー」に見えていた。
+    const words = this.bChosen.slice();
     this.bSegs = [];
     this.bChosen = [];
     this.bCur = 0;
     this.resetComposition();
     this.saveLearning();
+    this.pushPredictions(words);
   }
 
   // Called when user taps a candidate while in BUNSETSU state
@@ -3161,7 +3237,6 @@ export class InputHandler {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     if (index < candidates.length) {
       KanaKanjiConverter.recordChoice(this.bSegs[this.bCur], candidates[index]);
-      InputLog.recordBunsetsuPick(this.bSegs[this.bCur], candidates[index], index, candidates.length, candidates); // [DEBUG-LOG]
       this.bChosen[this.bCur] = candidates[index];
     }
     // Advance to next segment if available
@@ -3328,6 +3403,15 @@ export class KeyboardController {
   private panel: inputMethodEngine.Panel | undefined;
   private inputHandle: InputHandler = InputHandler.getInstance();
   private kbDelegate: inputMethodEngine.KeyboardDelegate | undefined;
+  // setFloatingMode がバックグラウンド (キーボードを表示していない状態) で
+  // の設定同期のときに panel.show() を誤って呼ばないための、パネルの
+  // 表示状態の自前追跡。Panel 自体に同期的な可視状態の取得手段が無いため。
+  private panelVisible: boolean = false;
+  // setFloatingMode が固定⇔フローティング切替のために自分で呼ぶ
+  // panel.hide() を、OS が「入力欄を離れた」と誤解して inputStop を
+  // 発火させたときに、その後始末 (inputClient破棄・composing状態クリア)
+  // を1回だけ無視するためのフラグ。
+  private suppressNextInputStop: boolean = false;
 
   private context: InputMethodExtensionContext;
 
@@ -3373,7 +3457,6 @@ export class KeyboardController {
   onDestroy(): void {
     // 予約中の学習・削除候補の保存を確定させてから畳む。
     this.inputHandle.flushPendingSaves();
-    InputLog.flush(); // [DEBUG-LOG] 未書き出しの記録を落とさない
     this.unregisterListeners();
     if (this.panel) {
       IMEAbility.destroyPanel(this.panel);
@@ -3494,6 +3577,94 @@ export class KeyboardController {
       });
   }
 
+  // フローティングモードの最小サイズ。これより小さいと掴みにくく／候補や
+  // キーが読めなくなる。
+  private static readonly FLOATING_MIN_W_VP = 220;
+  private static readonly FLOATING_MIN_H_VP = 160;
+  // 実際のOSパネルウィンドウをカード本体より一回り大きく取っておく余白
+  // (vp)。KeyboardPage.ets の FLOATING_MARGIN_VP と同じ値 -- 四隅の
+  // L字ハンドルや影がカードの外側へはみ出す分の描画領域を確保する
+  // (「Lのハンドル見切れてる」の実体は、窓そのものがカードぴったりの
+  // サイズしか無く、はみ出す分がOSにクリップされていたこと)。
+  private static readonly FLOATING_MARGIN_VP = 16;
+  // カード上端(=掴んで動かすためのピル型ハンドル/L字コーナーハンドル)が
+  // 画面最上端すれすれまで行けてしまうと、その帯がステータスバーや端末の
+  // エッジジェスチャー領域(通知パネルを引き出す操作等)と重なり、OS 側に
+  // タッチを横取りされてハンドルへ指が全く届かなくなる。「フローティング
+  // を上辺に持っていくと詰む」の実体はこれ -- 一度そこへ動かすと、動かす
+  // ためのハンドル自体に触れなくなり、二度と引きずり戻せなくなる。
+  // 単なる窓の余白 (FLOATING_MARGIN_VP) より広い専用の下限を設け、
+  // ハンドルが必ずその手前の安全な帯に残るようにする。
+  private static readonly FLOATING_TOP_SAFE_VP = 40;
+
+  // ドラッグ/リサイズ中だけ display.getDefaultDisplaySync() の結果を固定する
+  // ためのキャッシュ。「固定できる2点間で反復横跳びする」不具合の原因:
+  // フローティングパネル自身のリサイズが display の報告値 (使用可能領域)
+  // にわずかに影響し、それを毎回読み直して次の矩形を計算していたため、
+  // 計算→リサイズ→display値が変わる→別の計算結果→リサイズ…という
+  // フィードバックループで2値の間を往復していたとみられる。ドラッグ開始時
+  // に1回だけ読み、そのドラッグが終わるまでは同じ値を使い回すことで
+  // ループの入力そのものを固定する。
+  private draggingFloating: boolean = false;
+  private cachedDis: display.Display | undefined = undefined;
+  private cachedDensity: number = 3.0;
+
+  beginFloatingDrag(): void {
+    try {
+      this.cachedDis = display.getDefaultDisplaySync();
+      this.cachedDensity = this.cachedDis.densityDPI > 0 ? this.cachedDis.densityDPI / 160 : 3.0;
+      this.draggingFloating = true;
+    } catch (err) {
+      console.error('shuntiIME beginFloatingDrag error', err);
+    }
+  }
+
+  endFloatingDrag(): void {
+    this.draggingFloating = false;
+    this.cachedDis = undefined;
+  }
+
+  // ドラッグ中はキャッシュ、そうでなければ毎回読み直す (回転・折りたたみは
+  // 素早く反映したいので、ドラッグしていないときまで固定はしない)。
+  private displayForFloating(): DisplayInfo {
+    if (this.draggingFloating && this.cachedDis !== undefined) {
+      return { dis: this.cachedDis, density: this.cachedDensity };
+    }
+    const dis = display.getDefaultDisplaySync();
+    const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
+    return { dis: dis, density: density };
+  }
+
+  // フローティングの位置・大きさは画面に対する割合 (0〜1) で
+  // AppStorage/設定に持っている (回転・折りたたみで画面サイズ自体が
+  // 変わるため、絶対 vp では意味が無くなる)。呼ばれた時点の画面サイズで
+  // 実際の vp 矩形に変換し、画面からはみ出さないようクランプする。
+  private floatingRectVp(dis: display.Display, density: number): FloatingRect {
+    const screenWVp = dis.width / density;
+    const screenHVp = dis.height / density;
+    const m = KeyboardController.FLOATING_MARGIN_VP;
+    const xFrac = AppStorage.get<number>('floatingXFrac') ?? 0.2;
+    const yFrac = AppStorage.get<number>('floatingYFrac') ?? 0.12;
+    const wFrac = AppStorage.get<number>('floatingWFrac') ?? 0.6;
+    const hFrac = AppStorage.get<number>('floatingHFrac') ?? 0.35;
+    // 上下左右に余白ぶんを残す (窓 = カード + 2*余白 が画面からはみ出さない
+    // ようにするため、カード自体の上限は画面幅から余白の2倍を引いたもの)。
+    const w = Math.max(KeyboardController.FLOATING_MIN_W_VP,
+      Math.min(screenWVp - 2 * m, wFrac * screenWVp));
+    const h = Math.max(KeyboardController.FLOATING_MIN_H_VP,
+      Math.min(screenHVp - 2 * m, hFrac * screenHVp));
+    const x = Math.max(m, Math.min(screenWVp - w - m, xFrac * screenWVp));
+    // ドラッグ中は下端のクランプを緩め、ドック復帰が確定する位置の少し
+    // 手前まで実際に画面外へはみ出して見えるようにする(「UIでも下部は
+    // み出ししてほしい」)。ドラッグ中でなければ (確定した値) 従来どおり
+    // 画面内に収める。
+    const yMax = this.draggingFloating
+      ? screenHVp - h * (1 - KeyboardController.FLOATING_DOCK_BACK_FRACTION)
+      : screenHVp - h - m;
+    const y = Math.max(KeyboardController.FLOATING_TOP_SAFE_VP, Math.min(yMax, yFrac * screenHVp));
+    return { x, y, w, h };
+  }
+
   private computeKeyWidths(dis: display.Display): void {
     const safeDPI = dis.densityDPI > 0 ? dis.densityDPI : 460;
     const density = safeDPI / 160;
@@ -3512,7 +3683,8 @@ export class KeyboardController {
     const shortVp = Math.min(dis.width, dis.height) / density;
     const isTabletClass = shortVp > 600;
     AppStorage.setOrCreate('isTabletClass', isTabletClass);
-    AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP);
+    const widthScaleForWide = AppStorage.get<number>('keyboardWidthScale') ?? 1.0;
+    AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP * widthScaleForWide);
 
     // This is only a best-effort guess from raw display metrics — on-device
     // diagnostics confirmed this device's IME panel framework silently shrinks
@@ -3536,7 +3708,7 @@ export class KeyboardController {
     const learnedScale = isTabletClass ? 1 : (AppStorage.get<number>(scaleKey) ?? 1);
     AppStorage.setOrCreate('lastRawFullVp', fullVp);
     AppStorage.setOrCreate('lastRawFullVpIsLandscape', isLandscape);
-    applyKeyboardWidthsForVp(fullVp * learnedScale, isTabletClass);
+    applyKeyboardWidthsForVp(fullVp * learnedScale, isTabletClass, isLandscape);
   }
 
   // densityDPI/160 gives the px-per-vp ratio (e.g. 460dpi/160 = 2.875 on Pura 70)
@@ -3560,7 +3732,8 @@ export class KeyboardController {
     // 厳しくなり始めるので、下限はそのまま。LayoutAdjustBar のドラッグ
     // 範囲もこれと同じ値を使っている (isLandscape で分岐)。
     const minScale = isLandscape ? 0.4 : 0.7;
-    const scale = Math.min(1.3, Math.max(minScale, AppStorage.get<number>('keyboardHeightScale') ?? 1.0));
+    const scale = Math.min(1.3, Math.max(minScale, AppStorage.get<number>(
+      isLandscape ? 'keyboardHeightScaleLandscape' : 'keyboardHeightScalePortrait') ?? 1.0));
     return Math.floor(base * scale);
   }
 
@@ -3573,6 +3746,11 @@ export class KeyboardController {
       AppStorage.setOrCreate('isLandscape', isLandscape);
       AppStorage.setOrCreate('displayWidth', dis.width);
       AppStorage.setOrCreate('keyboardHeight', keyHeight);
+      // 'keyboardHeight' は panel.resize() に渡す都合で px のまま。ArkUI側
+      // (候補バー等の比率計算) が使うのは vp なので別キーで持つ
+      // (KeyboardPage.ets の keyboardHeightVp 参照)。
+      const initDensity = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
+      AppStorage.setOrCreate('keyboardHeightVp', keyHeight / initDensity);
       this.computeKeyWidths(dis);
 
       const panelInfo: inputMethodEngine.PanelInfo = {
@@ -3614,6 +3792,18 @@ export class KeyboardController {
   private static readonly RESIZE_BUSY_MS = 80;
   private resizeBusyUntil: number = 0;
   private resizePendingRequest: boolean = false;
+  // フローティングの四隅リサイズは resize() と moveTo() の非原子的な2段階が
+  // FIXED時のドラッグより目立ちやすい (掴んでいない角を固定するために毎回
+  // 両方叩くことが多いため)。直前に適用した位置と変わっていなければ
+  // moveTo() 自体を呼ばない -- 二段階のうち片方だけでも減らすと体感の
+  // 「ピクピク」がかなり収まる。
+  private lastFloatingXPx: number = Number.NaN;
+  private lastFloatingYPx: number = Number.NaN;
+  // 同じ考え方で resize() も、大きさが変わっていないとき (上際ハンドルの
+  // 純粋な移動ドラッグなど) は呼ばない。動かすだけなのに毎回 resize() まで
+  // 叩いていたのがカクつきの一因だった。
+  private lastFloatingWPx: number = Number.NaN;
+  private lastFloatingHPx: number = Number.NaN;
 
   // 設定 → レイアウト調整 のハンドルからライブに呼ばれるので公開している
   // (InputHandler.applyKeyboardHeightScaleLive 参照)。パネルの実サイズは
@@ -3628,20 +3818,78 @@ export class KeyboardController {
   }
 
   private doResizePanelNow(): void {
-    this.resizeBusyUntil = Date.now() + KeyboardController.RESIZE_BUSY_MS;
+    const floating = AppStorage.get<boolean>('floatingMode') ?? false;
+    // 「反復横跳び」の原因はジッタではなく display 値のフィードバック
+    // ループだったので (displayForFloating のキャッシュで解決済み)、間引き
+    // 自体はFIXED時と揃えてよい。動きの滑らかさ優先で少し短くしてある。
+    this.resizeBusyUntil = Date.now() + (floating ? Math.floor(KeyboardController.RESIZE_BUSY_MS / 2) : KeyboardController.RESIZE_BUSY_MS);
     try {
-      const dis = display.getDefaultDisplaySync();
+      const dis = this.displayForFloating().dis;
       const isLandscape = dis.width > dis.height;
-      const keyHeight = this.computeKeyHeight(dis, isLandscape);
 
       AppStorage.setOrCreate('isLandscape', isLandscape);
       AppStorage.setOrCreate('displayWidth', dis.width);
-      AppStorage.setOrCreate('keyboardHeight', keyHeight);
-      this.computeKeyWidths(dis);
 
-      this.panel?.resize(dis.width, keyHeight)
-        .then(() => this.panel?.moveTo(0, dis.height - keyHeight))
-        .catch((err: Error) => console.error('shuntiIME resizePanel resize/moveTo error', err));
+      if (floating) {
+        // フローティング中は画面全幅にも下端固定にもしない。位置・大きさは
+        // floatingRectVp が割合から実 vp へ変換したものをそのまま使う
+        // (タブレット幅キャップ・「実機は resize 要求を約76%に縮める」
+        // 学習係数は、いずれも画面いっぱいに広げるFIXED運用時だけの話なので
+        // ここでは適用しない)。
+        const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
+        const rect = this.floatingRectVp(dis, density);
+        AppStorage.setOrCreate('keyboardHeight', rect.h);
+        AppStorage.setOrCreate('keyboardHeightVp', rect.h);
+        applyKeyboardWidthsForVp(rect.w, false, isLandscape);
+        // OSパネルウィンドウ自体はカード(rect)より FLOATING_MARGIN_VP ぶん
+        // 一回り大きく取る。四隅ハンドルや影がその余白へはみ出して描ける
+        // ようにするため (KeyboardPage.ets 側もカードをこの余白ぶん内側に
+        // 絶対配置している -- 数値は両方で揃えてあること)。
+        const m = KeyboardController.FLOATING_MARGIN_VP;
+        const wPx = Math.round((rect.w + 2 * m) * density);
+        const hPx = Math.round((rect.h + 2 * m) * density);
+        const xPx = Math.round((rect.x - m) * density);
+        const yPx = Math.round((rect.y - m) * density);
+        const needsMove = xPx !== this.lastFloatingXPx || yPx !== this.lastFloatingYPx;
+        const needsResize = wPx !== this.lastFloatingWPx || hPx !== this.lastFloatingHPx;
+        this.lastFloatingXPx = xPx;
+        this.lastFloatingYPx = yPx;
+        this.lastFloatingWPx = wPx;
+        this.lastFloatingHPx = hPx;
+        // 変わった軸だけ叩く。上際ハンドルの純粋な移動ドラッグでは大きさが
+        // 一切変わらないので resize() 自体を省き moveTo() だけにする (逆に
+        // 右下角のリサイズでは位置が変わらないので moveTo() を省く) --
+        // どちらの場合も本来不要なネイティブ呼び出しを1回減らせる。
+        //
+        // 一度 adjustPanelRect(FLG_FLOATING, ...) に置き換えてみたが、
+        // フローティング→固定へ戻したときに右側のキーが反応しなくなる
+        // 不具合が出た (おそらく adjustPanelRect が設定した入力受付領域が
+        // FIXED 側の changeFlag/resize だけでは完全にリセットされない)。
+        // 実機での副作用が読み切れないため resize()/moveTo() に戻す。
+        // 「フローティング中もアプリの入力欄が押し上げられて空白ができる」
+        // 件は別の手段で改めて検討する。
+        if (needsResize && needsMove) {
+          this.panel?.resize(wPx, hPx)
+            .then(() => this.panel?.moveTo(xPx, yPx))
+            .catch((err: Error) => console.error('shuntiIME resizePanel(floating) resize/moveTo error', err));
+        } else if (needsResize) {
+          this.panel?.resize(wPx, hPx)
+            .catch((err: Error) => console.error('shuntiIME resizePanel(floating) resize error', err));
+        } else if (needsMove) {
+          this.panel?.moveTo(xPx, yPx)
+            .catch((err: Error) => console.error('shuntiIME resizePanel(floating) move error', err));
+        }
+      } else {
+        const keyHeight = this.computeKeyHeight(dis, isLandscape);
+        AppStorage.setOrCreate('keyboardHeight', keyHeight);
+        const fixedDensity = dis.densityDPI > 0 ? dis.densityDPI / 160 : 3.0;
+        AppStorage.setOrCreate('keyboardHeightVp', keyHeight / fixedDensity);
+        this.computeKeyWidths(dis);
+
+        this.panel?.resize(dis.width, keyHeight)
+          .then(() => this.panel?.moveTo(0, dis.height - keyHeight))
+          .catch((err: Error) => console.error('shuntiIME resizePanel resize/moveTo error', err));
+      }
     } catch (err) {
       console.error('shuntiIME resizePanel error', err);
     }
@@ -3654,7 +3902,242 @@ export class KeyboardController {
         this.resizePendingRequest = false;
         this.doResizePanelNow();
       }
-    }, KeyboardController.RESIZE_BUSY_MS);
+    }, floating ? Math.floor(KeyboardController.RESIZE_BUSY_MS / 2) : KeyboardController.RESIZE_BUSY_MS);
+  }
+
+  // 固定⇔フローティングの切替。Panel.changeFlag のAPI仕様どおり
+  // 「表示中は変えられない → 隠す → flag変更 → 新しい位置/大きさにする →
+  // 表示し直す」の順で行う。設定同期などキーボードを表示していない状態で
+  // 呼ばれることもあるため、隠す前に表示中だったかを覚えておいて
+  // (panelVisible) 最後に表示するかどうかを判断する — 非表示のときに
+  // うっかり呼び出してキーボードを勝手に出現させないため。
+  setFloatingMode(enabled: boolean): void {
+    if (!this.panel) { return; }
+    const wasVisible = this.panelVisible;
+    AppStorage.setOrCreate('floatingMode', enabled);
+    // モード切替の直後は必ず1回 resize()/moveTo() を通す (直前の記憶値は
+    // 別モードのものなので使い物にならない)。
+    this.lastFloatingXPx = Number.NaN;
+    this.lastFloatingYPx = Number.NaN;
+    this.lastFloatingWPx = Number.NaN;
+    this.lastFloatingHPx = Number.NaN;
+    // hide() は Promise を返すが、resizePanel と同じ理由 (このコードベースの
+    // 他の箇所で確認済みの「実機ではPromiseが確実には解決しない」問題) で
+    // then/catch だけに頼ると永久に次へ進めなくなるおそれがある。
+    // 解決/拒否が来ればすぐ、来なくても短い固定時間で必ず1回だけ次へ進む。
+    let proceeded = false;
+    const proceed = (): void => {
+      if (proceeded) { return; }
+      proceeded = true;
+      try {
+        this.panel?.changeFlag(enabled
+          ? inputMethodEngine.PanelFlag.FLG_FLOATING
+          : inputMethodEngine.PanelFlag.FLG_FIXED);
+      } catch (err) {
+        console.error('shuntiIME setFloatingMode changeFlag error', err);
+      }
+      // changeFlag() は戻り値が void で完了を知る手段が無いが、実機では
+      // 直後に resize/moveTo/show を叩くと ImsaKit 側が
+      // 「ShowPanel,channel is nullptr!」を返すことを確認済み -- ネイティブ側の
+      // ウィンドウ切替がまだ終わっていないところに割り込んでいたと見られる。
+      // resize/moveTo 自身の「Promiseが確実には解決しない」問題と同じ理由で
+      // イベント待ちにはできないので、短い固定時間だけ空けてから進む。
+      setTimeout(() => {
+        this.doResizePanelNow();
+        if (wasVisible) {
+          try {
+            this.panel?.show();
+          } catch (err) {
+            console.error('shuntiIME setFloatingMode show error', err);
+          }
+        }
+      }, 100);
+    };
+    // 「フローティング直前の高さぶんの空白ができる」対策として、changeFlag
+    // の前後で高さをほぼ0へ潰す resize() を複数回叩く版を試したが、この
+    // 端末では resize()/moveTo() の Promise が確実な順序で解決しないため、
+    // 後から発行した「本来のフローティングサイズへのリサイズ」より先に
+    // 潰す側の呼び出しが遅れて完了し、フローティングパネルが行方不明に
+    // なる (「どっか飛んで行って戻ってこなくなる」) regression を引き
+    // 起こした。空白問題より実害が大きいため撤回する。空白問題は改めて
+    // 別の(複数リクエストを同時に飛ばさない)安全なやり方を検討すること。
+    // 表示中でなければ hide() は実質なにもしない (何かを隠す必要が無い) の
+    // で、inputStop を誘発する余地も無い -- 無条件でフラグを立てると
+    // inputStop が結局来なかった場合にフラグが残り続け、次の本当の
+    // (無関係な) inputStop を誤って握りつぶしてしまう。表示中だった
+    // ときだけ立て、かつ安全弁として少し待っても来なければ自分で下ろす。
+    if (wasVisible) {
+      this.suppressNextInputStop = true;
+      setTimeout(() => { this.suppressNextInputStop = false; }, 500);
+    }
+    try {
+      this.panel.hide().then(proceed).catch(proceed);
+    } catch (err) {
+      console.error('shuntiIME setFloatingMode hide error', err);
+      proceed();
+    }
+    setTimeout(proceed, 150);
+  }
+
+  // フローティング中のドラッグ/リサイズハンドルからライブに呼ばれる。
+  // 渡された割合を画面からはみ出さないようクランプしてから保存し、
+  // resizePanel (setTimeoutベースの間引き。「実機では resize/moveTo の
+  // Promiseが確実には解決しない」対策は既存のものをそのまま使う) に渡す。
+  private applyFloatingRectLive(xFrac: number, yFrac: number, wFrac: number, hFrac: number): void {
+    try {
+      const dispInfo = this.displayForFloating();
+      const dis = dispInfo.dis;
+      const density = dispInfo.density;
+      const screenWVp = dis.width / density;
+      const screenHVp = dis.height / density;
+      const wVp = Math.max(KeyboardController.FLOATING_MIN_W_VP, Math.min(screenWVp, wFrac * screenWVp));
+      const hVp = Math.max(KeyboardController.FLOATING_MIN_H_VP, Math.min(screenHVp, hFrac * screenHVp));
+      const clampedW = wVp / screenWVp;
+      const clampedH = hVp / screenHVp;
+      const clampedX = Math.max(0, Math.min(1 - clampedW, xFrac));
+      AppStorage.setOrCreate('floatingXFrac', clampedX);
+      // Y は下方向をここではクランプしない (「UIでも下部はみ出ししてほしい」)。
+      // ドラッグ中に画面外へ出た値をそのまま保存し、実際にどこまで描画して
+      // よいかは floatingRectVp 側が draggingFloating を見て判断する。
+      // ドラッグが終わったら endFloatingMoveDrag が改めて範囲内に戻すか、
+      // ドック復帰を確定させるかを決める。
+      AppStorage.setOrCreate('floatingYFrac', yFrac);
+      AppStorage.setOrCreate('floatingWFrac', clampedW);
+      AppStorage.setOrCreate('floatingHFrac', clampedH);
+    } catch (err) {
+      console.error('shuntiIME applyFloatingRectLive error', err);
+    }
+    this.resizePanel();
+  }
+
+  // 上際ハンドルのドラッグ (LayoutAdjustBar 等と同じく、ドラッグ開始時点の
+  // 値 + 累積オフセットで計算する)。offsetX/Y は ArkUI ジェスチャの vp値を
+  // そのまま渡してもらい、画面 vp サイズへの換算はここで最新の
+  // display.getDefaultDisplaySync() を使って行う (回転を跨いでも狂わない)。
+  moveFloatingPanelLive(startXFrac: number, startYFrac: number, offsetXVp: number, offsetYVp: number): void {
+    try {
+      const dispInfo = this.displayForFloating();
+      const dis = dispInfo.dis;
+      const density = dispInfo.density;
+      const screenWVp = dis.width / density;
+      const screenHVp = dis.height / density;
+      const wFrac = AppStorage.get<number>('floatingWFrac') ?? 0.6;
+      const hFrac = AppStorage.get<number>('floatingHFrac') ?? 0.35;
+      this.applyFloatingRectLive(
+        startXFrac + offsetXVp / screenWVp,
+        startYFrac + offsetYVp / screenHVp,
+        wFrac, hFrac);
+    } catch (err) {
+      console.error('shuntiIME moveFloatingPanelLive error', err);
+    }
+  }
+
+  // 「画面下にはみ出るように動かしたら通常の状態に戻る」の判定そのもの。
+  // カードのこの割合以上が画面下端からはみ出す位置まで引っ張ったら true。
+  // ドラッグ中のライブプレビュー表示 (checkFloatingDockBack) と、離した
+  // 瞬間の確定 (endFloatingMoveDrag) の両方から使う共通ロジック。
+  // 元は 0.6 (カードの6割はみ出すまで戻らない) だったが、「下はみだし、
+  // 60%だと過剰」の指摘どおりそこまで引っ張るのは大袈裟すぎたので、
+  // もっと少ないはみ出しで戻るように緩めた。
+  private static readonly FLOATING_DOCK_BACK_FRACTION = 0.35;
+
+  // 0 = 画面内に完全に収まっている、1 = ドック復帰が確定する位置まで
+  // 引っ張った。カードが画面下端からはみ出し始めた瞬間から連続的に増える
+  // ので、KeyboardPage 側はこれをそのまま「下から這い出てくる」プレビュー
+  // の高さに使える。
+  private dockBackProgressRaw(startYFrac: number, offsetYVp: number): number {
+    try {
+      const dispInfo = this.displayForFloating();
+      const dis = dispInfo.dis;
+      const density = dispInfo.density;
+      const screenHVp = dis.height / density;
+      const hFrac = AppStorage.get<number>('floatingHFrac') ?? 0.35;
+      const m = KeyboardController.FLOATING_MARGIN_VP;
+      const h = Math.max(KeyboardController.FLOATING_MIN_H_VP,
+        Math.min(screenHVp - 2 * m, hFrac * screenHVp));
+      const rawYVp = (startYFrac + offsetYVp / screenHVp) * screenHVp;
+      const onscreenBottom = screenHVp - h - m;
+      const dockBackThreshold = screenHVp - h * (1 - KeyboardController.FLOATING_DOCK_BACK_FRACTION);
+      if (rawYVp <= onscreenBottom || dockBackThreshold <= onscreenBottom) {
+        return rawYVp > dockBackThreshold ? 1 : 0;
+      }
+      return Math.max(0, Math.min(1, (rawYVp - onscreenBottom) / (dockBackThreshold - onscreenBottom)));
+    } catch (err) {
+      console.error('shuntiIME dockBackProgressRaw error', err);
+      return 0;
+    }
+  }
+
+  private isPastDockBackThreshold(startYFrac: number, offsetYVp: number): boolean {
+    return this.dockBackProgressRaw(startYFrac, offsetYVp) >= 1;
+  }
+
+  // ドラッグ中、いま離したらドックに戻るかを連続値 (0〜1) でライブに問い
+  // 合わせる。KeyboardPage 側はこれを「下から這い出てくる」青いプレビュー
+  // 帯の高さに直接使う (1 で「離すとドックに戻る」ことも同時に分かる)。
+  checkFloatingDockBack(startYFrac: number, offsetYVp: number): number {
+    return this.dockBackProgressRaw(startYFrac, offsetYVp);
+  }
+
+  endFloatingMoveDrag(startYFrac: number, offsetYVp: number): void {
+    if (this.isPastDockBackThreshold(startYFrac, offsetYVp)) {
+      // setFloatingMode (自分自身) だけだと実行時の状態は変わるが設定への
+      // 保存がされないので、保存まで面倒を見る InputHandler 側の窓口を
+      // 経由する (kbCtrlRef はこの自分自身を指している)。
+      this.inputHandle.setFloatingModeExplicit(false);
+      return;
+    }
+    // ドック復帰しない場合は、ドラッグ中に緩めていた下端クランプを元に
+    // 戻すため、いまの (画面外かもしれない) 値を正規のクランプに通してから
+    // 保存する。resizePanel は endFloatingDrag 側で既に呼ばれているので
+    // ここでは AppStorage の値だけ直せば足りる。
+    const xFrac = AppStorage.get<number>('floatingXFrac') ?? 0.2;
+    const yFrac = AppStorage.get<number>('floatingYFrac') ?? 0.12;
+    const wFrac = AppStorage.get<number>('floatingWFrac') ?? 0.6;
+    const hFrac = AppStorage.get<number>('floatingHFrac') ?? 0.35;
+    try {
+      const dispInfo = this.displayForFloating();
+      const dis = dispInfo.dis;
+      const density = dispInfo.density;
+      const screenHVp = dis.height / density;
+      const m = KeyboardController.FLOATING_MARGIN_VP;
+      const h = Math.max(KeyboardController.FLOATING_MIN_H_VP,
+        Math.min(screenHVp - 2 * m, hFrac * screenHVp));
+      const clampedYFrac = Math.max(KeyboardController.FLOATING_TOP_SAFE_VP,
+        Math.min(screenHVp - h - m, yFrac * screenHVp)) / screenHVp;
+      AppStorage.setOrCreate('floatingYFrac', clampedYFrac);
+    } catch (err) {
+      console.error('shuntiIME endFloatingMoveDrag clamp error', err);
+    }
+    this.resizePanel();
+    this.inputHandle.saveFloatingRect();
+  }
+
+  // 四隅のリサイズハンドル。掴んだ角の対角(=動かない角)が画面上で固定に
+  // 見えるよう、角によって x/y も一緒に動かす。
+  resizeFloatingPanelLive(corner: 'tl' | 'tr' | 'bl' | 'br',
+      startXFrac: number, startYFrac: number, startWFrac: number, startHFrac: number,
+      offsetXVp: number, offsetYVp: number): void {
+    try {
+      const dispInfo = this.displayForFloating();
+      const dis = dispInfo.dis;
+      const density = dispInfo.density;
+      const dxFrac = offsetXVp / (dis.width / density);
+      const dyFrac = offsetYVp / (dis.height / density);
+      let x = startXFrac, y = startYFrac, w = startWFrac, h = startHFrac;
+      if (corner === 'br') {
+        w = startWFrac + dxFrac; h = startHFrac + dyFrac;
+      } else if (corner === 'bl') {
+        w = startWFrac - dxFrac; h = startHFrac + dyFrac; x = startXFrac + dxFrac;
+      } else if (corner === 'tr') {
+        w = startWFrac + dxFrac; h = startHFrac - dyFrac; y = startYFrac + dyFrac;
+      } else {
+        w = startWFrac - dxFrac; h = startHFrac - dyFrac; x = startXFrac + dxFrac; y = startYFrac + dyFrac;
+      }
+      this.applyFloatingRectLive(x, y, w, h);
+    } catch (err) {
+      console.error('shuntiIME resizeFloatingPanelLive error', err);
+    }
   }
 
   private registerListeners(): void {
@@ -3678,9 +4161,20 @@ export class KeyboardController {
         this.applyColorMode();
         this.inputHandle.onInputStart(kbCtrl, client);
         this.panel?.show();
+        this.panelVisible = true;
       });
 
       IMEAbility.on('inputStop', () => {
+        // フローティング切替のための panel.hide() が、OS 側には「入力欄を
+        // 離れた」と解釈されて inputStop を誘発することがある (「固定
+        // キーボードから引っ張り出したとき、テキスト欄の選択が消えて
+        // フローティング出ない」の実体 -- onInputStop が inputClient を
+        // 破棄し composing 状態を消してしまうため)。setFloatingMode 発の
+        // hide() の直後だけはこの後始末をまるごと飛ばす。
+        if (this.suppressNextInputStop) {
+          this.suppressNextInputStop = false;
+          return;
+        }
         // Only hide — don't tear down the context/panel here. initPanel()
         // (which creates this.panel) only runs once, from onCreate(), so
         // destroying the context on every inputStop left no panel to show()
@@ -3693,6 +4187,7 @@ export class KeyboardController {
         // is actually shut down.
         this.inputHandle.onInputStop();
         this.panel?.hide();
+        this.panelVisible = false;
       });
 
       IMEAbility.on('setSubtype', (subtype: InputMethodSubtype) => {

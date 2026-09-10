@@ -3,7 +3,6 @@ import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from './JpFont';
-import { DEBUG_INPUT_LOG } from '../ime/InputLog'; // [DEBUG-LOG]
 
 // Segmented-control / card metrics (design tokens: settings cards 16px,
 // segmented-control track 10-11px / inner pill 8px, selected option gets a
@@ -17,6 +16,26 @@ const DELETE_RED = '#E5484D';
 const RESET_ALL_TAPS = 5;
 const SELECTED_SHADOW: ShadowOptions = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
 const NO_SHADOW: ShadowOptions = { radius: 0, color: 'transparent' };
+
+// 設定項目が増えて縦一列のスクロールでは見づらくなったため、左にカテゴリ
+// 一覧・右に選んだカテゴリの中身、という2ペイン構成にしてある
+// (CategoryNav/MenuView 参照)。
+interface CategoryDef {
+  id: string;
+  label: string;
+}
+
+const CATEGORIES: CategoryDef[] = [
+  { id: 'clipboard', label: 'クリップボード' },
+  { id: 'dict', label: '辞書' },
+  { id: 'input', label: '入力' },
+  { id: 'visual', label: 'ビジュアル調整' },
+  { id: 'composing', label: '入力中の表示' },
+  { id: 'repair', label: '修復' },
+  { id: 'other', label: 'その他' },
+  { id: 'support', label: '開発を応援' },
+];
+const CATEGORY_COL_WIDTH = 96;
 
 // Dedicated settings sub-mode, entered via keyboardSubMode === 'settings'
 // (the ⚙ button in KeyboardPage). Takes the full IME panel the same way
@@ -39,6 +58,13 @@ export struct SettingsBar {
   @StorageLink('themeMode') themeMode: string = 'system';
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
   @StorageLink('flickHintsEnabled') flickHintsEnabled: boolean = true;
+  // タブレット/フォルダブルの展開画面かどうか (KeyboardController が画面の
+  // 短辺から判定)。幅の上限調整は普通のスマホでは効かないので、この端末
+  // 区分のときだけ出す。
+  @StorageLink('isTabletClass') isTabletClass: boolean = false;
+  @StorageLink('keyboardWidthScale') keyboardWidthScale: number = 1.0;
+  @StorageLink('keyboardHorizontalOffset') keyboardHorizontalOffset: number = 0;
+  @StorageLink('floatingMode') floatingMode: boolean = false;
   // 入力中のかなの表示先 (独立した2トグル、組み合わせは4通り)。
   @StorageLink('composingInPanel') composingInPanel: boolean = true;
   @StorageLink('composingInField') composingInField: boolean = true;
@@ -54,6 +80,10 @@ export struct SettingsBar {
   @StorageLink('vocabPackIds') vocabPackIds: string[] = [];
   // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。
   @StorageLink('hapticUnavailable') hapticUnavailable: boolean = false;
+  @StorageLink('clipboardUnavailable') clipboardUnavailable: boolean = false;
+  // 設定メニューの2ペイン構成 (CategoryNav/MenuView 参照) で、いま右側に
+  // 表示しているカテゴリ。CATEGORIES の id のいずれか。
+  @State selectedCategory: string = 'clipboard';
   @State showHistory: boolean = false;
   @State showDict: boolean = false;
   // 語彙パックの一覧。設定の本体に並べると項目が多すぎるので、辞書と同じく
@@ -79,9 +109,6 @@ export struct SettingsBar {
   // 全消去は RESET_ALL_TAPS 回の連打を要求する。手が止まると0に戻す。
   @State resetAllTaps: number = 0;
   private resetAllTimer: number = -1;
-  @State showLog: boolean = false; // [DEBUG-LOG]
-  @StorageLink('inputLogSummary') inputLogSummary: string = ''; // [DEBUG-LOG]
-  @StorageLink('inputLogRows') inputLogRows: string[] = []; // [DEBUG-LOG]
 
   // Re-read the system clipboard whenever the settings panel opens, so the
   // クリップボード履歴 count/list is current -- a copy made in the host app
@@ -117,10 +144,6 @@ export struct SettingsBar {
     this.showDict = true;
   }
 
-  private openLog(): void { // [DEBUG-LOG]
-    InputHandler.getInstance().publishInputLogRows();
-    this.showLog = true;
-  }
 
   build() {
     Column({ space: 0 }) {
@@ -128,7 +151,7 @@ export struct SettingsBar {
       // regardless of which side has a control (design tokens). ──
       Row() {
         Row() {
-          if (this.showHistory || this.showDict || this.showLog || this.showPacks) {
+          if (this.showHistory || this.showDict || this.showPacks) {
             Text('‹ 戻る')
               .fontFamily(JP_FONT_FAMILY)
               .fontSize(14)
@@ -144,7 +167,6 @@ export struct SettingsBar {
                 this.showHistory = false;
                 this.showDict = false;
                 this.showPacks = false;
-                this.showLog = false; // [DEBUG-LOG]
               })
           }
         }
@@ -157,7 +179,7 @@ export struct SettingsBar {
             ? (this.dictSub === 'suggest' ? '登録候補'
               : (this.dictSub === 'registered' ? '登録済み'
                 : (this.dictSub === 'suppressed' ? '削除した候補' : 'ユーザー辞書')))
-            : (this.showPacks ? '語彙パック' : (this.showLog ? '入力ログ' : '設定'))))
+            : (this.showPacks ? '語彙パック' : '設定')))
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(15)
           .fontWeight(FontWeight.Bold)
@@ -174,7 +196,7 @@ export struct SettingsBar {
               .onClick(() => {
                 InputHandler.getInstance().clearClipboardHistory();
               })
-          } else if (!this.showDict && !this.showLog) {
+          } else if (!this.showDict) {
             Text('✕')
               .fontFamily(JP_FONT_FAMILY)
               .fontSize(13)
@@ -197,48 +219,40 @@ export struct SettingsBar {
       Divider().color(kbTheme(this.isDark).divider)
 
       // ── Content (scrolls if it doesn't fit the panel height) ──
-      Scroll() {
-        Column() {
-          if (this.showHistory) {
-            this.HistoryView()
-          } else if (this.showDict && this.dictSub === 'suggest') {
-            this.DictSuggestView()
-          } else if (this.showDict && this.dictSub === 'registered') {
-            this.DictRegisteredView()
-          } else if (this.showDict && this.dictSub === 'suppressed') {
-            this.SuppressedView()
-          } else if (this.showDict) {
-            this.DictView()
-          } else if (this.showPacks) {
-            this.PackView()
-          } else if (this.showLog) {
-            this.LogView() // [DEBUG-LOG]
-          } else {
-            this.MenuView()
+      if (this.showHistory || this.showDict || this.showPacks) {
+        Scroll() {
+          Column() {
+            if (this.showHistory) {
+              this.HistoryView()
+            } else if (this.showDict && this.dictSub === 'suggest') {
+              this.DictSuggestView()
+            } else if (this.showDict && this.dictSub === 'registered') {
+              this.DictRegisteredView()
+            } else if (this.showDict && this.dictSub === 'suppressed') {
+              this.SuppressedView()
+            } else if (this.showDict) {
+              this.DictView()
+            } else {
+              this.PackView()
+            }
           }
+          .padding(16)
         }
-        .padding(16)
+        .width('100%')
+        .layoutWeight(1)
+        .align(Alignment.Top)
+        .scrollBar(BarState.Auto)
+        .edgeEffect(EdgeEffect.Spring)
+      } else {
+        // メニュー入口だけは左カテゴリ一覧・右カテゴリの中身という2ペイン
+        // 構成 (MenuView 参照)。ここは自分でスクロール領域を左右別々に
+        // 持つので、上のような共通の Scroll には乗せない。
+        this.MenuView()
       }
-      .width('100%')
-      .layoutWeight(1)
-      .align(Alignment.Top)
-      .scrollBar(BarState.Auto)
-      .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
     .height('100%')
     .backgroundColor(kbTheme(this.isDark).panelBg)
-  }
-
-  @Builder SectionLabel(text: string) {
-    Text(text)
-      .fontFamily(JP_FONT_FAMILY)
-      .fontSize(12)
-      .fontWeight(FontWeight.Bold)
-      .letterSpacing(0.6)
-      .fontColor(kbTheme(this.isDark).textSecondary)
-      .padding({ left: 4, bottom: 8 })
-      .width('100%')
   }
 
   // Segmented-control options are written inline (not as a shared @Builder
@@ -249,17 +263,100 @@ export struct SettingsBar {
   // Each option below reads its @StorageLink field directly so the
   // dependency is unambiguous.
 
+  // 左のカテゴリ一覧。選択中は accent 塗り、それ以外は透明地に控えめな文字色。
+  @Builder CategoryNav() {
+    Scroll() {
+      Column({ space: 4 }) {
+        ForEach(CATEGORIES, (cat: CategoryDef) => {
+          Text(cat.label)
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(this.selectedCategory === cat.id ? FontWeight.Bold : FontWeight.Medium)
+            .fontColor(this.selectedCategory === cat.id
+              ? kbTheme(this.isDark).onAccent
+              : kbTheme(this.isDark).textSecondary)
+            .backgroundColor(this.selectedCategory === cat.id
+              ? kbTheme(this.isDark).accent
+              : 'transparent')
+            .textAlign(TextAlign.Start)
+            .width('100%')
+            .borderRadius(10)
+            .padding({ left: 12, right: 6, top: 10, bottom: 10 })
+            .onClick(() => { this.selectedCategory = cat.id; })
+        }, (cat: CategoryDef) => cat.id)
+      }
+      .width('100%')
+      .padding({ top: 12, bottom: 12, left: 8 })
+    }
+    .width(CATEGORY_COL_WIDTH)
+    .height('100%')
+    .align(Alignment.Top)
+    .scrollBar(BarState.Off)
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+  }
+
+  // 右側、選んだカテゴリの中身だけを出す。カテゴリごとの実体は
+  // ClipboardSection〜SupportSection の各 @Builder。
   @Builder MenuView() {
-    // Clipboard history is one of the most-reached-for items, so it leads the
-    // settings panel rather than sitting near the bottom of その他.
-    this.SectionLabel('クリップボード')
+    Row() {
+      this.CategoryNav()
+
+      Divider()
+        .vertical(true)
+        .color(kbTheme(this.isDark).divider)
+
+      Scroll() {
+        Column() {
+          if (this.selectedCategory === 'clipboard') {
+            this.ClipboardSection()
+          } else if (this.selectedCategory === 'dict') {
+            this.DictSection()
+          } else if (this.selectedCategory === 'input') {
+            this.InputSection()
+          } else if (this.selectedCategory === 'visual') {
+            this.VisualSection()
+          } else if (this.selectedCategory === 'composing') {
+            this.ComposingSection()
+          } else if (this.selectedCategory === 'repair') {
+            this.RepairSection()
+          } else if (this.selectedCategory === 'other') {
+            this.OtherSection()
+          } else {
+            this.SupportSection()
+          }
+        }
+        .padding(16)
+      }
+      .layoutWeight(1)
+      .height('100%')
+      .align(Alignment.Top)
+      .scrollBar(BarState.Auto)
+      .edgeEffect(EdgeEffect.Spring)
+    }
+    .width('100%')
+    .layoutWeight(1)
+    .alignItems(VerticalAlign.Top)
+  }
+
+  @Builder ClipboardSection() {
     Column() {
       Row() {
-        Text('クリップボード履歴')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .layoutWeight(1)
+        Column({ space: 2 }) {
+          Text('クリップボード履歴')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          // 読み出しに一度でも失敗していれば非対応と分かる
+          // (KeyboardController.refreshClipboardPreview 参照)。
+          if (this.clipboardUnavailable) {
+            Text('この端末では利用できません（OSがキーボードからのクリップボード読み取りを許可していません）')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(11)
+              .fontColor(kbTheme(this.isDark).textSecondary)
+          }
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
         Row({ space: 6 }) {
           Text(String(this.clipboardHistory.length))
             .fontFamily(JP_FONT_FAMILY)
@@ -273,14 +370,16 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 14, bottom: 14 })
+      .enabled(!this.clipboardUnavailable)
       .onClick(() => { this.openHistory(); })
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
     .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
+    .opacity(this.clipboardUnavailable ? 0.4 : 1)
+  }
 
-    this.SectionLabel('辞書')
+  @Builder DictSection() {
     Column() {
       Row() {
         Column({ space: 2 }) {
@@ -331,35 +430,13 @@ export struct SettingsBar {
       .padding({ top: 14, bottom: 14 })
       .onClick(() => { this.showPacks = true; })
 
-      // [DEBUG-LOG] リリース前に削除する。収集した内容は本体アプリからは
-      // 読めない (サンドボックスが別) ので、書いた側であるここから見る。
-      // DEBUG_INPUT_LOG が false のときは入口ごと消える (InputLog.ets の
-      // 「とりあえず無効化だけしたい場合」がそう振る舞うと書いてあるのに、
-      // ここにガードが無く項目だけ残っていた)。
-      if (DEBUG_INPUT_LOG) { // [DEBUG-LOG]
-        Divider().color(kbTheme(this.isDark).divider) // [DEBUG-LOG]
-        Row() { // [DEBUG-LOG]
-          Text('入力ログ(デバッグ)') // [DEBUG-LOG]
-            .fontFamily(JP_FONT_FAMILY) // [DEBUG-LOG]
-            .fontSize(14) // [DEBUG-LOG]
-            .fontColor(kbTheme(this.isDark).textPrimary) // [DEBUG-LOG]
-            .layoutWeight(1) // [DEBUG-LOG]
-          Text('›') // [DEBUG-LOG]
-            .fontFamily(JP_FONT_FAMILY) // [DEBUG-LOG]
-            .fontSize(15) // [DEBUG-LOG]
-            .fontColor(kbTheme(this.isDark).textSecondary) // [DEBUG-LOG]
-        } // [DEBUG-LOG]
-        .width('100%') // [DEBUG-LOG]
-        .padding({ top: 14, bottom: 14 }) // [DEBUG-LOG]
-        .onClick(() => { this.openLog(); }) // [DEBUG-LOG]
-      } // [DEBUG-LOG]
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
     .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
+  }
 
-    this.SectionLabel('入力')
+  @Builder InputSection() {
     Column() {
       // Switches immediately (same process as the keyboard itself) — more
       // reliable than the main app's copy of this same toggle, which has to
@@ -461,12 +538,17 @@ export struct SettingsBar {
           .width(44)
           .height(26)
           .selectedColor(kbTheme(this.isDark).accent)
+          .enabled(!this.hapticUnavailable)
           .onChange((isOn: boolean) => {
             InputHandler.getInstance().setHapticEnabled(isOn);
           })
       }
       .width('100%')
       .padding({ top: 13, bottom: 13 })
+      // 非対応端末では触れないようにグレーアウトする。説明文 (上の
+      // hapticUnavailable 分岐) だけだと、触れてしまうぶん「効かない設定」に
+      // 見えて紛らわしかった。
+      .opacity(this.hapticUnavailable ? 0.4 : 1)
 
       Divider().color(kbTheme(this.isDark).divider)
 
@@ -580,14 +662,14 @@ export struct SettingsBar {
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
     .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
+  }
 
-    // キーボードの見た目・大きさ・位置に関わる調整をまとめた区分。
-    // 「入力」(かな入力レイアウト・変換エンジン等、打鍵の挙動そのもの)とは
-    // 分けてある。レイアウト調整・片手モードはどちらも「文字の変換や
-    // 打鍵の仕方」ではなく「キーボードの形をどう見せるか」の調整なので
-    // ここに移した。
-    this.SectionLabel('ビジュアル調整')
+  // キーボードの見た目・大きさ・位置に関わる調整をまとめた区分。
+  // 「入力」(かな入力レイアウト・変換エンジン等、打鍵の挙動そのもの)とは
+  // 分けてある。レイアウト調整・片手モードはどちらも「文字の変換や
+  // 打鍵の仕方」ではなく「キーボードの形をどう見せるか」の調整なので
+  // ここに移した。
+  @Builder VisualSection() {
     Column() {
       Row() {
         Column({ space: 2 }) {
@@ -662,6 +744,34 @@ export struct SettingsBar {
 
       Divider().color(kbTheme(this.isDark).divider)
 
+      // 設定ボタンの長押し→上スライドでも切り替えられる (KeyboardPage
+      // 参照)。ジェスチャに気づかない人向けの確実な入口としてここにも置く。
+      Row() {
+        Column({ space: 2 }) {
+          Text('フローティングキーボード')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text('画面下端に固定せず、好きな位置・大きさで浮かせて使えます。設定ボタンの長押し→上スライドでも切り替えられます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.floatingMode })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setFloatingModeExplicit(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
       Row() {
         Column({ space: 2 }) {
           Text('フリックの十字ヒント')
@@ -685,13 +795,210 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 13, bottom: 13 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Text('外観')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+
+        Row({ space: 2 }) {
+          Text('自動')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.themeMode === 'system' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.themeMode === 'system' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.themeMode === 'system' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setThemeMode('system'); })
+
+          Text('ライト')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.themeMode === 'light' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.themeMode === 'light' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.themeMode === 'light' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setThemeMode('light'); })
+
+          Text('ダーク')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.themeMode === 'dark' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.themeMode === 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .shadow(this.themeMode === 'dark' ? SELECTED_SHADOW : NO_SHADOW)
+            .onClick(() => { InputHandler.getInstance().setThemeMode('dark'); })
+        }
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(TRACK_RADIUS)
+        .padding(3)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Column({ space: 2 }) {
+          Text('キーの外枠')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text('キーの背景色を有効にする')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(11)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.keyChromeEnabled })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setKeyChromeEnabled(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 13, bottom: 13 })
+
+      // タブレット/フォルダブルの展開画面でだけ効く調整。普通のスマホでは
+      // 画面が最大幅の上限に届かないので出しても意味が無く隠してある。
+      // 実機を持たずに検証できないぶん、この調整は「開発側があらかじめ
+      // 正解のサイズに決め打つ」のを諦めて利用者自身に追い込んでもらう
+      // ための項目 (KeyboardController.applyKeyboardWidthsForVp 参照)。
+      if (this.isTabletClass) {
+        Divider().color(kbTheme(this.isDark).divider)
+
+        Row() {
+          Column({ space: 2 }) {
+            Text('キーボード幅の上限')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(14)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+            Text('タブレット/フォルダブルの展開画面での最大幅を調整します')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(11)
+              .fontColor(kbTheme(this.isDark).textSecondary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Row({ space: 10 }) {
+            Text('−')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+              .width(28).height(28)
+              .textAlign(TextAlign.Center)
+              .backgroundColor(kbTheme(this.isDark).funcBg)
+              .borderRadius(14)
+              .onClick(() => {
+                const next = Math.max(0.5, Math.round((this.keyboardWidthScale - 0.05) * 100) / 100);
+                InputHandler.getInstance().saveKeyboardWidthScale(next);
+              })
+
+            Text(`${Math.round(this.keyboardWidthScale * 100)}%`)
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(13)
+              .fontColor(kbTheme(this.isDark).textSecondary)
+              .width(44)
+              .textAlign(TextAlign.Center)
+
+            Text('＋')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+              .width(28).height(28)
+              .textAlign(TextAlign.Center)
+              .backgroundColor(kbTheme(this.isDark).funcBg)
+              .borderRadius(14)
+              .onClick(() => {
+                const next = Math.min(1.6, Math.round((this.keyboardWidthScale + 0.05) * 100) / 100);
+                InputHandler.getInstance().saveKeyboardWidthScale(next);
+              })
+          }
+        }
+        .width('100%')
+        .padding({ top: 13, bottom: 13 })
+
+        Divider().color(kbTheme(this.isDark).divider)
+
+        // 幅の上限で狭くなったぶんの余白を、左右どちらへ寄せるか。大画面では
+        // 中央に置くと両手が届かないことがあるため (「左右に空白を入れれる
+        // ように」)。幅が画面いっぱいのままなら寄せる余白が無く効かない。
+        Row() {
+          Column({ space: 2 }) {
+            Text('キーボードの左右位置')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(14)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+            Text('幅の上限で空いた余白を、左右どちらに寄せるか決めます')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(11)
+              .fontColor(kbTheme(this.isDark).textSecondary)
+          }
+          .alignItems(HorizontalAlign.Start)
+          .layoutWeight(1)
+
+          Row({ space: 10 }) {
+            Text('◀')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(14)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+              .width(28).height(28)
+              .textAlign(TextAlign.Center)
+              .backgroundColor(kbTheme(this.isDark).funcBg)
+              .borderRadius(14)
+              .onClick(() => {
+                const next = Math.max(-1, Math.round((this.keyboardHorizontalOffset - 0.2) * 100) / 100);
+                InputHandler.getInstance().saveKeyboardHorizontalOffset(next);
+              })
+
+            Text(this.keyboardHorizontalOffset === 0 ? '中央'
+              : `${this.keyboardHorizontalOffset < 0 ? '左' : '右'}${Math.round(Math.abs(this.keyboardHorizontalOffset) * 100)}%`)
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(13)
+              .fontColor(kbTheme(this.isDark).textSecondary)
+              .width(52)
+              .textAlign(TextAlign.Center)
+
+            Text('▶')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(14)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+              .width(28).height(28)
+              .textAlign(TextAlign.Center)
+              .backgroundColor(kbTheme(this.isDark).funcBg)
+              .borderRadius(14)
+              .onClick(() => {
+                const next = Math.min(1, Math.round((this.keyboardHorizontalOffset + 0.2) * 100) / 100);
+                InputHandler.getInstance().saveKeyboardHorizontalOffset(next);
+              })
+          }
+        }
+        .width('100%')
+        .padding({ top: 13, bottom: 13 })
+      }
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
     .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
+  }
 
-    this.SectionLabel('入力中のかなの表示')
+  @Builder ComposingSection() {
     Column() {
       Row() {
         Column({ space: 2 }) {
@@ -777,92 +1084,11 @@ export struct SettingsBar {
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
     .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
+  }
 
-    this.SectionLabel('テーマ')
-    Column() {
-      Row() {
-        Text('外観')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .layoutWeight(1)
-
-        Row({ space: 2 }) {
-          Text('自動')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.themeMode === 'system' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.themeMode === 'system' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'system' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setThemeMode('system'); })
-
-          Text('ライト')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.themeMode === 'light' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.themeMode === 'light' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'light' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setThemeMode('light'); })
-
-          Text('ダーク')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.themeMode === 'dark' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.themeMode === 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'dark' ? SELECTED_SHADOW : NO_SHADOW)
-            .onClick(() => { InputHandler.getInstance().setThemeMode('dark'); })
-        }
-        .backgroundColor(kbTheme(this.isDark).funcBg)
-        .borderRadius(TRACK_RADIUS)
-        .padding(3)
-      }
-      .width('100%')
-      .padding({ top: 14, bottom: 14 })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      Row() {
-        Column({ space: 2 }) {
-          Text('キーの外枠')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('キーの背景色を有効にする')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.keyChromeEnabled })
-          .width(44)
-          .height(26)
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setKeyChromeEnabled(isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: 13 })
-    }
-    .backgroundColor(kbTheme(this.isDark).cardBg)
-    .borderRadius(CARD_RADIUS)
-    .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
-
-    // 本体アプリの「修復」はアプリ側のストアしか消せず、キーボードの学習・設定・
-    // 辞書には届かない (別サンドボックス)。復旧手段はここに置く。
-    this.SectionLabel('修復')
+  // 本体アプリの「修復」はアプリ側のストアしか消せず、キーボードの学習・設定・
+  // 辞書には届かない (別サンドボックス)。復旧手段はここに置く。
+  @Builder RepairSection() {
     Column() {
       Row() {
         Column({ space: 2 }) {
@@ -932,9 +1158,9 @@ export struct SettingsBar {
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
     .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
+  }
 
-    this.SectionLabel('その他')
+  @Builder OtherSection() {
     Column() {
       Row() {
         Text('アプリを開く')
@@ -1000,9 +1226,9 @@ export struct SettingsBar {
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
     .padding({ left: 14, right: 14 })
-    .margin({ bottom: 22 })
+  }
 
-    this.SectionLabel('開発を応援')
+  @Builder SupportSection() {
     Column() {
       Row() {
         Column({ space: 2 }) {
@@ -1489,57 +1715,4 @@ export struct SettingsBar {
     }
   }
 
-  // [DEBUG-LOG] 収集した入力ログの閲覧。リリース前にこの Builder ごと削除する。
-  @Builder LogView() {
-    Row({ space: 8 }) {
-      Text(this.inputLogSummary.length > 0 ? this.inputLogSummary : '—')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12)
-        .fontColor(kbTheme(this.isDark).textSecondary)
-        .layoutWeight(1)
-      Text('コピー')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12)
-        .fontColor(kbTheme(this.isDark).accent)
-        .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-        .onClick(() => {
-          InputHandler.getInstance().exportInputLog();
-          promptAction.showToast({ message: 'クリップボードにコピーしました' });
-        })
-      Text('消去')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12)
-        .fontColor(DELETE_RED)
-        .padding({ left: 8, right: 8, top: 6, bottom: 6 })
-        .onClick(() => { InputHandler.getInstance().clearInputLog(); })
-    }
-    .width('100%')
-    .padding({ bottom: 10 })
-
-    if (this.inputLogRows.length === 0) {
-      Text('記録がありません')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12)
-        .fontColor(kbTheme(this.isDark).textSecondary)
-        .width('100%')
-        .textAlign(TextAlign.Center)
-        .padding({ top: 32, bottom: 32 })
-    } else {
-      Column() {
-        ForEach(this.inputLogRows, (row: string, index: number) => {
-          Text(row.split('\t').join('  '))
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .maxLines(2)
-            .textOverflow({ overflow: TextOverflow.Ellipsis })
-            .width('100%')
-            .padding({ top: 7, bottom: 7 })
-        }, (row: string, index: number) => `${index}-${row}`)
-      }
-      .backgroundColor(kbTheme(this.isDark).cardBg)
-      .borderRadius(CARD_RADIUS)
-      .padding({ left: 12, right: 12 })
-    }
-  }
 }

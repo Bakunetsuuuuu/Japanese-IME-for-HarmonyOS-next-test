@@ -65,14 +65,6 @@ interface Ranked {
   count: number;
 }
 
-// [DEBUG-LOG] Notified when a run is judged to be an unknown word. `confirmed`
-// is true when this assembly matched a just-abandoned reading (see
-// noteAbandonedReading) and was fast-tracked straight to LEARN_THRESHOLD.
-// Injected as a callback rather than imported so this module keeps its
-// zero-dependency, independently-testable shape (tools/ime-eval/run_unknownword.js
-// compiles it on its own) -- and so removing the debug build's collection means
-// deleting the two [DEBUG-LOG] lines here, nothing else.
-export type LearnedWordFn = (reading: string, surface: string, confirmed: boolean) => void; // [DEBUG-LOG]
 
 // 組み立てた語が isKnown() 的には「もう変換できる」語だった (辞書のどこかに
 // ある) ときに呼ばれる。呼び出し側 (KeyboardController) はこれを
@@ -89,7 +81,6 @@ export type LearnedWordFn = (reading: string, surface: string, confirmed: boolea
 export type KnownAssemblyFn = (reading: string, surface: string) => void;
 
 export class UnknownWordLearner {
-  static onLearn: LearnedWordFn | undefined = undefined; // [DEBUG-LOG]
   static onKnownAssembly: KnownAssemblyFn | undefined = undefined;
 
   // reading -> (surface -> times assembled)
@@ -189,7 +180,6 @@ export class UnknownWordLearner {
     // confirmed はログ用にだけ残す。
     const confirmed = reading === UnknownWordLearner.abandonedReading && UnknownWordLearner.abandonedReading.length > 0;
     UnknownWordLearner.abandonedReading = '';
-    if (UnknownWordLearner.onLearn !== undefined) { UnknownWordLearner.onLearn(reading, surface, confirmed); } // [DEBUG-LOG]
     UnknownWordLearner.bump(reading, surface, 1);
   }
 

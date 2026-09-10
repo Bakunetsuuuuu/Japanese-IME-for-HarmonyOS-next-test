@@ -3,16 +3,16 @@ import { kbTheme } from './Theme';
 import { JP_FONT_FAMILY } from './JpFont';
 import { promptAction } from '@kit.ArkUI';
 
-// Chip height (design tokens: "fixed 34px height" pill chips). Landscape gets
-// a much shorter bar since vertical space there is scarce.
-const CHIP_H = 34;
-const CHIP_H_LANDSCAPE = 22;
-
 @Component
 export struct CandidateBar {
   @Prop candidates: string[] = [];
   @Prop selectedIndex: number = 0;
   @Prop showExpand: boolean = false;
+  // 呼び出し側 (KeyboardPage) が比率計算した実際のバー高さ (vp)。以前は
+  // ここが isLandscape の2択固定 (34/22) だったため、外側のバーが比率で
+  // 縮んだときにチップだけ元の固定サイズのままはみ出て潰れて見えた。
+  // チップ・フォント・矢印ボタンをすべてこの値から逆算する。
+  @Prop barHeightVp: number = 48;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('isLandscape') isLandscape: boolean = false;
   // まだ LEARN_THRESHOLD 未満の未知語(準候補)。通常候補と見分けが付くよう
@@ -28,6 +28,14 @@ export struct CandidateBar {
   private closeMenu(): void {
     this.menuIndex = -1;
     this.menuCandidate = '';
+  }
+
+  private chipHeightVp(): number {
+    return Math.max(18, this.barHeightVp - 6);
+  }
+
+  private chipFontSize(): number {
+    return Math.max(10, Math.min(16, this.chipHeightVp() * 0.42));
   }
 
   @Builder DeleteMenu() {
@@ -59,14 +67,14 @@ export struct CandidateBar {
             Row() {
               Text(candidate)
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(this.isLandscape ? 12 : 16)
+                .fontSize(this.chipFontSize())
                 .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
             }
             .justifyContent(FlexAlign.Center)
             .alignItems(VerticalAlign.Center)
-            .height(this.isLandscape ? CHIP_H_LANDSCAPE : CHIP_H)
+            .height(this.chipHeightVp())
             .padding({ left: this.isLandscape ? 10 : 18, right: this.isLandscape ? 10 : 18 })
-            .borderRadius((this.isLandscape ? CHIP_H_LANDSCAPE : CHIP_H) / 2)
+            .borderRadius(this.chipHeightVp() / 2)
             .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
             .border(this.quasiCandidateSurfaces.includes(candidate) ? {
               width: 1, color: kbTheme(this.isDark).textSecondary, style: BorderStyle.Dotted,
@@ -104,15 +112,15 @@ export struct CandidateBar {
       .scrollable(ScrollDirection.Horizontal)
       .scrollBar(BarState.Off)
       .layoutWeight(1)
-      .height(this.isLandscape ? 22 : 48)
+      .height(this.barHeightVp)
 
       if (this.showExpand && this.candidates.length > 0) {
         Text('▼')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(this.isLandscape ? 10 : 14)
+          .fontSize(Math.max(9, Math.min(14, this.chipHeightVp() * 0.36)))
           .fontColor(kbTheme(this.isDark).textSecondary)
           .width(this.isLandscape ? 24 : 36)
-          .height(this.isLandscape ? 22 : 48)
+          .height(this.barHeightVp)
           .textAlign(TextAlign.Center)
           .backgroundColor(kbTheme(this.isDark).funcBg)
           .onClick(() => {
@@ -121,7 +129,7 @@ export struct CandidateBar {
       }
     }
     .width('100%')
-    .height(this.isLandscape ? 22 : 48)
-    .backgroundColor(kbTheme(this.isDark).panelBg)
+    .height(this.barHeightVp)
+    .backgroundColor(kbTheme(this.isDark).previewBg)
   }
 }

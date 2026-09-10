@@ -8,14 +8,24 @@ import { JP_FONT_FAMILY } from './JpFont';
 // reads as a suggestion strip, not an active-conversion candidate list. Tapping
 // a chip inserts that word and chains to the next prediction — see
 // InputHandler.commitPrediction.
-const CHIP_H = 34;
-const CHIP_H_LANDSCAPE = 22;
-
 @Component
 export struct PredictionBar {
   @Prop predictions: string[] = [];
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('isLandscape') isLandscape: boolean = false;
+  // 呼び出し側 (KeyboardPage) が比率計算した実際のバー高さ (vp)。
+  // CandidateBar.barHeightVp と同じ理由・同じ値を渡す -- ここだけ固定の
+  // ままだと、同じ行を occupies する CandidateBar 側だけ縮んで
+  // PredictionBar 側は縮まないというズレが起きる。
+  @Prop barHeightVp: number = 48;
+
+  private chipHeightVp(): number {
+    return Math.max(18, this.barHeightVp - 6);
+  }
+
+  private chipFontSize(): number {
+    return Math.max(10, Math.min(16, this.chipHeightVp() * 0.42));
+  }
 
   build() {
     Scroll() {
@@ -24,14 +34,14 @@ export struct PredictionBar {
           Row() {
             Text(word)
               .fontFamily(JP_FONT_FAMILY)
-              .fontSize(this.isLandscape ? 12 : 16)
+              .fontSize(this.chipFontSize())
               .fontColor(kbTheme(this.isDark).textPrimary)
           }
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
-          .height(this.isLandscape ? CHIP_H_LANDSCAPE : CHIP_H)
+          .height(this.chipHeightVp())
           .padding({ left: this.isLandscape ? 10 : 18, right: this.isLandscape ? 10 : 18 })
-          .borderRadius((this.isLandscape ? CHIP_H_LANDSCAPE : CHIP_H) / 2)
+          .borderRadius(this.chipHeightVp() / 2)
           .backgroundColor(kbTheme(this.isDark).candidateBg)
           .onClick(() => {
             InputHandler.getInstance().commitPrediction(index);
@@ -43,7 +53,7 @@ export struct PredictionBar {
     .scrollable(ScrollDirection.Horizontal)
     .scrollBar(BarState.Off)
     .width('100%')
-    .height(this.isLandscape ? 22 : 48)
-    .backgroundColor(kbTheme(this.isDark).panelBg)
+    .height(this.barHeightVp)
+    .backgroundColor(kbTheme(this.isDark).previewBg)
   }
 }

@@ -65,16 +65,44 @@ export interface KeyboardSettings {
   // .pack の default: ヘッダに従う (KanaKanjiConverter.resolveEnabledPacks)。
   vocabPackOverrides: Record<string, boolean>;
   // 設定 → レイアウト調整。どちらも既定 1.0 で今までどおりの見た目になる。
-  // keyboardHeightScale: キーボード全体の縦の長さの倍率 (0.7〜1.3)。
+  // keyboardHeightScale: キーボード全体の縦の長さの倍率 (0.7〜1.3、横向きは下限0.4)。
   // flickSideColumnRatio: フリック5列の「左右特殊キー1列 / 中央かなキー1列」
   // の幅比 (0.4〜2.0)。QWERTY側の特殊キー幅には影響しない。
-  keyboardHeightScale: number;
-  flickSideColumnRatio: number;
+  // 縦向き/横向きで持ちたい値が違う(横は画面が横長で背が低くなりがち、特殊キー
+  // 列の見え方も違う)ため、Portrait/Landscape で別々に保持する。
+  keyboardHeightScalePortrait: number;
+  keyboardHeightScaleLandscape: number;
+  flickSideColumnRatioPortrait: number;
+  flickSideColumnRatioLandscape: number;
+  // タブレット/フォルダブルの展開画面など、画面の短辺が600vp超の端末だけに
+  // 効く「キーボードの最大幅」の倍率 (既定 1.0 = 620vp、KeyboardController の
+  // MAX_KB_VP)。端末を実際に持っていないと画面比率が分からず、開発側からは
+  // 一律の見た目に固定できない --「タブレット/フォルダブルで幅が合わない」
+  // という声に対して、その場で自分で追い込めるようにするための調整項目。
+  // 通常のスマホ (短辺600vp以下) では常に無効 (最大幅の制約自体が働かない)。
+  keyboardWidthScale: number;
+  // キーボード本体を左右どちらへ寄せるか。-1 = 左端いっぱい、0 = 中央
+  // (従来どおり)、+1 = 右端いっぱい。幅の上限を絞って画面より狭くなった
+  // ぶんの余白を、どちら側に寄せるかを決める。タブレット/フォルダブルの
+  // 展開画面では中央に置くと両手が届かず、左右どちらかに寄せた方が打ち
+  // やすいことがあるため (「左右に空白を入れれるように」)。余白が無い
+  // (キーボードが画面幅いっぱい) ときは何も起きない。
+  keyboardHorizontalOffset: number;
   // フリックキーの上下左右に出す小さいかなヒント(十字表示)。フリック自体は
   // タッチのジェスチャで判定しており、このヒントを消しても機能は一切
   // 変わらない (FlickKeyboardView の isLandscape 分岐と同じ仕組みを流用)。
   // 使い慣れた人には邪魔になるという要望向けのオフスイッチ。既定はオン。
   flickHintsEnabled: boolean;
+  // フローティングキーボード。画面下端に固定せず、任意の位置・大きさで
+  // 浮かせて使えるモード。位置・大きさは画面の縦横比に依存させたくない
+  // (回転・折りたたみで画面サイズ自体が変わるため) ので、絶対 vp ではなく
+  // 画面に対する割合 (0〜1) で持つ。KeyboardController.floatingRectVp が
+  // 表示のたびにその時点の画面サイズへ変換する。
+  floatingMode: boolean;
+  floatingXFrac: number;
+  floatingYFrac: number;
+  floatingWFrac: number;
+  floatingHFrac: number;
 }
 
 const DEFAULTS: KeyboardSettings = {
@@ -90,9 +118,21 @@ const DEFAULTS: KeyboardSettings = {
   composingInPanel: true,
   composingInField: true,
   vocabPackOverrides: {},
-  keyboardHeightScale: 1.0,
-  flickSideColumnRatio: 1.0,
+  keyboardHeightScalePortrait: 1.0,
+  keyboardHeightScaleLandscape: 1.0,
+  flickSideColumnRatioPortrait: 1.0,
+  flickSideColumnRatioLandscape: 1.0,
+  keyboardWidthScale: 1.0,
+  keyboardHorizontalOffset: 0,
   flickHintsEnabled: true,
+  floatingMode: false,
+  // 既定は画面上寄り、幅60%・高さ35%程度の常識的なサイズ。設定ボタンの
+  // 長押し→上スライドで出すジェスチャの向き(上へ引き出す)に合わせて
+  // 上寄りにしてある(「フローティング、上に出せない?」の指摘)。
+  floatingXFrac: 0.2,
+  floatingYFrac: 0.12,
+  floatingWFrac: 0.6,
+  floatingHFrac: 0.35,
 };
 
 export class SettingsStore {
@@ -120,9 +160,22 @@ export class SettingsStore {
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
       const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
       const inField = await prefs.get('composingInField', DEFAULTS.composingInField);
-      const heightScale = await prefs.get('keyboardHeightScale', DEFAULTS.keyboardHeightScale);
-      const flickRatio = await prefs.get('flickSideColumnRatio', DEFAULTS.flickSideColumnRatio);
+      // 旧・縦横共用キーからの移行: 新キーが無い端末では旧値を両方向の初期値に
+      // 引き継ぐ。新キーが一度でも保存されればそちらが優先される。
+      const legacyHeightScale = await prefs.get('keyboardHeightScale', DEFAULTS.keyboardHeightScalePortrait);
+      const legacyFlickRatio = await prefs.get('flickSideColumnRatio', DEFAULTS.flickSideColumnRatioPortrait);
+      const heightScaleP = await prefs.get('keyboardHeightScalePortrait', legacyHeightScale);
+      const heightScaleL = await prefs.get('keyboardHeightScaleLandscape', legacyHeightScale);
+      const flickRatioP = await prefs.get('flickSideColumnRatioPortrait', legacyFlickRatio);
+      const flickRatioL = await prefs.get('flickSideColumnRatioLandscape', legacyFlickRatio);
+      const widthScale = await prefs.get('keyboardWidthScale', DEFAULTS.keyboardWidthScale);
+      const hOffset = await prefs.get('keyboardHorizontalOffset', DEFAULTS.keyboardHorizontalOffset);
       const flickHints = await prefs.get('flickHintsEnabled', DEFAULTS.flickHintsEnabled);
+      const floating = await prefs.get('floatingMode', DEFAULTS.floatingMode);
+      const floatX = await prefs.get('floatingXFrac', DEFAULTS.floatingXFrac);
+      const floatY = await prefs.get('floatingYFrac', DEFAULTS.floatingYFrac);
+      const floatW = await prefs.get('floatingWFrac', DEFAULTS.floatingWFrac);
+      const floatH = await prefs.get('floatingHFrac', DEFAULTS.floatingHFrac);
       const ovRaw = await prefs.get('vocabPackOverrides', '');
       let packs: Record<string, boolean> = {};
       try {
@@ -152,9 +205,18 @@ export class SettingsStore {
         composingInPanel: inPanel !== false,
         composingInField: inField !== false,
         vocabPackOverrides: packs,
-        keyboardHeightScale: Number(heightScale),
-        flickSideColumnRatio: Number(flickRatio),
+        keyboardHeightScalePortrait: Number(heightScaleP),
+        keyboardHeightScaleLandscape: Number(heightScaleL),
+        flickSideColumnRatioPortrait: Number(flickRatioP),
+        flickSideColumnRatioLandscape: Number(flickRatioL),
+        keyboardWidthScale: Number(widthScale),
+        keyboardHorizontalOffset: Number(hOffset),
         flickHintsEnabled: flickHints !== false,
+        floatingMode: floating === true,
+        floatingXFrac: Number(floatX),
+        floatingYFrac: Number(floatY),
+        floatingWFrac: Number(floatW),
+        floatingHFrac: Number(floatH),
       };
     } catch (e) {
       console.error('shuntiIME SettingsStore.load error', JSON.stringify(e));
@@ -171,9 +233,18 @@ export class SettingsStore {
         composingInPanel: DEFAULTS.composingInPanel,
         composingInField: DEFAULTS.composingInField,
         vocabPackOverrides: DEFAULTS.vocabPackOverrides,
-        keyboardHeightScale: DEFAULTS.keyboardHeightScale,
-        flickSideColumnRatio: DEFAULTS.flickSideColumnRatio,
+        keyboardHeightScalePortrait: DEFAULTS.keyboardHeightScalePortrait,
+        keyboardHeightScaleLandscape: DEFAULTS.keyboardHeightScaleLandscape,
+        flickSideColumnRatioPortrait: DEFAULTS.flickSideColumnRatioPortrait,
+        flickSideColumnRatioLandscape: DEFAULTS.flickSideColumnRatioLandscape,
+        keyboardWidthScale: DEFAULTS.keyboardWidthScale,
+        keyboardHorizontalOffset: DEFAULTS.keyboardHorizontalOffset,
         flickHintsEnabled: DEFAULTS.flickHintsEnabled,
+        floatingMode: DEFAULTS.floatingMode,
+        floatingXFrac: DEFAULTS.floatingXFrac,
+        floatingYFrac: DEFAULTS.floatingYFrac,
+        floatingWFrac: DEFAULTS.floatingWFrac,
+        floatingHFrac: DEFAULTS.floatingHFrac,
       };
     }
   }
@@ -264,18 +335,34 @@ export class SettingsStore {
     } catch (_e) {}
   }
 
-  static async saveKeyboardHeightScale(context: common.Context, scale: number): Promise<void> {
+  static async saveKeyboardHeightScale(context: common.Context, scale: number, isLandscape: boolean): Promise<void> {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('keyboardHeightScale', scale);
+      await prefs.put(isLandscape ? 'keyboardHeightScaleLandscape' : 'keyboardHeightScalePortrait', scale);
       await prefs.flush();
     } catch (_e) {}
   }
 
-  static async saveFlickSideRatio(context: common.Context, ratio: number): Promise<void> {
+  static async saveFlickSideRatio(context: common.Context, ratio: number, isLandscape: boolean): Promise<void> {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('flickSideColumnRatio', ratio);
+      await prefs.put(isLandscape ? 'flickSideColumnRatioLandscape' : 'flickSideColumnRatioPortrait', ratio);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveKeyboardWidthScale(context: common.Context, scale: number): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('keyboardWidthScale', scale);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveKeyboardHorizontalOffset(context: common.Context, offset: number): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('keyboardHorizontalOffset', offset);
       await prefs.flush();
     } catch (_e) {}
   }
@@ -284,6 +371,28 @@ export class SettingsStore {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('flickHintsEnabled', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveFloatingMode(context: common.Context, enabled: boolean): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('floatingMode', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  // ドラッグ/リサイズのたびに呼ばれる想定なので4値まとめて1回で書く
+  // (個別4メソッドに分けると保存のたびに4回 flush することになる)。
+  static async saveFloatingRect(context: common.Context,
+      xFrac: number, yFrac: number, wFrac: number, hFrac: number): Promise<void> {
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('floatingXFrac', xFrac);
+      await prefs.put('floatingYFrac', yFrac);
+      await prefs.put('floatingWFrac', wFrac);
+      await prefs.put('floatingHFrac', hFrac);
       await prefs.flush();
     } catch (_e) {}
   }

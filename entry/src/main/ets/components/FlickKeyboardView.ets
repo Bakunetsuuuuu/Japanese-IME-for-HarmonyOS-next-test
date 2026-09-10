@@ -49,6 +49,17 @@ const FLICK_GRID: FlickKeyDef[][] = [
 // Flick cell corner radius (design tokens: "flick cells 14px").
 const CELL_RADIUS = 14;
 
+// キー間の見た目の隙間を広げるための余白。各キーは「当たり判定用の枠
+// (従来どおりのサイズ、これがタップ/フリックを検出する)」+「その内側に
+// パディングで一回り小さく描く見た目のキー本体」の二重構造にしてある。
+// パディングは枠の内側の余白なので枠自体の width/height は一切変わらず、
+// Row の総幅計算・境界ハンドル(boundaryX)の位置・当たり判定の広さは
+// 従来と同じまま、見た目の隙間だけが広がる。フリック方向 (dirFrom) は
+// タッチ開始位置からの相対デルタ (t.x - touchStartX) だけを見ているので
+// 枠の内側でキー本体の位置が動いても判定には影響しない。
+const FLICK_H_INSET = 1;
+const FLICK_V_INSET = 1;
+
 // フリック中央3列との幅比調整ハンドル。このぶんドラッグすると比率の
 // 全域 (0.4〜2.0) を動く。
 const RATIO_DRAG_RANGE_VP = 140;
@@ -62,7 +73,17 @@ export struct FlickKeyboardView {
   // 設定 → レイアウト調整 → このキーボードを見ながら調整、のときだけ true。
   // 左右特殊キー列との境界に、幅比を変えるドラッグハンドルを重ねて出す。
   @Prop adjustMode: boolean = false;
-  @StorageLink('flickSideColumnRatio') sideRatio: number = 1.0;
+  // 縦横で別の値を持つ (StorageLink はキー名を静的にしか束縛できないため、
+  // 両方を保持して isLandscape で読み書き先を切り替える)。
+  @StorageLink('flickSideColumnRatioPortrait') sideRatioPortrait: number = 1.0;
+  @StorageLink('flickSideColumnRatioLandscape') sideRatioLandscape: number = 1.0;
+  // get アクセサではなくメソッドにしてある -- ArkTS の @Component 内では
+  // @StorageLink を組み合わせた get プロパティが実行時に正しく評価されず
+  // (undefined を返す)、ドラッグ量の計算が NaN に化けて「サイズ調整が
+  // 効かなくなる」不具合の原因になった (LayoutAdjustBar.heightScale と同じ)。
+  private sideRatio(): number {
+    return this.isLandscape ? this.sideRatioLandscape : this.sideRatioPortrait;
+  }
   private dragStartRatio: number = 1.0;
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
   // 境界ハンドルの位置計算用 (ColumnHandle 参照)。行の幅そのものには
@@ -84,6 +105,19 @@ export struct FlickKeyboardView {
   // 半角の A/1 は ひらがな と字形の大きさが厳密には揃わないが、
   // 全角にすると見た目が野暮ったくなるため半角のままにしている。
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
+  // フローティングでキーボード自体が小さくリサイズされると、行の実高さも
+  // それに応じて縮む (このコンポーネント自身は '100%' で親に委ねている
+  // だけなので、行高そのものはここでは持っていない)。フリックヒント
+  // (上下左右の小さいかな) やキー中央の文字が固定フォントサイズのままだと
+  // 縮んだ行の中で溢れて重なって見える (「潰れる」の実体)。
+  // keyboardHeightVp は常に vp のキーボード全体高さ (KeyboardController.
+  // initPanel/doResizePanelNow 参照) なので、これを基準にフォントサイズを
+  // 比例縮小する。既定の 260vp 前後を基準 (scale=1.0) とする。
+  @StorageLink('keyboardHeightVp') keyboardHeightVp: number = 260;
+
+  private hintScale(): number {
+    return Math.max(0.5, Math.min(1.15, this.keyboardHeightVp / 260));
+  }
 
   @State activeRow: number = -1;
   @State activeCol: number = -1;
@@ -297,7 +331,7 @@ export struct FlickKeyboardView {
     .gesture(
       PanGesture({ direction: PanDirection.Horizontal })
         .onActionStart(() => {
-          this.dragStartRatio = this.sideRatio;
+          this.dragStartRatio = this.sideRatio();
         })
         .onActionUpdate((event: GestureEvent) => {
           // 境界線そのものを掴んで動かす感覚に合わせる: 指を動かした方向に
@@ -309,10 +343,10 @@ export struct FlickKeyboardView {
           const dir = side === 'left' ? 1 : -1;
           const delta = dir * event.offsetX / RATIO_DRAG_RANGE_VP * (RATIO_MAX - RATIO_MIN);
           const next = Math.min(RATIO_MAX, Math.max(RATIO_MIN, this.dragStartRatio + delta));
-          this.h().applyFlickSideRatioLive(next);
+          this.h().applyFlickSideRatioLive(next, this.isLandscape);
         })
         .onActionEnd(() => {
-          this.h().saveFlickSideRatio(this.sideRatio);
+          this.h().saveFlickSideRatio(this.sideRatio(), this.isLandscape);
         })
     )
   }
@@ -359,37 +393,49 @@ export struct FlickKeyboardView {
       // 数字パッドの入口は「あA」キー側のサイクルに一本化した(setNumericPadEnabled
       // 参照)。この枠は常に取消を表示する。押すたびに直近削除した文字を1つずつ
       // 戻す(消し過ぎた分を押した回数だけ復元する順次アンドゥ)。
-      Text('取消')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13).textAlign(TextAlign.Center)
-        .width(this.flickSideKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => {
-          this.h().hapticTick();
-          this.h().undoLastDeletion();
-        })
+      Row() {
+        Text('取消')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(13).textAlign(TextAlign.Center)
+          .width('100%').height('100%')
+          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
+          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      }
+      .width(this.flickSideKeyWidthVp).height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
+      .onClick(() => {
+        this.h().hapticTick();
+        this.h().undoLastDeletion();
+      })
     } else if (rowIdx === 1) {
-      Text('◄')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickSideKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onTouch((event: TouchEvent) => {
-          if (event.type === TouchType.Down) {
-            this.h().hapticTick();
-            this.startCurRepeat('left');
-          }
-          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
-        })
+      Row() {
+        Text('◄')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(16).textAlign(TextAlign.Center)
+          .width('100%').height('100%')
+          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
+          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      }
+      .width(this.flickSideKeyWidthVp).height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
+      .onTouch((event: TouchEvent) => {
+        if (event.type === TouchType.Down) {
+          this.h().hapticTick();
+          this.startCurRepeat('left');
+        }
+        else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
+      })
     } else if (rowIdx === 2) {
-      Text('記号')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13).textAlign(TextAlign.Center)
-        .width(this.flickSideKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      Row() {
+        Text('記号')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(13).textAlign(TextAlign.Center)
+          .width('100%').height('100%')
+          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
+          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      }
+      .width(this.flickSideKeyWidthVp).height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
         // Long-press to reveal the 左手モード hint, then flick up to switch.
         .bindPopup(this.oneHandHint === 'left', {
           builder: this.OneHandHintPopup,
@@ -420,61 +466,77 @@ export struct FlickKeyboardView {
           AppStorage.setOrCreate('keyboardSubMode', 'symbol');
         })
     } else {
-      Text(this.numericPadEnabled
-        ? (this.inputMode === InputMode.HIRAGANA ? 'あA1' : 'A1あ')
-        : (this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ'))
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(12).textAlign(TextAlign.Center)
-        .width(this.flickSideKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => {
-          this.h().hapticTick();
-          this.h().commitTopCandidate();
-          this.h().cycleInputMode();
-        })
+      Row() {
+        Text(this.numericPadEnabled
+          ? (this.inputMode === InputMode.HIRAGANA ? 'あA1' : 'A1あ')
+          : (this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ'))
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12).textAlign(TextAlign.Center)
+          .width('100%').height('100%')
+          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
+          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      }
+      .width(this.flickSideKeyWidthVp).height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
+      .onClick(() => {
+        this.h().hapticTick();
+        this.h().commitTopCandidate();
+        this.h().cycleInputMode();
+      })
     }
   }
 
   // Right column keys per row
   @Builder RightKey(rowIdx: number) {
     if (rowIdx === 0) {
-      Text('⌫')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickSideKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onTouch((event: TouchEvent) => {
-          if (event.type === TouchType.Down) {
-            this.h().hapticTick();
-            this.startBsRepeat();
-          } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
-            this.stopBsRepeat();
-          }
-        })
+      Row() {
+        Text('⌫')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(16).textAlign(TextAlign.Center)
+          .width('100%').height('100%')
+          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
+          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      }
+      .width(this.flickSideKeyWidthVp).height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
+      .onTouch((event: TouchEvent) => {
+        if (event.type === TouchType.Down) {
+          this.h().hapticTick();
+          this.startBsRepeat();
+        } else if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
+          this.stopBsRepeat();
+        }
+      })
     } else if (rowIdx === 1) {
-      Text('►')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickSideKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onTouch((event: TouchEvent) => {
-          if (event.type === TouchType.Down) {
-            this.h().hapticTick();
-            this.startCurRepeat('right');
-          }
-          else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
-        })
+      Row() {
+        Text('►')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(16).textAlign(TextAlign.Center)
+          .width('100%').height('100%')
+          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
+          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      }
+      .width(this.flickSideKeyWidthVp).height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
+      .onTouch((event: TouchEvent) => {
+        if (event.type === TouchType.Down) {
+          this.h().hapticTick();
+          this.startCurRepeat('right');
+        }
+        else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
+      })
     } else if (rowIdx === 2) {
-      Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
-        .textAlign(TextAlign.Center)
-        .width(this.flickSideKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      Row() {
+        Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
+          .textAlign(TextAlign.Center)
+          .width('100%').height('100%')
+          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
+          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      }
+      .width(this.flickSideKeyWidthVp).height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
         // Long-press the space key to reveal the 右手モード hint, then flick up
         // while it shows to switch. Gating on the long-press stops a stray flick
         // from misfiring. A plain tap still inserts a space via onClick.
@@ -512,24 +574,28 @@ export struct FlickKeyboardView {
           }
         })
     } else {
-      Text('→')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(16).textAlign(TextAlign.Center)
-        .width(this.flickSideKeyWidthVp).height('100%')
-        .backgroundColor(kbTheme(this.isDark).accent).fontColor(kbTheme(this.isDark).onAccent)
-        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-        .onClick(() => {
-          this.h().hapticTick();
-          const st = AppStorage.get<string>('inputState') ?? 'IDLE';
-          if (st === 'BUNSETSU') {
-            this.h().commitBunsetsu();
-          } else if (st === 'SELECTING') {
-            this.h().commitTopCandidate();
-          } else if (st === 'COMPOSING') {
-            this.h().commitRaw();
-          } else {
-            this.h().handleEnterKey();
-          }
+      Row() {
+        Text('→')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(16).textAlign(TextAlign.Center)
+          .width('100%').height('100%')
+          .backgroundColor(kbTheme(this.isDark).accent).fontColor(kbTheme(this.isDark).onAccent)
+          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      }
+      .width(this.flickSideKeyWidthVp).height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
+      .onClick(() => {
+        this.h().hapticTick();
+        const st = AppStorage.get<string>('inputState') ?? 'IDLE';
+        if (st === 'BUNSETSU') {
+          this.h().commitBunsetsu();
+        } else if (st === 'SELECTING') {
+          this.h().commitTopCandidate();
+        } else if (st === 'COMPOSING') {
+          this.h().commitRaw();
+        } else {
+          this.h().handleEnterKey();
+        }
         })
     }
   }
@@ -539,75 +605,89 @@ export struct FlickKeyboardView {
       // Landscape rows are short on height; drop the flick-direction hints and
       // just show the center glyph. Flicking itself is unaffected — dirFrom()
       // reads the touch gesture, not this label.
-      Text(this.centerLabel(rowIdx, colIdx, key))
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(this.isActive(rowIdx, colIdx) ? 17 : 14)
-        .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
-        .fontWeight(FontWeight.Medium)
-        .textAlign(TextAlign.Center)
-        .width(this.flickKeyWidthVp)
-        .height('100%')
-        .backgroundColor(this.keyBg(rowIdx, colIdx, key))
-        .borderRadius(CELL_RADIUS)
-        .shadow(this.keyShadow(rowIdx, colIdx, key))
-        .onTouch((e: TouchEvent) => {
-          this.handleTouch(e, rowIdx, colIdx, key);
-        })
+      Row() {
+        Text(this.centerLabel(rowIdx, colIdx, key))
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(this.isActive(rowIdx, colIdx)
+            ? Math.max(11, Math.round(17 * this.hintScale()))
+            : Math.max(9, Math.round(14 * this.hintScale())))
+          .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+          .fontWeight(FontWeight.Medium)
+          .textAlign(TextAlign.Center)
+          .width('100%')
+          .height('100%')
+          .backgroundColor(this.keyBg(rowIdx, colIdx, key))
+          .borderRadius(CELL_RADIUS)
+          .shadow(this.keyShadow(rowIdx, colIdx, key))
+      }
+      .width(this.flickKeyWidthVp)
+      .height('100%')
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
+      .onTouch((e: TouchEvent) => {
+        this.handleTouch(e, rowIdx, colIdx, key);
+      })
     } else {
       // 上・中・下の3帯。各帯は必ず中央揃えのコンテナで包む。
       // Text に height だけ与えると帯の中で上寄りに描かれ、中心文字との間隔が
       // 上下で食い違って「文字がずれている」ように見える。
-      Column({ space: 0 }) {
-        Row() {
-          Text(key.up !== undefined ? this.toMode(key.up) : ' ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
-            .textAlign(TextAlign.Center)
+      Row() {
+        Column({ space: 0 }) {
+          Row() {
+            Text(key.up !== undefined ? this.toMode(key.up) : ' ')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(Math.max(7, Math.round(11 * this.hintScale())))
+              .fontColor(this.hintColor(rowIdx, colIdx, 'up'))
+              .textAlign(TextAlign.Center)
+          }
+          .width('100%').height('26%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
+
+          Row({ space: 0 }) {
+            Text(key.left !== undefined ? this.toMode(key.left) : ' ')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(Math.max(7, Math.round(11 * this.hintScale())))
+              .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
+              .width('25%').textAlign(TextAlign.Center)
+
+            Text(this.centerLabel(rowIdx, colIdx, key))
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(this.isActive(rowIdx, colIdx)
+                ? Math.max(14, Math.round(22 * this.hintScale()))
+                : Math.max(12, Math.round(18 * this.hintScale())))
+              .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
+              .fontWeight(FontWeight.Medium)
+              .width('50%').textAlign(TextAlign.Center)
+
+            Text(key.right !== undefined ? this.toMode(key.right) : ' ')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(Math.max(7, Math.round(11 * this.hintScale())))
+              .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
+              .width('25%').textAlign(TextAlign.Center)
+          }
+          .width('100%').height('44%')
+          .alignItems(VerticalAlign.Center)
+
+          Row() {
+            Text(key.down !== undefined ? this.toMode(key.down) : ' ')
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(Math.max(7, Math.round(11 * this.hintScale())))
+              .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
+              .textAlign(TextAlign.Center)
+          }
+          .width('100%').height('30%')
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
         }
-        .width('100%').height('26%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
-
-        Row({ space: 0 }) {
-          Text(key.left !== undefined ? this.toMode(key.left) : ' ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(this.hintColor(rowIdx, colIdx, 'left'))
-            .width('25%').textAlign(TextAlign.Center)
-
-          Text(this.centerLabel(rowIdx, colIdx, key))
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(this.isActive(rowIdx, colIdx) ? 22 : 18)
-            .fontColor(key.special === 'dakuten' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
-            .fontWeight(FontWeight.Medium)
-            .width('50%').textAlign(TextAlign.Center)
-
-          Text(key.right !== undefined ? this.toMode(key.right) : ' ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(this.hintColor(rowIdx, colIdx, 'right'))
-            .width('25%').textAlign(TextAlign.Center)
-        }
-        .width('100%').height('44%')
-        .alignItems(VerticalAlign.Center)
-
-        Row() {
-          Text(key.down !== undefined ? this.toMode(key.down) : ' ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(this.hintColor(rowIdx, colIdx, 'down'))
-            .textAlign(TextAlign.Center)
-        }
-        .width('100%').height('30%')
-        .justifyContent(FlexAlign.Center)
-        .alignItems(VerticalAlign.Center)
+        .width('100%')
+        .height('100%')
+        .backgroundColor(this.keyBg(rowIdx, colIdx, key))
+        .borderRadius(CELL_RADIUS)
+        .shadow(this.keyShadow(rowIdx, colIdx, key))
       }
       .width(this.flickKeyWidthVp)
       .height('100%')
-      .backgroundColor(this.keyBg(rowIdx, colIdx, key))
-      .borderRadius(CELL_RADIUS)
-      .shadow(this.keyShadow(rowIdx, colIdx, key))
+      .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
       .onTouch((e: TouchEvent) => {
         this.handleTouch(e, rowIdx, colIdx, key);
       })

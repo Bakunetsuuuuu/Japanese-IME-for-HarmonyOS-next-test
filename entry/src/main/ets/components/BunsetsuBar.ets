@@ -40,6 +40,6 @@ export struct BunsetsuBar {
     .scrollBar(BarState.Off)
     .width('100%')
     .height(this.isLandscape ? 22 : 48)
-    .backgroundColor(kbTheme(this.isDark).panelBg)
+    .backgroundColor(kbTheme(this.isDark).previewBg)
   }
 }
