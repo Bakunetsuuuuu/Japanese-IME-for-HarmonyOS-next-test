@@ -9,3 +9,19 @@
 debug_input_log*
 __pycache__/
 tools/.cache/
+
+# 署名情報。build-profile.json5 自体は追跡対象だが、ローカルで
+# signingConfigs (リリース用 .p12/.p7b のパスと storePassword/keyPassword) を
+# 足して使うため、その変更は絶対にコミットしない。このリポジトリは public。
+# ファイル本体は git update-index --skip-worktree で変更を無視させてある
+# (解除は --no-skip-worktree)。控えのバックアップもここで弾く。
+build-profile.json5.release-backup
+*.p12
+*.p7b
+*.cer
+
+# ビルド生成物・IDE の作業状態
+.hvigor/
+.idea/
+entry/build/
+entry/.preview/
