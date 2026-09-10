@@ -65,6 +65,10 @@
       "value": "Privacy policy"
     },
     {
+      "name": "license_title",
+      "value": "Licenses"
+    },
+    {
       "name": "consent_title",
       "value": "Privacy policy consent"
     },

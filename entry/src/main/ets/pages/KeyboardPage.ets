@@ -630,69 +630,79 @@ struct KeyboardPage {
               if (this.showComposingPanel
                   || (this.convEnd > 0 && this.convEnd < this.composingText.length)) {
               Row() {
-                if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
-                  if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
-                    Text(this.composingText.slice(0, this.convEnd))
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 16)
-                      .fontWeight(FontWeight.Medium)
-                      .fontColor(kbTheme(this.isDark).textPrimary)
-                      .maxLines(1)
-                      .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
-                    Text(this.composingText.slice(this.convEnd))
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 16)
-                      .fontColor(kbTheme(this.isDark).textSecondary)
-                      .maxLines(1)
-                  } else {
-                    Text(this.composingText + this.pendingRomaji)
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 16)
-                      .fontWeight(FontWeight.Medium)
-                      .fontColor(kbTheme(this.isDark).textPrimary)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .padding({ left: 12, right: 8 })
-                      .border((this.composingText + this.pendingRomaji).length > 0 ?
-                        { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
-                        { width: { bottom: 0 } })
-                      .layoutWeight(1)
+                Row() {
+                  if (this.composingText.length > 0 || this.pendingRomaji.length > 0) {
+                    if (this.convEnd > 0 && this.convEnd < this.composingText.length) {
+                      Text(this.composingText.slice(0, this.convEnd))
+                        .fontFamily(JP_FONT_FAMILY)
+                        .fontSize(this.isLandscape ? 12 : 16)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(kbTheme(this.isDark).textPrimary)
+                        .maxLines(1)
+                        .decoration({ type: TextDecorationType.Underline, color: kbTheme(this.isDark).accent })
+                      Text(this.composingText.slice(this.convEnd))
+                        .fontFamily(JP_FONT_FAMILY)
+                        .fontSize(this.isLandscape ? 12 : 16)
+                        .fontColor(kbTheme(this.isDark).textSecondary)
+                        .maxLines(1)
+                    } else {
+                      Text(this.composingText + this.pendingRomaji)
+                        .fontFamily(JP_FONT_FAMILY)
+                        .fontSize(this.isLandscape ? 12 : 16)
+                        .fontWeight(FontWeight.Medium)
+                        .fontColor(kbTheme(this.isDark).textPrimary)
+                        .maxLines(1)
+                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .padding({ left: 12, right: 8 })
+                        .border((this.composingText + this.pendingRomaji).length > 0 ?
+                          { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
+                          { width: { bottom: 0 } })
+                        .layoutWeight(1)
+                    }
                   }
+                  Blank()
                 }
-                Blank()
-                Text('設定')
-                  .fontFamily(JP_FONT_FAMILY)
-                  .fontSize(this.isLandscape ? 10 : 13)
-                  .fontColor(kbTheme(this.isDark).textSecondary)
-                  .padding({ left: 10, right: 10 })
-                  // 見た目のサイズは変えず、当たり判定だけ広げる (帯自体が
-                  // 低い/狭いことがあるので、パディングを増やすと今度は
-                  // ここが原因で潰れて見えかねない)。
-                  .responseRegion({ x: '-20%', y: '-60%', width: '140%', height: '220%' })
-                  .onClick(() => {
-                    AppStorage.setOrCreate('keyboardSubMode', 'settings');
-                  })
-                  .gesture(
-                    GestureGroup(GestureMode.Sequence,
-                      LongPressGesture({ duration: 300 })
-                        .onAction(() => {
-                          this.floatingHint = true;
-                          this.floatingHintTimer = setTimeout(() => { this.floatingHint = false; }, 1500);
-                        }),
-                      PanGesture({ direction: PanDirection.Up, distance: 20 })
-                        .onActionStart(() => {
-                          InputHandler.getInstance().toggleFloatingMode();
-                          clearTimeout(this.floatingHintTimer);
-                          this.floatingHint = false;
-                        })
-                    )
+                .layoutWeight(1)
+                .height('100%')
+                .alignItems(VerticalAlign.Center)
+                .padding({ left: 12 })
+
+                Row() {
+                  SymbolGlyph($r('sys.symbol.gearshape'))
+                    .fontSize(this.isLandscape ? 12 : 18)
+                    .fontColor([kbTheme(this.isDark).textSecondary])
+                }
+                .width(this.isLandscape ? 24 : 36)
+                .height('100%')
+                .justifyContent(FlexAlign.Center)
+                .alignItems(VerticalAlign.Center)
+                // 見た目のサイズは変えず、当たり判定だけ広げる (帯自体が
+                // 低い/狭いことがあるので、パディングを増やすと今度は
+                // ここが原因で潰れて見えかねない)。
+                .responseRegion({ x: '-20%', y: '-60%', width: '140%', height: '220%' })
+                .onClick(() => {
+                  AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                })
+                .gesture(
+                  GestureGroup(GestureMode.Sequence,
+                    LongPressGesture({ duration: 300 })
+                      .onAction(() => {
+                        this.floatingHint = true;
+                        this.floatingHintTimer = setTimeout(() => { this.floatingHint = false; }, 1500);
+                      }),
+                    PanGesture({ direction: PanDirection.Up, distance: 20 })
+                      .onActionStart(() => {
+                        InputHandler.getInstance().toggleFloatingMode();
+                        clearTimeout(this.floatingHintTimer);
+                        this.floatingHint = false;
+                      })
                   )
+                )
               }
               .width('100%')
               .height(this.stripHeightVp())
               .backgroundColor(kbTheme(this.isDark).panelBg)
               .alignItems(VerticalAlign.Center)
-              .padding({ left: 12, right: 8 })
               }
 
               // Candidate bar row + layout toggle
@@ -719,7 +729,7 @@ struct KeyboardPage {
                     // rather than left-aligned like an actual conversion candidate.
                     Text(this.clipboardPreview)
                       .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 16)
+                      .fontSize(this.isLandscape ? 12 : 16)
                       .maxLines(1)
                       .textOverflow({ overflow: TextOverflow.Ellipsis })
                       // Cap how wide the chip can grow instead of letting it stretch to
@@ -780,30 +790,34 @@ struct KeyboardPage {
                 // 無いので、候補バーの右端に寄せる。
                 if (!this.showComposingPanel
                     && !(this.convEnd > 0 && this.convEnd < this.composingText.length)) {
-                  Text('設定')
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(this.isLandscape ? 10 : 13)
-                    .fontColor(kbTheme(this.isDark).textSecondary)
-                    .padding({ left: 10, right: 10 })
-                    .responseRegion({ x: '-20%', y: '-60%', width: '140%', height: '220%' })
-                    .onClick(() => {
-                      AppStorage.setOrCreate('keyboardSubMode', 'settings');
-                    })
-                    .gesture(
-                      GestureGroup(GestureMode.Sequence,
-                        LongPressGesture({ duration: 300 })
-                          .onAction(() => {
-                            this.floatingHint = true;
-                            this.floatingHintTimer = setTimeout(() => { this.floatingHint = false; }, 1500);
-                          }),
-                        PanGesture({ direction: PanDirection.Up, distance: 20 })
-                          .onActionStart(() => {
-                            InputHandler.getInstance().toggleFloatingMode();
-                            clearTimeout(this.floatingHintTimer);
-                            this.floatingHint = false;
-                          })
-                      )
+                  Row() {
+                    SymbolGlyph($r('sys.symbol.gearshape'))
+                      .fontSize(this.isLandscape ? 12 : 18)
+                      .fontColor([kbTheme(this.isDark).textSecondary])
+                  }
+                  .width(this.isLandscape ? 24 : 36)
+                  .height('100%')
+                  .justifyContent(FlexAlign.Center)
+                  .alignItems(VerticalAlign.Center)
+                  .responseRegion({ x: '-20%', y: '-60%', width: '140%', height: '220%' })
+                  .onClick(() => {
+                    AppStorage.setOrCreate('keyboardSubMode', 'settings');
+                  })
+                  .gesture(
+                    GestureGroup(GestureMode.Sequence,
+                      LongPressGesture({ duration: 300 })
+                        .onAction(() => {
+                          this.floatingHint = true;
+                          this.floatingHintTimer = setTimeout(() => { this.floatingHint = false; }, 1500);
+                        }),
+                      PanGesture({ direction: PanDirection.Up, distance: 20 })
+                        .onActionStart(() => {
+                          InputHandler.getInstance().toggleFloatingMode();
+                          clearTimeout(this.floatingHintTimer);
+                          this.floatingHint = false;
+                        })
                     )
+                  )
                 }
               }
               .width('100%')

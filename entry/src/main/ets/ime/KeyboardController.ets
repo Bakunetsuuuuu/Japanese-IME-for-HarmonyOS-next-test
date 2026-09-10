@@ -116,22 +116,21 @@ export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boo
   // それを入力に再計算すると小さいほうに固定されて戻れなくなる)。
   AppStorage.setOrCreate('keyboardRawContentVp', rawScreenVp);
   // 10-key rows (KeyboardView's number row / qwerty row / romaji asdfghjklー
-  // row): 4vp total H-padding + 9 gaps × 5vp (KeyboardView's Row({space:5}),
+  // row): 4vp total H-padding + 9 gaps × 4vp (KeyboardView's Row({space:4}),
   // not the 2vp this used to assume before the design-token pass bumped row
   // spacing -- that mismatch was the actual bug: keys came out ~2.7vp too
   // wide each, ~27vp of overflow past the right edge on any 10-key row) =
-  // 49vp overhead. The middle letter row (asdfghjkl + ー) and bottom row
+  // 40vp overhead. The middle letter row (asdfghjkl + ー) and bottom row
   // (shift + zxcvbnm + backspace) also reuse this width; they aren't a
   // fixed-width fit like this row, just centered, so a different key count
   // is harmless.
-  const kwVp = Math.max(Math.floor((screenVp - 49) / 10), 24);
+  const kwVp = Math.max(Math.floor((screenVp - 40) / 10), 24);
   const skwVp = Math.round(kwVp * 1.2);
-  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps × 5vp
+  // Space bar = remaining after mode + 、 + 文節 + 。 + enter + 5 gaps × 4vp
   // (文節 sits right after space, at the same special-key width as
   // mode/enter — the row would overflow if it were sized on top of them
-  // instead of space giving up the room). Same space:5 vs assumed-2vp
-  // mismatch as kwVp above.
-  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 25), 60);
+  // instead of space giving up the room). Same space:4 as kwVp above.
+  const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 2 * kwVp - 20), 60);
   // Flick keys: 5 columns (左特殊・中央3列・右特殊) + 4 gaps × 4vp
   // (FlickKeyboardView's Row({space:4})) + 0vp H-padding (its Column has no
   // left/right padding) = 16vp overhead -- same total as the old "4 gaps ×

@@ -46,8 +46,8 @@ const FLICK_GRID: FlickKeyDef[][] = [
   ],
 ];
 
-// Flick cell corner radius (design tokens: "flick cells 14px").
-const CELL_RADIUS = 14;
+// Flick cell corner radius (design tokens: "flick cells 8px").
+const CELL_RADIUS = 8;
 
 // キー間の見た目の隙間を広げるための余白。各キーは「当たり判定用の枠
 // (従来どおりのサイズ、これがタップ/フリックを検出する)」+「その内側に
@@ -287,10 +287,10 @@ export struct FlickKeyboardView {
   @Builder OneHandHintPopup() {
     Text(this.oneHandHint === 'left' ? '左手モード' : '右手モード')
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(13)
+      .fontSize(14)
       .fontWeight(FontWeight.Medium)
       .fontColor(kbTheme(this.isDark).textPrimary)
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+      .padding({ left: 14, right: 14, top: 6, bottom: 6 })
   }
 
   // 左右特殊キー列と中央3列の境界の、幅比調整ハンドル。行ごとに1本ずつ
@@ -396,7 +396,7 @@ export struct FlickKeyboardView {
       Row() {
         Text('取消')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13).textAlign(TextAlign.Center)
+          .fontSize(14).textAlign(TextAlign.Center)
           .width('100%').height('100%')
           .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
           .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
@@ -409,12 +409,16 @@ export struct FlickKeyboardView {
       })
     } else if (rowIdx === 1) {
       Row() {
-        Text('◄')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(16).textAlign(TextAlign.Center)
-          .width('100%').height('100%')
-          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(16)
+            .fontColor([kbTheme(this.isDark).textPrimary])
+        }
+        .width('100%').height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).specialBg)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       }
       .width(this.flickSideKeyWidthVp).height('100%')
       .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
@@ -429,7 +433,7 @@ export struct FlickKeyboardView {
       Row() {
         Text('記号')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13).textAlign(TextAlign.Center)
+          .fontSize(14).textAlign(TextAlign.Center)
           .width('100%').height('100%')
           .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
           .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
@@ -443,7 +447,7 @@ export struct FlickKeyboardView {
           enableArrow: true,
           popupColor: kbTheme(this.isDark).specialBg,
           backgroundBlurStyle: BlurStyle.NONE,
-          radius: 14,
+          radius: 20,
           mask: false,
         })
         .gesture(
@@ -490,12 +494,16 @@ export struct FlickKeyboardView {
   @Builder RightKey(rowIdx: number) {
     if (rowIdx === 0) {
       Row() {
-        Text('⌫')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(16).textAlign(TextAlign.Center)
-          .width('100%').height('100%')
-          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        Row() {
+          SymbolGlyph($r('sys.symbol.delete_left'))
+            .fontSize(16)
+            .fontColor([kbTheme(this.isDark).textPrimary])
+        }
+        .width('100%').height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).specialBg)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       }
       .width(this.flickSideKeyWidthVp).height('100%')
       .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
@@ -509,12 +517,16 @@ export struct FlickKeyboardView {
       })
     } else if (rowIdx === 1) {
       Row() {
-        Text('►')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(16).textAlign(TextAlign.Center)
-          .width('100%').height('100%')
-          .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
-          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_right'))
+            .fontSize(16)
+            .fontColor([kbTheme(this.isDark).textPrimary])
+        }
+        .width('100%').height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).specialBg)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       }
       .width(this.flickSideKeyWidthVp).height('100%')
       .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
@@ -529,7 +541,7 @@ export struct FlickKeyboardView {
       Row() {
         Text(this.inputState === 'COMPOSING' ? '文節' : '空白')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(this.inputState === 'COMPOSING' ? 13 : 12)
+          .fontSize(this.inputState === 'COMPOSING' ? 14 : 12)
           .textAlign(TextAlign.Center)
           .width('100%').height('100%')
           .backgroundColor(kbTheme(this.isDark).specialBg).fontColor(kbTheme(this.isDark).textPrimary)
@@ -546,7 +558,7 @@ export struct FlickKeyboardView {
           enableArrow: true,
           popupColor: kbTheme(this.isDark).specialBg,
           backgroundBlurStyle: BlurStyle.NONE,
-          radius: 14,
+          radius: 20,
           mask: false,
         })
         .gesture(
@@ -575,12 +587,16 @@ export struct FlickKeyboardView {
         })
     } else {
       Row() {
-        Text('→')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(16).textAlign(TextAlign.Center)
-          .width('100%').height('100%')
-          .backgroundColor(kbTheme(this.isDark).accent).fontColor(kbTheme(this.isDark).onAccent)
-          .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        Row() {
+          SymbolGlyph($r('sys.symbol.arrow_right'))
+            .fontSize(16)
+            .fontColor([kbTheme(this.isDark).onAccent])
+        }
+        .width('100%').height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).accent)
+        .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       }
       .width(this.flickSideKeyWidthVp).height('100%')
       .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })

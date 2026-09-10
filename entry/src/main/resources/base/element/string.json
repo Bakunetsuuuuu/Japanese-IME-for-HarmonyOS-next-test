@@ -65,6 +65,10 @@
       "value": "プライバシーポリシー"
     },
     {
+      "name": "license_title",
+      "value": "ライセンス"
+    },
+    {
       "name": "consent_title",
       "value": "プライバシーポリシーへの同意"
     },

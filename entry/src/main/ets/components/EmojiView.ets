@@ -148,17 +148,19 @@ export struct EmojiView {
     Column({ space: 0 }) {
       // ── Tab row ───────────────────────────────────────────────
       Row({ space: 4 }) {
-        Text('←')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(18)
-          .textAlign(TextAlign.Center)
-          .width(48).height(40)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .backgroundColor(kbTheme(this.isDark).specialBg)
-          .borderRadius(20)
-          .onClick(() => {
-            AppStorage.setOrCreate('keyboardSubMode', 'symbol');
-          })
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_left'))
+            .fontSize(18)
+            .fontColor([kbTheme(this.isDark).textPrimary])
+        }
+        .width(48).height(40)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).specialBg)
+        .borderRadius(20)
+        .onClick(() => {
+          AppStorage.setOrCreate('keyboardSubMode', 'symbol');
+        })
 
         ForEach([0, 1, 2, 3, 4, 5, 6, 7], (i: number) => {
           Text(EMOJI_TABS[i])
@@ -168,7 +170,7 @@ export struct EmojiView {
             .textAlign(TextAlign.Center)
             .width(34).height(32)
             .backgroundColor(this.currentTab === i ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
-            .borderRadius(12)
+            .borderRadius(8)
             .onClick(() => {
               this.currentTab = i;
               // 押したカテゴリの先頭行へ飛ぶ。切り替えではなく移動。
@@ -195,7 +197,7 @@ export struct EmojiView {
                   .width(this.symKeyWidthVp)
                   .height(GRID_ROW_H)
                   .backgroundColor(kbTheme(this.isDark).keyBg)
-                  .borderRadius(10)
+                  .borderRadius(8)
                   .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
                   .onClick(() => {
                     this.h().commitTopCandidate();
@@ -224,7 +226,7 @@ export struct EmojiView {
       Row({ space: 0 }) {
         Text('あいう')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13).textAlign(TextAlign.Center)
+          .fontSize(14).textAlign(TextAlign.Center)
           .width(68).height(44)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .onClick(() => {
@@ -233,23 +235,26 @@ export struct EmojiView {
 
         Text('←記')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13).textAlign(TextAlign.Center)
+          .fontSize(14).textAlign(TextAlign.Center)
           .width(60).height(44)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .backgroundColor(kbTheme(this.isDark).funcBg)
-          .borderRadius(12)
+          .borderRadius(8)
           .onClick(() => {
             AppStorage.setOrCreate('keyboardSubMode', 'symbol');
           })
 
-        Text('⌫')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(18).textAlign(TextAlign.Center)
-          .width(52).height(44)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .backgroundColor(kbTheme(this.isDark).specialBg)
-          .borderRadius(14)
-          .onClick(() => { this.h().handleBackspace(); })
+        Row() {
+          SymbolGlyph($r('sys.symbol.delete_left'))
+            .fontSize(18)
+            .fontColor([kbTheme(this.isDark).textPrimary])
+        }
+        .width(52).height(44)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).specialBg)
+        .borderRadius(8)
+        .onClick(() => { this.h().handleBackspace(); })
       }
       .width('100%')
       .height(52)

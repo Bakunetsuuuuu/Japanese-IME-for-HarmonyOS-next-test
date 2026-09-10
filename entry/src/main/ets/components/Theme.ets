@@ -36,8 +36,15 @@ export interface KbTheme {
   // Lines / shadow
   divider: ResourceColor;
   shadowColor: ResourceColor;
+  deleteRed: ResourceColor;      // destructive actions (settings delete)
 }
 
+// 色そのものは実機の Huawei 純正キーボードから採寸した値を使う。
+// PR #58 (UIの調整) は HarmonyOS デザインガイドの標準トークン
+// (#F1F3F5 / #191A1C, accent #0A59F7 …) への差し替えを提案していたが、
+// このキーボードは「純正と並べて違和感が無いこと」を優先しているので
+// 実測値のまま据え置いた。PR からは deleteRed トークンだけ取り込んでいる。
+//
 // 2026-08-28、ライトの panelBg を実機の正確な値 #E3E4E6 に再訂正
 // (前回 #E2E6E9 としていたが、青に寄りすぎていた)。前回同様、panelBg の
 // ズレ量 (+1,-2,-3) をそのまま他の面 (keyBg/specialBg/funcBg/cardBg/
@@ -64,6 +71,7 @@ export const LIGHT_THEME: KbTheme = {
   onAccent: '#FFFFFF',
   divider: '#D7D8DB',
   shadowColor: '#0F142B0F', // rgba(20,20,43,0.06)
+  deleteRed: '#E84026',
 };
 
 export const DARK_THEME: KbTheme = {
@@ -82,6 +90,7 @@ export const DARK_THEME: KbTheme = {
   onAccent: '#FFFFFF',
   divider: '#414141',
   shadowColor: '#0F142B1F',
+  deleteRed: '#D94838',
 };
 
 export function kbTheme(isDark: boolean): KbTheme {

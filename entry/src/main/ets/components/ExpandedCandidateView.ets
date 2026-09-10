@@ -23,12 +23,12 @@ export struct ExpandedCandidateView {
 
   @Builder DeleteMenu() {
     Row({ space: 6 }) {
-      Text('🗑')
-        .fontFamily(JP_FONT_FAMILY)
+      SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(14)
+        .fontColor([kbTheme(this.isDark).textPrimary])
       Text(`「${this.menuCandidate}」を候補から削除`)
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13)
+        .fontSize(14)
         .fontWeight(FontWeight.Medium)
         .fontColor(kbTheme(this.isDark).textPrimary)
     }
@@ -60,12 +60,14 @@ export struct ExpandedCandidateView {
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textSecondary)
             .layoutWeight(1)
-          Text('✕')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(16)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .width(40).height(36)
-            .textAlign(TextAlign.Center)
+          Row() {
+            SymbolGlyph($r('sys.symbol.xmark'))
+              .fontSize(16)
+              .fontColor([kbTheme(this.isDark).textSecondary])
+          }
+          .width(40).height(36)
+          .justifyContent(FlexAlign.Center)
+          .alignItems(VerticalAlign.Center)
             .onClick(() => {
               AppStorage.setOrCreate('candidateExpanded', false);
             })
@@ -79,10 +81,10 @@ export struct ExpandedCandidateView {
               GridItem() {
                 Text(candidate)
                   .fontFamily(JP_FONT_FAMILY)
-                  .fontSize(17)
+                  .fontSize(18)
                   .fontWeight(index === this.selectedIndex ? FontWeight.Bold : FontWeight.Normal)
                   .width('100%').textAlign(TextAlign.Center)
-                  .padding({ top: 12, bottom: 12 }).borderRadius(10)
+                  .padding({ top: 12, bottom: 12 }).borderRadius(8)
                   .backgroundColor(index === this.selectedIndex ? kbTheme(this.isDark).accent : kbTheme(this.isDark).candidateBg)
                   .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
                   .border(this.quasiCandidateSurfaces.includes(candidate) ? {
@@ -95,7 +97,7 @@ export struct ExpandedCandidateView {
                 enableArrow: true,
                 popupColor: kbTheme(this.isDark).cardBg,
                 backgroundBlurStyle: BlurStyle.NONE,
-                radius: 12,
+                radius: 20,
                 mask: true,
                 onStateChange: (e: PopupStateChangeParam) => {
                   if (!e.isVisible && this.menuIndex === index) { this.closeMenu(); }

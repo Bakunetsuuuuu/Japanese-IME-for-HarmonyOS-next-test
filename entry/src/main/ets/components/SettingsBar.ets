@@ -5,17 +5,12 @@ import { promptAction } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from './JpFont';
 
 // Segmented-control / card metrics (design tokens: settings cards 16px,
-// segmented-control track 10-11px / inner pill 8px, selected option gets a
-// slight elevation vs. the flat unselected one).
+// segmented-control track 20px / inner pill 20px).
 const CARD_RADIUS = 16;
-const TRACK_RADIUS = 11;
-const PILL_RADIUS = 8;
-// 削除系の操作に使う赤 (本体アプリ側 pages/Index.ets と同じ値)。
-const DELETE_RED = '#E5484D';
+const TRACK_RADIUS = 20;
+const PILL_RADIUS = 20;
 // 全消去に必要な連打回数。誤操作で到達しない回数にしてある。
 const RESET_ALL_TAPS = 5;
-const SELECTED_SHADOW: ShadowOptions = { radius: 3, color: '#2E000000', offsetX: 0, offsetY: 1 };
-const NO_SHADOW: ShadowOptions = { radius: 0, color: 'transparent' };
 
 // 設定項目が増えて縦一列のスクロールでは見づらくなったため、左にカテゴリ
 // 一覧・右に選んだカテゴリの中身、という2ペイン構成にしてある
@@ -152,26 +147,36 @@ export struct SettingsBar {
       Row() {
         Row() {
           if (this.showHistory || this.showDict || this.showPacks) {
-            Text('‹ 戻る')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(14)
-              .fontWeight(FontWeight.Medium)
-              .fontColor(kbTheme(this.isDark).accent)
-              .onClick(() => {
-                InputHandler.getInstance().stopCapture();
-                // 辞書の下位画面にいるときは、まず辞書の入口へ戻る。
-                if (this.showDict && this.dictSub.length > 0) {
-                  this.dictSub = '';
-                  return;
-                }
-                this.showHistory = false;
-                this.showDict = false;
-                this.showPacks = false;
-              })
+            Row({ space: 2 }) {
+              SymbolGlyph($r('sys.symbol.chevron_left'))
+                .fontSize(16)
+                .fontWeight(FontWeight.Medium)
+                .fontColor([kbTheme(this.isDark).accent])
+              Text('戻る')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(14)
+                .fontWeight(FontWeight.Medium)
+                .fontColor(kbTheme(this.isDark).accent)
+            }
+            .height('100%')
+            .alignItems(VerticalAlign.Center)
+            .onClick(() => {
+              InputHandler.getInstance().stopCapture();
+              // 辞書の下位画面にいるときは、まず辞書の入口へ戻る。
+              if (this.showDict && this.dictSub.length > 0) {
+                this.dictSub = '';
+                return;
+              }
+              this.showHistory = false;
+              this.showDict = false;
+              this.showPacks = false;
+            })
           }
         }
         .width(56)
+        .height('100%')
         .justifyContent(FlexAlign.Start)
+        .alignItems(VerticalAlign.Center)
 
         Text(this.showHistory
           ? 'クリップボード履歴'
@@ -181,7 +186,7 @@ export struct SettingsBar {
                 : (this.dictSub === 'suppressed' ? '削除した候補' : 'ユーザー辞書')))
             : (this.showPacks ? '語彙パック' : '設定')))
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(kbTheme(this.isDark).textPrimary)
           .layoutWeight(1)
@@ -191,21 +196,23 @@ export struct SettingsBar {
           if (this.showHistory) {
             Text('削除')
               .fontFamily(JP_FONT_FAMILY)
-              .fontSize(13)
+              .fontSize(12)
               .fontColor(kbTheme(this.isDark).textSecondary)
               .onClick(() => {
                 InputHandler.getInstance().clearClipboardHistory();
               })
           } else if (!this.showDict) {
-            Text('✕')
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(13)
-              .width(28).height(28)
-              .textAlign(TextAlign.Center)
-              .fontColor(kbTheme(this.isDark).textSecondary)
-              .backgroundColor(kbTheme(this.isDark).funcBg)
-              .borderRadius(14)
-              .onClick(() => { this.close(); })
+            Row() {
+              SymbolGlyph($r('sys.symbol.xmark'))
+                .fontSize(14)
+                .fontColor([kbTheme(this.isDark).textSecondary])
+            }
+            .width(28).height(28)
+            .justifyContent(FlexAlign.Center)
+            .alignItems(VerticalAlign.Center)
+            .backgroundColor(kbTheme(this.isDark).funcBg)
+            .borderRadius(8)
+            .onClick(() => { this.close(); })
           }
         }
         .width(56)
@@ -254,6 +261,18 @@ export struct SettingsBar {
     .height('100%')
     .backgroundColor(kbTheme(this.isDark).panelBg)
   }
+
+  @Builder SectionLabel(text: string) {
+    Text(text)
+      .fontFamily(JP_FONT_FAMILY)
+      .fontSize(12)
+      .fontWeight(FontWeight.Medium)
+      .letterSpacing(0.6)
+      .fontColor(kbTheme(this.isDark).textSecondary)
+      .padding({ left: 4, bottom: 8 })
+      .width('100%')
+  }
+
 
   // Segmented-control options are written inline (not as a shared @Builder
   // taking an "active" boolean parameter) — ArkUI's fine-grained update
@@ -364,7 +383,7 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textSecondary)
           Text('›')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(15)
+            .fontSize(14)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
       }
@@ -390,14 +409,14 @@ export struct SettingsBar {
             .width('100%')
           Text('打った語をここから登録できます')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
             .width('100%')
         }
         .layoutWeight(1)
         Text('›')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(14)
           .fontColor(kbTheme(this.isDark).textSecondary)
       }
       .width('100%')
@@ -457,7 +476,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.kanaKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.kanaKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.kanaKeyboardLayout === 'QWERTY' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setKanaKeyboardLayout('QWERTY'); })
 
           Text('フリック')
@@ -468,12 +486,11 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.kanaKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.kanaKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.kanaKeyboardLayout === 'FLICK' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setKanaKeyboardLayout('FLICK'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
         .borderRadius(TRACK_RADIUS)
-        .padding(3)
+        .padding(2)
       }
       .width('100%')
       .padding({ top: 14, bottom: 14 })
@@ -494,7 +511,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.alphabetKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.alphabetKeyboardLayout === 'QWERTY' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.alphabetKeyboardLayout === 'QWERTY' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setAlphabetKeyboardLayout('QWERTY'); })
 
           Text('フリック')
@@ -505,15 +521,14 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.alphabetKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.alphabetKeyboardLayout === 'FLICK' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.alphabetKeyboardLayout === 'FLICK' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setAlphabetKeyboardLayout('FLICK'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
         .borderRadius(TRACK_RADIUS)
-        .padding(3)
+        .padding(2)
       }
       .width('100%')
-      .padding({ top: 13, bottom: 13 })
+      .padding({ top: 12, bottom: 12 })
 
       Divider().color(kbTheme(this.isDark).divider)
 
@@ -529,7 +544,7 @@ export struct SettingsBar {
             ? 'この端末では利用できません（OSがキーボードからの振動を許可していません）'
             : 'キーを押したときに短く振動します')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
         .alignItems(HorizontalAlign.Start)
@@ -544,7 +559,7 @@ export struct SettingsBar {
           })
       }
       .width('100%')
-      .padding({ top: 13, bottom: 13 })
+      .padding({ top: 12, bottom: 12 })
       // 非対応端末では触れないようにグレーアウトする。説明文 (上の
       // hapticUnavailable 分岐) だけだと、触れてしまうぶん「効かない設定」に
       // 見えて紛らわしかった。
@@ -564,7 +579,7 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textPrimary)
           Text('オンにすると「あA」キーで日本語→アルファベット→数字と切り替わります')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
         .alignItems(HorizontalAlign.Start)
@@ -578,7 +593,7 @@ export struct SettingsBar {
           })
       }
       .width('100%')
-      .padding({ top: 13, bottom: 13 })
+      .padding({ top: 12, bottom: 12 })
 
       Divider().color(kbTheme(this.isDark).divider)
 
@@ -598,7 +613,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.conversionEngine === 'custom' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.conversionEngine === 'custom' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.conversionEngine === 'custom' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setConversionEngine('custom'); })
 
           Text('統計データ')
@@ -609,15 +623,14 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.conversionEngine === 'mozc' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setConversionEngine('mozc'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
         .borderRadius(TRACK_RADIUS)
-        .padding(3)
+        .padding(2)
       }
       .width('100%')
-      .padding({ top: 13, bottom: 4 })
+      .padding({ top: 12, bottom: 4 })
       // hybrid supersedes this 2-way choice entirely while active -- see the
       // beta toggle below. Dimmed + non-interactive rather than hidden, so
       // switching back off is discoverable (just turn the beta toggle off).
@@ -628,10 +641,10 @@ export struct SettingsBar {
         ? '高性能だが比較的鈍重（推奨）'
         : this.conversionEngine === 'hybrid' ? '' : '軽量だが発展途上')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(11)
+        .fontSize(10)
         .fontColor(kbTheme(this.isDark).textSecondary)
         .width('100%')
-        .padding({ bottom: this.conversionEngine === 'hybrid' ? 4 : 13 })
+        .padding({ bottom: this.conversionEngine === 'hybrid' ? 4 : 12 })
 
       Divider().color(kbTheme(this.isDark).divider)
 
@@ -639,11 +652,11 @@ export struct SettingsBar {
         Column({ space: 2 }) {
           Text('ハイブリッド')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(13)
+            .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
           Text('独自辞書と統計データを融合。有効にすると上の選択は一時的に無効になります')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
         .alignItems(HorizontalAlign.Start)
@@ -657,7 +670,7 @@ export struct SettingsBar {
           })
       }
       .width('100%')
-      .padding({ top: 10, bottom: 13 })
+      .padding({ top: 10, bottom: 12 })
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
@@ -723,7 +736,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
             .fontColor(this.oneHandedSide === 'left' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.oneHandedSide === 'left' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'left'); })
 
           Text('右寄せ')
@@ -734,7 +746,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).accent : kbTheme(this.isDark).funcBg)
             .fontColor(this.oneHandedSide === 'right' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.oneHandedSide === 'right' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setOneHandedMode(true, 'right'); })
         }
         .width('100%')
@@ -814,7 +825,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.themeMode === 'system' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.themeMode === 'system' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'system' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setThemeMode('system'); })
 
           Text('ライト')
@@ -825,7 +835,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.themeMode === 'light' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.themeMode === 'light' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'light' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setThemeMode('light'); })
 
           Text('ダーク')
@@ -836,7 +845,6 @@ export struct SettingsBar {
             .borderRadius(PILL_RADIUS)
             .backgroundColor(this.themeMode === 'dark' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.themeMode === 'dark' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .shadow(this.themeMode === 'dark' ? SELECTED_SHADOW : NO_SHADOW)
             .onClick(() => { InputHandler.getInstance().setThemeMode('dark'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
@@ -1099,7 +1107,7 @@ export struct SettingsBar {
             .width('100%')
           Text('変換の学習・次単語予測・記号の履歴を消します')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
             .width('100%')
         }
@@ -1127,11 +1135,11 @@ export struct SettingsBar {
             : 'すべてリセット')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
-            .fontColor(DELETE_RED)
+            .fontColor(kbTheme(this.isDark).deleteRed)
             .width('100%')
           Text(`${RESET_ALL_TAPS}回連続で押すと実行。学習に加えユーザー辞書・削除した候補・設定も消えます`)
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
             .width('100%')
         }
@@ -1170,7 +1178,7 @@ export struct SettingsBar {
           .layoutWeight(1)
         Text('›')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(14)
           .fontColor(kbTheme(this.isDark).textSecondary)
       }
       .width('100%')
@@ -1190,7 +1198,7 @@ export struct SettingsBar {
           .layoutWeight(1)
         Text('›')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(14)
           .fontColor(kbTheme(this.isDark).textSecondary)
       }
       .width('100%')
@@ -1213,7 +1221,7 @@ export struct SettingsBar {
           .layoutWeight(1)
         Text('›')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(14)
           .fontColor(kbTheme(this.isDark).textSecondary)
       }
       .width('100%')
@@ -1238,14 +1246,14 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textPrimary)
           Text('リンクを共有 → 決済できる端末で開いて応援（缶コーヒー1杯から）')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         Text('›')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(14)
           .fontColor(kbTheme(this.isDark).textSecondary)
       }
       .width('100%')
@@ -1265,14 +1273,14 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textPrimary)
           Text('リンクを共有 → GitHubで月額/単発の支援（要アカウント）')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
         .alignItems(HorizontalAlign.Start)
         .layoutWeight(1)
         Text('›')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(14)
           .fontColor(kbTheme(this.isDark).textSecondary)
       }
       .width('100%')
@@ -1291,7 +1299,7 @@ export struct SettingsBar {
     if (this.clipboardHistory.length === 0) {
       Text('履歴がありません')
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13)
+        .fontSize(12)
         .fontColor(kbTheme(this.isDark).textSecondary)
         .width('100%')
         .textAlign(TextAlign.Center)
@@ -1410,14 +1418,14 @@ export struct SettingsBar {
             .width('100%')
           Text('この画面を閉じて、キーボードの上に入力欄を出します')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
+            .fontSize(10)
             .fontColor(kbTheme(this.isDark).textSecondary)
             .width('100%')
         }
         .layoutWeight(1)
         Text('›')
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
+          .fontSize(14)
           .fontColor(kbTheme(this.isDark).textSecondary)
       }
       .width('100%')
@@ -1442,7 +1450,7 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textSecondary)
           Text('›')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(15)
+            .fontSize(14)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
       }
@@ -1465,7 +1473,7 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textSecondary)
           Text('›')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(15)
+            .fontSize(14)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
       }
@@ -1489,7 +1497,7 @@ export struct SettingsBar {
             .fontColor(kbTheme(this.isDark).textSecondary)
           Text('›')
             .fontFamily(JP_FONT_FAMILY)
-            .fontSize(15)
+            .fontSize(14)
             .fontColor(kbTheme(this.isDark).textSecondary)
         }
       }
@@ -1513,7 +1521,7 @@ export struct SettingsBar {
       Text('打った語のうち辞書に無いもの')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(12)
-        .fontWeight(FontWeight.Bold)
+        .fontWeight(FontWeight.Medium)
         .letterSpacing(0.6)
         .fontColor(kbTheme(this.isDark).textSecondary)
         .padding({ left: 4 })
@@ -1524,7 +1532,7 @@ export struct SettingsBar {
         Text('すべて消去')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
-          .fontColor(DELETE_RED)
+          .fontColor(kbTheme(this.isDark).deleteRed)
           .padding({ left: 8 })
           .onClick(() => { InputHandler.getInstance().clearUnknownWords(); })
       }
@@ -1549,25 +1557,25 @@ export struct SettingsBar {
             Column({ space: 2 }) {
               Text(row.split('\t')[1])
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(15)
+                .fontSize(16)
                 .fontWeight(FontWeight.Medium)
                 .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
               Text(`${row.split('\t')[0]}   組み立て ${row.split('\t')[2]}回`)
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(11)
+                .fontSize(10)
                 .fontColor(kbTheme(this.isDark).textSecondary)
                 .width('100%')
             }
             .layoutWeight(1)
             Text('登録')
               .fontFamily(JP_FONT_FAMILY)
-              .fontSize(13)
+              .fontSize(12)
               .fontWeight(FontWeight.Bold)
               .fontColor(kbTheme(this.isDark).onAccent)
               .backgroundColor(kbTheme(this.isDark).accent)
               .borderRadius(8)
-              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .padding({ left: 14, right: 14, top: 6, bottom: 6 })
               .onClick(() => {
                 const p = row.split('\t');
                 InputHandler.getInstance().registerUserWord(p[0], p[1]);
@@ -1575,7 +1583,7 @@ export struct SettingsBar {
               })
             Text('✕')
               .fontFamily(JP_FONT_FAMILY)
-              .fontSize(13)
+              .fontSize(12)
               .width(28).height(28)
               .textAlign(TextAlign.Center)
               .fontColor(kbTheme(this.isDark).textSecondary)
@@ -1600,7 +1608,7 @@ export struct SettingsBar {
       Text('変換候補から消した語')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(12)
-        .fontWeight(FontWeight.Bold)
+        .fontWeight(FontWeight.Medium)
         .letterSpacing(0.6)
         .fontColor(kbTheme(this.isDark).textSecondary)
         .padding({ left: 4 })
@@ -1635,24 +1643,24 @@ export struct SettingsBar {
             Column({ space: 2 }) {
               Text(row.split('\t')[1])
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(15)
+                .fontSize(16)
                 .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
               Text(row.split('\t')[0])
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(11)
+                .fontSize(10)
                 .fontColor(kbTheme(this.isDark).textSecondary)
                 .width('100%')
             }
             .layoutWeight(1)
             Text('戻す')
               .fontFamily(JP_FONT_FAMILY)
-              .fontSize(13)
+              .fontSize(12)
               .fontWeight(FontWeight.Bold)
               .fontColor(kbTheme(this.isDark).onAccent)
               .backgroundColor(kbTheme(this.isDark).accent)
               .borderRadius(8)
-              .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+              .padding({ left: 14, right: 14, top: 6, bottom: 6 })
               .onClick(() => {
                 const p = row.split('\t');
                 InputHandler.getInstance().restoreSuppressedWord(p[0], p[1]);
@@ -1685,21 +1693,21 @@ export struct SettingsBar {
             Column({ space: 2 }) {
               Text(row.split('\t')[1])
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(15)
+                .fontSize(16)
                 .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
               Text(row.split('\t')[0])
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(11)
+                .fontSize(10)
                 .fontColor(kbTheme(this.isDark).textSecondary)
                 .width('100%')
             }
             .layoutWeight(1)
             Text('削除')
               .fontFamily(JP_FONT_FAMILY)
-              .fontSize(13)
-              .fontColor(DELETE_RED)
-              .padding({ left: 10, right: 4, top: 7, bottom: 7 })
+              .fontSize(12)
+              .fontColor(kbTheme(this.isDark).deleteRed)
+              .padding({ left: 10, right: 4, top: 6, bottom: 6 })
               .onClick(() => {
                 const p = row.split('\t');
                 InputHandler.getInstance().removeUserWord(p[0], p[1]);

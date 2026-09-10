@@ -20,8 +20,8 @@ const ROW1_ALPHANUMERIC: string[] = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l'
 
 const NUMBER_ROW: string[] = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '0'];
 
-// Key corner radius (design tokens: "regular keys 14px").
-const KEY_RADIUS = 14;
+// Key corner radius (design tokens: "regular keys 8px").
+const KEY_RADIUS = 8;
 
 @Component
 export struct KeyboardView {
@@ -74,17 +74,17 @@ export struct KeyboardView {
   @Builder OneHandHintPopup() {
     Text(this.oneHandHint === 'left' ? '左手モード' : '右手モード')
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(13)
+      .fontSize(14)
       .fontWeight(FontWeight.Medium)
       .fontColor(kbTheme(this.isDark).textPrimary)
-      .padding({ left: 14, right: 14, top: 7, bottom: 7 })
+      .padding({ left: 14, right: 14, top: 6, bottom: 6 })
   }
 
   build() {
     Stack() {
-      Column({ space: 5 }) {
+      Column({ space: 4 }) {
         if (!this.isLandscape) {
-          Row({ space: 5 }) {
+          Row({ space: 4 }) {
             ForEach(NUMBER_ROW, (key: string) => {
               this.RegularKey(key, this.keyWidthVp)
             }, (key: string) => key)
@@ -95,7 +95,7 @@ export struct KeyboardView {
         }
 
         ForEach([0, 1], (rowIdx: number) => {
-          Row({ space: 5 }) {
+          Row({ space: 4 }) {
             ForEach(rowIdx === 1 && this.inputMode === InputMode.ALPHANUMERIC ? ROW1_ALPHANUMERIC : ROWS[rowIdx], (key: string) => {
               this.RegularKey(key, this.keyWidthVp)
             }, (key: string) => key)
@@ -105,7 +105,7 @@ export struct KeyboardView {
           .layoutWeight(1)
         }, (rowIdx: number) => String(rowIdx))
 
-        Row({ space: 5 }) {
+        Row({ space: 4 }) {
           this.ShiftKey()
           ForEach(ROWS[2], (key: string) => {
             this.RegularKey(key, this.keyWidthVp)
@@ -116,7 +116,7 @@ export struct KeyboardView {
         .justifyContent(FlexAlign.Center)
         .layoutWeight(1)
 
-        Row({ space: 5 }) {
+        Row({ space: 4 }) {
           this.ModeKey()
           this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、', () => {
             const ch = this.inputMode === InputMode.ALPHANUMERIC ? ',' : '、';
@@ -152,7 +152,7 @@ export struct KeyboardView {
     // so the label re-renders when the shift state changes.
     Text((this.isShift || this.isCapsLock) ? value.toUpperCase() : value)
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(17)
+      .fontSize(18)
       .fontWeight(FontWeight.Medium)
       .fontColor(kbTheme(this.isDark).textPrimary)
       .textAlign(TextAlign.Center)
@@ -174,19 +174,22 @@ export struct KeyboardView {
   }
 
   @Builder ShiftKey() {
-    Text(this.isCapsLock ? '⇪' : '⇧')
-      .fontFamily(JP_FONT_FAMILY)
-      .fontSize(17)
-      .textAlign(TextAlign.Center)
-      .width(this.specialKeyWidthVp)
-      .height('100%')
-      .backgroundColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark).accent : kbTheme(this.isDark).specialBg)
-      // onAccent (always white) only reads correctly against the accent fill
-      // above; the inactive state's specialBg is light in light mode, so it
-      // needs the theme's normal text color instead or the glyph washes out.
-      .fontColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
-      .borderRadius(KEY_RADIUS)
-      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+    Row() {
+      SymbolGlyph(this.isCapsLock
+        ? $r('sys.symbol.switch_majuscule_fill')
+        : $r('sys.symbol.switch_majuscule'))
+        .fontSize(18)
+        .fontColor([this.isShift || this.isCapsLock
+          ? kbTheme(this.isDark).onAccent
+          : kbTheme(this.isDark).textPrimary])
+    }
+    .width(this.specialKeyWidthVp)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(this.isShift || this.isCapsLock ? kbTheme(this.isDark).accent : kbTheme(this.isDark).specialBg)
+    .borderRadius(KEY_RADIUS)
+    .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       // QWERTY has no 記号 key, so the shift/caps key doubles as the left-lean
       // control: long-press to reveal the 左手モード hint, then flick up to
       // switch. A plain tap still cycles shift/caps via onClick.
@@ -196,7 +199,7 @@ export struct KeyboardView {
         enableArrow: true,
         popupColor: kbTheme(this.isDark).specialBg,
         backgroundBlurStyle: BlurStyle.NONE,
-        radius: 14,
+        radius: 20,
         mask: false,
       })
       .gesture(
@@ -228,16 +231,18 @@ export struct KeyboardView {
   }
 
   @Builder BackspaceKey() {
-    Text('⌫')
-      .fontFamily(JP_FONT_FAMILY)
-      .fontSize(17)
-      .textAlign(TextAlign.Center)
-      .width(this.specialKeyWidthVp)
-      .height('100%')
-      .backgroundColor(kbTheme(this.isDark).specialBg)
-      .fontColor(kbTheme(this.isDark).textPrimary)
-      .borderRadius(KEY_RADIUS)
-      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+    Row() {
+      SymbolGlyph($r('sys.symbol.delete_left'))
+        .fontSize(18)
+        .fontColor([kbTheme(this.isDark).textPrimary])
+    }
+    .width(this.specialKeyWidthVp)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(kbTheme(this.isDark).specialBg)
+    .borderRadius(KEY_RADIUS)
+    .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onTouch((event: TouchEvent) => {
         if (event.type === TouchType.Down) { this.getHandler().hapticTick(); }
         if (event.type === TouchType.Down) {
@@ -251,7 +256,7 @@ export struct KeyboardView {
   @Builder BunsetsuKey() {
     Text('文節')
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(13)
+      .fontSize(14)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height('100%')
@@ -268,7 +273,7 @@ export struct KeyboardView {
   @Builder SpaceKey() {
     Text(this.inputMode === InputMode.HIRAGANA ? 'かな' : 'space')
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(15)
+      .fontSize(16)
       .fontColor(kbTheme(this.isDark).textPrimary)
       .textAlign(TextAlign.Center)
       .width(this.spaceKeyWidthVp)
@@ -285,7 +290,7 @@ export struct KeyboardView {
         enableArrow: true,
         popupColor: kbTheme(this.isDark).specialBg,
         backgroundBlurStyle: BlurStyle.NONE,
-        radius: 14,
+        radius: 20,
         mask: false,
       })
       .gesture(
@@ -314,7 +319,7 @@ export struct KeyboardView {
       ? (this.inputMode === InputMode.HIRAGANA ? 'あA1' : 'A1あ')
       : (this.inputMode === InputMode.HIRAGANA ? 'あA' : 'Aあ'))
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(13)
+      .fontSize(14)
       .textAlign(TextAlign.Center)
       .width(this.specialKeyWidthVp)
       .height('100%')
@@ -332,7 +337,7 @@ export struct KeyboardView {
   @Builder FuncKey(label: string, action: () => void) {
     Text(label)
       .fontFamily(JP_FONT_FAMILY)
-      .fontSize(17)
+      .fontSize(18)
       .fontWeight(FontWeight.Medium)
       .fontColor(kbTheme(this.isDark).textPrimary)
       .textAlign(TextAlign.Center)
@@ -347,16 +352,18 @@ export struct KeyboardView {
   }
 
   @Builder EnterKey() {
-    Text('⏎')
-      .fontFamily(JP_FONT_FAMILY)
-      .fontSize(17)
-      .textAlign(TextAlign.Center)
-      .width(this.specialKeyWidthVp)
-      .height('100%')
-      .backgroundColor(kbTheme(this.isDark).accent)
-      .fontColor(kbTheme(this.isDark).onAccent)
-      .borderRadius(KEY_RADIUS)
-      .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+    Row() {
+      SymbolGlyph($r('sys.symbol.arrow_right'))
+        .fontSize(18)
+        .fontColor([kbTheme(this.isDark).onAccent])
+    }
+    .width(this.specialKeyWidthVp)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(kbTheme(this.isDark).accent)
+    .borderRadius(KEY_RADIUS)
+    .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
         this.getHandler().hapticTick();
         this.getHandler().handleEnterKey();

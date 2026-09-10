@@ -40,12 +40,12 @@ export struct CandidateBar {
 
   @Builder DeleteMenu() {
     Row({ space: 6 }) {
-      Text('🗑')
-        .fontFamily(JP_FONT_FAMILY)
+      SymbolGlyph($r('sys.symbol.trash'))
         .fontSize(14)
+        .fontColor([kbTheme(this.isDark).textPrimary])
       Text(`「${this.menuCandidate}」を候補から削除`)
         .fontFamily(JP_FONT_FAMILY)
-        .fontSize(13)
+        .fontSize(14)
         .fontWeight(FontWeight.Medium)
         .fontColor(kbTheme(this.isDark).textPrimary)
     }
@@ -85,7 +85,7 @@ export struct CandidateBar {
               enableArrow: true,
               popupColor: kbTheme(this.isDark).cardBg,
               backgroundBlurStyle: BlurStyle.NONE,
-              radius: 12,
+              radius: 20,
               // Masked: deleting is destructive enough to deserve a deliberate
               // second tap, and tapping the mask dismisses without deleting.
               mask: true,
@@ -115,14 +115,18 @@ export struct CandidateBar {
       .height(this.barHeightVp)
 
       if (this.showExpand && this.candidates.length > 0) {
-        Text('▼')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(Math.max(9, Math.min(14, this.chipHeightVp() * 0.36)))
-          .fontColor(kbTheme(this.isDark).textSecondary)
-          .width(this.isLandscape ? 24 : 36)
-          .height(this.barHeightVp)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(kbTheme(this.isDark).funcBg)
+        // 自前の「▼」ではなく HarmonyOS Symbol を使う (PR #58)。高さと
+        // グリフサイズは固定値ではなく実際のバー高さから逆算する。
+        Row() {
+          SymbolGlyph($r('sys.symbol.chevron_down'))
+            .fontSize(Math.max(9, Math.min(14, this.chipHeightVp() * 0.36)))
+            .fontColor([kbTheme(this.isDark).textSecondary])
+        }
+        .width(this.isLandscape ? 24 : 36)
+        .height(this.barHeightVp)
+        .justifyContent(FlexAlign.Center)
+        .alignItems(VerticalAlign.Center)
+        .backgroundColor(kbTheme(this.isDark).funcBg)
           .onClick(() => {
             AppStorage.setOrCreate('candidateExpanded', true);
           })

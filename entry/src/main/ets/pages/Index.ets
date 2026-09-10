@@ -24,11 +24,12 @@ const CARD_RADIUS = 16;
 // 発行が前提で、AGC に登録導線が無く使えない。
 // 動かない画面を残すと「登録したのに効かない」を再生産するだけなので消した。
 //
-// この画面に残っている仕事は3つ:
+// この画面に残っている仕事:
 //   1. 初回のプライバシー同意
 //   2. READ_PASTEBOARD の要求 ── user_grant 権限は画面を持つ UIAbility から
 //      しか要求できず、拡張自身では出せない。この画面が存在する主目的。
 //   3. キーボードからの「URLを開く」「共有する」の受け口 (EntryAbility 経由)
+//   4. プライバシーポリシーとライセンス（キーボードからは開けない）
 @Entry
 @Component
 struct Index {
@@ -153,13 +154,13 @@ struct Index {
             Column({ space: 8 }) {
               Text($r('app.string.home_where_title'))
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(15)
+                .fontSize(16)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
               Text($r('app.string.home_where_body'))
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(13)
+                .fontSize(14)
                 .fontColor(kbTheme(this.isDark).textSecondary)
                 .lineHeight(21)
                 .width('100%')
@@ -172,13 +173,13 @@ struct Index {
             Column({ space: 8 }) {
               Text($r('app.string.home_enable_title'))
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(15)
+                .fontSize(16)
                 .fontWeight(FontWeight.Bold)
                 .fontColor(kbTheme(this.isDark).textPrimary)
                 .width('100%')
               Text($r('app.string.home_enable_body'))
                 .fontFamily(JP_FONT_FAMILY)
-                .fontSize(13)
+                .fontSize(14)
                 .fontColor(kbTheme(this.isDark).textSecondary)
                 .lineHeight(21)
                 .width('100%')
@@ -187,6 +188,28 @@ struct Index {
             .padding(16)
             .backgroundColor(kbTheme(this.isDark).cardBg)
             .borderRadius(CARD_RADIUS)
+
+            Text($r('app.string.privacy_policy'))
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+              .width('100%')
+              .padding(16)
+              .backgroundColor(kbTheme(this.isDark).cardBg)
+              .borderRadius(CARD_RADIUS)
+              .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
+
+            Text($r('app.string.license_title'))
+              .fontFamily(JP_FONT_FAMILY)
+              .fontSize(16)
+              .fontWeight(FontWeight.Bold)
+              .fontColor(kbTheme(this.isDark).textPrimary)
+              .width('100%')
+              .padding(16)
+              .backgroundColor(kbTheme(this.isDark).cardBg)
+              .borderRadius(CARD_RADIUS)
+              .onClick(() => { router.pushUrl({ url: 'pages/License' }); })
           }
           .width('100%')
           .padding(16)
@@ -197,23 +220,15 @@ struct Index {
         .scrollBar(BarState.Auto)
         .edgeEffect(EdgeEffect.Spring)
 
-        Flex({ wrap: FlexWrap.Wrap, justifyContent: FlexAlign.Center }) {
-          Text($r('app.string.privacy_policy'))
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).accent)
-            .onClick(() => { router.pushUrl({ url: 'pages/PrivacyPolicy' }); })
-          Text('  ·  ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-          Text('v1.5.4')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        .width('100%')
-        .padding({ top: 12, bottom: 16 })
+        // プライバシーポリシー/ライセンスへの導線は上のカードに集約したので
+        // (PR #58)、ここはバージョン表記だけにする。
+        Text('v1.5.4')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(12)
+          .fontColor(kbTheme(this.isDark).textSecondary)
+          .width('100%')
+          .textAlign(TextAlign.Center)
+          .padding({ top: 12, bottom: 16 })
       }
       .width('100%')
       .height('100%')
@@ -232,7 +247,7 @@ struct Index {
       Column({ space: 14 }) {
         Text($r('app.string.consent_title'))
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(18)
+          .fontSize(20)
           .fontWeight(FontWeight.Bold)
           .fontColor(kbTheme(this.isDark).textPrimary)
 
@@ -260,7 +275,7 @@ struct Index {
 
         Text($r('app.string.consent_decline'))
           .fontFamily(JP_FONT_FAMILY)
-          .fontSize(13)
+          .fontSize(12)
           .fontColor(kbTheme(this.isDark).textSecondary)
           .onClick(() => { this.declineConsent(); })
       }
