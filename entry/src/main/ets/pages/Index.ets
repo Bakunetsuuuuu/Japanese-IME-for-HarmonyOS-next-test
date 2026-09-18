@@ -222,7 +222,7 @@ struct Index {
 
         // プライバシーポリシー/ライセンスへの導線は上のカードに集約したので
         // (PR #58)、ここはバージョン表記だけにする。
-        Text('v1.5.4')
+        Text('v1.5.5')
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(12)
           .fontColor(kbTheme(this.isDark).textSecondary)
