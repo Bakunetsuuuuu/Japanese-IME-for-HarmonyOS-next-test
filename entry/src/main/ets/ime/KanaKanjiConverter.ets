@@ -33781,6 +33781,27 @@ export class KanaKanjiConverter {
   // whole-reading dictionary hit. See composeMozcCandidates.
   private mozcLastInput: string = '';
   private mozcLastSegs: string[] = [];
+
+  // 入力ログ用: 直近の segment() 本番呼び出し (forbidSpan なし) の内訳。
+  // 変換の「自信」を後から見るためのもので、collectSegDiag が false の間
+  // (リリースビルド) は何も集めない。形式は segDiagFor() の説明を参照。
+  static collectSegDiag: boolean = false;
+  private segDiagKana: string = '';
+  private segDiag: string = '';
+  // 直近の本番 segment() の経路コストを 1 かなあたりにしたもの。こちらは
+  // ログ用ではなく変換そのものに使う (promoteKatakanaIfUnsure) ので常に持つ。
+  private segCostKana: string = '';
+  private segCostPerKana: number = -1;
+
+  // 分割が「辞書でうまく説明できていない」とみなす 1 かなあたりの経路コスト。
+  // 実機ログを tools/ime-eval/run_inputlog.js で再生して決めた値 (--diag)。
+  // これ以上だと組み立てた漢字候補の 1 位率が 3 割程度まで落ち、選ばれた
+  // カタカナ語の大半がこの範囲に入る。
+  static UNSURE_PARSE_COST_PER_KANA: number = 1600;
+  // これより短い読みには使わない。1〜2 かなの語は語 1 つ分の固定コストを
+  // 少ないかなで割るので、辞書どおりの普通の語 (のる→乗る) でも 1 かな
+  // あたりが高く出てしまい、自信の目安にならない。
+  static UNSURE_PARSE_MIN_KANA: number = 3;
   // Ring buffer of up to 15 recently confirmed output strings for context re-ranking.
   private static contextBuffer: string[] = [];
   // True when the most recently committed text ended in an Arabic digit (half- or full-width).
@@ -37757,6 +37778,17 @@ export class KanaKanjiConverter {
     const prevPos: number[] = [];
     const rightClass: number[] = [];
     const winSurface: (string | undefined)[] = [];
+    // 入力ログ用の内訳 (collectSegDiag のときだけ埋める)。位置 j で勝った
+    // 語の 語コスト / 接続コスト / 辞書にあったか、と、末尾 n に届く経路の
+    // 開始位置ごとの最安値 (次善との差 = 分割の自信 に使う)。
+    const diag = KanaKanjiConverter.collectSegDiag && forbidSpan === undefined;
+    const segNode: number[] = [];
+    const segEdge: number[] = [];
+    const segKnown: boolean[] = [];
+    const endBest: Map<number, number> = new Map<number, number>();
+    if (diag) {
+      for (let j = 0; j <= n; j++) { segNode.push(0); segEdge.push(0); segKnown.push(true); }
+    }
     const bosClass = isMozc ? KanaKanjiConverter.mozcBosClass : KanaKanjiConverter.VC_BOS;
     for (let j = 0; j <= n; j++) {
       best.push(INF);
@@ -37968,11 +38000,21 @@ export class KanaKanjiConverter {
           const topicPenalty = (len > 1 && sub.charCodeAt(0) === 0x306F &&
               KanaKanjiConverter.WA_PREV_CLASSES.has(rightClass[i]))
               ? KanaKanjiConverter.WA_SWALLOW_PENALTY : 0;
-          const total = best[i] + nc + topicPenalty + this.getEdgeCost(rightClass[i], lc);
+          const edge = this.getEdgeCost(rightClass[i], lc);
+          const total = best[i] + nc + topicPenalty + edge;
+          if (diag && i + len === n) {
+            const prevEnd = endBest.get(i);
+            if (prevEnd === undefined || total < prevEnd) { endBest.set(i, total); }
+          }
           if (total < best[i + len]) {
             best[i + len] = total;
             prevPos[i + len] = i;
             rightClass[i + len] = rc;
+            if (diag) {
+              segNode[i + len] = nc + topicPenalty;
+              segEdge[i + len] = edge;
+              segKnown[i + len] = len > 1 || this.inDict(sub);
+            }
           }
         }
       }
@@ -37981,13 +38023,32 @@ export class KanaKanjiConverter {
     // Backtrace from n to 0
     const segs: string[] = [];
     const segHints: (string | undefined)[] = [];
+    const diagParts: string[] = [];
     let pos = n;
     while (pos > 0) {
       const p = prevPos[pos];
       if (p < 0) { break; }
       segs.unshift(kana.slice(p, pos));
       segHints.unshift(winSurface[pos]);
+      if (diag && !isMozc) {
+        diagParts.unshift(`${pos - p}:${Math.round(segNode[pos])}:${Math.round(segEdge[pos])}${!segKnown[pos] ? 'u' : ''}`);
+      }
       pos = p;
+    }
+    if (!isMozc && forbidSpan === undefined && best[n] < INF) {
+      this.segCostKana = kana;
+      this.segCostPerKana = best[n] / n;
+    }
+    if (diag && !isMozc && best[n] < INF) {
+      // 次善: 最後の語の開始位置が違う経路のうち最安のもの。真の2位経路では
+      // ないが、「最後の区切りをずらすとどれだけ高くつくか」は分割の自信の
+      // 目安になる。別経路が無ければ '-'。
+      let second = INF;
+      endBest.forEach((v: number, start: number) => {
+        if (start !== prevPos[n] && v < second) { second = v; }
+      });
+      this.segDiagKana = kana;
+      this.segDiag = `c=${Math.round(best[n])} m=${second < INF ? Math.round(second - best[n]) : '-'} s=${diagParts.join('/')}`;
     }
 
     // Merge segments starting with a non-word-start kana into the previous segment.
@@ -38090,6 +38151,40 @@ export class KanaKanjiConverter {
       this.mozcLastSegs = merged2;
     }
     return merged2;
+  }
+
+  // 入力ログ用: kana の直近の本番 segment() の内訳。無ければ ''。
+  //   c=<経路の総コスト> m=<次善との差 or -> s=<文節ごと 長さ:語コスト:接続コスト[u]>
+  // u は辞書に無い1文字として DP を通った文節 (= 未知語の断片)。
+  // 文節は DP の生の区切り (後段の ん/カタカナ 結合より前) の並び。
+  segDiagFor(kana: string): string {
+    return this.segDiagKana === kana ? this.segDiag : '';
+  }
+
+  // kana の直近の本番 segment() の 1 かなあたり経路コスト。無ければ -1。
+  segCostPerKanaFor(kana: string): number {
+    return this.segCostKana === kana ? this.segCostPerKana : -1;
+  }
+
+  // 分割に自信が無い読み (1 かなあたりの経路コストが高い = 辞書の語で
+  // うまく区切れず、短い断片を無理につないでいる) では、カタカナ形を
+  // 2 番目へ上げる。辞書に無い外来語 (カタカナ語) を打ったとき、組み立て
+  // られた当て字が 1 位に出てカタカナが下の方に沈むのを防ぐ。
+  //
+  // 1 位には上げない: 同じコスト帯でも組み立てが正解のことがまだ多く
+  // (実機ログで 1 位に上げると差し引きで悪化)、2 位ならその分を失わない。
+  // 先頭がすでにカタカナ・読みがカタカナにならない・コスト不明のときは何もしない。
+  // costPerKana は segCostPerKanaFor(kana) で、segment(kana) の直後に取る
+  // (候補を作る途中で別の読みの segment() が走ると上書きされるため)。
+  static promoteKatakanaIfUnsure(kana: string, candidates: string[], costPerKana: number): string[] {
+    if (costPerKana < KanaKanjiConverter.UNSURE_PARSE_COST_PER_KANA
+        || kana.length < KanaKanjiConverter.UNSURE_PARSE_MIN_KANA) { return candidates; }
+    const kata = KanaKanjiConverter.toKatakana(kana);
+    if (kata === kana) { return candidates; }
+    const at = candidates.indexOf(kata);
+    if (at <= 1) { return candidates; }
+    const rest = candidates.filter((c: string) => c !== kata);
+    return [rest[0], kata, ...rest.slice(1)];
   }
 
   // True for a non-empty run of katakana characters (incl. the ー長音符,

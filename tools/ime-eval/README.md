@@ -24,6 +24,25 @@ node tools/ime-eval/build_real_corpus.js    # 読みを復元して [読み,表�
 node tools/ime-eval/run_real.js --rank      # 誤りを頻度順に集計 ← これを見て直す
 ```
 
+### 実機の入力ログで採点する (run_inputlog.js)
+
+実文コーパスは「他人の文」なので、実際の使い方とはずれる。こちらは debug
+ビルドの入力ログ (設定→修復→入力ログ→USBへ書き出す、PC 側は
+`node tools/pull_input_log.js`) にある確定 1 件ずつを、今のコードで変換し
+直して「選んだ表記が何番目に来るか」を採点する。端末の学習は入らないので、
+数字は学習前の素の変換器の実力。
+
+```sh
+node tools/ime-eval/run_inputlog.js --save base     # 変更前に保存
+# …辞書やコードを変える…
+node tools/ime-eval/run_inputlog.js --compare base  # 良くなった/悪くなった件数
+node tools/ime-eval/run_inputlog.js --diag          # 分割の自信 (コスト/かな) と正解率
+```
+
+typescript が無くても動く (Node 22.13+ の型除去を使う)。ログと保存結果は
+`tools/.inputlog/` に置かれ git には入らない。`--show` は打った文をそのまま
+表示するので、画面共有や貼り付けに注意。
+
 ### 同音異義語だけを採点する (run_homophone.js)
 
 実文の残る差の大半が表記の好み(事/こと、時/とき)になった段階では、文全体の

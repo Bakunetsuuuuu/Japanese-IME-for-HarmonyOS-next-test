@@ -502,6 +502,7 @@ export class InputHandler {
   // ので、setWritableDir が実際に開いて確かめる。
   private setupInputLog(ctx: InputMethodExtensionContext): void {
     if (!DEBUG_INPUT_LOG) { return; }
+    KanaKanjiConverter.collectSegDiag = true;
     try {
       let appDir = '';
       try { appDir = ctx.getApplicationContext().filesDir; } catch (_e) { appDir = ''; }
@@ -3066,6 +3067,19 @@ export class InputHandler {
     const fullKatakana = KanaKanjiConverter.toKatakana(target);
     const segs = this.kanjiConverter.segment(target);
     let candidates: string[];
+    // 入力ログ用: 各候補をどの段が列に入れたか (InputLog の o 欄)。段ごとに
+    // 「まだ印の無い候補」へ印を付けていくので、先に入れた段が勝つ。
+    const segDiag = DEBUG_INPUT_LOG ? this.kanjiConverter.segDiagFor(target) : '';
+    const segCostPerKana = this.kanjiConverter.segCostPerKanaFor(target);
+    const origin = new Map<string, string>();
+    const promo = new Map<string, string>();
+    const tagNew = (list: string[], tag: string): void => {
+      if (!DEBUG_INPUT_LOG) { return; }
+      for (const c of list) {
+        if (!origin.has(c)) { origin.set(c, tag); }
+      }
+    };
+    let baseTag = 'look';
     // Recomputed below whenever the composing text is multi-segment. Reset
     // here so a single-segment / symbol-prefix / stale commit falls back to
     // the plain whole-string recordChoice instead of a stale alignment.
@@ -3102,6 +3116,7 @@ export class InputHandler {
       const hasRealHit = (fullFirst !== fullKatakana && fullFirst !== target) ||
         KanaKanjiConverter.isDictionaryWord(target);
 
+      baseTag = hasRealHit ? 'whole' : 'join';
       if (hasRealHit) {
         candidates = fullCands;
       } else {
@@ -3145,6 +3160,8 @@ export class InputHandler {
       }
     }
 
+    tagNew(candidates, baseTag);
+
     // Per-segment homophone alternatives for the whole sentence, inserted
     // right after the primary pick and ahead of the katakana/kana fallbacks
     // the branches above appended. Track A used to offer only the last
@@ -3186,6 +3203,8 @@ export class InputHandler {
       }
     }
 
+    tagNew(candidates, 'alt');
+
     // 自動区切り変更: a candidate from a differently-segmented parse of the
     // same reading (へんかんせいど's single whole-compound entry 変換精度 vs the
     // へんかん+せいど split's 返還制度).
@@ -3221,7 +3240,12 @@ export class InputHandler {
     // it just learns. Empty (no reorder) until the pair has been written, and
     // it only ever matches a full-word candidate, so partial-input candidate
     // lists are untouched.
+    tagNew(candidates, 'reseg');
+    const topBeforeCtx = candidates.length > 0 ? candidates[0] : '';
     candidates = this.applyContextRerank(candidates);
+    if (DEBUG_INPUT_LOG && candidates.length > 0 && candidates[0] !== topBeforeCtx) {
+      promo.set(candidates[0], 'C');
+    }
 
     // Predictive completion: once enough of a known common phrase's reading
     // has been typed to be unambiguous, lead with the whole thing rather than
@@ -3230,6 +3254,8 @@ export class InputHandler {
     if (predictive !== null && !candidates.includes(predictive)) {
       candidates = [predictive, ...candidates];
     }
+
+    tagNew(candidates, 'phrase');
 
     // Predictive conversion (予測変換): common words whose reading EXTENDS what's
     // been typed so far (かいし→会社, にほん→日本語), inserted right after the exact
@@ -3246,6 +3272,7 @@ export class InputHandler {
     for (const u of UnknownWordLearner.candidates(target)) {
       if (!candidates.includes(u)) { candidates.splice(insAt, 0, u); insAt++; }
     }
+    tagNew(candidates, 'unk');
     // Date/time expansion (きょう→2026年7月23日, いま→15:05, あした→翌日…) leads the
     // alternatives for its trigger readings -- when someone types きょう the live
     // date is a likelier intent than a prefix-completion (教育 for きょういく).
@@ -3256,6 +3283,8 @@ export class InputHandler {
       if (!candidates.includes(d)) { candidates.splice(insAt, 0, d); insAt++; }
     }
 
+    tagNew(candidates, 'date');
+
     // Common-word prefix completions (かいし→会社), after any date/time values.
     const completions = PredictiveConversion.predict(target, KanaKanjiConverter.getLearned(),
       KanaKanjiConverter.prefixCompletions(target, PREDICT_DICT_HITS),
@@ -3263,6 +3292,8 @@ export class InputHandler {
     for (const c of completions) {
       if (!candidates.includes(c)) { candidates.splice(insAt, 0, c); insAt++; }
     }
+
+    tagNew(candidates, 'pred');
 
     // Numeral formatting (1000000→1,000,000 / 100万 / 百万) for bare-digit input.
     // Ephemeral like the above -- excluded from conversion learning.
@@ -3275,7 +3306,16 @@ export class InputHandler {
     // actually been picking for this reading to the front. Applied here rather
     // than relying on lookup()'s own learning boost because most of the list
     // above never passed through lookup() -- see applyLearnedOrder.
+    tagNew(candidates, 'num');
+    // 分割に自信が無い読みではカタカナを 2 番目へ (外来語の取りこぼし対策)。
+    // 予測補完などを差し込み終えた後に置くのは、それらが位置 1 に入って
+    // カタカナをまた押し下げないようにするため。
+    candidates = KanaKanjiConverter.promoteKatakanaIfUnsure(target, candidates, segCostPerKana);
+    const topBeforeLearn = candidates.length > 0 ? candidates[0] : '';
     candidates = KanaKanjiConverter.applyLearnedOrder(target, candidates);
+    if (DEBUG_INPUT_LOG && candidates.length > 0 && candidates[0] !== topBeforeLearn) {
+      promo.set(candidates[0], 'L');
+    }
     // 準候補 (quasi-candidates): まだ LEARN_THRESHOLD 未満の、組み立てかけの
     // 未知語。確定候補(上の UnknownWordLearner.candidates)とは違い列の末尾に
     // だけ足す -- まだ確認できていない語を目立つ位置に出すと通常の変換を
@@ -3285,6 +3325,7 @@ export class InputHandler {
     for (const q of quasi) {
       if (!candidates.includes(q)) { candidates.push(q); }
     }
+    tagNew(candidates, 'quasi');
     AppStorage.setOrCreate('quasiCandidateSurfaces', quasi);
     // Candidates the user deleted by long-pressing them are dropped last, so
     // every source above (dictionaries, learning, the injected predictions) is
@@ -3292,6 +3333,13 @@ export class InputHandler {
     const shown = SuppressedCandidates.filter(target, candidates);
     AppStorage.setOrCreate('candidates', shown);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
+    if (DEBUG_INPUT_LOG) {
+      promo.forEach((mark: string, c: string) => {
+        const o = origin.get(c);
+        if (o !== undefined) { origin.set(c, `${o}^${mark}`); }
+      });
+      InputLog.noteCandidateOrigins(target, origin, segDiag);
+    }
     InputLog.recordUpdate(composing, AppStorage.get<string>('pendingRomaji') ?? '',
       this.conversionEnd, shown, segs);
   }

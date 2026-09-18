@@ -163,6 +163,17 @@ export interface InputLogEntry {
   // それより上に並んでいた候補」の分だけ入る (= 何に負けて下にいたか)。
   p?: string;
   g?: string;  // 変換中の自動の文節区切り ('|' 区切り)
+  // 候補をどの仕組みが列に入れたか (',' 区切り、c と同じ並び)。p が「どの
+  // 辞書に載っているか」なのに対し、こちらは「どの段が入れたか」:
+  //   look=読み全体の辞書引き / whole=複数文節だが全体で辞書に当たった /
+  //   join=文節ごとに変換して連結 / alt=文節ごとの同音語差し替え /
+  //   reseg=区切りを変えた別解 / phrase=定型句補完 / unk=未知語学習 /
+  //   date=日付時刻 / pred=予測補完 / num=数字整形 / quasi=準候補
+  // 末尾の ^C は文脈学習、^L は選択学習で先頭に引き上げられた印。
+  o?: string;
+  // 変換中の文節分割の内訳 (KanaKanjiConverter.segDiagFor の形式)。
+  // 分割の自信 (次善との差) と、辞書に無い1文字断片 (u) の有無を見る。
+  q?: string;
 }
 
 export class InputLog {
@@ -183,6 +194,11 @@ export class InputLog {
   // 直前の候補更新。同じ読み・同じ候補の更新が続くと (保留ローマ字だけが
   // 変わった打鍵など) 同じ行が並ぶだけなので記録しない。
   private static lastUpdateKey: string = '';
+  // 直近の候補更新で、各候補を入れた段 (o 欄) と文節分割の内訳 (q 欄)。
+  // 確定の記録にも同じものを付けるために持っておく。
+  private static lastOrigins: Map<string, string> = new Map<string, string>();
+  private static lastOriginsReading: string = '';
+  private static lastSegDiag: string = '';
   // 書き出し中か (二重押しで同じ内容を2回流さない)。
   private static dumping: boolean = false;
 
@@ -293,8 +309,26 @@ export class InputLog {
   static recordCommit(reading: string, surface: string, index: number, total: number,
       candidates: string[], via: string, provenance: string[]): void {
     if (!DEBUG_INPUT_LOG) { return; }
+    const fromUpdate = reading === InputLog.lastOriginsReading;
     InputLog.push(LK_COMMIT, reading, surface, index, total,
-      `${InputLog.classify(reading, surface)} via=${via}`, candidates, CAND_LIMIT_PICK, provenance);
+      `${InputLog.classify(reading, surface)} via=${via}`, candidates, CAND_LIMIT_PICK, provenance,
+      undefined, fromUpdate ? InputLog.originsOf(candidates, CAND_LIMIT_PICK) : undefined,
+      fromUpdate && InputLog.lastSegDiag.length > 0 ? InputLog.lastSegDiag : undefined);
+  }
+
+  // 候補更新の直前に呼ぶ。reading は変換対象 (範囲を縮めていればその部分)。
+  static noteCandidateOrigins(reading: string, origins: Map<string, string>, segDiag: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.lastOrigins = origins;
+    InputLog.lastOriginsReading = reading;
+    InputLog.lastSegDiag = segDiag;
+  }
+
+  private static originsOf(candidates: string[], limit: number): string {
+    const out: string[] = [];
+    const n = Math.min(candidates.length, limit);
+    for (let i = 0; i < n; i++) { out.push(InputLog.lastOrigins.get(candidates[i]) ?? '?'); }
+    return out.join(',');
   }
 
   static recordRaw(reading: string, surface: string): void {
@@ -447,7 +481,9 @@ export class InputLog {
     InputLog.lastUpdateKey = key;
     InputLog.push(LK_UPDATE, reading, pending, -1, candidates.length,
       convEnd > 0 && convEnd < reading.length ? `range=${convEnd}/${reading.length}` : '',
-      candidates, CAND_LIMIT_UPDATE, undefined, segs.length > 1 ? segs.join('|') : undefined);
+      candidates, CAND_LIMIT_UPDATE, undefined, segs.length > 1 ? segs.join('|') : undefined,
+      InputLog.originsOf(candidates, CAND_LIMIT_UPDATE),
+      InputLog.lastSegDiag.length > 0 ? InputLog.lastSegDiag : undefined);
   }
 
   static recordCursor(dir: string): void {
@@ -509,7 +545,8 @@ export class InputLog {
   // ---- 書き込み ---------------------------------------------------------
 
   private static push(k: string, r: string, s: string, i: number, n: number, x: string,
-      candidates?: string[], candLimit?: number, provenance?: string[], segs?: string): void {
+      candidates?: string[], candLimit?: number, provenance?: string[], segs?: string,
+      origins?: string, segDiag?: string): void {
     if (InputLog.secureField) { return; }
     if (InputLog.filesDir.length === 0) { return; }
     const e: InputLogEntry = { t: Date.now(), k: k, r: r, s: s, i: i, n: n, x: x };
@@ -518,6 +555,8 @@ export class InputLog {
     }
     if (provenance !== undefined && provenance.length > 0) { e.p = provenance.join(','); }
     if (segs !== undefined && segs.length > 0) { e.g = segs; }
+    if (origins !== undefined && origins.length > 0) { e.o = origins; }
+    if (segDiag !== undefined && segDiag.length > 0) { e.q = segDiag; }
     if (InputLog.fieldPending) {
       InputLog.pending.push(e);
       if (InputLog.pending.length > MAX_PENDING) { InputLog.pending.shift(); }
