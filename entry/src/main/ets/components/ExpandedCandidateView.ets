@@ -69,6 +69,7 @@ export struct ExpandedCandidateView {
           .justifyContent(FlexAlign.Center)
           .alignItems(VerticalAlign.Center)
             .onClick(() => {
+              InputHandler.getInstance().noteCandidateListToggle(false);
               AppStorage.setOrCreate('candidateExpanded', false);
             })
         }
@@ -100,7 +101,10 @@ export struct ExpandedCandidateView {
                 radius: 20,
                 mask: true,
                 onStateChange: (e: PopupStateChangeParam) => {
-                  if (!e.isVisible && this.menuIndex === index) { this.closeMenu(); }
+                  if (!e.isVisible && this.menuIndex === index) {
+                    InputHandler.getInstance().noteCandidateMenu('cancel', index);
+                    this.closeMenu();
+                  }
                 },
               })
               .gesture(
@@ -108,6 +112,7 @@ export struct ExpandedCandidateView {
                   .onAction(() => {
                     this.menuCandidate = candidate;
                     this.menuIndex = index;
+                    InputHandler.getInstance().noteCandidateMenu('open', index);
                   })
               )
               .onClick(() => {

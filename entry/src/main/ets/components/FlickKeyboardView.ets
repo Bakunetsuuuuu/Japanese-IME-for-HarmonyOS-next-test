@@ -272,7 +272,12 @@ export struct FlickKeyboardView {
     } else if (e.type === TouchType.Up || e.type === TouchType.Cancel) {
       if (this.isActive(row, col)) {
         const tc = e.changedTouches.length > 0 ? e.changedTouches[0] : e.touches[0];
-        const dir = this.dirFrom(tc.x - this.touchStartX, tc.y - this.touchStartY);
+        const dx = tc.x - this.touchStartX;
+        const dy = tc.y - this.touchStartY;
+        const dir = this.dirFrom(dx, dy);
+        // 入力ログ (デバッグビルドのみ): どのキーをどちらへ、指がどれだけ動いたか。
+        // 方向判定のしきい値 (THRESHOLD) 付近の打ち間違いを後から見るため。
+        this.h().noteFlick(key.center, getKanaByDir(key, dir), dir, dx, dy);
         this.onCommit(key, dir);
       }
       this.activeRow = -1;

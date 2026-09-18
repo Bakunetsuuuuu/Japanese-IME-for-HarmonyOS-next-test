@@ -3,6 +3,7 @@ import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from './JpFont';
+import { DEBUG_INPUT_LOG } from '../ime/InputLog';
 
 // Segmented-control / card metrics (design tokens: settings cards 16px,
 // segmented-control track 20px / inner pill 20px).
@@ -101,6 +102,9 @@ export struct SettingsBar {
   @StorageLink('dictCaptureTarget') dictCaptureTarget: string = '';
   // 学習リセットは2回押しで確認する。
   @State confirmResetLearning: boolean = false;
+  // 入力ログ (デバッグビルドのみ)。件数/サイズと書き出しの進み具合。
+  @StorageLink('inputLogSummary') inputLogSummary: string = '';
+  @State confirmClearInputLog: boolean = false;
   // 全消去は RESET_ALL_TAPS 回の連打を要求する。手が止まると0に戻す。
   @State resetAllTaps: number = 0;
   private resetAllTimer: number = -1;
@@ -338,6 +342,9 @@ export struct SettingsBar {
             this.ComposingSection()
           } else if (this.selectedCategory === 'repair') {
             this.RepairSection()
+            if (DEBUG_INPUT_LOG) {
+              this.InputLogSection()
+            }
           } else if (this.selectedCategory === 'other') {
             this.OtherSection()
           } else {
@@ -1166,6 +1173,78 @@ export struct SettingsBar {
     .backgroundColor(kbTheme(this.isDark).cardBg)
     .borderRadius(CARD_RADIUS)
     .padding({ left: 14, right: 14 })
+  }
+
+  // 入力ログ (デバッグビルドのみ。リリースビルドでは DEBUG_INPUT_LOG が false
+  // になり、この項目ごと出ない)。取り出しは USB デバッグ経由なので、ここには
+  // 閲覧画面を置かず、状態の確認と書き出し・消去だけを置く。
+  @Builder InputLogSection() {
+    Column() {
+      Row() {
+        Column({ space: 2 }) {
+          Text('入力ログ (デバッグビルドのみ)')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+            .width('100%')
+          Text(this.inputLogSummary.length > 0 ? this.inputLogSummary : '—')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(10)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Column({ space: 2 }) {
+          Text('USBへ書き出す')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).accent)
+            .width('100%')
+          Text('先にPCで node tools/pull_input_log.js を起動してから押す')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(10)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+            .width('100%')
+        }
+        .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => { InputHandler.getInstance().exportInputLog(); })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      Row() {
+        Text(this.confirmClearInputLog ? 'もう一度押すと消去します' : '入力ログを消去')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).deleteRed)
+          .layoutWeight(1)
+      }
+      .width('100%')
+      .padding({ top: 14, bottom: 14 })
+      .onClick(() => {
+        // 書き出し前に消すと取り返しがつかないので2回押しにする。
+        if (!this.confirmClearInputLog) {
+          this.confirmClearInputLog = true;
+          return;
+        }
+        this.confirmClearInputLog = false;
+        InputHandler.getInstance().clearInputLog();
+      })
+    }
+    .backgroundColor(kbTheme(this.isDark).cardBg)
+    .borderRadius(CARD_RADIUS)
+    .padding({ left: 14, right: 14 })
+    .margin({ top: 14 })
+    .onAppear(() => { InputHandler.getInstance().publishInputLogSummary(); })
   }
 
   @Builder OtherSection() {

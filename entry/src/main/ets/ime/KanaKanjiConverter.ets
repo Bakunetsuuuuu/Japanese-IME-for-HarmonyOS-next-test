@@ -34302,6 +34302,60 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.engine = ((e === 'mozc' || e === 'hybrid') && KanaKanjiConverter.isMozcLoaded()) ? e : 'custom';
   }
 
+  // この候補 (surface) が、読み kana に対してどの辞書/仕組みの何番目に
+  // 載っているかを列挙する (入力ログ用。独自辞書を手で育てるときに
+  // 「G0 は dict.json の25番目から来ている」のように原因を辿るため)。
+  //
+  // lookupCore 自体には手を入れず、各ソースを事後に引き直して判定する。
+  // 候補の並びを作った処理そのものを再現するわけではないので、「実際に
+  // この候補を出したのはどれか」ではなく「この候補を持っているのはどれか」
+  // の一覧になる (複数に載っていれば全部出す)。どれにも載っていなければ
+  // 分割して組み立てた候補などなので compose を返す。
+  //
+  // 返り値は '+' 区切りのタグ。番号は1始まり (その辞書の並びで何番目か)。
+  //   inline#n   コード内の手書き辞書 (DICTIONARY)
+  //   dict#n     dict.json (補助辞書)
+  //   global#n   global_dict.json
+  //   pack#n     有効な語彙パック (tail は packtail#n)
+  //   user#n     ユーザー辞書
+  //   learned=c  学習で選ばれた回数
+  //   dak:<タグ> 濁点ゆれ (じ⇔ぢ/ず⇔づ) の読みで上のいずれかに載っている
+  //   emoji / kaomoji / kata / kana / halfkata / compose
+  static explainSources(kana: string, surface: string): string {
+    const tags: string[] = [];
+    const at = (list: string[] | undefined, tag: string, prefix: string): void => {
+      if (list === undefined) { return; }
+      const i = list.indexOf(surface);
+      if (i >= 0) { tags.push(`${prefix}${tag}#${i + 1}`); }
+    };
+    const rawSources = (reading: string, prefix: string): void => {
+      at(DICTIONARY[reading], 'inline', prefix);
+      at(KanaKanjiConverter.supplementaryDict.get(reading), 'dict', prefix);
+      at(KanaKanjiConverter.globalDict.get(reading), 'global', prefix);
+      at(KanaKanjiConverter.packEntry(reading), 'pack', prefix);
+      at(KanaKanjiConverter.packTailEntry(reading), 'packtail', prefix);
+      at(KanaKanjiConverter.userDict[reading], 'user', prefix);
+    };
+    rawSources(kana, '');
+    const counts = KanaKanjiConverter.learned[kana];
+    const learnedCount = counts !== undefined ? counts[surface] : undefined;
+    if (learnedCount !== undefined && learnedCount > 0) { tags.push(`learned=${learnedCount}`); }
+    if (tags.length === 0) {
+      for (const v of KanaKanjiConverter.dakutenVariants(kana)) { rawSources(v, 'dak:'); }
+    }
+    const emojis = EMOJI_MAP[kana];
+    if (emojis !== undefined && emojis.includes(surface)) { tags.push('emoji'); }
+    const kaomoji = KAOMOJI_MAP[kana];
+    if (kaomoji !== undefined && kaomoji.includes(surface)) { tags.push('kaomoji'); }
+    if (tags.length === 0) {
+      if (surface === kana) { tags.push('kana'); }
+      else if (surface === KanaKanjiConverter.toKatakana(kana)) { tags.push('kata'); }
+      else if (surface === KanaKanjiConverter.toHalfWidthKatakana(kana)) { tags.push('halfkata'); }
+      else { tags.push('compose'); }
+    }
+    return tags.join('+');
+  }
+
   static getEngine(): 'custom' | 'mozc' | 'hybrid' {
     return KanaKanjiConverter.engine;
   }

@@ -5,8 +5,10 @@
 # 開発ビルドの入力ログ (ime/InputLog.ets)。実際に打った文がそのまま入るので、
 # private リポジトリであってもコミットしない -- clone・バックアップ・
 # コラボレータに渡り、git 履歴からは消せない。
+# tools/pull_input_log.js の保存先は tools/.inputlog/。
 *.jsonl
 debug_input_log*
+tools/.inputlog/
 __pycache__/
 tools/.cache/
 
@@ -20,7 +22,8 @@ build-profile.json5.release-backup
 *.p7b
 *.cer
 
-# ビルド生成物・IDE の作業状態
+# ビルド生成物・IDE の作業状態 (/build/ は署名済み .app の出力先)
+/build/
 .hvigor/
 .idea/
 entry/build/

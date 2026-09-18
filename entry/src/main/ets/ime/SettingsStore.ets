@@ -1,5 +1,7 @@
 import dataPreferences from '@ohos.data.preferences';
 import type common from '@ohos.app.ability.common';
+// 設定の変更を入力ログに残す (デバッグビルドのみ。InputLog.ets 参照)。
+import { InputLog } from './InputLog';
 
 // Keyboard-wide settings persisted via @ohos.data.preferences, shared between
 // the main app (settings UI) and the IME extension — same idiom as
@@ -250,6 +252,7 @@ export class SettingsStore {
   }
 
   static async saveKanaKeyboardLayout(context: common.Context, layout: string): Promise<void> {
+    InputLog.recordSetting('kanaKeyboardLayout', String(layout));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('kanaKeyboardLayout', layout);
@@ -261,6 +264,7 @@ export class SettingsStore {
   }
 
   static async saveAlphabetKeyboardLayout(context: common.Context, layout: string): Promise<void> {
+    InputLog.recordSetting('alphabetKeyboardLayout', String(layout));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('alphabetKeyboardLayout', layout);
@@ -272,6 +276,7 @@ export class SettingsStore {
   }
 
   static async saveOneHanded(context: common.Context, enabled: boolean, side: string): Promise<void> {
+    InputLog.recordSetting('oneHanded', JSON.stringify([enabled, side]));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('oneHandedMode', enabled);
@@ -281,6 +286,7 @@ export class SettingsStore {
   }
 
   static async saveConversionEngine(context: common.Context, engine: string): Promise<void> {
+    InputLog.recordSetting('conversionEngine', String(engine));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('conversionEngine', engine);
@@ -292,6 +298,7 @@ export class SettingsStore {
   }
 
   static async saveNumericPadEnabled(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('numericPadEnabled', String(enabled));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('numericPadEnabled', enabled);
@@ -300,6 +307,7 @@ export class SettingsStore {
   }
 
   static async saveHapticEnabled(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('hapticEnabled', String(enabled));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('hapticEnabled', enabled);
@@ -308,6 +316,7 @@ export class SettingsStore {
   }
 
   static async saveKeyChromeEnabled(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('keyChromeEnabled', String(enabled));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('keyChromeEnabled', enabled);
@@ -316,6 +325,7 @@ export class SettingsStore {
   }
 
   static async saveThemeMode(context: common.Context, mode: string): Promise<void> {
+    InputLog.recordSetting('themeMode', String(mode));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('themeMode', mode);
@@ -327,6 +337,7 @@ export class SettingsStore {
   }
 
   static async saveComposingDisplay(context: common.Context, inPanel: boolean, inField: boolean): Promise<void> {
+    InputLog.recordSetting('composingDisplay', JSON.stringify([inPanel, inField]));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('composingInPanel', inPanel);
@@ -336,6 +347,7 @@ export class SettingsStore {
   }
 
   static async saveKeyboardHeightScale(context: common.Context, scale: number, isLandscape: boolean): Promise<void> {
+    InputLog.recordSetting('keyboardHeightScale', JSON.stringify([scale, isLandscape]));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put(isLandscape ? 'keyboardHeightScaleLandscape' : 'keyboardHeightScalePortrait', scale);
@@ -344,6 +356,7 @@ export class SettingsStore {
   }
 
   static async saveFlickSideRatio(context: common.Context, ratio: number, isLandscape: boolean): Promise<void> {
+    InputLog.recordSetting('flickSideRatio', JSON.stringify([ratio, isLandscape]));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put(isLandscape ? 'flickSideColumnRatioLandscape' : 'flickSideColumnRatioPortrait', ratio);
@@ -352,6 +365,7 @@ export class SettingsStore {
   }
 
   static async saveKeyboardWidthScale(context: common.Context, scale: number): Promise<void> {
+    InputLog.recordSetting('keyboardWidthScale', String(scale));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('keyboardWidthScale', scale);
@@ -360,6 +374,7 @@ export class SettingsStore {
   }
 
   static async saveKeyboardHorizontalOffset(context: common.Context, offset: number): Promise<void> {
+    InputLog.recordSetting('keyboardHorizontalOffset', String(offset));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('keyboardHorizontalOffset', offset);
@@ -368,6 +383,7 @@ export class SettingsStore {
   }
 
   static async saveFlickHintsEnabled(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('flickHintsEnabled', String(enabled));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('flickHintsEnabled', enabled);
@@ -376,6 +392,7 @@ export class SettingsStore {
   }
 
   static async saveFloatingMode(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('floatingMode', String(enabled));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('floatingMode', enabled);
@@ -387,6 +404,7 @@ export class SettingsStore {
   // (個別4メソッドに分けると保存のたびに4回 flush することになる)。
   static async saveFloatingRect(context: common.Context,
       xFrac: number, yFrac: number, wFrac: number, hFrac: number): Promise<void> {
+    InputLog.recordSetting('floatingRect', JSON.stringify([xFrac, yFrac, wFrac, hFrac]));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('floatingXFrac', xFrac);
@@ -399,6 +417,7 @@ export class SettingsStore {
 
   static async saveVocabPackOverrides(context: common.Context,
       overrides: Record<string, boolean>): Promise<void> {
+    InputLog.recordSetting('vocabPackOverrides', String(overrides));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('vocabPackOverrides', JSON.stringify(overrides));

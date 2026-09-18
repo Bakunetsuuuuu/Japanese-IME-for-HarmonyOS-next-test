@@ -17,6 +17,7 @@ import { SettingsBar } from '../components/SettingsBar';
 import { LayoutAdjustBar } from '../components/LayoutAdjustBar';
 import { DictEditBar } from '../components/DictEditBar';
 import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
+import { InputLog, DEBUG_INPUT_LOG } from '../ime/InputLog';
 import { kbTheme } from '../components/Theme';
 import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
 
@@ -106,7 +107,12 @@ struct KeyboardPage {
   @StorageLink('isLandscape') isLandscape: boolean = false;
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
-  @StorageLink('keyboardSubMode') keyboardSubMode: string = 'kana';
+  // 記号・絵文字・設定などのパネル切替を入力ログに残す (デバッグビルドのみ)。
+  @StorageLink('keyboardSubMode') @Watch('onSubModeChanged') keyboardSubMode: string = 'kana';
+
+  private onSubModeChanged(): void {
+    InputHandler.getInstance().noteSubMode(this.keyboardSubMode);
+  }
   // 括弧の自動閉じ (KeyboardController の insertText 参照)。空でなければ
   // 「この文字が確定のたびに出るのを待っている」ことを候補バー行に出す。
   @StorageLink('pendingBracketClose') pendingBracketClose: string = '';
@@ -197,6 +203,17 @@ struct KeyboardPage {
     // registration -- and it has to happen from inside the UI, not from
     // KeyboardController.onCreate (see registerJpFont's comment).
     registerJpFont(this.getUIContext());
+    // 入力ログの初期化の保険 (デバッグビルドのみ)。本来は
+    // InputHandler.setupInputLog が setContext から立てるが、そこまで届かない
+    // 実機状態が出たことがあるので、描画される以上必ず走るここからも立てる。
+    // 既に立っていれば何もしない。順番はアプリ単位 -> モジュール単位で揃える。
+    if (DEBUG_INPUT_LOG) {
+      let panelAppDir = '';
+      try {
+        panelAppDir = (getContext(this) as ESObject).getApplicationContext().filesDir as string;
+      } catch (_e) { panelAppDir = ''; }
+      InputLog.ensureFromPanel([panelAppDir, getContext(this).filesDir]);
+    }
     // KeyboardController 側でも読んでいるが、そちらが走らない実機状態が出た
     // ため、確実に走るこの場所からも読む (_dictLoaded で一度きり)。
     //

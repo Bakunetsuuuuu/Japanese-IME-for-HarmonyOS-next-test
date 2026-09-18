@@ -20,6 +20,8 @@ import { NextWordPredictor } from './NextWordPredictor';
 import { PredictiveConversion } from './PredictiveConversion';
 import { UnknownWordLearner } from './UnknownWordLearner';
 import { ShortTermMemory } from './ShortTermMemory';
+// デバッグビルドでだけ記録する (BuildProfile.DEBUG に連動、InputLog.ets 冒頭参照)。
+import { InputLog, DEBUG_INPUT_LOG } from './InputLog';
 import { SuppressedCandidates, SUPPRESSED_STORE, SUPPRESSED_KEY } from './SuppressedCandidates';
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
@@ -278,6 +280,10 @@ export class InputHandler {
   // 受け取って、どんな入力欄でも毎回フォールバックのバナーを出してしまって
   // いた。判定が確定するまでバナーを抑止するためのフラグ。
   private previewSupportPending: boolean = false;
+  // 貼り付けの間だけ立てる。insertText は挿入した文字列を入力ログに残すが、
+  // クリップボードの中身は残さない方針なので、貼り付け経路からの挿入だけ
+  // 記録を止める (貼り付けた事実と文字数は InputLog.recordPaste で別に残す)。
+  private suppressInsertLog: boolean = false;
   // 実際に入力欄へプレビューを出している最中か。出していないのに
   // finishTextPreviewSync を呼ぶと無駄な IPC になるので状態を持つ。
   private previewActive: boolean = false;
@@ -377,6 +383,7 @@ export class InputHandler {
           KanaKanjiConverter.setLearned(data);
         } catch (_e) {}
       })
+      .catch((e: Error) => { InputLog.recordInit('shunti_learning', e); });
     dataPreferences.getPreferences(this.imeContext, 'shunti_nextword')
       .then((prefs: dataPreferences.Preferences) => {
         this.nextWordPrefs = prefs;
@@ -391,6 +398,7 @@ export class InputHandler {
           NextWordPredictor.setLearned(data);
         } catch (_e) {}
       })
+      .catch((e: Error) => { InputLog.recordInit('shunti_nextword', e); });
     dataPreferences.getPreferences(this.imeContext, 'shunti_unknownword')
       .then((prefs: dataPreferences.Preferences) => {
         this.unknownWordPrefs = prefs;
@@ -402,6 +410,7 @@ export class InputHandler {
           UnknownWordLearner.setLearned(data);
         } catch (_e) {}
       })
+      .catch((e: Error) => { InputLog.recordInit('shunti_unknownword', e); });
     dataPreferences.getPreferences(this.imeContext, SUPPRESSED_STORE)
       .then((prefs: dataPreferences.Preferences) => {
         this.suppressedPrefs = prefs;
@@ -413,6 +422,7 @@ export class InputHandler {
           SuppressedCandidates.setSuppressed(data);
         } catch (_e) {}
       })
+      .catch((e: Error) => { InputLog.recordInit('shunti_suppressed', e); });
     dataPreferences.getPreferences(this.imeContext, 'shunti_symbol_freq')
       .then((prefs: dataPreferences.Preferences) => {
         this.symbolPrefs = prefs;
@@ -424,6 +434,7 @@ export class InputHandler {
           InputHandler.publishFrequentSymbols();
         } catch (_e) {}
       })
+      .catch((e: Error) => { InputLog.recordInit('shunti_symbol_freq', e); });
     this.reloadUserDict();
     this.reloadSettings();
     // 単漢字ずつ組み立て直した語が、実は辞書のどこかに(埋もれて)もう存在した
@@ -435,7 +446,40 @@ export class InputHandler {
     UnknownWordLearner.onKnownAssembly = (r: string, s: string) => {
       KanaKanjiConverter.recordChoice(r, s);
       this.saveLearning();
+      InputLog.recordKnownAssembly(r, s);
     };
+    // 必ず最後。収集の初期化で例外が出ても、上の本来の初期化を巻き込まない。
+    this.setupInputLog(ctx);
+  }
+
+  // 入力ログの初期化 (デバッグビルドのみ。リリースでは何もしない)。
+  //
+  // 書き先はアプリ単位の filesDir を先に試し、書けなければモジュール単位に
+  // 落とす。どちらに書けたかは diag レコードに残るので、取り出した記録を見れば
+  // 分かる。パス文字列が取れても拡張のサンドボックスから書けるとは限らない
+  // ので、setWritableDir が実際に開いて確かめる。
+  private setupInputLog(ctx: InputMethodExtensionContext): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    try {
+      let appDir = '';
+      try { appDir = ctx.getApplicationContext().filesDir; } catch (_e) { appDir = ''; }
+      const used = InputLog.setWritableDir([appDir, ctx.filesDir]);
+      console.info('shuntiIME InputLog dir=' + used + ' (module=' + ctx.filesDir + ' app=' + appDir + ')');
+      InputLog.recordPaths('setContext',
+        used.length > 0 ? used : '書き込めるディレクトリ無し',
+        ctx.filesDir, ctx.preferencesDir);
+      let appVersion = '';
+      try {
+        appVersion = bundleManager.getBundleInfoForSelfSync(
+          bundleManager.BundleFlag.GET_BUNDLE_INFO_DEFAULT).versionName;
+      } catch (_e) { appVersion = ''; }
+      InputLog.recordVersion(appVersion);
+      UnknownWordLearner.onLearn = (r: string, s: string, confirmed: boolean) => {
+        InputLog.recordUnknownWord(r, s, confirmed);
+      };
+    } catch (e) {
+      console.error('shuntiIME InputLog setup failed', JSON.stringify(e));
+    }
   }
 
 
@@ -671,6 +715,7 @@ export class InputHandler {
   // One-handed mode is toggled from the keyboard's own settings panel, so it
   // can persist AppStorage's current value directly rather than re-reading it.
   setOneHandedMode(enabled: boolean, side: string): void {
+    InputLog.recordMode(`onehand=${enabled ? side : 'off'}`);
     AppStorage.setOrCreate('oneHandedMode', enabled);
     AppStorage.setOrCreate('oneHandedSide', side);
     if (this.imeContext) {
@@ -870,12 +915,15 @@ export class InputHandler {
     if (inputMode === InputMode.ALPHANUMERIC) {
       if (numericPadEnabled) {
         AppStorage.setOrCreate('keyboardSubMode', 'numeric');
+        InputLog.recordMode('input=numeric');
       } else {
         AppStorage.setOrCreate('inputMode', InputMode.HIRAGANA);
+        InputLog.recordMode(`input=${InputMode.HIRAGANA}`);
       }
       return;
     }
     AppStorage.setOrCreate('inputMode', InputMode.ALPHANUMERIC);
+    InputLog.recordMode(`input=${InputMode.ALPHANUMERIC}`);
   }
 
   // Same immediate-switch pattern as setKanaKeyboardLayout above. applyConversionEngine
@@ -1010,6 +1058,7 @@ export class InputHandler {
   // トグルと同じ形)。設定ボタン長押し→上スライドのジェスチャは現在値を
   // 反転させるだけでよいので toggleFloatingMode を使う。
   setFloatingModeExplicit(enabled: boolean): void {
+    InputLog.recordMode(`floating=${enabled ? 'on' : 'off'}`);
     this.kbCtrlRef?.setFloatingMode(enabled);
     if (this.imeContext) {
       SettingsStore.saveFloatingMode(this.imeContext, enabled);
@@ -1637,6 +1686,9 @@ export class InputHandler {
       : this.conversionTarget();
     if (reading.length === 0 || surface.length === 0) { return ''; }
     if (!SuppressedCandidates.suppress(reading, surface)) { return ''; }
+    InputLog.recordDeleteCandidate(reading, surface, index, candidates.length,
+      this.candidatePickVia(),
+      DEBUG_INPUT_LOG ? KanaKanjiConverter.explainSources(reading, surface) : '');
     KanaKanjiConverter.forgetChoice(reading, surface);
     UnknownWordLearner.forget(reading, surface);
     // 自分で登録した語を消した場合は登録からも外す (両方の一覧の辻褄を合わせる)。
@@ -1698,6 +1750,7 @@ export class InputHandler {
     const quasi = AppStorage.get<string[]>('quasiCandidateSurfaces') ?? [];
     if (quasi.includes(surface)) {
       UnknownWordLearner.confirmQuasi(reading, surface);
+      InputLog.recordQuasiPick(reading, surface);
     }
     UnknownWordLearner.observe(reading, surface,
       (r: string, s: string): boolean => this.isKnownConversion(r, s));
@@ -1779,6 +1832,7 @@ export class InputHandler {
     }
     AppStorage.setOrCreate('predictions', strip);
     this.predictionWordGroups = wordGroups;
+    InputLog.recordPredictions(strip, [w1, w2]);
   }
 
   // In casual JP chat "。" is rarely typed; sentences/clauses are broken with a
@@ -1788,6 +1842,7 @@ export class InputHandler {
   // rather than chained across the break, and surface this user's habitual
   // openers right now.
   private markSentenceBoundary(): void {
+    InputLog.recordBoundary('sentence');
     this.recentWords = [];
     // A finished sentence also finishes whatever word was being assembled.
     this.endUnknownWordRun();
@@ -1828,6 +1883,7 @@ export class InputHandler {
     if (index < 0 || index >= preds.length) { return; }
     const text = preds[index];
     if (text.length === 0) { return; }
+    InputLog.recordPredictionPick(text, index, preds);
     this.insertText(text, { raw: true } as InsertTextOptions);
     KanaKanjiConverter.addContext(text);
     const words = index < this.predictionWordGroups.length && this.predictionWordGroups[index].length > 0
@@ -1850,16 +1906,20 @@ export class InputHandler {
     this.previewSupported = false;
     this.previewSupportPending = true;
     this.publishPreviewMode();
+    // 入力ログは、この欄が secure (パスワード等) か分かるまで保留にする。
+    InputLog.beginField();
     client.getEditorAttribute()
       .then((attr: inputMethodEngine.EditorAttribute) => {
         this.previewSupported = attr.isTextPreviewSupported === true;
         this.previewSupportPending = false;
         this.publishPreviewMode();
+        InputLog.setFieldPattern(attr.inputPattern);
       })
       .catch((_e: Error) => {
         this.previewSupported = false;
         this.previewSupportPending = false;
         this.publishPreviewMode();
+        InputLog.setFieldPattern(0);
       });
     this.converter.reset();
     this.reloadUserDict();
@@ -1887,6 +1947,8 @@ export class InputHandler {
   }
 
   onInputStop(): void {
+    // 溜めた記録を書き出してから、次の欄の属性が分かるまで保留に入る。
+    InputLog.beginField();
     // 欄を離れる前にプレビューを畳む (inputClient を捨てた後では解除できない)。
     this.cancelPreviewText();
     this.previewSupported = false;
@@ -1924,6 +1986,7 @@ export class InputHandler {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
 
     if (mode === InputMode.ALPHANUMERIC) {
+      InputLog.recordKey(key, '', '', mode);
       this.commitPending();
       this.insertText(key);
       return;
@@ -1935,6 +1998,7 @@ export class InputHandler {
     }
 
     const result = this.converter.processKey(key);
+    InputLog.recordKey(key, result.committed, result.pending, mode);
 
     if (result.committed.length > 0) {
       const kana = mode === InputMode.KATAKANA
@@ -1959,6 +2023,9 @@ export class InputHandler {
   handleSpaceKey(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     let composing = AppStorage.get<string>('composingText') ?? '';
+    if (state !== InputState.SELECTING) {
+      InputLog.recordSpace(state, composing, -1, 0);
+    }
 
     if (state === InputState.IDLE || composing.length === 0) {
       const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
@@ -1994,6 +2061,7 @@ export class InputHandler {
       let idx = (AppStorage.get<number>('selectedCandidateIndex') ?? 0) + 1;
       if (idx >= candidates.length) { idx = 0; }
       AppStorage.setOrCreate('selectedCandidateIndex', idx);
+      InputLog.recordSpace(state, composing, idx, candidates.length);
     }
   }
 
@@ -2020,6 +2088,7 @@ export class InputHandler {
       if (deleted.length === 0) { deleted = this.insertedBuffer.pop() ?? ''; }
       else { this.insertedBuffer.pop(); }
       if (deleted.length > 0) { this.pushHostOp('delete', deleted); }
+      InputLog.recordDeleteChar(deleted, InputState.IDLE);
       // 括弧を開いた直後に取り消された等、何かを消したら保留中の自動閉じは
       // 前提が崩れているので破棄する (賢く追おうとはしない)。
       this.setPendingBracketClose('');
@@ -2047,6 +2116,7 @@ export class InputHandler {
     if (state === InputState.BUNSETSU) {
       // Exit bunsetsu, restore composing text
       const composing = this.bSegs.join('');
+      InputLog.recordBunsetsuCancel(composing);
       this.bSegs = [];
       this.bChosen = [];
       this.bCur = 0;
@@ -2061,6 +2131,7 @@ export class InputHandler {
     }
 
     if (state === InputState.SELECTING) {
+      InputLog.recordDeleteChar('', InputState.SELECTING);
       AppStorage.setOrCreate('candidates', [] as string[]);
       AppStorage.setOrCreate('inputState', InputState.COMPOSING);
       return;
@@ -2071,12 +2142,14 @@ export class InputHandler {
       if (pending.length > 0) {
         this.converter.backspace();
         AppStorage.setOrCreate('pendingRomaji', pending.slice(0, -1));
+        InputLog.recordDeleteChar(pending.slice(-1), 'COMPOSING_ROMAJI');
       } else {
         const composing = AppStorage.get<string>('composingText') ?? '';
         if (composing.length > 0) {
           const ch = composing.slice(-1);
           this.composingUndoStack.push(ch);
           AppStorage.setOrCreate('composingText', composing.slice(0, -1));
+          InputLog.recordDeleteChar(ch, InputState.COMPOSING);
         }
       }
 
@@ -2091,6 +2164,7 @@ export class InputHandler {
 
   handleEnterKey(): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    InputLog.recordEnter(state, AppStorage.get<string>('composingText') ?? '');
     if (state === InputState.BUNSETSU) {
       this.commitBunsetsu();
     } else if (state === InputState.SELECTING) {
@@ -2120,6 +2194,7 @@ export class InputHandler {
     const composing = AppStorage.get<string>('composingText') ?? '';
     const pending = this.converter.flushPending();
     const all = composing + pending;
+    InputLog.recordRaw(composing, all);
     if (all.length > 0) { this.insertText(all); }
     // Committing as raw kana is not a conversion, so it closes any word the
     // user was assembling rather than extending it.
@@ -2153,6 +2228,8 @@ export class InputHandler {
       const parts = this.splitAtConversionEnd(composing);
       const reading = parts[0];
       const tail = parts[1];
+      InputLog.recordCommit(reading, text, index, candidates.length, candidates,
+        this.candidatePickVia(), this.provenanceUpTo(reading, candidates, index));
       // A predictive completion (会社 committed from the prefix かいし) must NOT
       // feed conversion learning: its reading is longer than what was typed, so
       // recordChoice(かいし→会社) would teach a wrong reading. Skip the learn;
@@ -2251,6 +2328,8 @@ export class InputHandler {
       const parts = this.splitAtConversionEnd(composing);
       const reading = parts[0];
       const tail = parts[1];
+      InputLog.recordCommit(reading, chosen, idx, candidates.length, candidates, 'key',
+        this.provenanceUpTo(reading, candidates, idx));
       if (!this.isNonLearningCandidate(reading, chosen)) {
         this.learnCommit(reading, chosen);
         this.saveLearning();
@@ -2520,6 +2599,7 @@ export class InputHandler {
     if (isImage || isFile) {
       const uri = AppStorage.get<string>('clipboardUri') ?? '';
       if (this.sendPasteExtendAction()) {
+        InputLog.recordPaste(isImage ? 'image' : 'file', 0);
         // Dismiss the chip for this file/image until the clipboard changes.
         InputHandler.dismissedClipSig = InputHandler.clipSig('', uri, isImage);
         InputHandler.setClipboardPreviewState('', false, false, '');
@@ -2531,7 +2611,11 @@ export class InputHandler {
     if (text.length === 0) {
       return 'none';
     }
+    // クリップボードの中身は入力ログに残さない (貼り付けた事実と文字数だけ)。
+    InputLog.recordPaste('chip', text.length);
+    this.suppressInsertLog = true;
     this.insertText(text, { raw: true } as InsertTextOptions);
+    this.suppressInsertLog = false;
     // Hide the paste chip now that it's been used, and remember this content so
     // subsequent refreshes keep it hidden until the user copies something new.
     InputHandler.dismissedClipSig = InputHandler.clipSig(text, '', false);
@@ -2565,7 +2649,89 @@ export class InputHandler {
     const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
     const text = history[index];
     if (text === undefined || text.length === 0) { return; }
+    InputLog.recordPaste(`history#${index}`, text.length);
+    this.suppressInsertLog = true;
     this.insertText(text, { raw: true } as InsertTextOptions);
+    this.suppressInsertLog = false;
+  }
+
+  // ---- 入力ログ (デバッグビルドのみ。設定画面の「開発者用」から呼ぶ) ------
+  //
+  // 取り出しは USB デバッグ経由。拡張プロセスからはクリップボードへの書き込みも
+  // サンドボックスの直接読み出しも通らないので、hilog に流して PC 側
+  // (tools/pull_input_log.js) で拾う (InputLog.dumpToHilog 参照)。
+
+  // 候補のタップがどこから来たか。▼の一覧 (ExpandedCandidateView) は
+  // commitCandidate を呼んでから一覧を閉じるので、呼ばれた時点ではまだ開いている。
+  private candidatePickVia(): string {
+    return (AppStorage.get<boolean>('candidateExpanded') ?? false) ? 'list' : 'bar';
+  }
+
+  // 選んだ候補と、それより上に並んでいた候補それぞれの出どころ (どの辞書の
+  // 何番目か)。「なぜ正解が下にいたのか = 上の候補はどこから来たのか」を
+  // 独自辞書側で直すための記録。デバッグビルド以外では辞書を引き直さない。
+  private provenanceUpTo(reading: string, candidates: string[], index: number): string[] {
+    if (!DEBUG_INPUT_LOG || index < 0) { return []; }
+    const out: string[] = [];
+    const end = Math.min(index, candidates.length - 1);
+    for (let i = 0; i <= end; i++) {
+      out.push(KanaKanjiConverter.explainSources(reading, candidates[i]));
+    }
+    return out;
+  }
+
+  // フリック1回の詳細 (FlickKeyboardView から)。
+  noteFlick(center: string, out: string, dir: string, dx: number, dy: number): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.recordFlick(center, out, dir, dx, dy);
+  }
+
+  // 候補バーの横スクロールが止まった (CandidateBar から)。
+  noteCandidateScroll(offsetVp: number): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.recordScroll(this.conversionTarget(), offsetVp,
+      (AppStorage.get<string[]>('candidates') ?? []).length);
+  }
+
+  // 候補の長押しメニューを開いた / 削除せずに閉じた。
+  noteCandidateMenu(action: string, index: number): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    const cands = AppStorage.get<string[]>('candidates') ?? [];
+    InputLog.recordMenu(action, this.conversionTarget(),
+      index >= 0 && index < cands.length ? cands[index] : '', index);
+  }
+
+  // 記号・絵文字・設定・数字パッドなどのパネル切替 (KeyboardPage から)。
+  noteSubMode(mode: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.recordSubMode(mode);
+  }
+
+  // 候補一覧 (▼) を開いた/選ばずに閉じた (CandidateBar・ExpandedCandidateView から)。
+  noteCandidateListToggle(open: boolean): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.recordExpand(open, this.conversionTarget(),
+      AppStorage.get<string[]>('candidates') ?? []);
+  }
+
+  publishInputLogSummary(): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    AppStorage.setOrCreate('inputLogSummary', InputLog.summary());
+  }
+
+  exportInputLog(): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    AppStorage.setOrCreate('inputLogSummary', '書き出し中… (PC側で pull_input_log.js を実行)');
+    InputLog.dumpToHilog((chunks: number) => {
+      const done = chunks < 0 ? '書き出しに失敗' : `書き出し完了 (${chunks}チャンク)`;
+      AppStorage.setOrCreate('inputLogSummary', `${done} / ${InputLog.summary()}`);
+    });
+  }
+
+  clearInputLog(): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.clear();
+    this.publishInputLogSummary();
   }
 
   // 「クリップボード履歴を消しても最新の1件だけ消えない」の実体はここ。
@@ -2629,6 +2795,7 @@ export class InputHandler {
   private async undoLastHostEdit(): Promise<void> {
     const op = this.hostUndoStack.pop();
     if (op === undefined) { return; }
+    InputLog.recordUndo(`${op.kind}:${op.text}`);
     if (op.kind === 'insert') {
       // 挿入の取り消し = その範囲を削除。挿入直後の位置までカーソルを
       // 動かしてから、その直前を deleteForward で削る。
@@ -2662,6 +2829,7 @@ export class InputHandler {
     }
     const ch = this.composingUndoStack.pop();
     if (ch === undefined || ch.length === 0) { return; }
+    InputLog.recordUndo(ch);
     this.handleDirectKana(ch);
   }
 
@@ -2830,6 +2998,7 @@ export class InputHandler {
       // この直後に同じ読みが手作業で組み立て直されたら強い確認信号になる。
       if (this.composingWatermark.length > 0) {
         UnknownWordLearner.noteAbandonedReading(this.composingWatermark);
+        InputLog.recordAbandon(this.composingWatermark);
         this.composingWatermark = '';
       }
       AppStorage.setOrCreate('candidates', [] as string[]);
@@ -3072,8 +3241,11 @@ export class InputHandler {
     // Candidates the user deleted by long-pressing them are dropped last, so
     // every source above (dictionaries, learning, the injected predictions) is
     // covered by the one filter -- see SuppressedCandidates.
-    AppStorage.setOrCreate('candidates', SuppressedCandidates.filter(target, candidates));
+    const shown = SuppressedCandidates.filter(target, candidates);
+    AppStorage.setOrCreate('candidates', shown);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
+    InputLog.recordUpdate(composing, AppStorage.get<string>('pendingRomaji') ?? '',
+      this.conversionEnd, shown, segs);
   }
 
   handleVariantCycle(): void {
@@ -3084,6 +3256,7 @@ export class InputHandler {
     const last = composing.slice(-1);
     const next = VARIANT_CYCLE[last];
     if (next !== undefined) {
+      InputLog.recordVariant('cycle', last, next);
       AppStorage.setOrCreate('composingText', composing.slice(0, -1) + next);
       this.updateCandidates();
     }
@@ -3101,9 +3274,13 @@ export class InputHandler {
       if (this.conversionEnd > 1) {
         this.conversionEnd--;
         AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        InputLog.recordRange(composing, this.conversionEnd, 'L');
         this.updateCandidates();
+      } else {
+        InputLog.recordRange(composing, this.conversionEnd, 'L(端)');
       }
     } else {
+      InputLog.recordCursor(`L ${state}`);
       // 実際に動いた分だけ hostCursor に反映する。取消キーの位置追跡は
       // このIME自身が動かした分の自己申告なので、ここを飲むと矢印キーでの
       // 移動後に取消を押しても正しい位置へ戻れる (hostUndoStack のコメント
@@ -3124,11 +3301,14 @@ export class InputHandler {
       if (this.conversionEnd > 0 && this.conversionEnd < composing.length) {
         this.conversionEnd++;
         AppStorage.setOrCreate('convEnd', this.conversionEnd);
+        InputLog.recordRange(composing, this.conversionEnd, 'R');
         this.updateCandidates();
-      } else if (this.conversionEnd === 0) {
+      } else {
         // Already at full length, no change needed
+        InputLog.recordRange(composing, composing.length, 'R(端)');
       }
     } else {
+      InputLog.recordCursor(`R ${state}`);
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
         .then(() => { this.hostCursor += 1; })
         .catch((_e: Error) => {});
@@ -3138,6 +3318,7 @@ export class InputHandler {
   handleDirectKana(kana: string): void {
     const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    InputLog.recordKana(kana, mode);
 
     if (mode === InputMode.ALPHANUMERIC) {
       this.commitPending();
@@ -3185,12 +3366,17 @@ export class InputHandler {
     this.bSegs = this.kanjiConverter.segment(composing);
     this.bChosen = this.bSegs.map((seg: string, i: number) => this.kanjiConverter.autoConvert(seg, this.bSegs[i + 1], this.bSegs[i - 1]));
     this.bCur = 0;
+    InputLog.recordBunsetsu(composing, this.bSegs);
     this.updateBunsetsuStorage();
   }
 
   // Navigate to a specific segment and refresh candidates
   selectBunsetsuSegment(idx: number): void {
-    if (idx < 0 || idx >= this.bSegs.length) { return; }
+    if (idx < 0 || idx >= this.bSegs.length) {
+      InputLog.recordBunsetsuFocus(this.bSegs, this.bChosen, this.bCur, idx);
+      return;
+    }
+    InputLog.recordBunsetsuFocus(this.bSegs, this.bChosen, this.bCur, idx);
     this.bCur = idx;
     this.updateBunsetsuStorage();
   }
@@ -3200,6 +3386,7 @@ export class InputHandler {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state !== InputState.BUNSETSU) { return; }
     const text = this.bChosen.join('');
+    InputLog.recordBunsetsuFinal(this.bSegs.join(''), text, this.bChosen);
     for (let i = 0; i < this.bSegs.length; i++) {
       KanaKanjiConverter.recordChoice(this.bSegs[i], this.bChosen[i]);
       // 「足立レイ」のような、辞書が読み全体では出せず自動で2文節に割れて
@@ -3235,6 +3422,9 @@ export class InputHandler {
   commitBunsetsuCandidate(index: number): void {
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
     if (index < candidates.length) {
+      InputLog.recordBunsetsuPick(this.bSegs[this.bCur], candidates[index], index,
+        candidates.length, candidates, this.candidatePickVia(),
+        this.provenanceUpTo(this.bSegs[this.bCur], candidates, index));
       KanaKanjiConverter.recordChoice(this.bSegs[this.bCur], candidates[index]);
       this.bChosen[this.bCur] = candidates[index];
     }
@@ -3270,6 +3460,7 @@ export class InputHandler {
     const last = composing.slice(-1);
     const toggled = DAKUTEN[last];
     if (toggled !== undefined) {
+      InputLog.recordVariant('dakuten', last, toggled);
       AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
     }
   }
@@ -3282,6 +3473,7 @@ export class InputHandler {
     const last = composing.slice(-1);
     const toggled = HANDAKUTEN[last];
     if (toggled !== undefined) {
+      InputLog.recordVariant('handakuten', last, toggled);
       AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
     }
   }
@@ -3294,6 +3486,7 @@ export class InputHandler {
     const last = composing.slice(-1);
     const toggled = SMALL_KANA[last];
     if (toggled !== undefined) {
+      InputLog.recordVariant('small', last, toggled);
       AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
     }
   }
@@ -3310,6 +3503,7 @@ export class InputHandler {
     // 唯一の出口」はこの insertText なので、ここだけ差し替えれば、ローマ字入力・
     // かな漢字変換・候補選択といった仕組みはそのまま使える。
     if (this.captureTarget.length > 0) {
+      if (!this.suppressInsertLog) { InputLog.recordInsert(text, 'capture'); }
       this.appendCaptured(text);
       return;
     }
@@ -3369,6 +3563,10 @@ export class InputHandler {
       }
     }
     if (!previewCommitted) { this.inputClient?.insertText(finalText); }
+    if (!this.suppressInsertLog) {
+      InputLog.recordInsert(finalText,
+        `${previewCommitted ? 'preview' : 'direct'}${opts?.raw === true ? ' raw' : ''}`);
+    }
     if (finalText.length > 0) {
       for (let i = 0; i < finalText.length; i++) {
         this.insertedBuffer.push(finalText[i]);
@@ -3456,6 +3654,7 @@ export class KeyboardController {
   onDestroy(): void {
     // 予約中の学習・削除候補の保存を確定させてから畳む。
     this.inputHandle.flushPendingSaves();
+    InputLog.flush();
     this.unregisterListeners();
     if (this.panel) {
       IMEAbility.destroyPanel(this.panel);

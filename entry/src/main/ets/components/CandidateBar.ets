@@ -24,6 +24,9 @@ export struct CandidateBar {
   // reason KeyboardView drives its one-handed hint popup from state.
   @State menuIndex: number = -1;
   @State menuCandidate: string = '';
+  // 横スクロールの位置を入力ログに残すため (タップした候補がスクロールしないと
+  // 見えない位置だったかの手がかり)。
+  private scroller: Scroller = new Scroller();
 
   private closeMenu(): void {
     this.menuIndex = -1;
@@ -61,7 +64,7 @@ export struct CandidateBar {
 
   build() {
     Row() {
-      Scroll() {
+      Scroll(this.scroller) {
         Row({ space: 6 }) {
           ForEach(this.candidates, (candidate: string, index: number) => {
             Row() {
@@ -90,7 +93,12 @@ export struct CandidateBar {
               // second tap, and tapping the mask dismisses without deleting.
               mask: true,
               onStateChange: (e: PopupStateChangeParam) => {
-                if (!e.isVisible && this.menuIndex === index) { this.closeMenu(); }
+                if (!e.isVisible && this.menuIndex === index) {
+                  // 削除を押した場合は先に closeMenu 済みで menuIndex が -1 になって
+                  // いるので、ここに来るのは削除せずに閉じたときだけ。
+                  InputHandler.getInstance().noteCandidateMenu('cancel', index);
+                  this.closeMenu();
+                }
               },
             })
             // Long-press to offer deletion; a plain tap still commits via
@@ -100,6 +108,7 @@ export struct CandidateBar {
                 .onAction(() => {
                   this.menuCandidate = candidate;
                   this.menuIndex = index;
+                  InputHandler.getInstance().noteCandidateMenu('open', index);
                 })
             )
             .onClick(() => {
@@ -110,6 +119,9 @@ export struct CandidateBar {
         .padding({ left: 4, right: 4 })
       }
       .scrollable(ScrollDirection.Horizontal)
+      .onScrollStop(() => {
+        InputHandler.getInstance().noteCandidateScroll(this.scroller.currentOffset().xOffset);
+      })
       .scrollBar(BarState.Off)
       .layoutWeight(1)
       .height(this.barHeightVp)
@@ -128,6 +140,7 @@ export struct CandidateBar {
         .alignItems(VerticalAlign.Center)
         .backgroundColor(kbTheme(this.isDark).funcBg)
           .onClick(() => {
+            InputHandler.getInstance().noteCandidateListToggle(true);
             AppStorage.setOrCreate('candidateExpanded', true);
           })
       }

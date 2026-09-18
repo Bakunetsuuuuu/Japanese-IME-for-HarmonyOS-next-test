@@ -80,8 +80,15 @@ interface Ranked {
 // されない、という穴があった。
 export type KnownAssemblyFn = (reading: string, surface: string) => void;
 
+// 未知語として1回ぶん数えられたときの通知 (入力ログ用。KeyboardController が
+// InputLog.recordUnknownWord に繋ぐ)。confirmed は、直前に同じ読みを変換せず
+// 消して諦めていたのと一致した組み立てだったか。このモジュールを依存なしに
+// 保つため、ログへの書き込み自体はここでは行わずコールバックで外に出す。
+export type LearnedWordFn = (reading: string, surface: string, confirmed: boolean) => void;
+
 export class UnknownWordLearner {
   static onKnownAssembly: KnownAssemblyFn | undefined = undefined;
+  static onLearn: LearnedWordFn | undefined = undefined;
 
   // reading -> (surface -> times assembled)
   private static counts: Record<string, Record<string, number>> = {};
@@ -177,10 +184,11 @@ export class UnknownWordLearner {
     // 強い合図ではあるが、いきなり本採用まで飛ばすと外れたときに目立つ位置に
     // 出てしまう。1回目は他の組み立てと同じ扱いで準候補どまりにし、本人が
     // 準候補欄からもう一度タップして初めて本採用にする (confirmQuasi 参照)。
-    // confirmed はログ用にだけ残す。
+    // confirmed は学習の判定には使わず、入力ログに残すためだけに求める。
     const confirmed = reading === UnknownWordLearner.abandonedReading && UnknownWordLearner.abandonedReading.length > 0;
     UnknownWordLearner.abandonedReading = '';
     UnknownWordLearner.bump(reading, surface, 1);
+    if (UnknownWordLearner.onLearn !== undefined) { UnknownWordLearner.onLearn(reading, surface, confirmed); }
   }
 
   // 準候補として出ていた表記が、確定前にタップされて選ばれた。単体でタップ
