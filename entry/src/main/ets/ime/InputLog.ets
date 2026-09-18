@@ -93,6 +93,7 @@ export const LK_SCROLL: string = 'scroll';      // 候補バーを横にスク�
 export const LK_MENU: string = 'menu';          // 候補の長押しメニュー (x=open/cancel, i=候補番号)
 export const LK_SUBMODE: string = 'submode';    // 記号・絵文字・設定などのパネル切替 (x=パネル名)
 export const LK_SETTING: string = 'setting';    // 設定の変更 (r=項目, s=値)
+export const LK_BRACKET: string = 'bracket';    // 閉じ括弧の保留を解いた/捨てた (s=閉じ括弧, x=きっかけ)
 
 // 確定の性質を表す補助タグ (entry.x に入る)。
 export const LF_KATAKANA: string = 'kata';      // 読みのカタカナ形をそのまま確定
@@ -380,6 +381,14 @@ export class InputLog {
   static recordSetting(name: string, value: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
     InputLog.push(LK_SETTING, name, value, -1, 0, '');
+  }
+
+  // 閉じ括弧の保留をどう解いたか。trigger は flush (►・バッジのタップ・
+  // 送信直前) / cancel (バッジの長押し) / auto (自動モードで確定に付いた)。
+  // 手動モードで「括弧をどこで閉じているか・閉じ忘れていないか」を見るため。
+  static recordBracket(close: string, trigger: string): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    InputLog.push(LK_BRACKET, '', close, -1, 0, trigger);
   }
 
   static recordUnknownWord(reading: string, surface: string, confirmed: boolean): void {

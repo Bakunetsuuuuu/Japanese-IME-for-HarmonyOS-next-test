@@ -95,6 +95,18 @@ export interface KeyboardSettings {
   // 変わらない (FlickKeyboardView の isLandscape 分岐と同じ仕組みを流用)。
   // 使い慣れた人には邪魔になるという要望向けのオフスイッチ。既定はオン。
   flickHintsEnabled: boolean;
+  // 括弧の閉じ括弧をいつホストへ出すか (KeyboardController の BRACKET_PAIRS
+  // 参照)。開き括弧を確定した時点で閉じを保留するところまでは共通で、
+  // 違うのは「保留を解く引き金」だけ。
+  //   'manual' = 既定。► キー (または候補バーの待機バッジのタップ) を
+  //              押したその位置で初めて閉じを出す。括弧の中で何度確定
+  //              しても勝手に閉じないので、囲む範囲を自分で決められる。
+  //   'auto'   = 従来の挙動。次の確定の直後に自動で閉じる。1語だけ囲む
+  //              使い方なら打鍵が1つ減る。
+  // manual を既定にしたのは、auto だと「括弧の中で2語以上確定する」と
+  // いう普通の使い方が成立しなかったため (最初の確定で閉じてしまい、
+  // 続きが括弧の外に出る)。auto でも ► で早めに閉じることはできる。
+  bracketCloseMode: string;
   // フローティングキーボード。画面下端に固定せず、任意の位置・大きさで
   // 浮かせて使えるモード。位置・大きさは画面の縦横比に依存させたくない
   // (回転・折りたたみで画面サイズ自体が変わるため) ので、絶対 vp ではなく
@@ -127,6 +139,7 @@ const DEFAULTS: KeyboardSettings = {
   keyboardWidthScale: 1.0,
   keyboardHorizontalOffset: 0,
   flickHintsEnabled: true,
+  bracketCloseMode: 'manual',
   floatingMode: false,
   // 既定は画面上寄り、幅60%・高さ35%程度の常識的なサイズ。設定ボタンの
   // 長押し→上スライドで出すジェスチャの向き(上へ引き出す)に合わせて
@@ -173,6 +186,7 @@ export class SettingsStore {
       const widthScale = await prefs.get('keyboardWidthScale', DEFAULTS.keyboardWidthScale);
       const hOffset = await prefs.get('keyboardHorizontalOffset', DEFAULTS.keyboardHorizontalOffset);
       const flickHints = await prefs.get('flickHintsEnabled', DEFAULTS.flickHintsEnabled);
+      const bracketMode = await prefs.get('bracketCloseMode', DEFAULTS.bracketCloseMode);
       const floating = await prefs.get('floatingMode', DEFAULTS.floatingMode);
       const floatX = await prefs.get('floatingXFrac', DEFAULTS.floatingXFrac);
       const floatY = await prefs.get('floatingYFrac', DEFAULTS.floatingYFrac);
@@ -214,6 +228,7 @@ export class SettingsStore {
         keyboardWidthScale: Number(widthScale),
         keyboardHorizontalOffset: Number(hOffset),
         flickHintsEnabled: flickHints !== false,
+        bracketCloseMode: String(bracketMode),
         floatingMode: floating === true,
         floatingXFrac: Number(floatX),
         floatingYFrac: Number(floatY),
@@ -242,6 +257,7 @@ export class SettingsStore {
         keyboardWidthScale: DEFAULTS.keyboardWidthScale,
         keyboardHorizontalOffset: DEFAULTS.keyboardHorizontalOffset,
         flickHintsEnabled: DEFAULTS.flickHintsEnabled,
+        bracketCloseMode: DEFAULTS.bracketCloseMode,
         floatingMode: DEFAULTS.floatingMode,
         floatingXFrac: DEFAULTS.floatingXFrac,
         floatingYFrac: DEFAULTS.floatingYFrac,
@@ -387,6 +403,15 @@ export class SettingsStore {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('flickHintsEnabled', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveBracketCloseMode(context: common.Context, mode: string): Promise<void> {
+    InputLog.recordSetting('bracketCloseMode', String(mode));
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('bracketCloseMode', mode);
       await prefs.flush();
     } catch (_e) {}
   }

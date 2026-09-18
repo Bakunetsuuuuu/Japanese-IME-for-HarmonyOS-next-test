@@ -113,9 +113,12 @@ struct KeyboardPage {
   private onSubModeChanged(): void {
     InputHandler.getInstance().noteSubMode(this.keyboardSubMode);
   }
-  // 括弧の自動閉じ (KeyboardController の insertText 参照)。空でなければ
-  // 「この文字が確定のたびに出るのを待っている」ことを候補バー行に出す。
+  // 括弧の閉じ待ち (KeyboardController の insertText 参照)。空でなければ
+  // 「この文字がまだ出ていない」ことを候補バー行に出す。
   @StorageLink('pendingBracketClose') pendingBracketClose: string = '';
+  // 'manual' | 'auto'。バッジの文言を「► で閉じられる」案内にするか、
+  // 従来の「次の確定で出る」案内にするかの切り替え (SettingsStore 参照)。
+  @StorageLink('bracketCloseMode') bracketCloseMode: string = 'manual';
   // 辞書の登録欄をキーボードの上に出しているか (DictEditBar 参照)。
   @StorageLink('dictEditMode') dictEditMode: boolean = false;
   @StorageLink('bunsetsuTexts') bunsetsuTexts: string[] = [];
@@ -285,6 +288,7 @@ struct KeyboardPage {
       AppStorage.setOrCreate('themeMode', s.themeMode);
       AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
       AppStorage.setOrCreate('flickHintsEnabled', s.flickHintsEnabled);
+      AppStorage.setOrCreate('bracketCloseMode', s.bracketCloseMode);
       // かなの表示先は「設定値そのまま」ではなく入力欄の対応状況も混ぜて
       // 決まるので、AppStorage を直接書かず InputHandler に計算させる。
       InputHandler.getInstance().applyComposingDisplay(s.composingInPanel, s.composingInField);
@@ -313,6 +317,16 @@ struct KeyboardPage {
       InputHandler.getInstance().applyKeyboardHorizontalOffsetLive(s.keyboardHorizontalOffset);
       InputHandler.getInstance().syncFloatingFromSettings(s);
     });
+  }
+
+  // 今表示しているキーボード本体が ◄/► のカーソルキーを持っているか。
+  // 持っているのはフリック系と数字パッドだけで、QWERTY には無い
+  // (条件は KeyboardArea の分岐と同じ)。閉じ括弧の待機バッジの文言を、
+  // その利用者の手元に実在する操作だけで書くために使う。
+  private hasCaretKeys(): boolean {
+    if (this.keyboardSubMode === 'numeric') { return true; }
+    if (this.alphabetKeyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) { return true; }
+    return this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC;
   }
 
   // 実際のキーボード本体を選ぶ部分。通常の入力画面と、レイアウト調整モード
@@ -788,12 +802,18 @@ struct KeyboardPage {
                 .justifyContent(FlexAlign.Center)
                 .alignItems(VerticalAlign.Center)
 
-                // 括弧を開いた直後、閉じが保留中であることを示すバッジ。
+                // 括弧を開いた直後、閉じがまだ出ていないことを示すバッジ。
                 // 見た目に何も変化が無いと「閉じ括弧が出ない」と誤解される
-                // (実際に不具合報告があった)。次の確定でこの文字が出ることを
-                // 一目で分かるようにする。
+                // (実際に不具合報告があった)。手動モードでは閉じるのが利用者の
+                // 操作待ちになるので、文言でも ► を案内し、バッジ自体も
+                // 「ここを押せば今すぐ閉じる」ボタンとして使えるようにしてある
+                // (► キーが無いレイアウトからの逃げ道も兼ねる)。長押しは
+                // 「開き括弧だけ使いたかった」場合に保留を捨てる。
                 if (this.pendingBracketClose.length > 0) {
-                  Text(this.pendingBracketClose + ' 待ち')
+                  Text(this.pendingBracketClose
+                    + (this.bracketCloseMode === 'auto'
+                      ? ' 待ち'
+                      : (this.hasCaretKeys() ? ' ►で閉じる' : ' タップで閉じる')))
                     .fontFamily(JP_FONT_FAMILY)
                     .fontSize(this.isLandscape ? 10 : 12)
                     .fontColor(kbTheme(this.isDark).onAccent)
@@ -801,6 +821,17 @@ struct KeyboardPage {
                     .borderRadius(10)
                     .padding({ left: 8, right: 8, top: 3, bottom: 3 })
                     .margin({ right: 6 })
+                    .onClick(() => {
+                      InputHandler.getInstance().flushPendingBracketClose();
+                    })
+                    .gesture(
+                      LongPressGesture({ duration: 400 })
+                        .onAction(() => {
+                          const dropped = this.pendingBracketClose;
+                          InputHandler.getInstance().cancelPendingBracketClose();
+                          promptAction.showToast({ message: dropped + ' の自動挿入を取り消しました' });
+                        })
+                    )
                 }
 
                 // かな表示の行を出していないときは「設定」の置き場がここしか
