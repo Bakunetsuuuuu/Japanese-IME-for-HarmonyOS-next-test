@@ -9,6 +9,9 @@ import { kbTheme } from '../components/Theme';
 const CONSENT_STORE: string = 'shunti_consent';
 const CONSENT_KEY: string = 'privacy_agreed';
 const CARD_RADIUS = 16;
+const CONTRIBUTION_LOG: string[] = [
+  '2026/9/10 さぶうぇい氏の PR #58（UIの調整）をマージ',
+];
 
 // 本体アプリの画面。
 //
@@ -210,6 +213,19 @@ struct Index {
               .backgroundColor(kbTheme(this.isDark).cardBg)
               .borderRadius(CARD_RADIUS)
               .onClick(() => { router.pushUrl({ url: 'pages/License' }); })
+
+            // 外部からの貢献の記録。新しいものを下に足していく。
+            Column({ space: 4 }) {
+              ForEach(CONTRIBUTION_LOG, (line: string) => {
+                Text(line)
+                  .fontFamily(JP_FONT_FAMILY)
+                  .fontSize(12)
+                  .fontColor(kbTheme(this.isDark).textSecondary)
+                  .width('100%')
+              }, (line: string) => line)
+            }
+            .width('100%')
+            .padding({ left: 16, right: 16, top: 4 })
           }
           .width('100%')
           .padding(16)
