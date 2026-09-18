@@ -65,10 +65,17 @@ interface HostEditOp {
 // 実機で信用できないことが分かり撤去した (コミット 7328e504 参照)。
 //
 // 今回は発想を変え、カーソルを一切動かさない: 開きだけを確定し、閉じは
-// 「次に確定される内容の直後」まで保留する。ユーザーは括弧の中を普通に
-// 打ち進めるだけで、次の確定のたびに保留中の閉じがその直後へ続けて出る
-// ので、結果的に (内容) の形になる。カーソル移動プリミティブを一切
-// 使わないので、上記の実機不具合と無縁になる。
+// 保留しておいて、あとから「その時点のカーソル位置」へ挿入する。カーソル
+// 移動プリミティブを一切使わないので、上記の実機不具合と無縁になる。
+//
+// 保留を解く引き金は設定 bracketCloseMode で選べる (SettingsStore 参照)。
+//   'manual' (既定): ► キー / 候補バーの待機バッジのタップ / 送信直前
+//                    のいずれかで初めて閉じが出る。確定を何回挟んでも
+//                    勝手に閉じないので、囲む範囲は利用者が決める。
+//   'auto'          : 従来どおり、次の確定の直後に自動で閉じる。
+// 既定を manual にしたのは、auto では「括弧の中で2語以上確定する」という
+// ごく普通の使い方が成立しなかったため -- 最初の確定で閉じてしまい、
+// 続きが括弧の外に出ていた。auto のままでも ► で早めに閉じられる。
 const BRACKET_PAIRS: Record<string, string> = {
   '（': '）', '「': '」', '『': '』', '【': '】',
   '〖': '〗', '〔': '〕', '〈': '〉', '《': '》',
@@ -304,12 +311,45 @@ export class InputHandler {
   private hostUndoStack: HostEditOp[] = [];
   private hostCursor: number = 0;
   private static readonly MAX_HOST_UNDO = 100;
-  // 括弧の自動閉じで「次の確定の直後に出す」ぶんの閉じ括弧。空なら保留無し。
-  // 詳しい設計意図は BRACKET_PAIRS のコメント参照。AppStorage にも流して
-  // いるのは、保留中であることを画面に出すため (KeyboardPage の候補バー
-  // 行のバッジ参照) -- 見た目に何も変化が無いと、閉じ括弧がいつ出るのか
-  // 利用者から分からず不安になる。
+  // 出す機会を待っている閉じ括弧。空なら保留無し。いつ出るかは
+  // bracketCloseMode 次第で、詳しい設計意図は BRACKET_PAIRS のコメント参照。
+  // AppStorage にも流しているのは、保留中であることを画面に出すため
+  // (KeyboardPage の候補バー行のバッジ参照) -- 見た目に何も変化が無いと、
+  // 閉じ括弧がいつ出るのか利用者から分からず不安になる。手動モードでは
+  // このバッジ自体が「► で閉じられる」ことの案内も兼ねている。
   private pendingBracketClose: string = '';
+
+  // 閉じ括弧の保留を解く引き金 ('manual' | 'auto')。設定の実体は
+  // SettingsStore 側にあり、ここは反映済みの値を読むだけ。設定画面
+  // (パネル内 SettingsBar) と拡張本体は同じプロセスの AppStorage を
+  // 共有するので、都度読めば必ず最新になる。
+  private bracketCloseMode(): string {
+    return AppStorage.get<string>('bracketCloseMode') ?? 'manual';
+  }
+
+  // 保留中の閉じ括弧を今この位置へ出す。出したら true、保留が無ければ false。
+  // 先に保留を空にしてから insertText を呼ぶのは、insertText 側の
+  // 「利用者が自分で閉じ括弧を打った」判定と二重に噛み合わせないため。
+  flushPendingBracketClose(): boolean {
+    if (this.pendingBracketClose.length === 0) { return false; }
+    const close = this.pendingBracketClose;
+    this.setPendingBracketClose('');
+    this.insertText(close, { raw: true } as InsertTextOptions);
+    return true;
+  }
+
+  // 保留中の閉じ括弧を出さずに捨てる (待機バッジの長押し)。開き括弧だけを
+  // 使いたかった場合に、わざわざ出してから消す手間を省くための逃げ道。
+  cancelPendingBracketClose(): void {
+    this.setPendingBracketClose('');
+  }
+
+  setBracketCloseMode(mode: string): void {
+    AppStorage.setOrCreate('bracketCloseMode', mode);
+    if (this.imeContext) {
+      SettingsStore.saveBracketCloseMode(this.imeContext, mode);
+    }
+  }
 
   private setPendingBracketClose(v: string): void {
     this.pendingBracketClose = v;
@@ -533,6 +573,7 @@ export class InputHandler {
         AppStorage.setOrCreate('themeMode', s.themeMode);
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
         AppStorage.setOrCreate('flickHintsEnabled', s.flickHintsEnabled);
+        AppStorage.setOrCreate('bracketCloseMode', s.bracketCloseMode);
         this.applyVocabPacks(s.vocabPackOverrides);
         this.applyComposingDisplay(s.composingInPanel, s.composingInField);
         this.hapticEnabled = s.hapticEnabled;
@@ -2020,9 +2061,15 @@ export class InputHandler {
       if (deleted.length === 0) { deleted = this.insertedBuffer.pop() ?? ''; }
       else { this.insertedBuffer.pop(); }
       if (deleted.length > 0) { this.pushHostOp('delete', deleted); }
-      // 括弧を開いた直後に取り消された等、何かを消したら保留中の自動閉じは
-      // 前提が崩れているので破棄する (賢く追おうとはしない)。
-      this.setPendingBracketClose('');
+      // 自動モードの保留は「開き括弧〜次の確定」の間しか生きないので、
+      // 何を消したかに関わらず破棄してよい (従来どおり。賢く追おうとは
+      // しない)。手動モードの保留は確定をまたいで生き続けるため、同じ
+      // 扱いにすると括弧の中身を1文字打ち間違えて消しただけで閉じ括弧まで
+      // 消えてしまう。そちらは「開き括弧そのものを消した = 括弧をやめた」
+      // ときだけ破棄する。
+      if (this.bracketCloseMode() === 'auto' || BRACKET_PAIRS[deleted] === this.pendingBracketClose) {
+        this.setPendingBracketClose('');
+      }
       this.inputClient?.deleteForward(1);
       // 直前の確定 (熟語など) をバックスペースで削っていく間、漢字の手がかりが
       // 残っている限り truncate() で末尾を追う (かける→翔ける→⌫⌫→翔 のような、
@@ -2098,12 +2145,11 @@ export class InputHandler {
     } else if (state === InputState.COMPOSING) {
       this.commitRaw();
     } else {
-      // IDLE で Enter を押すのは insertText を一切経由しないので、括弧を
-      // 開いたまま中身を確定せずに送信/改行すると保留中の閉じ括弧が
-      // 出る機会を永遠に失う。送信の直前に閉じておく。
-      if (this.pendingBracketClose.length > 0) {
-        this.insertText(this.pendingBracketClose);
-      }
+      // 送信/改行してしまうと、保留中の閉じ括弧が出る機会は永遠に失われる
+      // (手動モードでは ► を押すまで待ち続けるので、なおさら取り残されや
+      // すい)。開きっぱなしの文が飛んでいくのを防ぐため、送信の直前に
+      // 閉じておく。
+      this.flushPendingBracketClose();
       this.inputClient?.getEditorAttribute().then((attr: inputMethodEngine.EditorAttribute) => {
         this.inputClient?.sendKeyFunction(attr.enterKeyType);
       }).catch((_e: Error) => {
@@ -3129,6 +3175,11 @@ export class InputHandler {
         // Already at full length, no change needed
       }
     } else {
+      // 閉じ括弧が保留されている間の ► は、カーソル移動より先に
+      // 「括弧をここで閉じる」を担当する。括弧の範囲を利用者自身が
+      // 決めるための操作で、閉じたあとにもう一度押せば通常どおり
+      // カーソルが動く (BRACKET_PAIRS のコメント参照)。
+      if (this.flushPendingBracketClose()) { return; }
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
         .then(() => { this.hostCursor += 1; })
         .catch((_e: Error) => {});
@@ -3343,10 +3394,13 @@ export class InputHandler {
           // (「自分で閉じた」として扱う)。これが無いと "）" が
           // "））" になって出ていた (実際の不具合報告の原因)。
           this.setPendingBracketClose('');
-        } else {
+        } else if (this.bracketCloseMode() === 'auto') {
           finalText = text + this.pendingBracketClose;
           this.setPendingBracketClose('');
         }
+        // 'manual' では確定の内容にも保留にも手を付けない。閉じが出るのは
+        // ► キー・待機バッジのタップ・送信直前のいずれかで
+        // flushPendingBracketClose が呼ばれたときだけ。
       }
     }
 
