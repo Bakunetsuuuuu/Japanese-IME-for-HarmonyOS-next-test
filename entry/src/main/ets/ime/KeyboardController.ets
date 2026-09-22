@@ -88,6 +88,13 @@ const BRACKET_PAIRS: Record<string, string> = {
 // Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
 const MAX_KB_VP = 620;
 
+// 打鍵の間隔がこれ未満なら「まだ打っている」とみなし、候補列のおまけ
+// (同音語の差し替え・区切り違いの別解) を後回しにする。指が止まってから
+// この時間後に計算し直す。人の連打はおおむね 100〜200ms 間隔。
+const ENRICH_DELAY_MS = 160;
+// 短い読みではおまけの計算自体が軽いので、後回しにせずそのまま出す。
+const EXTRAS_MIN_KANA = 4;
+
 // フローティングキーボードの位置・大きさ (vp)。KeyboardController.floatingRectVp
 // 参照。
 interface FloatingRect {
@@ -260,6 +267,14 @@ export class InputHandler {
   private bSegs: string[] = [];
   private bChosen: string[] = [];
   private bCur: number = 0;
+  // 打鍵が続いている間は、候補列の「おまけ」(同音語の差し替え・区切り違いの
+  // 別解) の計算を飛ばす。どちらも候補0を変えず、位置1以降を足すだけなのに
+  // 1打鍵あたりの計算時間の7割を占めていた (実機ログの読みで実測)。指が
+  // 止まってから ENRICH_DELAY_MS 後に計算し直して足す。安い端末ほど効く。
+  private enrichTimer: number = -1;
+  private enrichPending: boolean = false;
+  private lastKeystrokeAt: number = 0;
+
   // Segmentation + prefix surfaces of the most recent updateCandidates()
   // composing text, or undefined when it was a single segment / had a symbol
   // prefix. Lets a whole-sentence commit learn each 文節 individually (see
@@ -3038,7 +3053,19 @@ export class InputHandler {
     }
   }
 
+  // 変換1回の所要時間を debug ビルドだけ集計する (InputLog の perf 行)。
+  // リリースでは DEBUG_INPUT_LOG が false なので、そのまま中身を呼ぶだけ。
   private updateCandidates(): void {
+    if (!DEBUG_INPUT_LOG) {
+      this.updateCandidatesInner();
+      return;
+    }
+    const t0 = Date.now();
+    this.updateCandidatesInner();
+    InputLog.notePerf(this.enrichRun ? 'enrich' : 'conv', Date.now() - t0);
+  }
+
+  private updateCandidatesInner(): void {
     this.syncPreviewText();
     const composing = AppStorage.get<string>('composingText') ?? '';
     if (composing.length === 0) {
@@ -3064,6 +3091,14 @@ export class InputHandler {
     // text after stays as kana. 0 means convert the full text.
     const target = this.conversionTarget();
 
+    // 直前の打鍵から間が無いときは「おまけ」を後回しにする。後回しにしたら
+    // 指が止まったときに enrich() が同じ読みで計算し直す。
+    const now = Date.now();
+    const typingFast = now - this.lastKeystrokeAt < ENRICH_DELAY_MS;
+    if (!this.enrichRun) { this.lastKeystrokeAt = now; }
+    const skipExtras = typingFast && !this.enrichRun && target.length >= EXTRAS_MIN_KANA;
+    clearTimeout(this.enrichTimer);
+    this.enrichPending = false;
     const fullKatakana = KanaKanjiConverter.toKatakana(target);
     const segs = this.kanjiConverter.segment(target);
     let candidates: string[];
@@ -3169,7 +3204,7 @@ export class InputHandler {
     // homophone in any earlier word — 橋/箸 in はしをわたる, 撮る/取る in
     // 写真をとった — never appeared anywhere in the list. (Empty for track B,
     // whose lookup already routed through composeMozcCandidates above.)
-    const alts = this.kanjiConverter.sentenceAlternatives(target);
+    const alts = skipExtras ? [] as string[] : this.kanjiConverter.sentenceAlternatives(target);
     // Insert the alternatives just ABOVE the katakana/kana fallbacks, not at a
     // fixed position 1: a whole-phrase dict entry can already carry a genuine
     // kanji alternative at candidate[1] (はなをみる → 花を観る, 花を見る), and
@@ -3219,7 +3254,7 @@ export class InputHandler {
     // 境界の迂回探索は時々 贅金を修める(ぜいきんをおさめる)や 先生似合う
     // (せんせいにあう)のような妙な再解釈を出す。上げると本当に欲しい
     // 税金を納める が押し下げられる(実測: 候補4→5)。
-    const altSeg = this.kanjiConverter.findAlternateSegmentation(target);
+    const altSeg = skipExtras ? null : this.kanjiConverter.findAlternateSegmentation(target);
     if (altSeg !== null && !candidates.includes(altSeg)) {
       const kanaCount = (t: string): number => {
         let n = 0;
@@ -3342,6 +3377,32 @@ export class InputHandler {
     }
     InputLog.recordUpdate(composing, AppStorage.get<string>('pendingRomaji') ?? '',
       this.conversionEnd, shown, segs);
+    if (skipExtras) {
+      // 指が止まったら同じ読みで計算し直す。読みが変わっていれば次の
+      // updateCandidates が先に走ってこのタイマーは捨てられる。
+      this.enrichPending = true;
+      this.enrichTimer = setTimeout(() => { this.enrichCandidates(composing); }, ENRICH_DELAY_MS);
+    }
+  }
+
+  // 後回しにした「おまけ」候補を、指が止まってから足すためだけの再計算。
+  // enrichRun を立てて updateCandidates をもう一度通すので、候補列の作り方は
+  // 1通りのまま (ここで別に組み立てると本体とずれる)。
+  private enrichRun: boolean = false;
+  private enrichCandidates(reading: string): void {
+    if (!this.enrichPending) { return; }
+    this.enrichPending = false;
+    // 打ち続けて読みが変わっていたら、その読みの更新がもう走っている。
+    if ((AppStorage.get<string>('composingText') ?? '') !== reading) { return; }
+    if ((AppStorage.get<string>('inputState') ?? InputState.IDLE) !== InputState.COMPOSING) { return; }
+    // 候補を選んでいる途中(先頭以外を見ている)なら、列を入れ替えない。
+    if ((AppStorage.get<number>('selectedCandidateIndex') ?? 0) !== 0) { return; }
+    this.enrichRun = true;
+    try {
+      this.updateCandidates();
+    } finally {
+      this.enrichRun = false;
+    }
   }
 
   handleVariantCycle(): void {

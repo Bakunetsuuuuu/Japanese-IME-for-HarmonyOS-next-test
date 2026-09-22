@@ -33785,6 +33785,18 @@ export class KanaKanjiConverter {
   // 入力ログ用: 直近の segment() 本番呼び出し (forbidSpan なし) の内訳。
   // 変換の「自信」を後から見るためのもので、collectSegDiag が false の間
   // (リリースビルド) は何も集めない。形式は segDiagFor() の説明を参照。
+  // 直近の segment() の結果。1打鍵のあいだに同じ引数で 3〜4 回呼ばれており
+  // (候補列・同音語の差し替え・区切り違いの別解が各自呼ぶ)、実測で全体の
+  // 半分が同じ引数の呼び直しだった。安い端末ほど効くので覚えておく。
+  // mozc エンジンのときは segment() が候補生成用の状態も書き換えるため
+  // 使わない (custom 専用)。
+  private segCache: Map<string, string[]> = new Map<string, string[]>();
+  private segCacheCost: Map<string, number> = new Map<string, number>();
+  private segCacheGen: number = -1;
+  // 覚えておく数。1打鍵で使うのは「今の読み」と迂回 4 本ぶんなので、
+  // 数打鍵ぶんあれば足りる。
+  private static readonly SEG_CACHE_MAX: number = 32;
+
   static collectSegDiag: boolean = false;
   private segDiagKana: string = '';
   private segDiag: string = '';
@@ -33968,16 +33980,19 @@ export class KanaKanjiConverter {
   };
 
   static loadDictionary(dict: Record<string, string[]>): void {
+    KanaKanjiConverter.dictGeneration++;
     KanaKanjiConverter.supplementaryDict.setRecord(dict);
   }
 
   static loadDictionaryPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
       valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
+    KanaKanjiConverter.dictGeneration++;
     KanaKanjiConverter.supplementaryDict.setPacked(keyBlob, keyLens, keyBase,
       valBlob, valLens, valBase, idx);
   }
 
   static setUserDict(dict: Record<string, string[]>): void {
+    KanaKanjiConverter.dictGeneration++;
     KanaKanjiConverter.userDict = dict;
   }
 
@@ -33986,11 +34001,13 @@ export class KanaKanjiConverter {
   }
 
   static setGlobalDict(dict: Record<string, string[]>): void {
+    KanaKanjiConverter.dictGeneration++;
     KanaKanjiConverter.globalDict.setRecord(dict);
   }
 
   static setGlobalDictPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
       valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
+    KanaKanjiConverter.dictGeneration++;
     KanaKanjiConverter.globalDict.setPacked(keyBlob, keyLens, keyBase,
       valBlob, valLens, valBase, idx);
   }
@@ -34120,6 +34137,7 @@ export class KanaKanjiConverter {
   }
 
   static setPackEnabled(id: string, enabled: boolean): void {
+    KanaKanjiConverter.dictGeneration++;
     if (enabled) { KanaKanjiConverter.enabledPacks.add(id); } else { KanaKanjiConverter.enabledPacks.delete(id); }
   }
 
@@ -34319,7 +34337,12 @@ export class KanaKanjiConverter {
   // 'mozc'/'hybrid' are only actually honored if loadMozcEngine() has already
   // been called — falls back to 'custom' otherwise so a not-yet-loaded engine
   // can never silently produce empty/broken conversions.
+  // 辞書が入れ替わるたびに増やす番号。segment() のキャッシュはこの番号を
+  // 一緒に持っていて、違っていれば捨てる (古い辞書の分割を返さないため)。
+  static dictGeneration: number = 0;
+
   static setEngine(e: 'custom' | 'mozc' | 'hybrid'): void {
+    KanaKanjiConverter.dictGeneration++;
     KanaKanjiConverter.engine = ((e === 'mozc' || e === 'hybrid') && KanaKanjiConverter.isMozcLoaded()) ? e : 'custom';
   }
 
@@ -37758,6 +37781,29 @@ export class KanaKanjiConverter {
     if (n === 0) { return []; }
     const INF = 1000000000;
     const isMozc = KanaKanjiConverter.isMozcEngine();
+    // キャッシュ (custom エンジンのみ)。辞書が入れ替わったら丸ごと捨てる。
+    const cacheKey = isMozc ? ''
+      : (forbidSpan === undefined ? kana : `${kana}|${forbidSpan[0]},${forbidSpan[1]}`);
+    if (cacheKey.length > 0) {
+      if (this.segCacheGen !== KanaKanjiConverter.dictGeneration) {
+        this.segCache.clear();
+        this.segCacheCost.clear();
+        this.segCacheGen = KanaKanjiConverter.dictGeneration;
+      }
+      const hit = this.segCache.get(cacheKey);
+      if (hit !== undefined) {
+        if (forbidSpan === undefined) {
+          // 分割の自信 (promoteKatakanaIfUnsure が使う) も一緒に戻す。
+          const cost = this.segCacheCost.get(cacheKey);
+          if (cost !== undefined) {
+            this.segCostKana = kana;
+            this.segCostPerKana = cost;
+          }
+        }
+        // 呼び先が並べ替えたりしても困らないよう複製を返す。
+        return hit.slice();
+      }
+    }
     // Track B's dictionary has real entries well past 10 kana (5.7% of its
     // 745k readings -- ありがとうございました is 11, common polite phrases
     // run longer), which a 10-cap made structurally unreachable no matter
@@ -38149,6 +38195,21 @@ export class KanaKanjiConverter {
       // compose a real candidate list from it (see composeMozcCandidates).
       this.mozcLastInput = kana;
       this.mozcLastSegs = merged2;
+    }
+    if (cacheKey.length > 0) {
+      // 上限を超えたら一番古いものから捨てる (打っている最中の読みと、その
+      // 迂回ぶんが入る程度の大きさで足りる)。
+      if (this.segCache.size >= KanaKanjiConverter.SEG_CACHE_MAX) {
+        for (const oldest of this.segCache.keys()) {
+          this.segCache.delete(oldest);
+          this.segCacheCost.delete(oldest);
+          break;
+        }
+      }
+      this.segCache.set(cacheKey, merged2);
+      if (forbidSpan === undefined && this.segCostKana === kana) {
+        this.segCacheCost.set(cacheKey, this.segCostPerKana);
+      }
     }
     return merged2;
   }

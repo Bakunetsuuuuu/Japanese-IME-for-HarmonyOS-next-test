@@ -93,6 +93,7 @@ export const LK_SCROLL: string = 'scroll';      // 候補バーを横にスク�
 export const LK_MENU: string = 'menu';          // 候補の長押しメニュー (x=open/cancel, i=候補番号)
 export const LK_SUBMODE: string = 'submode';    // 記号・絵文字・設定などのパネル切替 (x=パネル名)
 export const LK_SETTING: string = 'setting';    // 設定の変更 (r=項目, s=値)
+export const LK_PERF: string = 'perf';       // 速度の集計 (r=対象, x=件数と ms)
 export const LK_BRACKET: string = 'bracket';    // 閉じ括弧の保留を解いた/捨てた (s=閉じ括弧, x=きっかけ)
 
 // 確定の性質を表す補助タグ (entry.x に入る)。
@@ -111,8 +112,16 @@ const SECURE_PATTERNS: number[] = [7, 8, 9, 11];
 // 件数が増えたので、1.5.3 以前 (4件/800ms) より溜める件数を増やしてある。
 // 間隔を短めにしているのは、拡張プロセスが onDestroy を経ずに落とされたときの
 // 取りこぼしを抑えるため。
-const FLUSH_AT: number = 16;
-const FLUSH_MS: number = 1000;
+const FLUSH_AT: number = 48;
+const FLUSH_MS: number = 2500;
+
+// 上限チェック (statSync) を flush のたびに走らせない。1回の flush で増えるのは
+// 数KBなので、この回数ごとに見れば十分。
+const TRIM_CHECK_EVERY: number = 64;
+
+// 速度の集計をログへ吐く間隔 (サンプル数)。1件ずつ残すと件数が倍増するので
+// まとめて 1 行にする。
+const PERF_EVERY: number = 100;
 
 // 属性が届くまでの保留の上限。
 const MAX_PENDING: number = 128;
@@ -194,6 +203,13 @@ export class InputLog {
   // 直前の候補更新。同じ読み・同じ候補の更新が続くと (保留ローマ字だけが
   // 変わった打鍵など) 同じ行が並ぶだけなので記録しない。
   private static lastUpdateKey: string = '';
+  private static flushCount: number = 0;
+  // 速度の集計 (notePerf)。対象ごとに件数・合計・最大を持つだけ。
+  private static perfName: string = '';
+  private static perfCount: number = 0;
+  private static perfSum: number = 0;
+  private static perfMax: number = 0;
+  private static perfSlow: number = 0;
   // 直近の候補更新で、各候補を入れた段 (o 欄) と文節分割の内訳 (q 欄)。
   // 確定の記録にも同じものを付けるために持っておく。
   private static lastOrigins: Map<string, string> = new Map<string, string>();
@@ -412,6 +428,32 @@ export class InputLog {
     InputLog.push(LK_SUBMODE, '', '', -1, 0, mode);
   }
 
+  // 変換1回などの所要時間を溜めて、PERF_EVERY 件ごとに 1 行だけ残す。
+  // 実機 (とくに安い端末) で本当に何 ms かかっているかを、あとからログで
+  // 見るためのもの。記録そのものが重くならないよう、1件ずつは残さない。
+  static notePerf(name: string, ms: number): void {
+    if (!DEBUG_INPUT_LOG) { return; }
+    if (name !== InputLog.perfName) {
+      InputLog.perfName = name;
+      InputLog.perfCount = 0;
+      InputLog.perfSum = 0;
+      InputLog.perfMax = 0;
+      InputLog.perfSlow = 0;
+    }
+    InputLog.perfCount++;
+    InputLog.perfSum += ms;
+    if (ms > InputLog.perfMax) { InputLog.perfMax = ms; }
+    if (ms >= 16) { InputLog.perfSlow++; }
+    if (InputLog.perfCount >= PERF_EVERY) {
+      InputLog.push(LK_PERF, name, '', -1, InputLog.perfCount,
+        `avg=${(InputLog.perfSum / InputLog.perfCount).toFixed(1)} max=${InputLog.perfMax} slow16=${InputLog.perfSlow}`);
+      InputLog.perfCount = 0;
+      InputLog.perfSum = 0;
+      InputLog.perfMax = 0;
+      InputLog.perfSlow = 0;
+    }
+  }
+
   static recordSetting(name: string, value: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
     InputLog.push(LK_SETTING, name, value, -1, 0, '');
@@ -475,8 +517,9 @@ export class InputLog {
   static recordUpdate(reading: string, pending: string, convEnd: number, candidates: string[],
       segs: string[]): void {
     if (!DEBUG_INPUT_LOG) { return; }
-    const top = candidates.slice(0, CAND_LIMIT_UPDATE).join(',');
-    const key = `${reading}\u0001${convEnd}\u0001${top}`;
+    // 以前は候補40件を join して比べていたが、打鍵ごとに走るので
+    // 先頭候補と件数だけで十分 (同じ読みで先頭も件数も同じなら同じ列)。
+    const key = `${reading}\u0001${convEnd}\u0001${candidates.length}${candidates.length > 0 ? candidates[0] : ''}`;
     if (key === InputLog.lastUpdateKey) { return; }
     InputLog.lastUpdateKey = key;
     InputLog.push(LK_UPDATE, reading, pending, -1, candidates.length,
@@ -593,7 +636,8 @@ export class InputLog {
         fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.APPEND);
       fs.writeSync(file.fd, text);
       fs.closeSync(file);
-      InputLog.trim(path);
+      InputLog.flushCount++;
+      if (InputLog.flushCount % TRIM_CHECK_EVERY === 0) { InputLog.trim(path); }
     } catch (_e) {
       // 収集が失敗しても入力そのものは止めない。
     }
