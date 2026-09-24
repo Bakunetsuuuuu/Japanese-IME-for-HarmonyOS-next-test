@@ -1,0 +1,7 @@
+# 辞書などのバイナリ (rawfile/*.blob/.len/.base/.bin)。拡張子からは git が
+# バイナリと判定できないことがあり、テキスト扱いのままだと core.autocrlf で
+# 取り出すときに 0x0A の前へ 0x0D が足されて辞書が壊れる。
+entry/src/main/resources/rawfile/*.blob binary
+entry/src/main/resources/rawfile/*.len binary
+entry/src/main/resources/rawfile/*.base binary
+entry/src/main/resources/rawfile/*.bin binary

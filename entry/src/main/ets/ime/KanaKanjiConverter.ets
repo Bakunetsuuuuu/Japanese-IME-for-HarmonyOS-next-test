@@ -236,7 +236,19 @@ const KAOMOJI_MAP: Record<string, string[]> = {
   'よろしく': ['m(_ _)m', 'ヨロシク(´∀`)'],
 };
 
-const DICTIONARY: Record<string, string[]> = {
+// 手書きの基本辞書 (約2.6万読み)。
+//
+// 以前は const DICTIONARY としてモジュール読み込み時にそのまま JS の
+// オブジェクトになっていたが、それだけでヒープを約 5MB 使っていた
+// (安い端末で効く)。いまはここを「ソース」として残し、アプリは
+// tools/pack_inline_dict.js がビルド時に作るバイナリ (rawfile/inline_dict.*)
+// を読む。この関数を呼ぶのは Node で動かす評価ツールだけ
+// (KanaKanjiConverter.inlineEntry を参照)。
+//
+// 編集はこれまでどおりここで行えばよい。entry のビルド (hvigorfile.ts) が
+// 毎回 pack_inline_dict.js を呼び、中身が変わっていれば作り直す。
+export function buildInlineDictionary(): Record<string, string[]> {
+  const dict: Record<string, string[]> = {
   // ネットスラング・ミーム語彙 (2026年時点)。一般的な言語資源には出てこない
   // 表記なので、独自辞書ならではの手入れ対象。「淫夢語録」由来のフレーズは
   // 意味が薄れて一般的な驚き表現として定着したものだけに絞ってある
@@ -26174,6 +26186,8 @@ const DICTIONARY: Record<string, string[]> = {
   'わたぬき': ['綿貫'],
   'さいたまし': ['さいたま市'],
 };
+  return dict;
+}
 
 // track A (engine='custom') POS/conjugation layer, Phase 1: whole-word
 // godan/ichidan verb entries -> [leftClass, rightClass] for the
@@ -33984,6 +33998,42 @@ export class KanaKanjiConverter {
     KanaKanjiConverter.supplementaryDict.setRecord(dict);
   }
 
+  // 手書きの基本辞書 (buildInlineDictionary)。アプリではバイナリを読む。
+  // inlinePackedExpected はアプリ側が「バイナリを読むので、読み終わるまでは
+  // 空として扱え」と宣言するためのもの。立っていないとき (Node のツール) は
+  // 初回に関数からオブジェクトを作る。
+  private static inlineDict: PackedDict = new PackedDict();
+  private static inlineReady: boolean = false;
+  static inlinePackedExpected: boolean = false;
+
+  static loadInlineDictPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
+      valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
+    KanaKanjiConverter.dictGeneration++;
+    KanaKanjiConverter.inlineDict.setPacked(keyBlob, keyLens, keyBase,
+      valBlob, valLens, valBase, idx);
+    KanaKanjiConverter.inlineReady = true;
+  }
+
+  private static ensureInline(): boolean {
+    if (KanaKanjiConverter.inlineReady) { return true; }
+    if (KanaKanjiConverter.inlinePackedExpected) { return false; }
+    KanaKanjiConverter.inlineDict.setRecord(buildInlineDictionary());
+    KanaKanjiConverter.inlineReady = true;
+    return true;
+  }
+
+  // 手書き辞書の表記一覧 (無ければ undefined)。以前の DICTIONARY[kana]。
+  static inlineEntry(kana: string): string[] | undefined {
+    if (!KanaKanjiConverter.ensureInline()) { return undefined; }
+    return KanaKanjiConverter.inlineDict.get(kana);
+  }
+
+  // 載っているかだけ (表記一覧を組み立てない分だけ速い)。以前の !!DICTIONARY[kana]。
+  static inlineHas(kana: string): boolean {
+    if (!KanaKanjiConverter.ensureInline()) { return false; }
+    return KanaKanjiConverter.inlineDict.has(kana);
+  }
+
   static loadDictionaryPacked(keyBlob: Uint8Array, keyLens: Uint8Array, keyBase: Uint32Array,
       valBlob: Uint8Array, valLens: Uint8Array, valBase: Uint32Array, idx: Uint32Array): void {
     KanaKanjiConverter.dictGeneration++;
@@ -34220,7 +34270,7 @@ export class KanaKanjiConverter {
   }
 
   private static knownOutsidePacks(kana: string): boolean {
-    const e = DICTIONARY[kana];
+    const e = KanaKanjiConverter.inlineEntry(kana);
     if (e !== undefined && e.length > 0) { return true; }
     const u = KanaKanjiConverter.userDict[kana];
     if (u !== undefined && u.length > 0) { return true; }
@@ -34373,7 +34423,7 @@ export class KanaKanjiConverter {
       if (i >= 0) { tags.push(`${prefix}${tag}#${i + 1}`); }
     };
     const rawSources = (reading: string, prefix: string): void => {
-      at(DICTIONARY[reading], 'inline', prefix);
+      at(KanaKanjiConverter.inlineEntry(reading), 'inline', prefix);
       at(KanaKanjiConverter.supplementaryDict.get(reading), 'dict', prefix);
       at(KanaKanjiConverter.globalDict.get(reading), 'global', prefix);
       at(KanaKanjiConverter.packEntry(reading), 'pack', prefix);
@@ -35120,7 +35170,7 @@ export class KanaKanjiConverter {
     for (let idx = 0; idx < segs.length; idx++) {
       const seg = segs[idx];
       const g = KanaKanjiConverter.globalDict.get(seg);
-      const e = DICTIONARY[seg];
+      const e = KanaKanjiConverter.inlineEntry(seg);
       const s = KanaKanjiConverter.supplementaryDict.get(seg);
       const fw = KanaKanjiConverter.FUNCTION_WORDS[seg];
       const hasDictHit = !!((g && g.length > 0) || (e && e.length > 0) || (s && s.length > 0));
@@ -35715,7 +35765,7 @@ export class KanaKanjiConverter {
       }
     }
 
-    const entry = DICTIONARY[kana];
+    const entry = KanaKanjiConverter.inlineEntry(kana);
     // 語彙パック (設定で個別に有効化するニッチ語彙) は補助辞書と同じ扱いに
     // する -- entry/ext どちらのカスケードでも既存のマージ処理にそのまま
     // 乗る。有効なパックが無ければ packHit は undefined で ext は今まで
@@ -36129,7 +36179,7 @@ export class KanaKanjiConverter {
       // それをそのまま混ぜるとかな確定より先に出て悪化した (実機で確認)。
       // DICTIONARY/補助辞書に本当に載っている語だけを通すことで、雑音を
       // 混ぜずに実在のネットスラング等だけを拾う。
-      const registeredInTrackA = !!(DICTIONARY[kana]
+      const registeredInTrackA = !!(KanaKanjiConverter.inlineHas(kana)
         || KanaKanjiConverter.globalDict.has(kana)
         || KanaKanjiConverter.supplementaryDict.has(kana)
         || KanaKanjiConverter.packEntry(kana) !== undefined
@@ -36857,7 +36907,7 @@ export class KanaKanjiConverter {
     return !!(KanaKanjiConverter.globalDict.has(sub)
       || KanaKanjiConverter.userDict[sub]
       || KanaKanjiConverter.supplementaryDict.has(sub)
-      || DICTIONARY[sub]
+      || KanaKanjiConverter.inlineHas(sub)
       || KanaKanjiConverter.FW_CLASS_MAP[sub] !== undefined
       || KanaKanjiConverter.FUNCTION_WORDS[sub]);
   }
@@ -36939,7 +36989,7 @@ export class KanaKanjiConverter {
     if (KanaKanjiConverter.isMozcEngine()) {
       return KanaKanjiConverter.mozcReadings.has(reading);
     }
-    return !!(DICTIONARY[reading]
+    return !!(KanaKanjiConverter.inlineHas(reading)
       || KanaKanjiConverter.globalDict.has(reading)
       || KanaKanjiConverter.userDict[reading]
       || KanaKanjiConverter.supplementaryDict.has(reading));
@@ -37411,7 +37461,7 @@ export class KanaKanjiConverter {
   // machinery, so it needs its own guard -- see the FUNCTION_WORDS/
   // FW_CLASS_MAP check in applyHybridHintOverride below.
   private static getTrackAPreferredSurface(sub: string): string | undefined {
-    const d = DICTIONARY[sub];
+    const d = KanaKanjiConverter.inlineEntry(sub);
     if (d !== undefined && d.length > 0) { return d[0]; }
     return undefined;
   }

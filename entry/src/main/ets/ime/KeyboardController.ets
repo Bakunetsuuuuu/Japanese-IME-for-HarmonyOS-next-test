@@ -3795,6 +3795,7 @@ export class KeyboardController {
     this.applyColorMode();
     this.initPanel();
     this.registerListeners();
+    this.loadInlineDictionary();
     this.loadDictionary();
     this.loadGlobalDictionary();
     this.loadVocabPacks();
@@ -3860,6 +3861,18 @@ export class KeyboardController {
         // だけで表からは見えず、実際 KeyboardPage 側の重複ロードが
         // dict.json 削除後に無言で死んでいた。
         console.error('shuntiIME packed dict load failed: ' + name, JSON.stringify(e));
+      });
+  }
+
+  // 手書きの基本辞書 (KanaKanjiConverter.buildInlineDictionary のバイナリ版)。
+  // 先に「バイナリを読むので、読み終わるまで関数からは作るな」と宣言する。
+  // そうしないと読み込み前の最初の変換で 5MB のオブジェクトが作られてしまう。
+  private loadInlineDictionary(): void {
+    KanaKanjiConverter.inlinePackedExpected = true;
+    this.loadPackedDict('inline_dict',
+      (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
+       vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
+        KanaKanjiConverter.loadInlineDictPacked(kb, kl, kbase, vb, vl, vbase, idx);
       });
   }
 
