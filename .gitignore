@@ -28,3 +28,6 @@ build-profile.json5.release-backup
 .idea/
 entry/build/
 entry/.preview/
+
+# 端末ごとの SDK パス。個人のユーザー名が入るので追跡しない
+local.properties
