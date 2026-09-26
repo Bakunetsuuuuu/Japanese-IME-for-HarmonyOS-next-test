@@ -843,6 +843,11 @@ export class InputHandler {
   private hapticEnabled: boolean = false;
 
   setHapticEnabled(enabled: boolean): void {
+    // 使えないと分かっている端末ではオンにしない (トグルはグレーアウトしてあるが、念のためここでも止める)
+    if (enabled && (AppStorage.get<boolean>('hapticUnavailable') ?? false)) {
+      AppStorage.setOrCreate('hapticEnabled', false);
+      return;
+    }
     this.hapticEnabled = enabled;
     AppStorage.setOrCreate('hapticEnabled', enabled);
     if (this.imeContext) {
@@ -878,31 +883,60 @@ export class InputHandler {
   // 設定自体をグレーアウトしてほしい」)。OS が IME 拡張プロセスからの振動を
   // 許可していない場合はここでは分からないので、実際に鳴らそうとして初めて
   // 判明する従来の経路 (probeHaptic / markHapticUnavailable) も残してある。
+  //
+  // 効果の有無だけでは足りない: 振動できる端末でも、上に書いたとおり OS が
+  // キーボードのプロセスから振動サービスへの接続を禁じているので、この判定を
+  // 通ってしまい、効かないトグルをオンにできていた。そこで振動を「止める」
+  // 命令も送ってみる。止めるだけなので鳴らないが、振動サービスへの接続は
+  // 鳴らすときと同じなので、禁じられていればここで失敗して分かる
+  // (鳴っていないときに止めても、接続できれば成功で返る)。
   probeHapticSupportSilently(): void {
     try {
       if (!vibrator.isSupportEffectSync('haptic.clock.timer')) {
         this.markHapticUnavailable();
+        return;
       }
     } catch (_e) {
-      // 判定APIそのものが無い/失敗した端末では、従来どおり実際に鳴らして
-      // みるまで分からないものとして扱う (ここでグレーアウトはしない)。
+      // 判定APIそのものが無い/失敗した端末では、下の接続の確認に任せる。
+    }
+    try {
+      vibrator.stopVibration()
+        .then(() => {
+          console.info('shuntiIME haptic probe: vibrator reachable');
+        })
+        .catch((e: ESObject) => {
+          console.info('shuntiIME haptic probe: unavailable ' + JSON.stringify(e));
+          this.markHapticUnavailable();
+        });
+    } catch (e) {
+      console.info('shuntiIME haptic probe: unavailable (sync) ' + JSON.stringify(e));
+      this.markHapticUnavailable();
     }
   }
 
+  // startVibration は Promise で失敗を返すだけでなく、その場で例外を投げる
+  // 端末もある。以前は例外を受けていなかったので、投げられるとオフに戻す処理
+  // (markHapticUnavailable) まで届かず、効かないのにオンのまま残っていた。
   private probeHaptic(): void {
-    AppStorage.setOrCreate('hapticUnavailable', false);
-    // 1) プリセット効果。端末が用意している「カチッ」を借りる方式。
-    vibrator.startVibration({ type: 'preset', effectId: 'haptic.clock.timer', count: 1 },
-      { id: 0, usage: 'physicalFeedback' })
-      .then(() => { this.hapticMode = 1; })
-      .catch((_e1: ESObject) => {
-        // 2) 時間指定 + usage:'touch'。物理フィードバック扱いを避ける。
+    // 2) 時間指定 + usage:'touch'。物理フィードバック扱いを避ける。
+    const tryTime = (): void => {
+      try {
         vibrator.startVibration({ type: 'time', duration: 30 }, { id: 0, usage: 'touch' })
           .then(() => { this.hapticMode = 2; })
-          .catch((_e2: ESObject) => {
-            this.markHapticUnavailable();
-          });
-      });
+          .catch((_e2: ESObject) => { this.markHapticUnavailable(); });
+      } catch (_e) {
+        this.markHapticUnavailable();
+      }
+    };
+    // 1) プリセット効果。端末が用意している「カチッ」を借りる方式。
+    try {
+      vibrator.startVibration({ type: 'preset', effectId: 'haptic.clock.timer', count: 1 },
+        { id: 0, usage: 'physicalFeedback' })
+        .then(() => { this.hapticMode = 1; })
+        .catch((_e1: ESObject) => { tryTime(); });
+    } catch (_e) {
+      tryTime();
+    }
   }
 
   // どの方式でも鳴らせなかった。
@@ -1737,6 +1771,13 @@ export class InputHandler {
   // clipped to the conversion range (see splitAtConversionEnd). Shared by
   // updateCandidates and suppressCandidate so a deletion is always keyed on
   // exactly the reading the deleted candidate was offered for.
+  // 変換範囲を ◄ で縮めているか。範囲が 0 (全体) のときも、読みの長さちょうどのとき (かなを直接打つと
+  // handleDirectKana がそうする) も「縮めていない」。以前は 0 だけを見ていたので、フリックで打つと
+  // AI 変換の自動確定が一度も走らなかった。
+  private isRangeShrunk(composing: string): boolean {
+    return this.conversionEnd > 0 && this.conversionEnd < composing.length;
+  }
+
   private conversionTarget(): string {
     const composing = AppStorage.get<string>('composingText') ?? '';
     const rangeEnd = this.conversionEnd > 0 ? this.conversionEnd : composing.length;
@@ -2474,7 +2515,7 @@ export class InputHandler {
   private autoCommitFrozen(target: string, fk: string, fs: string): void {
     // 速く打つと、ここに来るまでに入力がもう進んでいる。固定した読みが頭に残っていれば確定してよい
     const composing = AppStorage.get<string>('composingText') ?? '';
-    if (fk.length === 0 || !composing.startsWith(fk) || !target.startsWith(fk) || this.conversionEnd !== 0) { return; }
+    if (fk.length === 0 || !composing.startsWith(fk) || !target.startsWith(fk) || this.isRangeShrunk(composing)) { return; }
     if ((AppStorage.get<string>('pendingRomaji') ?? '') !== '') { return; }
     if ((AppStorage.get<string>('inputState') ?? InputState.IDLE) !== InputState.COMPOSING) { return; }
     this.insertText(fs);
@@ -3146,7 +3187,7 @@ export class InputHandler {
       });
     }
     // 前の方が固定されたら、それを入力欄に確定して、残りだけを入力中に残す (長い入力でも変換中の文字列を短く保つ)
-    if (aiMode && AiConverter.frozenKana().length > 0 && this.conversionEnd === 0) {
+    if (aiMode && AiConverter.frozenKana().length > 0 && !this.isRangeShrunk(composing)) {
       const fk = AiConverter.frozenKana();
       const fs = AiConverter.frozenSurf();
       setTimeout(() => { this.autoCommitFrozen(target, fk, fs); }, 0);
