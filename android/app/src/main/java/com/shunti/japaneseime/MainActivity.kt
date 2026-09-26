@@ -32,6 +32,10 @@ class MainActivity : Activity() {
     private lateinit var col: LinearLayout
     private lateinit var step1: TextView
     private lateinit var step2: TextView
+    private lateinit var scroll: ScrollView
+    private lateinit var dictSection: View
+    private lateinit var dictReading: EditText
+    private lateinit var dictList: LinearLayout
     private val dp get() = resources.displayMetrics.density
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -42,7 +46,7 @@ class MainActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(px(20), px(16), px(20), px(32))
         }
-        val scroll = ScrollView(this).apply {
+        scroll = ScrollView(this).apply {
             addView(col)
             // 画面の端まで描く端末 (Android 15 以降) で、状態バーとナビゲーションバーに重ならないように
             setOnApplyWindowInsetsListener { v, insets ->
@@ -55,6 +59,21 @@ class MainActivity : Activity() {
         }
         setContentView(scroll)
         build()
+        jumpTo(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        jumpTo(intent)
+    }
+
+    /** キーボードのメニューの「辞書に登録」から来たときは、ユーザー辞書の所へ */
+    private fun jumpTo(intent: Intent?) {
+        if (intent?.getStringExtra("section") != "dict") return
+        scroll.post {
+            scroll.smoothScrollTo(0, dictSection.top)
+            dictReading.requestFocus()
+        }
     }
 
     override fun onResume() {
@@ -86,6 +105,18 @@ class MainActivity : Activity() {
             minLines = 3
             gravity = Gravity.TOP
         }, lp(top = 8))
+
+        section("入力")
+        col.addView(text("かなの配列", 14f, secondary = true))
+        col.addView(radios(listOf("フリック", "QWERTY (ローマ字)"), if (settings.kanaLayout == "QWERTY") 1 else 0) {
+            settings.kanaLayout = if (it == 1) "QWERTY" else "FLICK"
+        })
+        col.addView(text("英字の配列", 14f, secondary = true), lp(top = 8))
+        col.addView(radios(listOf("QWERTY", "フリック"), if (settings.alphaLayout == "FLICK") 1 else 0) {
+            settings.alphaLayout = if (it == 1) "FLICK" else "QWERTY"
+        })
+        col.addView(switch("あA キーで数字パッドにも切り替える", settings.numericPad) { settings.numericPad = it }, lp(top = 8))
+        col.addView(text("オンにすると、あA キーで 日本語 → 英字 → 数字 → 日本語 と回ります。", 12f, secondary = true))
 
         section("振動")
         val strength = radios(listOf("弱", "中", "強"), settings.hapticStrength) {
@@ -122,8 +153,38 @@ class MainActivity : Activity() {
                 override fun onStopTrackingTouch(s: SeekBar) {}
             })
         })
+        col.addView(slider("キーボードの幅", "%", Settings.WIDTH_MIN, 100, 5, settings.widthPercent) { settings.widthPercent = it }, lp(top = 8))
+        col.addView(slider("キーボードの位置 (0 = 左、50 = 真ん中、100 = 右)", "", 0, 100, 10, settings.offsetPercent) {
+            settings.offsetPercent = it
+        }, lp(top = 8))
+        col.addView(text("片手モード", 14f, secondary = true), lp(top = 12))
+        col.addView(radios(listOf("オフ", "左手", "右手"), listOf("off", "left", "right").indexOf(settings.oneHanded).coerceAtLeast(0)) {
+            settings.oneHanded = listOf("off", "left", "right")[it]
+            if (it != 0) settings.floating = false
+        })
+        col.addView(switch("フローティング (画面の上の好きな所に小さく出す)", settings.floating) { settings.floating = it }, lp(top = 8))
+        col.addView(text("フローティングは上端のつまみで動かせます。片手・フローティングは、キーボードの ⚙ からも切り替えられます。", 12f, secondary = true))
         col.addView(switch("フリックの上下左右の字を出す", settings.flickHints) { settings.flickHints = it }, lp(top = 8))
         col.addView(text("見た目の変更は、キーボードを次に開いたときに反映されます。", 12f, secondary = true))
+
+        section("ユーザー辞書")
+        dictSection = col.getChildAt(col.childCount - 1)
+        col.addView(text("読みを打ったとき、登録した単語を候補の先頭に出します。", 14f, secondary = true))
+        dictReading = EditText(this).apply { hint = "読み (ひらがな)" }
+        val dictWord = EditText(this).apply { hint = "単語" }
+        col.addView(dictReading)
+        col.addView(dictWord)
+        col.addView(button("登録") {
+            val ok = UserDict.get(this).add(dictReading.text.toString(), dictWord.text.toString())
+            if (ok) {
+                dictReading.setText("")
+                dictWord.setText("")
+                refreshDict()
+            }
+        })
+        dictList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        col.addView(dictList)
+        refreshDict()
 
         section("学習")
         col.addView(text("選んだ候補を覚えて、次から前に出します。覚えた中身はこの端末の中だけに保存します。", 14f, secondary = true))
@@ -138,14 +199,40 @@ class MainActivity : Activity() {
                 .show()
         })
 
+        section("応援する")
+        col.addView(text("shunti IME は無料です。気に入ったら、開発の応援をしてもらえるとうれしいです。", 14f, secondary = true))
+        col.addView(button("Buy Me a Coffee") { open("https://buymeacoffee.com/shunti") })
+        col.addView(button("GitHub Sponsors") { open("https://github.com/sponsors/shuntilettuce") })
+
         section("このアプリについて")
         val ver = packageManager.getPackageInfo(packageName, 0).versionName
         col.addView(text("バージョン $ver", 14f, secondary = true))
         col.addView(button("ライセンス") { showDoc("ライセンス", "licenses.txt") })
         col.addView(button("プライバシーポリシー") { showDoc("プライバシーポリシー", "privacy.txt") })
-        col.addView(button("ソースコード (GitHub)") {
-            startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next")))
-        })
+        col.addView(button("ソースコード (GitHub)") { open("https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next") })
+    }
+
+    private fun open(url: String) {
+        runCatching { startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url))) }
+    }
+
+    /** 登録した単語の一覧 (新しいものが上。それぞれ削除できる) */
+    private fun refreshDict() {
+        dictList.removeAllViews()
+        val dict = UserDict.get(this)
+        for (e in dict.list().asReversed()) {
+            val row = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            row.addView(text("${e.reading} → ${e.word}", 15f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            row.addView(button("削除") {
+                dict.remove(e)
+                refreshDict()
+            })
+            dictList.addView(row)
+        }
+        if (dict.list().isEmpty()) dictList.addView(text("まだ登録していません", 13f, secondary = true))
     }
 
     /** 手順の状態: 有効にしたか・選んでいるか (設定の画面から戻るたびに見直す) */
@@ -186,7 +273,10 @@ class MainActivity : Activity() {
         text = s
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sp)
         if (bold) typeface = Typeface.DEFAULT_BOLD
-        if (secondary) alpha = 0.7f
+        // 見出し・本文はテーマのはっきりした文字色、補足は薄い文字色
+        val attr = obtainStyledAttributes(intArrayOf(if (secondary) android.R.attr.textColorSecondary else android.R.attr.textColorPrimary))
+        attr.getColorStateList(0)?.let { setTextColor(it) }
+        attr.recycle()
         setPadding(0, px(4), 0, px(4))
     }
 
@@ -203,6 +293,29 @@ class MainActivity : Activity() {
         isChecked = on
         setPadding(0, px(8), 0, px(8))
         setOnCheckedChangeListener { _, v -> onChange(v) }
+    }
+
+    /** 目盛りつきのつまみ。値は min..max を step 刻み */
+    private fun slider(label: String, unit: String, min: Int, max: Int, step: Int, value: Int, onChange: (Int) -> Unit): View {
+        val box = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+        val t = text("", 14f, secondary = true)
+        fun show(v: Int) { t.text = "$label  $v$unit" }
+        show(value)
+        box.addView(t)
+        box.addView(SeekBar(this).apply {
+            this.max = (max - min) / step
+            progress = (value - min) / step
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(s: SeekBar, p: Int, fromUser: Boolean) {
+                    val v = min + p * step
+                    show(v)
+                    if (fromUser) onChange(v)
+                }
+                override fun onStartTrackingTouch(s: SeekBar) {}
+                override fun onStopTrackingTouch(s: SeekBar) {}
+            })
+        })
+        return box
     }
 
     private fun radios(labels: List<String>, selected: Int, onPick: (Int) -> Unit) = RadioGroup(this).apply {

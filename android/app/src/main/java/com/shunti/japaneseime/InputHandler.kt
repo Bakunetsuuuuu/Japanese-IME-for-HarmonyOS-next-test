@@ -14,11 +14,17 @@ import java.util.Calendar
 /**
  * 入力の状態と操作 (HarmonyOS 版 ime/KeyboardController.ets の InputHandler の、AI 変換で使う部分の移植)。
  * 関数名と状態の決まりは向こうと同じ。向こうとの違い:
- *  - 辞書を使う機能 (ハイブリッド変換・予測変換・文節の編集・ユーザー辞書) は持たない。変換は AI 変換だけ
+ *  - 辞書を使う機能 (ハイブリッド変換・予測変換・文節の編集) は持たない。変換は AI 変換だけ (+ ユーザー辞書)
  *  - 文脈は確定した文のかわりに、入力欄のカーソルの左をそのまま読む (Android では読めるので)
  *  - SELECTING (空白で候補を選んでいる) の間は、選んでいる候補を入力欄に出す
  */
-class InputHandler(private val host: Host, private val tables: Tables, private val learning: Learning) {
+class InputHandler(
+    private val host: Host,
+    private val tables: Tables,
+    private val learning: Learning,
+    private val settings: Settings,
+    private val userDict: UserDict,
+) {
 
     interface Host {
         val ic: InputConnection?
@@ -30,7 +36,7 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
 
     enum class InputState { IDLE, COMPOSING, SELECTING }
     enum class InputMode { HIRAGANA, ALPHANUMERIC }
-    enum class SubMode { KANA, NUMERIC, SYMBOL, EMOJI }
+    enum class SubMode { KANA, NUMERIC, SYMBOL, EMOJI, MENU }
 
     var inputState = InputState.IDLE
         private set
@@ -49,6 +55,10 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
     private var conversionEnd = 0                  // 0 = 読みの全体を変換。それ以外は先頭からこの字数だけ
     private var ctx = ""                           // 変換の文脈 (入力を始めたときのカーソルの左 + その後に確定した分)
     private val composingUndoStack = ArrayList<String>()
+    private val romaji = JapaneseConverter(tables.ROMAJI_TABLE)   // QWERTY でかなを打つとき
+
+    /** まだかなに決まっていないローマ字 (QWERTY) */
+    val pendingRomaji get() = romaji.pending()
 
     private class HostOp(val insert: Boolean, val text: String, val at: Int)
     private val hostUndoStack = ArrayList<HostOp>()
@@ -92,20 +102,46 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
             return
         }
         if (inputState == InputState.SELECTING) commitTopCandidate()
-        if (composingText.isEmpty()) {
-            ctx = host.ic?.getTextBeforeCursor(40, 0)?.toString() ?: ""
-            predictions = emptyList()
-        }
-        composingText += kana
+        beginIfIdle()
+        composingText += romaji.flushPending() + kana
         inputState = InputState.COMPOSING
         conversionEnd = 0
         updateCandidates()
     }
 
-    /** 英字のキー。英数モードでは打った字をそのまま入れる */
+    /** 入力を始めるとき: 文脈 (カーソルの左) を読み、確定の後の帯を消す */
+    private fun beginIfIdle() {
+        if (composingText.isEmpty() && romaji.pending().isEmpty()) {
+            ctx = host.ic?.getTextBeforeCursor(40, 0)?.toString() ?: ""
+            predictions = emptyList()
+        }
+    }
+
+    /**
+     * QWERTY のキー。英数モードでは打った字をそのまま入れる。かなモードではローマ字をかなにする
+     * (HarmonyOS 版 handleKeyPress と同じ: かなに決まった分を読みに足し、決まらない分は pendingRomaji に残す)
+     */
     fun handleKeyPress(key: String) {
-        commitPending()
-        insertText(key)
+        if (inputMode == InputMode.ALPHANUMERIC) {
+            commitPending()
+            insertText(key)
+            return
+        }
+        if (inputState == InputState.SELECTING) commitTopCandidate()
+        beginIfIdle()
+        val r = romaji.processKey(key)
+        composingText += r.committed
+        inputState = if (composingText.isNotEmpty() || r.pending.isNotEmpty()) InputState.COMPOSING else InputState.IDLE
+        conversionEnd = 0
+        updateCandidates()
+    }
+
+    /** 打ちかけのローマ字を読みに足す (n → ん にはならず、そのまま) */
+    private fun flushRomaji(): Boolean {
+        val p = romaji.flushPending()
+        if (p.isEmpty()) return false
+        composingText += p
+        return true
     }
 
     /** 小゛゜ キー: 最後の 1 文字を順に切り替える */
@@ -117,6 +153,7 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
     }
 
     fun handleSpaceKey() {
+        if (inputState == InputState.COMPOSING && flushRomaji()) updateCandidates()
         if (inputState == InputState.IDLE || composingText.isEmpty()) {
             insertText(if (inputMode == InputMode.ALPHANUMERIC) " " else "　")
             return
@@ -141,12 +178,14 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
                 host.render()
             }
             InputState.COMPOSING -> {
-                if (composingText.isNotEmpty()) {
+                if (romaji.pending().isNotEmpty()) {
+                    romaji.backspace()
+                } else if (composingText.isNotEmpty()) {
                     composingUndoStack.add(composingText.takeLast(1))
                     composingText = composingText.dropLast(1)
                 }
                 if (conversionEnd > composingText.length) conversionEnd = 0
-                if (composingText.isEmpty()) {
+                if (composingText.isEmpty() && romaji.pending().isEmpty()) {
                     inputState = InputState.IDLE
                     host.ic?.setComposingText("", 1)
                     host.ic?.finishComposingText()
@@ -197,6 +236,7 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
 
     /** かなのまま確定 */
     fun commitRaw() {
+        flushRomaji()
         if (composingText.isNotEmpty()) insertText(composingText)
         resetComposition()
     }
@@ -235,6 +275,7 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
     }
 
     private fun commitPending() {
+        flushRomaji()
         if (composingText.isNotEmpty()) insertText(composingText)
         resetComposition()
     }
@@ -269,7 +310,8 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
     }
 
     private fun resetComposition() {
-        if (composingText.isNotEmpty()) {
+        romaji.reset()
+        if (composingText.isNotEmpty() || inputState != InputState.IDLE) {
             host.ic?.setComposingText("", 1)
             host.ic?.finishComposingText()
         }
@@ -306,7 +348,7 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
         }
     }
 
-    /** あA キー: 日本語 → 英字 → 数字 → 日本語 */
+    /** あA キー: 日本語 → 英字 (→ 数字パッド。設定でオンのとき) → 日本語 (HarmonyOS 版 cycleInputMode と同じ) */
     fun cycleInputMode() {
         commitTopCandidate()
         when {
@@ -315,7 +357,8 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
                 subMode = SubMode.KANA
             }
             inputMode == InputMode.ALPHANUMERIC -> {
-                subMode = SubMode.NUMERIC
+                if (settings.numericPad) subMode = SubMode.NUMERIC
+                else inputMode = InputMode.HIRAGANA
             }
             else -> inputMode = InputMode.ALPHANUMERIC
         }
@@ -419,12 +462,13 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
             ic.setComposingText((candidates.getOrNull(selectedCandidateIndex) ?: "") + tail, 1)
             return
         }
+        val shown = composingText + romaji.pending()   // 打ちかけのローマ字も後ろに出す
         if (isRangeShrunk()) {
-            val s = SpannableString(composingText)
+            val s = SpannableString(shown)
             s.setSpan(BackgroundColorSpan(RANGE_BG), 0, conversionEnd, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             ic.setComposingText(s, 1)
         } else {
-            ic.setComposingText(composingText, 1)
+            ic.setComposingText(shown, 1)
         }
     }
 
@@ -448,6 +492,7 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
     fun updateCandidates() {
         if (composingText.isEmpty()) {
             candidates = emptyList()
+            showComposing()   // ローマ字の打ちかけだけのとき
             host.render()
             return
         }
@@ -471,6 +516,9 @@ class InputHandler(private val host: Host, private val tables: Tables, private v
         for (d in DateTimePredictor.predict(target, Calendar.getInstance()) + NumberFormatter.predict(target)) {
             if (d !in cands) cands.add(insAt++, d)
         }
+        // ユーザー辞書に登録した語は先頭に (HarmonyOS 版 withRegisteredWords と同じ)
+        val user = userDict.lookup(target)
+        if (user.isNotEmpty()) cands = ArrayList(user + cands.filter { it !in user })
         // 絵文字・顔文字は後ろに (HarmonyOS 版の辞書変換と同じ位置)
         for (e in (tables.EMOJI_MAP[target] ?: emptyList()) + (tables.KAOMOJI_MAP[target] ?: emptyList())) {
             if (e !in cands) cands.add(e)

@@ -21,6 +21,9 @@ const TABLES = {
   'ime/EmojiSuggest.ets': ['EMOJI_FOR_SURFACE'],
   'ime/KanaKanjiConverter.ets': ['EMOJI_MAP', 'KAOMOJI_MAP'],
   'ime/KeyboardController.ets': ['VARIANT_CYCLE'],
+  'ime/JapaneseConverter.ets': ['ROMAJI_TABLE'],
+  // QWERTY の配置。「元の名前:JSON での名前」(元の名前が一般的すぎるので付け替える)
+  'components/KeyboardView.ets': ['ROWS:QWERTY_ROWS', 'ROW1_ALPHANUMERIC:QWERTY_ROW1_ALPHANUMERIC', 'NUMBER_ROW:QWERTY_NUMBER_ROW'],
 };
 
 // start から、対応する閉じ括弧までの文字列 (文字列とコメントの中の括弧は数えない)
@@ -54,7 +57,10 @@ const ets = (file) => readFileSync(join(root, 'entry/src/main/ets', file), 'utf8
 const out = {};
 for (const [file, names] of Object.entries(TABLES)) {
   const src = ets(file);
-  for (const name of names) out[name] = (0, eval)(`(${literal(src, name)})`);
+  for (const spec of names) {
+    const [name, as = name] = spec.split(':');
+    out[as] = (0, eval)(`(${literal(src, name)})`);
+  }
 }
 // 語をつないで差別語になった候補を出さないための正規表現 (AiConverter.SLURS の `new RegExp(...)` の中身)
 {

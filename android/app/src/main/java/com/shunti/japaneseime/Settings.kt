@@ -36,6 +36,45 @@ class Settings(context: Context) {
         get() = p.getBoolean("flickHints", true)
         set(v) = p.edit().putBoolean("flickHints", v).apply()
 
+    /** かなの配列: "FLICK" (フリック) か "QWERTY" (ローマ字) */
+    var kanaLayout: String
+        get() = p.getString("kanaLayout", "FLICK") ?: "FLICK"
+        set(v) = p.edit().putString("kanaLayout", v).apply()
+
+    /** 英字の配列: "QWERTY" か "FLICK" */
+    var alphaLayout: String
+        get() = p.getString("alphaLayout", "QWERTY") ?: "QWERTY"
+        set(v) = p.edit().putString("alphaLayout", v).apply()
+
+    /** あA キーで 日本語 → 英字 → 数字パッド と回すか (HarmonyOS 版と同じく既定はオフ) */
+    var numericPad: Boolean
+        get() = p.getBoolean("numericPad", false)
+        set(v) = p.edit().putBoolean("numericPad", v).apply()
+
+    /** キーボードの幅 (100 = 画面いっぱい) と左右の位置 (0 = 左寄せ, 50 = 真ん中, 100 = 右寄せ) */
+    var widthPercent: Int
+        get() = p.getInt("widthPercent", 100)
+        set(v) = p.edit().putInt("widthPercent", v).apply()
+    var offsetPercent: Int
+        get() = p.getInt("offsetPercent", 50)
+        set(v) = p.edit().putInt("offsetPercent", v).apply()
+
+    /** 片手モード: "off" / "left" / "right" */
+    var oneHanded: String
+        get() = p.getString("oneHanded", "off") ?: "off"
+        set(v) = p.edit().putString("oneHanded", v).apply()
+
+    /** フローティング (画面の上の好きな所に小さく出す) と、その位置 (画面に対する割合) */
+    var floating: Boolean
+        get() = p.getBoolean("floating", false)
+        set(v) = p.edit().putBoolean("floating", v).apply()
+    var floatX: Float
+        get() = p.getFloat("floatX", 0.12f)
+        set(v) = p.edit().putFloat("floatX", v).apply()
+    var floatY: Float
+        get() = p.getFloat("floatY", 0.45f)
+        set(v) = p.edit().putFloat("floatY", v).apply()
+
     fun isDark(context: Context): Boolean = when (theme) {
         1 -> false
         2 -> true
@@ -47,6 +86,9 @@ class Settings(context: Context) {
     companion object {
         const val HEIGHT_MIN = 80
         const val HEIGHT_MAX = 130
+        const val WIDTH_MIN = 60
+        const val ONE_HAND_PERCENT = 80   // 片手モードの幅
+        const val FLOAT_PERCENT = 72      // フローティングの幅
     }
 }
 

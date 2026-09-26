@@ -36,6 +36,10 @@ class Tables private constructor(j: JSONObject) {
     val EMOJI_MAP = listMap(j.getJSONObject("EMOJI_MAP"))
     val KAOMOJI_MAP = listMap(j.getJSONObject("KAOMOJI_MAP"))
     val SLURS: Regex? = if (j.has("SLURS")) Regex(j.getString("SLURS")) else null
+    val ROMAJI_TABLE: Map<String, String> = j.getJSONObject("ROMAJI_TABLE").let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
+    val QWERTY_ROWS = pages(JSONArray().put(j.getJSONArray("QWERTY_ROWS")))[0]   // [q..p], [a..l, -], [z..m]
+    val QWERTY_ROW1_ALPHANUMERIC = strings(j.getJSONArray("QWERTY_ROW1_ALPHANUMERIC"))
+    val QWERTY_NUMBER_ROW = strings(j.getJSONArray("QWERTY_NUMBER_ROW"))
     val VARIANT_CYCLE: Map<String, String> = j.getJSONObject("VARIANT_CYCLE").let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
 
     companion object {

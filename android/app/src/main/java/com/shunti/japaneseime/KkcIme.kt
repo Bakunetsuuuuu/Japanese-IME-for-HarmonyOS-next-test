@@ -1,15 +1,22 @@
 package com.shunti.japaneseime
 
+import android.content.ClipboardManager
+import android.content.Intent
 import android.content.res.Configuration
+import android.graphics.Canvas
+import android.graphics.Paint
+import android.graphics.Rect
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
 import android.util.TypedValue
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.inputmethod.InputMethodManager
 import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
@@ -18,9 +25,11 @@ import java.util.concurrent.Executors
 
 /**
  * shunti IME (Android 版)。入力の決まりは HarmonyOS 版の移植 (InputHandler)、変換は AI 変換 (shuntelligence) だけ。
- * 画面: 上に候補の帯 (入力中は変換の候補、確定の後は絵文字の候補)、下にキーボード (または記号・絵文字の一覧)。
+ * 画面: 上に候補の帯 (入力中は変換の候補、確定の後は絵文字とクリップボード。右端に ⚙)、
+ * 下にキーボード (フリック / QWERTY / 記号・絵文字の一覧 / メニュー のどれか)。
+ * 置き方は 3 通り: 普通 (幅と左右の位置を設定で変えられる)・片手 (左か右に寄せる)・フローティング (画面の上の好きな所)。
  */
-class KkcIme : InputMethodService(), InputHandler.Host {
+class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
 
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -34,14 +43,24 @@ class KkcIme : InputMethodService(), InputHandler.Host {
     private lateinit var input: InputHandler
     private lateinit var settings: Settings
     private lateinit var haptics: Haptics
-    private var viewSig = ""   // 画面の作りに効く設定 (色・高さ・ヒント・縦横)。変わったら作り直す
+    private var viewSig = ""   // 画面の作りに効く設定。変わったら作り直す
 
     private var bar: LinearLayout? = null
     private var scroll: HorizontalScrollView? = null
-    private var keyboard: KeyboardView? = null
+    private var flick: KeyboardView? = null
+    private var qwerty: QwertyKeyboardView? = null
     private var palette: PaletteView? = null
-    private var root: LinearLayout? = null
+    private var menu: MenuView? = null
+    private var root: FrameLayout? = null
+    private var block: LinearLayout? = null   // 候補の帯 + キーボード (片手・フローティングで動かす塊)
     private var theme: Map<String, Int> = emptyMap()
+    private var navInset = 0   // 画面下のナビゲーションバーの高さ (最後に分かった値)
+
+    // クリップボード: 直近 8 件 (このプロセスの中だけ。保存しない)。fresh = まだ貼っていない新しいコピー
+    private val clips = ArrayList<String>()
+    private var freshClip: String? = null
+    private var clipboard: ClipboardManager? = null
+    private val clipListener = ClipboardManager.OnPrimaryClipChangedListener { readClip() }
 
     override val ic: InputConnection? get() = currentInputConnection
     override val editorInfo: EditorInfo? get() = currentInputEditorInfo
@@ -53,7 +72,8 @@ class KkcIme : InputMethodService(), InputHandler.Host {
         settings = Settings(this)
         haptics = Haptics(this)
         recent = RecentSymbols(getSharedPreferences("shunti", MODE_PRIVATE), tables.DEFAULT_RECENT_SYMBOLS)
-        input = InputHandler(this, tables, learning)
+        input = InputHandler(this, tables, learning, settings, UserDict.get(this))
+        clipboard = (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)?.also { it.addPrimaryClipChangedListener(clipListener) }
         // 辞書とモデルは裏で開く (開くまでは、かなとカタカナだけを出す)
         worker.execute {
             val e = Engine.open(assets, tables.SLURS)
@@ -66,6 +86,7 @@ class KkcIme : InputMethodService(), InputHandler.Host {
     }
 
     override fun onDestroy() {
+        clipboard?.removePrimaryClipChangedListener(clipListener)
         learning.save()
         recent.save()
         worker.execute { engine?.close() }
@@ -73,62 +94,217 @@ class KkcIme : InputMethodService(), InputHandler.Host {
         super.onDestroy()
     }
 
+    /** 横向きでも全画面の入力欄 (抽出画面) にしない */
+    override fun onEvaluateFullscreenMode() = false
+
+    // ---------------------------------------------------------------- 画面の組み立て
+    private fun sig() = listOf(
+        settings.isDark(this), settings.heightPercent, settings.flickHints, settings.widthPercent, settings.offsetPercent,
+        settings.oneHanded, settings.floating, resources.configuration.orientation,
+    ).joinToString("/")
+
     override fun onCreateInputView(): View {
         val dp = resources.displayMetrics.density
+        val screenW = resources.displayMetrics.widthPixels
         viewSig = sig()
         theme = if (settings.isDark(this)) tables.DARK_THEME else tables.LIGHT_THEME
+        val floating = settings.floating
+        val side = if (floating) "off" else settings.oneHanded
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        val scale = settings.heightPercent / 100f * (if (floating) 0.85f else 1f)
+        val rowH = (if (landscape) 44 else 56) * dp * scale
+        val kbH = rowH * 4 + 8 * dp
+
         val kb = KeyboardView(this, input, tables, ::tick).also {
             it.theme = theme
             it.hints = settings.flickHints
+            it.rowH = rowH
         }
-        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        kb.rowH = (if (landscape) 44 else 56) * dp * settings.heightPercent / 100f
-        val pal = PaletteView(this, input, tables, recent, ::tick).also {
-            it.theme = theme
-            it.totalH = kb.rowH * 4 + 8 * dp
+        val qw = QwertyKeyboardView(this, input, tables, ::tick).also { it.theme = theme; it.totalH = kbH }
+        val pal = PaletteView(this, input, tables, recent, ::tick).also { it.theme = theme; it.totalH = kbH }
+        val mv = MenuView(this, this, ::tick).also { it.theme = theme; it.totalH = kbH }
+        val frame = FrameLayout(this).apply {
+            addView(kb)
+            addView(qw)
+            addView(pal)
+            addView(mv)
         }
+        // 候補の帯 (横に動かせる) と、右端の ⚙
         val b = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
         val sc = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             addView(b)
         }
-        val frame = FrameLayout(this).apply {
-            addView(kb)
-            addView(pal)
+        val gear = TextView(this).apply {
+            text = "⚙"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
+            setTextColor(theme.getValue("textSecondary"))
+            gravity = Gravity.CENTER
+            setOnClickListener {
+                tick()
+                input.commitTopCandidate()
+                input.subMode = if (input.subMode == InputHandler.SubMode.MENU) InputHandler.SubMode.KANA else InputHandler.SubMode.MENU
+                render()
+            }
         }
-        val r = LinearLayout(this).apply {
+        val strip = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            addView(sc, LinearLayout.LayoutParams(0, (44 * dp).toInt(), 1f))
+            addView(gear, LinearLayout.LayoutParams((44 * dp).toInt(), (44 * dp).toInt()))
+        }
+        val blk = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.getValue("panelBg"))
-            addView(sc, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (44 * dp).toInt()))
+            if (floating) addView(DragHandle(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (20 * dp).toInt()))
+            addView(strip)
             addView(frame)
-            // 画面下のナビゲーションバー (ジェスチャーの線・キーボード切替) にキーが重ならないよう、その分だけ下を空ける
-            setOnApplyWindowInsetsListener { v, insets ->
+        }
+        val r = FrameLayout(this)
+        if (floating) {
+            // 窓は画面いっぱいの高さにして中は透明。触れられるのはキーボードの所だけ (onComputeInsets)
+            val w = screenW * Settings.FLOAT_PERCENT / 100
+            r.minimumHeight = resources.displayMetrics.heightPixels
+            blk.elevation = 8 * dp
+            r.addView(blk, FrameLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT))
+            r.post { placeFloating() }
+        } else {
+            val w = if (side != "off") screenW * Settings.ONE_HAND_PERCENT / 100 else screenW * settings.widthPercent / 100
+            val left = when (side) {
+                "left" -> 0
+                "right" -> screenW - w
+                else -> (screenW - w) * settings.offsetPercent / 100
+            }
+            r.setBackgroundColor(theme.getValue("panelBg"))
+            r.addView(blk, FrameLayout.LayoutParams(w, ViewGroup.LayoutParams.WRAP_CONTENT).apply { leftMargin = left })
+            if (side != "off") {
+                // 空いた側: 反対側へ寄せる・片手をやめる
+                val pane = LinearLayout(this).apply {
+                    orientation = LinearLayout.VERTICAL
+                    gravity = Gravity.CENTER
+                    addView(sideButton("⇆") { toggleOneHanded(if (side == "left") "right" else "left") })
+                    addView(sideButton("⤢") { toggleOneHanded(side) })
+                }
+                r.addView(pane, FrameLayout.LayoutParams(screenW - w, ViewGroup.LayoutParams.MATCH_PARENT).apply {
+                    leftMargin = if (side == "left") w else 0
+                })
+            }
+            // 画面下のナビゲーションバー (ジェスチャーの線・キーボード切替) にキーが重ならないよう、その分だけ下を空ける。
+            // 作り直した画面には余白の知らせが来ないことがあるので、最後に分かった値を先に当てておく
+            r.setPadding(0, 0, 0, navInset)
+            r.setOnApplyWindowInsetsListener { v, insets ->
                 val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom
                 else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
+                navInset = bottom
                 v.setPadding(0, 0, 0, bottom)
                 insets
             }
+            r.post { r.requestApplyInsets() }
         }
         bar = b
         scroll = sc
-        keyboard = kb
+        flick = kb
+        qwerty = qw
         palette = pal
+        menu = mv
+        block = blk
         root = r
         render()
         return r
     }
 
-    private fun sig() = "${settings.isDark(this)}/${settings.heightPercent}/${settings.flickHints}/${resources.configuration.orientation}"
+    private fun sideButton(label: String, onClick: () -> Unit) = TextView(this).apply {
+        val dp = resources.displayMetrics.density
+        text = label
+        setTextSize(TypedValue.COMPLEX_UNIT_SP, 22f)
+        setTextColor(theme.getValue("textSecondary"))
+        gravity = Gravity.CENTER
+        setPadding(0, (14 * dp).toInt(), 0, (14 * dp).toInt())
+        setOnClickListener {
+            tick()
+            onClick()
+        }
+    }
 
-    /** キーボードを開くたびに、設定画面で変えた見た目を反映する */
+    // ---------------------------------------------------------------- フローティング
+    /** 保存した位置 (画面に対する割合) に置く。画面からはみ出さないように */
+    private fun placeFloating() {
+        val r = root ?: return
+        val b = block ?: return
+        if (r.width == 0 || b.width == 0) {   // まだ大きさが決まっていない: 決まってから置く
+            r.post { placeFloating() }
+            return
+        }
+        val lp = b.layoutParams as FrameLayout.LayoutParams
+        lp.leftMargin = (settings.floatX * r.width).toInt().coerceIn(0, maxOf(0, r.width - b.width))
+        lp.topMargin = (settings.floatY * r.height).toInt().coerceIn(0, maxOf(0, r.height - b.height))
+        b.layoutParams = lp
+    }
+
+    /** フローティングの上端のつまみ: ドラッグで動かし、離したら位置を覚える */
+    private inner class DragHandle : View(this@KkcIme) {
+        private val p = Paint(Paint.ANTI_ALIAS_FLAG)
+        private var sx = 0f
+        private var sy = 0f
+        private var ml = 0
+        private var mt = 0
+
+        override fun onDraw(canvas: Canvas) {
+            val dp = resources.displayMetrics.density
+            p.color = theme.getValue("textSecondary")
+            canvas.drawRoundRect(width / 2f - 20 * dp, height / 2f - 2 * dp, width / 2f + 20 * dp, height / 2f + 2 * dp, 2 * dp, 2 * dp, p)
+        }
+
+        @android.annotation.SuppressLint("ClickableViewAccessibility")
+        override fun onTouchEvent(e: MotionEvent): Boolean {
+            val r = root ?: return true
+            val b = block ?: return true
+            val lp = b.layoutParams as FrameLayout.LayoutParams
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    sx = e.rawX; sy = e.rawY; ml = lp.leftMargin; mt = lp.topMargin
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    lp.leftMargin = (ml + (e.rawX - sx)).toInt().coerceIn(0, maxOf(0, r.width - b.width))
+                    lp.topMargin = (mt + (e.rawY - sy)).toInt().coerceIn(0, maxOf(0, r.height - b.height))
+                    b.layoutParams = lp
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (r.width > 0 && r.height > 0) {
+                        settings.floatX = lp.leftMargin.toFloat() / r.width
+                        settings.floatY = lp.topMargin.toFloat() / r.height
+                    }
+                }
+            }
+            return true
+        }
+    }
+
+    /**
+     * フローティングのとき: 入力欄のアプリは画面いっぱいのまま (キーボードの分を縮めない)、
+     * 触れて反応するのはキーボードの所だけにする。ほかは下のアプリに触れる
+     */
+    override fun onComputeInsets(outInsets: Insets) {
+        super.onComputeInsets(outInsets)
+        val r = root ?: return
+        val b = block ?: return
+        if (!settings.floating || r.height == 0) return
+        val loc = IntArray(2)
+        b.getLocationInWindow(loc)
+        val rootLoc = IntArray(2)
+        r.getLocationInWindow(rootLoc)
+        val bottom = rootLoc[1] + r.height
+        outInsets.contentTopInsets = bottom
+        outInsets.visibleTopInsets = bottom
+        outInsets.touchableInsets = Insets.TOUCHABLE_INSETS_REGION
+        outInsets.touchableRegion.set(Rect(loc[0], loc[1], loc[0] + b.width, loc[1] + b.height))
+    }
+
+    // ---------------------------------------------------------------- 入力欄の出入り
+    /** キーボードを開くたびに、設定画面で変えた見た目を反映し、新しいコピーがないか見る */
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         if (root != null && sig() != viewSig) setInputView(onCreateInputView())
-    }
-
-    /** キーに触れた瞬間の振動 (設定でオフにできる) */
-    private fun tick() {
-        if (settings.haptic) haptics.tick(settings.hapticStrength)
+        readClip()
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
@@ -142,6 +318,77 @@ class KkcIme : InputMethodService(), InputHandler.Host {
         recent.save()
     }
 
+    /** キーに触れた瞬間の振動 (設定でオフにできる) */
+    private fun tick() {
+        if (settings.haptic) haptics.tick(settings.hapticStrength)
+    }
+
+    // ---------------------------------------------------------------- クリップボード
+    private var lastClip: String? = null
+
+    /** 新しくコピーされた文を履歴に足し、候補の帯に貼り付けのチップを出す (読めるのは選ばれているキーボードのときだけ) */
+    private fun readClip() {
+        val t = runCatching { clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() }
+            .getOrNull()
+        if (t.isNullOrEmpty() || t == lastClip) return
+        lastClip = t
+        clips.remove(t)
+        clips.add(0, t)
+        while (clips.size > 8) clips.removeAt(clips.size - 1)
+        freshClip = t
+        render()
+    }
+
+    // ---------------------------------------------------------------- MenuView.Host
+    override val oneHanded get() = if (settings.floating) "off" else settings.oneHanded
+    override val floating get() = settings.floating
+    override val themeLabel get() = listOf("端末", "ライト", "ダーク")[settings.theme.coerceIn(0, 2)]
+    override val clipHistory: List<String> get() = clips
+
+    private fun rebuild() {
+        input.subMode = InputHandler.SubMode.KANA
+        setInputView(onCreateInputView())
+    }
+
+    override fun toggleOneHanded(side: String) {
+        settings.oneHanded = if (settings.oneHanded == side && !settings.floating) "off" else side
+        settings.floating = false
+        rebuild()
+    }
+
+    override fun toggleFloating() {
+        settings.floating = !settings.floating
+        rebuild()
+    }
+
+    override fun cycleTheme() {
+        settings.theme = (settings.theme + 1) % 3
+        setInputView(onCreateInputView())   // メニューを開いたまま色だけ変える
+    }
+
+    override fun openApp(section: String?) {
+        closeMenu()
+        startActivity(Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            if (section != null) putExtra("section", section)
+        })
+    }
+
+    override fun showImePicker() {
+        (getSystemService(INPUT_METHOD_SERVICE) as InputMethodManager).showInputMethodPicker()
+    }
+
+    override fun paste(text: String) {
+        input.insertText(text)
+        freshClip = null
+        closeMenu()
+    }
+
+    override fun closeMenu() {
+        input.subMode = InputHandler.SubMode.KANA
+        render()
+    }
+
     // ---------------------------------------------------------------- InputHandler.Host
     override fun post(r: () -> Unit) {
         main.post(r)
@@ -149,20 +396,36 @@ class KkcIme : InputMethodService(), InputHandler.Host {
 
     override fun render() {
         val b = bar ?: return
-        val palMode = input.subMode == InputHandler.SubMode.SYMBOL || input.subMode == InputHandler.SubMode.EMOJI
-        keyboard?.visibility = if (palMode) View.INVISIBLE else View.VISIBLE
-        palette?.visibility = if (palMode) View.VISIBLE else View.GONE
-        keyboard?.invalidate()
-        palette?.invalidate()
+        val sub = input.subMode
+        val showQwerty = sub == InputHandler.SubMode.KANA &&
+            (if (input.inputMode == InputHandler.InputMode.HIRAGANA) settings.kanaLayout else settings.alphaLayout) == "QWERTY"
+        val shown: View? = when (sub) {
+            InputHandler.SubMode.MENU -> menu
+            InputHandler.SubMode.SYMBOL, InputHandler.SubMode.EMOJI -> palette
+            else -> if (showQwerty) qwerty else flick
+        }
+        for (v in listOf(flick, qwerty, palette, menu)) {
+            v?.visibility = if (v === shown) View.VISIBLE else if (v === flick) View.INVISIBLE else View.GONE
+            if (v === shown) v?.invalidate()
+        }
 
-        val showCands = input.inputState != InputHandler.InputState.IDLE
-        val list = if (showCands) input.candidates else input.predictions
-        val sel = if (input.inputState == InputHandler.InputState.SELECTING) input.selectedCandidateIndex else -1
+        // 候補の帯: 入力中は変換の候補。そうでなければ貼り付け (新しいコピー) と、確定の後の絵文字
         val dp = resources.displayMetrics.density
+        val sel = if (input.inputState == InputHandler.InputState.SELECTING) input.selectedCandidateIndex else -1
+        val chips = ArrayList<Pair<String, () -> Unit>>()
+        if (input.inputState != InputHandler.InputState.IDLE) {
+            for ((i, s) in input.candidates.withIndex()) chips.add(s to { input.commitCandidate(i) })
+        } else {
+            freshClip?.let { c ->
+                val preview = c.replace('\n', ' ').let { if (it.length > 14) it.take(14) + "…" else it }
+                chips.add("📋 $preview" to { paste(c) })
+            }
+            for ((i, s) in input.predictions.withIndex()) chips.add(s to { input.commitPrediction(i) })
+        }
         b.removeAllViews()
-        for ((i, s) in list.withIndex()) {
+        for ((i, c) in chips.withIndex()) {
             val tv = TextView(this).apply {
-                text = s
+                text = c.first
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                 setTextColor(theme.getValue(if (i == sel) "onAccent" else "textPrimary"))
                 if (i == sel) setBackgroundColor(theme.getValue("accent"))
@@ -170,7 +433,7 @@ class KkcIme : InputMethodService(), InputHandler.Host {
                 gravity = Gravity.CENTER_VERTICAL
                 setOnClickListener {
                     tick()
-                    if (showCands) input.commitCandidate(i) else input.commitPrediction(i)
+                    c.second()
                 }
             }
             b.addView(tv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (44 * dp).toInt()))

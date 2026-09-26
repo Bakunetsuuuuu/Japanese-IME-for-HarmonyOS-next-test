@@ -26,6 +26,25 @@ class GoldenTest {
     }
 
     @Test
+    fun japaneseConverter() {
+        // 表は HarmonyOS 版から生成した資産 (テストは android/app で走る)
+        val t = JSONObject(java.io.File("src/main/assets/hmos_tables.json").readText()).getJSONObject("ROMAJI_TABLE")
+        val table = t.keys().asSequence().associateWith { t.getString(it) }
+        val cases = golden.getJSONArray("romaji")
+        for (i in 0 until cases.length()) {
+            val c = cases.getJSONArray(i)
+            val word = c.getString(0)
+            val want = c.getJSONArray(1)
+            val conv = JapaneseConverter(table)
+            for (k in word.indices) {
+                val r = conv.processKey(word[k].toString())
+                val w = want.getJSONArray(k)
+                assertEquals("$word の ${k + 1} 打目", w.getString(0) + "|" + w.getString(1), r.committed + "|" + r.pending)
+            }
+        }
+    }
+
+    @Test
     fun dateTimePredictor() {
         val cases = golden.getJSONArray("dates")
         for (i in 0 until cases.length()) {
