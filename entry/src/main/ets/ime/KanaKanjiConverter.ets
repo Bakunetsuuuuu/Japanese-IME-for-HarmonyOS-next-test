@@ -34953,6 +34953,11 @@ export class KanaKanjiConverter {
     return common.length > 0 ? [...common, ...rest] : cands;
   }
 
+  // AI 変換の文脈: 直前に確定した文を後ろから n 文字 (入力欄を移ると clearContext で消える)
+  static recentContext(n: number = 40): string {
+    return KanaKanjiConverter.contextBuffer.join('').slice(-n);
+  }
+
   static addContext(text: string): void {
     if (text.length === 0) { return; }
     KanaKanjiConverter.contextBuffer.push(text);

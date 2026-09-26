@@ -6,5 +6,7 @@
   "main": "",
   "author": "",
   "license": "",
-  "dependencies": {}
+  "dependencies": {
+    "libkkc.so": "file:./src/main/cpp/types/libkkc"
+  }
 }

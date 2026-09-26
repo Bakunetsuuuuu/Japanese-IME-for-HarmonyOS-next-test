@@ -137,6 +137,43 @@
 
 ---
 
+## 9. AI変換（shuntelligence / shuntorge）
+
+AI変換（設定 → 変換エンジン → AI変換）のモデル **shuntelligence**（`kkc_model.bin`）と辞書 **shuntorge**
+（`kkc_lex.bin`）は GitHub Releases に置き、`tools/fetch_ai_assets.py` で取得する（`tools/ai_assets.json` に SHA-256）。
+学習のコードと教材は公開していない。モデルの重みと推論のコード（`entry/src/main/cpp/`）だけを公開する。
+
+### モデル shuntelligence — CC BY 4.0
+
+約630万パラメータの Transformer。学習に使った文章（モデルの重みに文章そのものは含まれない。日本の著作権法第30条の4に基づく情報解析）:
+
+| 出典 | 条件 |
+|---|---|
+| おーぷん2ちゃんねる（open2ch-dialogue-corpus） | サイトが「投稿は著作権を放棄しパブリックドメイン」と明記。URL・顔文字・コピペ等を掃除し、差別語を含む投稿は除外、罵詈雑言は 1/10 に間引いた |
+| GitHub（codeparrot/github-code-clean） | MIT・Apache-2.0・BSD・ISC・Unlicense・CC0 のファイルのみ |
+| 青空文庫（globis-university/aozorabunko-clean） | 著作権の切れた作品のうち新字新仮名のもの |
+| Wikipedia日本語版 | CC BY-SA 4.0。本文の段落のみ |
+
+- 読み付けは SudachiPy + SudachiDict-core（Apache License 2.0）。
+- 書き分けの強化の参考: 文化庁「「異字同訓」の漢字の使い分け例（報告）」（平成26年、文化審議会国語分科会。
+  出典: 文化庁ホームページ。用例から語の組み合わせを取り出して加工し、同じ組み合わせを含む上記の文章を探す手掛かりに使用。
+  用例の文そのものは学習に入れていない）、Wikipedia「助数詞」の一覧（CC BY-SA 4.0、名詞と助数詞の組を同様に手掛かりとして使用）、
+  Wikidata（CC0、生き物の和名と分類）。
+- 評価だけに使ったもの（学習には入れていない）: AJIMEE-Bench（CC BY-SA 3.0）、開発者本人の入力ログ（集計値のみ）。
+
+### 辞書 shuntorge — 独自部分は MIT
+
+| 部分 | 出どころ | ライセンス |
+|---|---|---|
+| 語・品詞のつながりのコスト | mozc OSS 辞書（`src/data/dictionary_oss`） | BSD-3-Clause / IPAdic（NAIST）ライセンス / 沖縄辞書（パブリックドメイン） |
+| 記号・絵文字・顔文字 | mozc `symbol.tsv`・`emoji_data.tsv`・`emoticon.tsv` | BSD-3-Clause |
+| 手入れ済みの語 | shunti IME 独自辞書のネット語・バス行き先等の節（SudachiDict の読みと一致したもの） | MIT |
+| 地名 | shunti IME 地名パック（日本郵便 郵便番号データの町域名と照合） | MIT |
+| ネットの読み・技術用語・【速報】等の定型 | 本プロジェクトで作成（定型の読みは SudachiDict） | MIT / SudachiDict（Apache 2.0） |
+| 文章から拾った名詞 | 上記の教材に30回以上出て mozc に無い名詞（読みは SudachiDict） | MIT / SudachiDict（Apache 2.0） |
+
+差別語は辞書と候補から除いている。
+
 ## 未対応の推奨アクション
 
 1. ~~Wiktionary・JMdictの帰属表示をライセンス画面に追加~~ — 完了
