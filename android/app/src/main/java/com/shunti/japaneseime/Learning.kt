@@ -56,6 +56,16 @@ class Learning(private val file: File) {
         return boosted + cands.filter { (counts[it] ?: 0) == 0 }
     }
 
+    /** 予測: 読みが prefix で始まる、より長い読みで選んだ表記 (選んだ回数の多い順) */
+    fun completions(prefix: String, max: Int): List<String> {
+        if (prefix.isEmpty()) return emptyList()
+        return learned.entries.asSequence()
+            .filter { it.key.length > prefix.length && it.key.startsWith(prefix) }
+            .flatMap { e -> e.value.entries.map { it.key to it.value } }
+            .sortedByDescending { it.second }
+            .map { it.first }.distinct().take(max).toList()
+    }
+
     fun clear() {
         learned.clear()
         dirty = true

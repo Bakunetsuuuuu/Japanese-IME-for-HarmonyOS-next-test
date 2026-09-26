@@ -482,9 +482,13 @@ class InputHandler(
 
     private fun conversionTarget() = splitAtConversionEnd(composingText).first
 
-    /** 日付・数字の書き換え・絵文字は、その場の値や記号なので学習しない */
+    /** 予測 (読みの続きの語・決まり文句) で出した候補。読みが打った分より長いので、打った読みでは学習しない */
+    private var completions: Set<String> = emptySet()
+
+    /** 日付・数字の書き換え・絵文字・予測は、その場の値や記号や読みの違う語なので学習しない */
     private fun isNonLearningCandidate(reading: String, text: String): Boolean =
-        text in DateTimePredictor.predict(reading, Calendar.getInstance()) ||
+        text in completions ||
+            text in DateTimePredictor.predict(reading, Calendar.getInstance()) ||
             text in NumberFormatter.predict(reading) ||
             tables.EMOJI_MAP[reading]?.contains(text) == true ||
             tables.KAOMOJI_MAP[reading]?.contains(text) == true
@@ -516,6 +520,29 @@ class InputHandler(
         for (d in DateTimePredictor.predict(target, Calendar.getInstance()) + NumberFormatter.predict(target)) {
             if (d !in cands) cands.add(insAt++, d)
         }
+        preferGreetings(target, cands)
+        // 予測 (HarmonyOS 版と同じ置き方): 決まり文句は先頭に、読みの続く語 (学習した語・辞書の語) は 1 位の直後に 3 つまで
+        val comp = LinkedHashSet<String>()
+        val phrase = tables.PREDICTIVE_PHRASES.firstOrNull {
+            target.length >= it.minPrefix && target.length < it.reading.length && it.reading.startsWith(target)
+        }
+        if (target.length >= 2 && !isRangeShrunk()) {
+            comp.addAll(learning.completions(target, 2))
+            ai?.let { comp.addAll(it.complete(target, 4)) }
+        }
+        val inserted = ArrayList<String>()
+        var at = minOf(1, cands.size)
+        for (c in comp) {
+            if (inserted.size >= 3) break
+            if (c in cands || c == phrase?.text) continue
+            cands.add(at++, c)
+            inserted.add(c)
+        }
+        if (phrase != null) {
+            cands.remove(phrase.text)
+            cands.add(0, phrase.text)
+        }
+        completions = (inserted + listOfNotNull(phrase?.text)).toSet()
         // ユーザー辞書に登録した語は先頭に (HarmonyOS 版 withRegisteredWords と同じ)
         val user = userDict.lookup(target)
         if (user.isNotEmpty()) cands = ArrayList(user + cands.filter { it !in user })
@@ -529,6 +556,26 @@ class InputHandler(
         else selectedCandidateIndex = selectedCandidateIndex.coerceAtMost(cands.size - 1)
         showComposing()
         host.render()
+    }
+
+    /**
+     * 挨拶はかな書きを先に。モデルは「こんにちは」を「今日は」と書きがち (教材の読みの入れ替え「今日 → こんにち」の副作用)。
+     * こんにちは は読みのどこにあっても (きょうは も打っていなければ)、こんばんは は読みがそれだけのとき (今晩は寒い があるので)、
+     * 1 位の「今日は」「今晩は」をかな書きに直した候補を 1 位に置く (漢字の方も残す)
+     */
+    private fun preferGreetings(target: String, cands: MutableList<String>) {
+        val top = cands.firstOrNull() ?: return
+        val rules = listOf(
+            Triple("今日は", "こんにちは", "こんにちは" in target && "きょうは" !in target),
+            Triple("今晩は", "こんばんは", target.trimEnd('、', '。', '！', '？', '!', '?', 'ー', '〜') == "こんばんは"),
+        )
+        for ((kanji, kana, ok) in rules) {
+            if (!ok || kanji !in top) continue
+            val fixed = top.replace(kanji, kana)
+            cands.remove(fixed)
+            cands.add(0, fixed)
+            return
+        }
     }
 
     /**

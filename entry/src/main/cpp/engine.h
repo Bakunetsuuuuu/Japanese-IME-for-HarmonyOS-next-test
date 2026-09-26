@@ -42,3 +42,8 @@ KKC_API int kkc_last_segments(kkc_engine* e, int32_t* ends, int32_t* lens, int c
 KKC_API void kkc_user_clear(kkc_engine* e);
 KKC_API int kkc_user_add_like(kkc_engine* e, const uint16_t* r, int nr, const uint16_t* s, int ns, const uint16_t* tr, int ntr,
                               const uint16_t* ts, int nts, int bonus);
+
+// 予測: 読みが prefix で始まり、prefix より長い (長くても max_extra 字まで) 辞書の語の表記を、コストの低い (よく使う) 順に
+// 最大 maxout 個、0 区切りの UTF-16 で out に書く (こん → こんにちは・こんばんは・今度…)。返り値は数 (out が足りなければ -1)。
+// 辞書を読むだけなので、変換中の別のスレッドから呼んでもよい
+KKC_API int kkc_complete(kkc_engine* e, const uint16_t* prefix, int np, int max_extra, int maxout, uint16_t* out, int cap);

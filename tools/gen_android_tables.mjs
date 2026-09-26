@@ -22,6 +22,7 @@ const TABLES = {
   'ime/KanaKanjiConverter.ets': ['EMOJI_MAP', 'KAOMOJI_MAP'],
   'ime/KeyboardController.ets': ['VARIANT_CYCLE'],
   'ime/JapaneseConverter.ets': ['ROMAJI_TABLE'],
+  'ime/PredictivePhrases.ets': ['PREDICTIVE_PHRASES'],
   // QWERTY の配置。「元の名前:JSON での名前」(元の名前が一般的すぎるので付け替える)
   'components/KeyboardView.ets': ['ROWS:QWERTY_ROWS', 'ROW1_ALPHANUMERIC:QWERTY_ROW1_ALPHANUMERIC', 'NUMBER_ROW:QWERTY_NUMBER_ROW'],
 };

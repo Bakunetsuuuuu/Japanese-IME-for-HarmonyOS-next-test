@@ -897,3 +897,65 @@ KKC_API int kkc_user_add_like(kkc_engine* e, const uint16_t* r, int nr, const ui
     e->user.push_back({from16(r, size_t(nr)), from16(s, size_t(ns)), best->lid, best->rid, best->cost - bonus});
     return 1;
 }
+
+#ifndef KKC_FRAG
+#define KKC_FRAG 4500   // 「ね」へのつながりのコストがこれより高い語は、言い切れない形として予測に出さない
+#endif
+
+KKC_API int kkc_complete(kkc_engine* e, const uint16_t* prefix, int np, int max_extra, int maxout, uint16_t* out, int cap) {
+    if (!e || np <= 0) return 0;
+    const Lex& L = e->lex;
+    // 読みは辞書の中で並んでいるので、prefix で始まる読みの範囲の先頭を二分探索で探す
+    int lo = 0, hi = L.nread;
+    while (lo < hi) {
+        int mid = (lo + hi) >> 1;
+        const uint16_t* r = L.r_blob + L.r_off[mid];
+        int rn = int(L.r_off[mid + 1] - L.r_off[mid]);
+        int m = std::min(rn, np), c = 0;
+        for (int i = 0; i < m && !c; i++) c = int(r[i]) - int(prefix[i]);
+        if (!c) c = rn - np;
+        if (c < 0) lo = mid + 1; else hi = mid;
+    }
+    // 終助詞「ね」の左 ID (読み ね・表記 ね の語のうちコストのいちばん低いもの)
+    int ne_lid = 0;
+    {
+        const uint16_t ne = 0x306D;
+        uint32_t a, b;
+        int32_t best = INT32_MAX;
+        if (L.find(&ne, 1, a, b))
+            for (uint32_t j = a; j < b; j++)
+                if (L.ents[j].slen == 1 && L.s_blob[L.ents[j].soff] == ne && L.ents[j].cost < best) best = L.ents[j].cost, ne_lid = L.ents[j].lid;
+    }
+    struct C { int32_t cost; uint32_t ent; };
+    std::vector<C> found;
+    for (int i = lo, scanned = 0; i < L.nread && scanned < 50000; i++, scanned++) {
+        const uint16_t* r = L.r_blob + L.r_off[i];
+        int rn = int(L.r_off[i + 1] - L.r_off[i]);
+        if (rn < np || memcmp(r, prefix, size_t(np) * 2)) break;          // prefix で始まる読みが尽きた
+        if (rn == np || rn > np + max_extra) continue;                      // 打った読みそのもの・長すぎる読みは除く
+        // 順位は語のコスト (よく使う語ほど低い)。ただし後ろに終助詞「ね」が付きにくい語 (よろしけれ・いただい など
+        // 活用の途中の形) は、言い切れないので除く
+        for (uint32_t j = L.e_first[i]; j < L.e_first[i + 1]; j++)
+            if (L.conn(L.ents[j].rid, ne_lid) <= KKC_FRAG) found.push_back({L.ents[j].cost, j});
+    }
+    std::sort(found.begin(), found.end(), [](const C& a, const C& b) { return a.cost < b.cost; });
+    std::vector<uint16_t> buf;
+    std::unordered_set<ustr> seen;
+    int n = 0;
+    for (const C& c : found) {
+        if (n >= maxout) break;
+        const Ent& en = L.ents[c.ent];
+        ustr sf = from16(L.s_blob + en.soff, en.slen);
+        // 言い切れない形を表記の終わりで除く (ありゃ・すみゃ・ありがたかっ・よろしけれ・よろしかろ)
+        const char32_t last = sf.back();
+        if (last == U'ゃ' || last == U'ゅ' || last == U'ょ' || last == U'っ') continue;
+        if (sf.size() >= 2 && (sf.compare(sf.size() - 2, 2, U"けれ") == 0 || sf.compare(sf.size() - 2, 2, U"かろ") == 0)) continue;
+        if (!seen.insert(sf).second) continue;
+        to16(sf, buf);
+        buf.push_back(0);
+        n++;
+    }
+    if (int(buf.size()) > cap) return -1;
+    std::copy(buf.begin(), buf.end(), out);
+    return n;
+}

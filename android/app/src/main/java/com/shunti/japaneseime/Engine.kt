@@ -35,6 +35,10 @@ class Engine private constructor(private var handle: Long, private val slurs: Re
         return n
     }
 
+    /** 予測: 読みが prefix で始まり、あと maxExtra 字までの辞書の語を、よく使う順に最大 max 個 (辞書を読むだけ。どのスレッドからでもよい) */
+    fun complete(prefix: String, max: Int = 3, maxExtra: Int = 6): List<String> =
+        if (handle == 0L || prefix.isEmpty()) emptyList() else nativeComplete(handle, prefix, maxExtra, max).toList()
+
     fun setThreads(n: Int) {
         if (handle != 0L) nativeSetThreads(handle, n)
     }
@@ -62,6 +66,7 @@ class Engine private constructor(private var handle: Long, private val slurs: Re
         @JvmStatic private external fun nativeSetThreads(h: Long, n: Int)
         @JvmStatic private external fun nativeSegments(h: Long): IntArray
         @JvmStatic private external fun nativeUserClear(h: Long)
+        @JvmStatic private external fun nativeComplete(h: Long, prefix: String, maxExtra: Int, maxOut: Int): Array<String>
         @JvmStatic private external fun nativeUserAddLike(h: Long, r: String, s: String, tr: String, ts: String, bonus: Int): Int
     }
 }
