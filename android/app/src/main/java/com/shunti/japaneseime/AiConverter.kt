@@ -101,6 +101,9 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         }
     }
 
+    /** 予測 (読みの続く辞書の語) */
+    fun complete(prefix: String, max: Int) = engine.complete(prefix, max)
+
     /** 変換の結果の控えを捨てる (ユーザー辞書が変わって、同じ読みでも結果が変わるとき) */
     fun clearCache() {
         cache.clear()

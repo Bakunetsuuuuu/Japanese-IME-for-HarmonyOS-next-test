@@ -119,3 +119,27 @@ extern "C" JNIEXPORT jint JNICALL Java_com_shunti_japaneseime_Engine_nativeUserA
     for (int i = 0; i < 4; i++) env->ReleaseStringChars(strs[i], c[i]);
     return ok;
 }
+
+// 予測 (kkc_complete): 読みが prefix で始まる、より長い辞書の語 (よく使う順)。辞書を読むだけなので、どのスレッドから呼んでもよい
+extern "C" JNIEXPORT jobjectArray JNICALL Java_com_shunti_japaneseime_Engine_nativeComplete(JNIEnv* env, jclass, jlong p, jstring prefix,
+                                                                                          jint maxExtra, jint maxOut) {
+    auto* h = reinterpret_cast<Handle*>(p);
+    jclass str = env->FindClass("java/lang/String");
+    if (!h) return env->NewObjectArray(0, str, nullptr);
+    const jchar* c = env->GetStringChars(prefix, nullptr);
+    std::vector<uint16_t> out(1 << 12);
+    int n = kkc_complete(h->e, reinterpret_cast<const uint16_t*>(c), env->GetStringLength(prefix), maxExtra, maxOut, out.data(), int(out.size()));
+    env->ReleaseStringChars(prefix, c);
+    if (n < 0) n = 0;
+    jobjectArray arr = env->NewObjectArray(n, str, nullptr);
+    size_t st = 0;
+    for (int i = 0; i < n; i++) {
+        size_t e = st;
+        while (out[e]) e++;
+        jstring s = env->NewString(reinterpret_cast<const jchar*>(out.data() + st), jsize(e - st));
+        env->SetObjectArrayElement(arr, i, s);
+        env->DeleteLocalRef(s);
+        st = e + 1;
+    }
+    return arr;
+}

@@ -40,6 +40,12 @@ class Tables private constructor(j: JSONObject) {
     val QWERTY_ROWS = pages(JSONArray().put(j.getJSONArray("QWERTY_ROWS")))[0]   // [q..p], [a..l, -], [z..m]
     val QWERTY_ROW1_ALPHANUMERIC = strings(j.getJSONArray("QWERTY_ROW1_ALPHANUMERIC"))
     val QWERTY_NUMBER_ROW = strings(j.getJSONArray("QWERTY_NUMBER_ROW"))
+
+    /** 決まり文句の予測 (HarmonyOS 版 PredictivePhrases): 読み・表記・出し始める字数 */
+    class Phrase(val reading: String, val text: String, val minPrefix: Int)
+    val PREDICTIVE_PHRASES: List<Phrase> = j.getJSONArray("PREDICTIVE_PHRASES").let { a ->
+        List(a.length()) { a.getJSONObject(it).let { o -> Phrase(o.getString("reading"), o.getString("text"), o.getInt("minPrefix")) } }
+    }
     val VARIANT_CYCLE: Map<String, String> = j.getJSONObject("VARIANT_CYCLE").let { o -> o.keys().asSequence().associateWith { o.getString(it) } }
 
     companion object {
