@@ -37,6 +37,20 @@ AppGallery で「shunti Japanese IME」を検索してインストール後、�
 
 ---
 
+## Android 版（shunti IME）
+
+AI変換（shuntelligence）だけで打つ、Android 向けの軽い日本語キーボードです（Android 8.0 以上、64bit の ARM 端末）。**Huawei AppGallery** から APK で入手できます。インストール後にアプリを開くと、キーボードを有効にする手順が出ます。
+
+- 変換は端末の中だけで行い、**インターネット権限を持ちません**（辞書とモデルを APK に同梱）
+- フリック / QWERTY（ローマ字）をかな・英字それぞれで選べる、数字パッド、記号・絵文字の一覧
+- 予測（読みの続く語・決まり文句）、日付・時刻、数字の書き換え、学習、ユーザー辞書（品詞つき。登録した語は文の途中でも AI 変換が選ぶ）
+- クリップボードの貼り付け、片手モード（記号・空白の長押し）、フローティング（⚙ の長押し）、高さ・幅・位置の調整、ライト / ダーク
+- メモリは以前の JS 版の約 1/5（キーボードを選んだだけのとき 49MB、JS 版 160MB）
+
+入力の決まり・キーの配置・記号や絵文字の表は HarmonyOS 版と共有しています（詳しくは下の「開発 → Android 版」）。プライバシーポリシー: [日本語](https://shuntilettuce.github.io/Japanese-IME-for-HarmonyOS-next/privacy-policy-android) / [English](https://shuntilettuce.github.io/Japanese-IME-for-HarmonyOS-next/privacy-policy-android-en)
+
+---
+
 ## 機能一覧
 
 ### 入力方式
@@ -115,6 +129,26 @@ hvigorw assembleHap --mode module -p product=default -p buildMode=debug
 # 実機へインストール (デバッグ署名済みHAP)
 hdc install <出力されたhapファイル>
 ```
+
+### Android 版
+
+`android/` にあります。Android SDK と NDK 27.2.12479018 が要ります（CMake は不要。変換エンジン `entry/src/main/cpp/engine.cpp` を NDK の clang で直接ビルドする）。
+
+```bash
+# 辞書とモデル (HarmonyOS 版と共有。entry/src/main/resources/rawfile/kkc_*.bin に置かれ、ビルド時に APK に同梱される)
+python tools/fetch_ai_assets.py
+
+# デバッグビルド
+cd android && ./gradlew assembleDebug
+
+# リリースビルド (android/keystore.properties に署名の鍵を書いておく。git には入れない)
+cd android && ./gradlew assembleRelease
+```
+
+HarmonyOS 版のソースを正本として、Android 版に取り込むもの:
+
+- `node tools/gen_android_tables.mjs` — キーの配置・QWERTY・ローマ字・記号・絵文字・顔文字・決まり文句・色・差別語の除外・ライセンス表記を `android/app/src/main/assets/` に書き出す（HarmonyOS 版の表を直したら流し直す）
+- `node tools/gen_android_golden.mjs` — NumberFormatter / DateTimePredictor / JapaneseConverter を Node でそのまま動かした正解を作る。Kotlin 版は `./gradlew testDebugUnitTest`（GoldenTest）で一致を確かめる
 
 ### プロジェクト構成（抜粋）
 
