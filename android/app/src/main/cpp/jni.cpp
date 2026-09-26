@@ -96,3 +96,26 @@ extern "C" JNIEXPORT jintArray JNICALL Java_com_shunti_japaneseime_Engine_native
     if (!v.empty()) env->SetIntArrayRegion(a, 0, jsize(v.size()), v.data());
     return a;
 }
+
+// ユーザー辞書 (kkc_user_clear / kkc_user_add_like)。nativeConvert と同じスレッドで呼ぶ
+extern "C" JNIEXPORT void JNICALL Java_com_shunti_japaneseime_Engine_nativeUserClear(JNIEnv*, jclass, jlong p) {
+    auto* h = reinterpret_cast<Handle*>(p);
+    if (h) kkc_user_clear(h->e);
+}
+
+extern "C" JNIEXPORT jint JNICALL Java_com_shunti_japaneseime_Engine_nativeUserAddLike(JNIEnv* env, jclass, jlong p, jstring r, jstring s,
+                                                                                     jstring tr, jstring ts, jint bonus) {
+    auto* h = reinterpret_cast<Handle*>(p);
+    if (!h) return 0;
+    jstring strs[4] = {r, s, tr, ts};
+    const jchar* c[4];
+    jsize n[4];
+    for (int i = 0; i < 4; i++) {
+        c[i] = env->GetStringChars(strs[i], nullptr);
+        n[i] = env->GetStringLength(strs[i]);
+    }
+    auto u = [&](int i) { return reinterpret_cast<const uint16_t*>(c[i]); };
+    int ok = kkc_user_add_like(h->e, u(0), n[0], u(1), n[1], u(2), n[2], u(3), n[3], bonus);
+    for (int i = 0; i < 4; i++) env->ReleaseStringChars(strs[i], c[i]);
+    return ok;
+}

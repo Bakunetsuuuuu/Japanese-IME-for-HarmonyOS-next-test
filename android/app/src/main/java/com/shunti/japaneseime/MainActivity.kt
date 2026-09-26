@@ -169,19 +169,37 @@ class MainActivity : Activity() {
 
         section("ユーザー辞書")
         dictSection = col.getChildAt(col.childCount - 1)
-        col.addView(text("読みを打ったとき、登録した単語を候補の先頭に出します。", 14f, secondary = true))
+        col.addView(text(
+            "登録した単語は、AI 変換が文の中でもほかの語と比べて選びます (しゅんてぃはすごい → shuntiはすごい)。" +
+                "品詞を選ぶと、動詞・形容詞は活用した形 (ググれば・ググった) でも変換されます。読みがちょうど一致したときは候補の先頭に出ます。",
+            14f, secondary = true,
+        ))
         dictReading = EditText(this).apply { hint = "読み (ひらがな)" }
         val dictWord = EditText(this).apply { hint = "単語" }
         col.addView(dictReading)
         col.addView(dictWord)
+        val posKeys = UserDict.POS_LABELS.keys.toList()
+        var pos = "noun"
+        var group = "godan"
+        val groupRow = radios(listOf("五段 (書く・ググる)", "一段 (食べる)"), 0) { group = if (it == 1) "ichidan" else "godan" }
+        groupRow.visibility = View.GONE
+        col.addView(text("品詞", 14f, secondary = true), lp(top = 8))
+        col.addView(radios(UserDict.POS_LABELS.values.toList(), 0) {
+            pos = posKeys[it]
+            groupRow.visibility = if (pos == "verb") View.VISIBLE else View.GONE
+        })
+        col.addView(groupRow)
+        val dictError = text("", 13f, secondary = true)
         col.addView(button("登録") {
-            val ok = UserDict.get(this).add(dictReading.text.toString(), dictWord.text.toString())
-            if (ok) {
+            val err = UserDict.get(this).add(dictReading.text.toString(), dictWord.text.toString(), pos, group)
+            dictError.text = err ?: ""
+            if (err == null) {
                 dictReading.setText("")
                 dictWord.setText("")
                 refreshDict()
             }
         })
+        col.addView(dictError)
         dictList = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         col.addView(dictList)
         refreshDict()
@@ -225,7 +243,9 @@ class MainActivity : Activity() {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
             }
-            row.addView(text("${e.reading} → ${e.word}", 15f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            val posLabel = UserDict.POS_LABELS[e.pos] ?: "名詞"
+            val g = if (e.pos == "verb") (if (e.group == "ichidan") "・一段" else "・五段") else ""
+            row.addView(text("${e.reading} → ${e.word}  ($posLabel$g)", 15f), LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             row.addView(button("削除") {
                 dict.remove(e)
                 refreshDict()

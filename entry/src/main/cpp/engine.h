@@ -34,3 +34,11 @@ KKC_API int kkc_last_scores(kkc_engine* e, float* u, int cap);
 // 直前の kkc_convert の 1 位の候補の語の区切り。ends[i] = i 語目の読みの終わりの位置 (読みの UTF-16 の字数)、
 // lens[i] = i 語目の表記の長さ (UTF-16)。返り値は語の数。長い入力で「前の方を固定して後ろだけ変換する」ために使う
 KKC_API int kkc_last_segments(kkc_engine* e, int32_t* ends, int32_t* lens, int cap);
+
+// ユーザー辞書。登録した語を辞書の語と同じく網に入れ、モデルが文脈で採点する (読みが文の途中に出てきても候補になる)。
+// 品詞の左右 ID とコストは、辞書にある「同じ品詞・同じ活用の形の代表語」(読み tr・表記 ts) から写す
+// (例: 登録語 ぐぐら/ググら の代表に はしら/走ら)。コストは代表語より bonus だけ下げる (選ばれやすくする)。
+// 代表語が辞書に無ければ足さずに 0 を返す。kkc_convert と同じスレッドで呼ぶ
+KKC_API void kkc_user_clear(kkc_engine* e);
+KKC_API int kkc_user_add_like(kkc_engine* e, const uint16_t* r, int nr, const uint16_t* s, int ns, const uint16_t* tr, int ntr,
+                              const uint16_t* ts, int nts, int bonus);
