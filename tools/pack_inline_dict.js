@@ -100,7 +100,8 @@ function verify(dict) {
 }
 
 function main() {
-  const src = fs.readFileSync(SRC, 'utf8');
+  // Windows で core.autocrlf=true だと作業ツリーは CRLF になる。HEAD の照合とハッシュが改行の違いでずれないよう LF に揃える
+  const src = fs.readFileSync(SRC, 'utf8').replace(/\r\n/g, '\n');
   const literal = extractLiteral(src);
   const hash = crypto.createHash('sha1').update(literal).digest('hex');
   const outputs = ['.keys.blob', '.keys.len', '.keys.base', '.vals.blob', '.vals.len', '.vals.base', '.idx.bin']
