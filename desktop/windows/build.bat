@@ -16,6 +16,9 @@ rem dictionary and model (copied only when changed)
 xcopy /D /Y /Q "%ROOT%\entry\src\main\resources\rawfile\kkc_lex.bin" "%DIST%\" >nul
 xcopy /D /Y /Q "%ROOT%\entry\src\main\resources\rawfile\kkc_model.bin" "%DIST%\" >nul
 copy /Y "%HERE%install.ps1" "%DIST%\" >nul
+copy /Y "%HERE%install.bat" "%DIST%\" >nul
+copy /Y "%HERE%uninstall.bat" "%DIST%\" >nul
+copy /Y "%HERE%README.txt" "%DIST%\" >nul
 copy /Y "%HERE%LICENSE.txt" "%DIST%\" >nul
 echo built: %DIST%
 exit /b 0
