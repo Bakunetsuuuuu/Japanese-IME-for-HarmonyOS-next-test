@@ -16,8 +16,13 @@ import android.view.View
  * 配置の表は Tables (HarmonyOS 版から生成)。描画も当たり判定も自前。
  */
 @SuppressLint("ViewConstructor")
-class QwertyKeyboardView(context: Context, private val h: InputHandler, private val tables: Tables, private val haptic: () -> Unit) :
-    View(context) {
+class QwertyKeyboardView(
+    context: Context,
+    private val h: InputHandler,
+    private val tables: Tables,
+    private val haptic: () -> Unit,
+    private val special: (String) -> Unit,   // 長押しの操作 ("onehand-left" / "onehand-right")
+) : View(context) {
 
     var theme: Map<String, Int> = tables.LIGHT_THEME
         set(v) { field = v; invalidate() }
@@ -111,25 +116,33 @@ class QwertyKeyboardView(context: Context, private val h: InputHandler, private 
             MotionEvent.ACTION_DOWN -> {
                 pressed = keyAt(e.x, e.y)
                 haptic()
-                if (pressed?.action == "del") startRepeat { h.handleBackspace() }
+                longFired = false
+                when (pressed?.action) {
+                    "del" -> startRepeat { h.handleBackspace() }
+                    "symbol" -> armLong("onehand-left")    // 長押しで片手 (左)。もう一度で元に戻る
+                    "space" -> armLong("onehand-right")    // 長押しで片手 (右)
+                }
                 invalidate()
             }
             MotionEvent.ACTION_MOVE -> {
                 // 押したまま隣のキーへずらしたら、離した所のキーにする (打ち間違いを直せる)
                 val k = keyAt(e.x, e.y)
                 if (k != null && k !== pressed && pressed?.action != "del") {
+                    cancelLong()
                     pressed = k
                     invalidate()
                 }
             }
             MotionEvent.ACTION_UP -> {
                 stopRepeat()
-                pressed?.let { press(it) }
+                cancelLong()
+                if (!longFired) pressed?.let { press(it) }
                 pressed = null
                 invalidate()
             }
             MotionEvent.ACTION_CANCEL -> {
                 stopRepeat()
+                cancelLong()
                 pressed = null
                 invalidate()
             }
@@ -163,6 +176,24 @@ class QwertyKeyboardView(context: Context, private val h: InputHandler, private 
                 h.updateView()
             }
         }
+    }
+
+    private var longFired = false
+    private var longPress: Runnable? = null
+
+    private fun armLong(action: String) {
+        val r = Runnable {
+            longFired = true
+            haptic()
+            special(action)
+        }
+        longPress = r
+        timers.postDelayed(r, KeyboardView.LONG_MS)
+    }
+
+    private fun cancelLong() {
+        longPress?.let { timers.removeCallbacks(it) }
+        longPress = null
     }
 
     private fun startRepeat(action: () -> Unit) {

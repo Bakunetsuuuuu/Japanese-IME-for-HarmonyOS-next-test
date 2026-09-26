@@ -17,7 +17,13 @@ import kotlin.math.abs
  * 描画も当たり判定も自前 (部品を使わない。軽さ優先)。
  */
 @SuppressLint("ViewConstructor")
-class KeyboardView(context: Context, private val h: InputHandler, private val tables: Tables, private val haptic: () -> Unit) : View(context) {
+class KeyboardView(
+    context: Context,
+    private val h: InputHandler,
+    private val tables: Tables,
+    private val haptic: () -> Unit,
+    private val special: (String) -> Unit,   // 長押しの操作 ("onehand-left" / "onehand-right")
+) : View(context) {
 
     var theme: Map<String, Int> = tables.LIGHT_THEME
         set(v) { field = v; applyTheme(); invalidate() }
@@ -165,6 +171,7 @@ class KeyboardView(context: Context, private val h: InputHandler, private val ta
             }
             MotionEvent.ACTION_MOVE -> {
                 val d = dir(e.x - startX, e.y - startY)
+                if (d != 0) cancelLong()   // 指をずらしたら長押しではない
                 if (d != flickDir) {
                     flickDir = d
                     invalidate()
@@ -172,13 +179,15 @@ class KeyboardView(context: Context, private val h: InputHandler, private val ta
             }
             MotionEvent.ACTION_UP -> {
                 stopRepeat()
-                if (activeRow >= 0) onUp(activeRow, activeCol, dir(e.x - startX, e.y - startY))
+                cancelLong()
+                if (activeRow >= 0 && !longFired) onUp(activeRow, activeCol, dir(e.x - startX, e.y - startY))
                 activeRow = -1
                 activeCol = -1
                 invalidate()
             }
             MotionEvent.ACTION_CANCEL -> {
                 stopRepeat()
+                cancelLong()
                 activeRow = -1
                 activeCol = -1
                 invalidate()
@@ -187,8 +196,32 @@ class KeyboardView(context: Context, private val h: InputHandler, private val ta
         return true
     }
 
-    /** 押した瞬間に動くキー: ⌫ と ◀ ▶ (押し続けると繰り返す) */
+    // 長押し: 記号 → 片手 (左)、空白 → 片手 (右)。もう一度で元に戻る (HarmonyOS 版と同じキー)
+    private var longFired = false
+    private var longPress: Runnable? = null
+
+    private fun armLong(action: String) {
+        val r = Runnable {
+            longFired = true
+            haptic()
+            special(action)
+        }
+        longPress = r
+        timers.postDelayed(r, LONG_MS)
+    }
+
+    private fun cancelLong() {
+        longPress?.let { timers.removeCallbacks(it) }
+        longPress = null
+    }
+
+    /** 押した瞬間に動くキー: ⌫ と ◀ ▶ (押し続けると繰り返す)。記号・空白は長押しを待つ */
     private fun onDown(r: Int, c: Int) {
+        longFired = false
+        when {
+            c == 0 && r == 2 -> armLong("onehand-left")
+            c == 4 && r == 2 -> armLong("onehand-right")
+        }
         when {
             c == 4 && r == 0 -> startRepeat(500, 100, 100) { h.handleBackspace() }
             c == 0 && r == 1 -> startRepeat(400, 110, 40) { h.handleCursorLeft() }
@@ -270,6 +303,7 @@ class KeyboardView(context: Context, private val h: InputHandler, private val ta
     }
 
     companion object {
+        const val LONG_MS = 450L
         private val ASCII_PUNCT = mapOf("、" to ",", "。" to ".", "！" to "!", "？" to "?", "…" to "...")
     }
 }

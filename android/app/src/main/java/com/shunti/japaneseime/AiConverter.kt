@@ -101,6 +101,11 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         }
     }
 
+    /** 変換の結果の控えを捨てる (ユーザー辞書が変わって、同じ読みでも結果が変わるとき) */
+    fun clearCache() {
+        cache.clear()
+    }
+
     // ---- 裏のスレッドでの変換 ----
     private val cache = HashMap<String, Engine.Result>()
     private var inflight = false

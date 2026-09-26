@@ -23,6 +23,18 @@ class Engine private constructor(private var handle: Long, private val slurs: Re
         return Result(cands, IntArray(n) { seg[2 * it] }, IntArray(n) { seg[2 * it + 1] })
     }
 
+    /**
+     * ユーザー辞書の語を変換の網に入れ直す (前の分は消す)。forms は UserDict.engineForms() の、読み・表記と代表語の組。
+     * 代表語から品詞とコストを写し、そこから bonus だけ選ばれやすくする。足せた数を返す。convert と同じスレッドで呼ぶ
+     */
+    fun setUserWords(forms: List<UserDict.Form>, bonus: Int = 800): Int {
+        if (handle == 0L) return 0
+        nativeUserClear(handle)
+        var n = 0
+        for (f in forms) n += nativeUserAddLike(handle, f.reading, f.surface, f.tmplReading, f.tmplSurface, bonus)
+        return n
+    }
+
     fun setThreads(n: Int) {
         if (handle != 0L) nativeSetThreads(handle, n)
     }
@@ -49,5 +61,7 @@ class Engine private constructor(private var handle: Long, private val slurs: Re
         @JvmStatic private external fun nativeConvert(h: Long, ctx: String, kana: String, max: Int, model: Boolean, times: DoubleArray?): Array<String>
         @JvmStatic private external fun nativeSetThreads(h: Long, n: Int)
         @JvmStatic private external fun nativeSegments(h: Long): IntArray
+        @JvmStatic private external fun nativeUserClear(h: Long)
+        @JvmStatic private external fun nativeUserAddLike(h: Long, r: String, s: String, tr: String, ts: String, bonus: Int): Int
     }
 }

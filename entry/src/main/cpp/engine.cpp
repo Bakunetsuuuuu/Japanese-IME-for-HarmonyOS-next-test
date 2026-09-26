@@ -42,6 +42,9 @@ static_assert(sizeof(Ent) == 16, "Ent");
 
 struct Edge { int s, e; ustr surf; int32_t lid, rid, cost; Kind kind; };
 
+// ユーザー辞書の語 (読み・表記・品詞の左右 ID・コスト)。辞書の語と同じく網に入れ、モデルが文脈で採点する
+struct UserWord { ustr r, s; int32_t lid, rid, cost; };
+
 inline bool is_kana(char32_t c) { return (c >= 0x3041 && c <= 0x3096) || c == 0x30FC || c == 0x3094; }
 inline char32_t kata(char32_t c) { return (c >= 0x3041 && c <= 0x3096) ? c + 0x60 : c; }
 ustr to_kata(const ustr& s) { ustr o = s; for (auto& c : o) c = kata(c); return o; }
@@ -284,7 +287,7 @@ void special_edges(const Lex& L, const ustr& r, std::vector<Edge>& out) {
     }
 }
 
-std::vector<Edge> edges(const Lex& L, const ustr& r) {
+std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>* user = nullptr) {
     std::vector<Edge> out;
     int n = int(r.size());
     std::vector<uint16_t> key;
@@ -307,6 +310,14 @@ std::vector<Edge> edges(const Lex& L, const ustr& r) {
             } else if (e - s <= 12) {
                 out.push_back({s, e, to_kata(r.substr(s, e - s)), L.noun, L.noun, L.kata + L.kata_per * (e - s), K_KATA});
             }
+        }
+    }
+    // ユーザー辞書: 読みが現れる所すべてに辞書の語として置く
+    if (user) {
+        for (const UserWord& w : *user) {
+            if (w.r.empty()) continue;
+            for (size_t i = r.find(w.r); i != ustr::npos; i = r.find(w.r, i + 1))
+                out.push_back({int(i), int(i + w.r.size()), w.s, w.lid, w.rid, w.cost, K_DICT});
         }
     }
     std::vector<Edge> num;
@@ -501,6 +512,7 @@ struct kkc_engine {
     std::vector<float> K;
     std::vector<float> last_u;
     std::vector<std::pair<int, int>> last_segs;   // 直前の変換の 1 位の語の区切り
+    std::vector<UserWord> user;                   // ユーザー辞書の語 (kkc_user_add_like で足す)
     // 作業用
     std::vector<float> x, xn, qkv, att, tmp, ffb, h;
 };
@@ -799,7 +811,7 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
     auto t0 = std::chrono::steady_clock::now();
     ustr r = from16(kana, size_t(nk));
     const int n = int(r.size());
-    std::vector<Edge> E = edges(e->lex, r);
+    std::vector<Edge> E = edges(e->lex, r, &e->user);
     e->times[0] = ms_since(t0);
     std::vector<ustr> res;
     e->last_u.clear();
@@ -864,4 +876,24 @@ KKC_API int kkc_last_segments(kkc_engine* e, int32_t* ends, int32_t* lens, int c
     if (n > cap) return -1;
     for (int i = 0; i < n; i++) { ends[i] = e->last_segs[i].first; lens[i] = e->last_segs[i].second; }
     return n;
+}
+
+KKC_API void kkc_user_clear(kkc_engine* e) {
+    if (e) e->user.clear();
+}
+
+KKC_API int kkc_user_add_like(kkc_engine* e, const uint16_t* r, int nr, const uint16_t* s, int ns, const uint16_t* tr, int ntr,
+                              const uint16_t* ts, int nts, int bonus) {
+    if (!e || nr <= 0 || ns <= 0) return 0;
+    uint32_t a, b;
+    if (!e->lex.find(tr, ntr, a, b)) return 0;
+    const ustr want = from16(ts, size_t(nts));
+    const Ent* best = nullptr;
+    for (uint32_t j = a; j < b; j++) {
+        const Ent& en = e->lex.ents[j];
+        if (from16(e->lex.s_blob + en.soff, en.slen) == want && (!best || en.cost < best->cost)) best = &en;
+    }
+    if (!best) return 0;
+    e->user.push_back({from16(r, size_t(nr)), from16(s, size_t(ns)), best->lid, best->rid, best->cost - bonus});
+    return 1;
 }

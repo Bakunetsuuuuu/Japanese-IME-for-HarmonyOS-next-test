@@ -30,6 +30,9 @@ import java.util.concurrent.Executors
  * 置き方は 3 通り: 普通 (幅と左右の位置を設定で変えられる)・片手 (左か右に寄せる)・フローティング (画面の上の好きな所)。
  */
 class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
+    companion object {
+        private const val CLIP_PREFIX = "\u0001clip\u0001"   // 候補の帯の中で、貼り付けのチップを見分ける印 (表示はしない)
+    }
 
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -80,6 +83,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
             main.post {
                 engine = e
                 if (e != null) ai = AiConverter(e, worker, main)
+                syncUserWords()
                 if (input.composingText.isNotEmpty()) input.updateCandidates()
             }
         }
@@ -115,12 +119,12 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         val rowH = (if (landscape) 44 else 56) * dp * scale
         val kbH = rowH * 4 + 8 * dp
 
-        val kb = KeyboardView(this, input, tables, ::tick).also {
+        val kb = KeyboardView(this, input, tables, ::tick, ::special).also {
             it.theme = theme
             it.hints = settings.flickHints
             it.rowH = rowH
         }
-        val qw = QwertyKeyboardView(this, input, tables, ::tick).also { it.theme = theme; it.totalH = kbH }
+        val qw = QwertyKeyboardView(this, input, tables, ::tick, ::special).also { it.theme = theme; it.totalH = kbH }
         val pal = PaletteView(this, input, tables, recent, ::tick).also { it.theme = theme; it.totalH = kbH }
         val mv = MenuView(this, this, ::tick).also { it.theme = theme; it.totalH = kbH }
         val frame = FrameLayout(this).apply {
@@ -145,6 +149,12 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
                 input.commitTopCandidate()
                 input.subMode = if (input.subMode == InputHandler.SubMode.MENU) InputHandler.SubMode.KANA else InputHandler.SubMode.MENU
                 render()
+            }
+            // 長押しでフローティングの切り替え
+            setOnLongClickListener {
+                tick()
+                toggleFloating()
+                true
             }
         }
         val strip = LinearLayout(this).apply {
@@ -240,13 +250,17 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         b.layoutParams = lp
     }
 
-    /** フローティングの上端のつまみ: ドラッグで動かし、離したら位置を覚える */
+    /**
+     * フローティングの上端のつまみ: ドラッグで動かし、離したら位置を覚える。
+     * 画面の下の端より先まで押し込んで離すと、フローティングをやめて下に戻す (押し込んでいる間は薄く出す)
+     */
     private inner class DragHandle : View(this@KkcIme) {
         private val p = Paint(Paint.ANTI_ALIAS_FLAG)
         private var sx = 0f
         private var sy = 0f
         private var ml = 0
         private var mt = 0
+        private var dock = false
 
         override fun onDraw(canvas: Canvas) {
             val dp = resources.displayMetrics.density
@@ -262,13 +276,23 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
                     sx = e.rawX; sy = e.rawY; ml = lp.leftMargin; mt = lp.topMargin
+                    dock = false
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    val maxTop = maxOf(0, r.height - b.height)
+                    val want = (mt + (e.rawY - sy)).toInt()
                     lp.leftMargin = (ml + (e.rawX - sx)).toInt().coerceIn(0, maxOf(0, r.width - b.width))
-                    lp.topMargin = (mt + (e.rawY - sy)).toInt().coerceIn(0, maxOf(0, r.height - b.height))
+                    lp.topMargin = want.coerceIn(0, maxTop)
                     b.layoutParams = lp
+                    dock = want > maxTop + 48 * resources.displayMetrics.density
+                    b.alpha = if (dock) 0.55f else 1f
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    if (dock && e.actionMasked == MotionEvent.ACTION_UP) {
+                        toggleFloating()   // 下に戻す
+                        return true
+                    }
+                    b.alpha = 1f
                     if (r.width > 0 && r.height > 0) {
                         settings.floatX = lp.leftMargin.toFloat() / r.width
                         settings.floatY = lp.topMargin.toFloat() / r.height
@@ -305,6 +329,23 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         super.onStartInputView(info, restarting)
         if (root != null && sig() != viewSig) setInputView(onCreateInputView())
         readClip()
+        syncUserWords()
+    }
+
+    private var userSynced = -1
+
+    /** ユーザー辞書が変わっていたら、変換の網に入れ直す (変換と同じ裏のスレッドで) */
+    private fun syncUserWords() {
+        val e = engine ?: return
+        val dict = UserDict.get(this)
+        val v = dict.version
+        if (v == userSynced) return
+        userSynced = v
+        val forms = dict.engineForms()
+        worker.execute {
+            e.setUserWords(forms)
+            main.post { ai?.clearCache() }
+        }
     }
 
     override fun onStartInput(attribute: EditorInfo?, restarting: Boolean) {
@@ -316,6 +357,14 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         super.onFinishInput()
         input.onInputStop()
         recent.save()
+    }
+
+    /** キーの長押しの操作 (KeyboardView / QwertyKeyboardView から) */
+    private fun special(action: String) {
+        when (action) {
+            "onehand-left" -> toggleOneHanded("left")
+            "onehand-right" -> toggleOneHanded("right")
+        }
     }
 
     /** キーに触れた瞬間の振動 (設定でオフにできる) */
@@ -389,6 +438,15 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         render()
     }
 
+    /** 貼り付けのチップの字: 小さい「貼り付け」を色の字で、その後ろにコピーした文 (キーボードの 2 色の見た目に合わせ、絵文字の印は使わない) */
+    private fun clipLabel(preview: String): CharSequence {
+        val head = "貼り付け  "
+        return android.text.SpannableStringBuilder(head + preview).apply {
+            setSpan(android.text.style.ForegroundColorSpan(theme.getValue("accent")), 0, head.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            setSpan(android.text.style.RelativeSizeSpan(0.7f), 0, head.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+    }
+
     // ---------------------------------------------------------------- InputHandler.Host
     override fun post(r: () -> Unit) {
         main.post(r)
@@ -418,14 +476,14 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         } else {
             freshClip?.let { c ->
                 val preview = c.replace('\n', ' ').let { if (it.length > 14) it.take(14) + "…" else it }
-                chips.add("📋 $preview" to { paste(c) })
+                chips.add(CLIP_PREFIX + preview to { paste(c) })
             }
             for ((i, s) in input.predictions.withIndex()) chips.add(s to { input.commitPrediction(i) })
         }
         b.removeAllViews()
         for ((i, c) in chips.withIndex()) {
             val tv = TextView(this).apply {
-                text = c.first
+                text = if (c.first.startsWith(CLIP_PREFIX)) clipLabel(c.first.removePrefix(CLIP_PREFIX)) else c.first
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                 setTextColor(theme.getValue(if (i == sel) "onAccent" else "textPrimary"))
                 if (i == sel) setBackgroundColor(theme.getValue("accent"))
