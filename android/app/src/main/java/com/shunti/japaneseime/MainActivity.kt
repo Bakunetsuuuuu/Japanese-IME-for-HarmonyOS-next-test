@@ -153,6 +153,9 @@ class MainActivity : Activity() {
                 override fun onStopTrackingTouch(s: SeekBar) {}
             })
         })
+        col.addView(slider("キーボードの下の余白 (画面下のボタンと重なるとき)", "dp", 0, 48, 4, settings.bottomExtraDp) {
+            settings.bottomExtraDp = it
+        }, lp(top = 8))
         col.addView(slider("キーボードの幅", "%", Settings.WIDTH_MIN, 100, 5, settings.widthPercent) { settings.widthPercent = it }, lp(top = 8))
         col.addView(slider("キーボードの位置 (0 = 左、50 = 真ん中、100 = 右)", "", 0, 100, 10, settings.offsetPercent) {
             settings.offsetPercent = it
