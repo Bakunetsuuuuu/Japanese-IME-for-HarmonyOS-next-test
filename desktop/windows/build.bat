@@ -15,6 +15,8 @@ call :build x86 vcvarsamd64_x86.bat || exit /b 1
 rem dictionary and model (copied only when changed)
 xcopy /D /Y /Q "%ROOT%\entry\src\main\resources\rawfile\kkc_lex.bin" "%DIST%\" >nul
 xcopy /D /Y /Q "%ROOT%\entry\src\main\resources\rawfile\kkc_model.bin" "%DIST%\" >nul
+copy /Y "%HERE%install.ps1" "%DIST%\" >nul
+copy /Y "%HERE%LICENSE.txt" "%DIST%\" >nul
 echo built: %DIST%
 exit /b 0
 

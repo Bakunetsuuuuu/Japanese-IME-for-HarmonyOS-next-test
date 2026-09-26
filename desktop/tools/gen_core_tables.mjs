@@ -47,3 +47,15 @@ for (const s of slurs) {
 o += '};\n\n}  // namespace shunti\n';
 fs.writeFileSync(path.join(root, 'desktop/core/tables.h'), o);
 console.log('romaji', Object.keys(t.ROMAJI_TABLE).length, 'slurs', slurs.length);
+
+// Windows 版に同梱するライセンスの文 (Android 版の licenses.txt の見出しと表の説明を PC 版に直したもの)
+{
+  let lic = fs.readFileSync(path.join(root, 'android/app/src/main/assets/licenses.txt'), 'utf8').replace(/\r\n/g, '\n');
+  const before = lic;
+  lic = lic.replace('shunti IME (Android 版)', 'shunti IME (Windows 版)');
+  lic = lic.replace('■ キー配置・記号・絵文字・顔文字の表\nHarmonyOS 版 shunti IME と同じもの (MIT)。',
+    '■ ローマ字の表・差別語の表\nHarmonyOS 版 shunti IME と同じもの (MIT)。\n\n■ 文節の区切りに使う品詞の分類\nmozc の品詞 ID の表 (id.def、BSD-3-Clause) から作ったもの。');
+  if (lic === before || !lic.includes('Windows 版') || !lic.includes('品詞の分類')) throw new Error('licenses.txt の形が想定外');
+  fs.writeFileSync(path.join(root, 'desktop/windows/LICENSE.txt'), lic.replace(/\n/g, '\r\n'));
+  console.log('desktop/windows/LICENSE.txt', lic.length, '字');
+}
