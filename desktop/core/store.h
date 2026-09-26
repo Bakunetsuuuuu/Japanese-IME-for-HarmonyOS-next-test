@@ -22,6 +22,8 @@ public:
     void forget(const u16& reading, const u16& surface);
     // 選んだことのある表記を回数の多い順に前へ (他の並びはそのまま)
     std::vector<u16> apply_order(const u16& reading, const std::vector<u16>& cands);
+    // 予測: 読みが prefix で始まる、より長い読みで選んだ表記 (選んだ回数の多い順)
+    std::vector<u16> completions(const u16& prefix, size_t max);
     // その読みでいちばん多く選んだ表記 (無ければ空)
     u16 top(const u16& reading);
     void clear();

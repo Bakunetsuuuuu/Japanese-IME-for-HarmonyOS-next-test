@@ -138,6 +138,22 @@ std::vector<u16> Learning::apply_order(const u16& reading, const std::vector<u16
     return boosted;
 }
 
+std::vector<u16> Learning::completions(const u16& prefix, size_t max) {
+    std::vector<u16> out;
+    if (prefix.empty()) return out;
+    refresh();
+    std::vector<std::pair<u16, int>> all;
+    for (auto& e : entries_)
+        if (e.reading.size() > prefix.size() && e.reading.compare(0, prefix.size(), prefix) == 0)
+            for (auto& c : e.counts) all.push_back(c);
+    std::stable_sort(all.begin(), all.end(), [](auto& a, auto& b) { return a.second > b.second; });
+    for (auto& c : all) {
+        if (out.size() >= max) break;
+        if (std::find(out.begin(), out.end(), c.first) == out.end()) out.push_back(c.first);
+    }
+    return out;
+}
+
 u16 Learning::top(const u16& reading) {
     refresh();
     Entry* e = find(reading);

@@ -44,6 +44,11 @@ for (const s of slurs) {
   if (s.not.length > 5) throw new Error('not_after が多すぎる');
   o += `    {${q(s.word)}, {${[...s.not.map(q), 'nullptr'].join(', ')}}},\n`;
 }
+o += '};\n\n';
+o += 'struct Phrase2 { const char16_t* reading; const char16_t* text; int min_prefix; };\n';
+o += '// 決まり文句の予測 (読みの頭を min_prefix 字以上打ったら、候補の先頭に出す)\n';
+o += 'constexpr Phrase2 PREDICTIVE_PHRASES[] = {\n';
+for (const p of t.PREDICTIVE_PHRASES) o += `    {${q(p.reading)}, ${q(p.text)}, ${p.minPrefix}},\n`;
 o += '};\n\n}  // namespace shunti\n';
 fs.writeFileSync(path.join(root, 'desktop/core/tables.h'), o);
 console.log('romaji', Object.keys(t.ROMAJI_TABLE).length, 'slurs', slurs.length);

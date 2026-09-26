@@ -118,6 +118,7 @@ int main(int argc, char** argv) {
     Learning learning(work / "learned.json");
     UserDict dict(work / "userdict.json");
     Composer c(&conv, &learning, &dict);
+    c.options.live_commit = false;   // リアルタイム確定は下でまとめて試す
 
     // ---- 語の区切りと品詞 (文節の分け方を見る)
     for (const char16_t* r : {u"きょうはいいてんきですね", u"わたしはがくせいです", u"たべさせられなかった"}) {
@@ -126,6 +127,19 @@ int main(int argc, char** argv) {
         for (auto& w : cv.words) printf(" %s/%s(%d:%c,%d:%c)", u8(w.reading).c_str(), u8(w.surface).c_str(), w.lid,
                                         POS_CLASSES[w.lid], w.rid, POS_CLASSES[w.rid]);
         printf("\n");
+    }
+
+    // ---- 1 打鍵ごとの重さ (打っている間の変換と予測)
+    {
+        auto ms_of = [](auto f) {
+            auto t = std::chrono::steady_clock::now();
+            for (int i = 0; i < 20; i++) f();
+            return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t).count() / 20;
+        };
+        printf("     convert 8 kana %.1f ms, 16 kana %.1f ms, complete %.1f ms\n",
+               ms_of([&] { conv.convert(u"今日は", u"いいてんきです", 10); }),
+               ms_of([&] { conv.convert(u"今日は", u"いいてんきですねさんぽにいき", 10); }),
+               ms_of([&] { conv.complete(u"いいてんき", 4); }));
     }
 
     // ---- 入力中の見せ方
@@ -152,7 +166,7 @@ int main(int argc, char** argv) {
     printf("     2nd phrase cands:");
     for (auto& x : c.view().cands) printf(" %s", u8(x).c_str());
     printf("\n");
-    keys(c, "{esc}{esc}");
+    keys(c, "{esc}");
     expect("back to input", c.view().text, u"わたしはがくせいです");
     keys(c, "{esc}");
 
@@ -177,6 +191,38 @@ int main(int argc, char** argv) {
     keys(c, "{f8}");
     expect("F8", c.view().text, u"ﾄｳｷｮｳ");
     keys(c, "{esc}{esc}");
+
+    // ---- 無変換キーは押すたびに カタカナ → 半角カタカナ → ひらがな
+    keys(c, "toukyou{muhenkan}");
+    expect("muhenkan 1", c.view().text, u"トウキョウ");
+    keys(c, "{muhenkan}");
+    expect("muhenkan 2", c.view().text, u"ﾄｳｷｮｳ");
+    keys(c, "{muhenkan}");
+    expect("muhenkan 3", c.view().text, u"とうきょう");
+    keys(c, "{esc}{esc}");
+
+    // ---- 打っている間の候補と、↓ で選んで確定
+    keys(c, "konnnichiha");
+    printf("     live cands:");
+    for (auto& x : c.view().cands) printf(" %s", u8(x).c_str());
+    printf("\n");
+    if (!c.view().cand_open) { printf("FAIL live cands not shown\n"); failures++; }
+    keys(c, "{down}{enter}");
+    expect("live select", c.take_commit(), u"こんにちは");
+
+    // ---- 変換したらすぐ候補の窓が出る
+    keys(c, "kawa{sp}");
+    if (!c.view().cand_open) { printf("FAIL cands not open after convert\n"); failures++; }
+    keys(c, "{esc}{esc}");
+
+    // ---- リアルタイム確定: 長く打つと前の方が確定されていく
+    c.options.live_commit = true;
+    keys(c, "kyouhaiitenkidesunesanponiikitaikedoamegafurisoudesu");
+    u16 auto_commit = c.take_commit();
+    printf("     live commit: [%s] + composing [%s]\n", u8(auto_commit).c_str(), u8(c.view().text).c_str());
+    if (auto_commit.empty()) { printf("FAIL no live commit\n"); failures++; }
+    keys(c, "{sp}{enter}");
+    printf("     rest: %s\n", u8(c.take_commit()).c_str());
 
     // ---- 英字・数字・記号
     keys(c, "Google{enter}");

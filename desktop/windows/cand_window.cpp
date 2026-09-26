@@ -104,8 +104,8 @@ void CandWindow::show(const std::vector<u16>& cands, int sel, const RECT& anchor
         small_ = CreateFontW(-MulDiv(12, int(dpi), 96), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Yu Gothic UI");
     }
     cands_ = cands;
-    sel_ = std::clamp(sel, 0, int(cands.size()) - 1);
-    page_ = sel_ / Composer::PAGE;
+    sel_ = std::clamp(sel, -1, int(cands.size()) - 1);   // -1 = まだ選んでいない (打っている間の候補)
+    page_ = std::max(sel_, 0) / Composer::PAGE;
     layout();
 
     // 文節の下に出す (候補の字の頭を文節の頭にそろえる)。画面の下に入らなければ上に
@@ -200,7 +200,8 @@ void CandWindow::paint(HDC wdc) {
         DrawTextW(dc, W(s), int(s.size()), &tr, DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOPREFIX | DT_END_ELLIPSIS);
     }
     SelectObject(dc, small_);
-    std::wstring foot = std::to_wstring(sel_ + 1) + L" / " + std::to_wstring(cands_.size());
+    std::wstring foot = sel_ < 0 ? L"Tab で選ぶ  " + std::to_wstring(cands_.size()) + L" 件"
+                                 : std::to_wstring(sel_ + 1) + L" / " + std::to_wstring(cands_.size());
     RECT fr = {pad_, height_ - footer_h_, width_ - pad_, height_ - MulDiv(3, int(dpi_), 96)};
     SetTextColor(dc, c.sub);
     DrawTextW(dc, foot.c_str(), int(foot.size()), &fr, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
