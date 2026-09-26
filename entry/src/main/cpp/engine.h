@@ -35,6 +35,10 @@ KKC_API int kkc_last_scores(kkc_engine* e, float* u, int cap);
 // lens[i] = i 語目の表記の長さ (UTF-16)。返り値は語の数。長い入力で「前の方を固定して後ろだけ変換する」ために使う
 KKC_API int kkc_last_segments(kkc_engine* e, int32_t* ends, int32_t* lens, int cap);
 
+// 直前の kkc_convert の 1 位の候補の語ごとの品詞の左右 ID (辞書の ID。辞書に無い語は名詞の ID)。返り値は語の数。
+// PC 版が文節 (自立語 + 付属語) の区切りを決めるのに使う
+KKC_API int kkc_last_segment_pos(kkc_engine* e, int32_t* lids, int32_t* rids, int cap);
+
 // ユーザー辞書。登録した語を辞書の語と同じく網に入れ、モデルが文脈で採点する (読みが文の途中に出てきても候補になる)。
 // 品詞の左右 ID とコストは、辞書にある「同じ品詞・同じ活用の形の代表語」(読み tr・表記 ts) から写す
 // (例: 登録語 ぐぐら/ググら の代表に はしら/走ら)。コストは代表語より bonus だけ下げる (選ばれやすくする)。

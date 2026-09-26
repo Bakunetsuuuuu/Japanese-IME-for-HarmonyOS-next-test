@@ -1,0 +1,2 @@
+# build output (DLLs, objects, test binaries, copied dictionary/model)
+build/

@@ -1,0 +1,278 @@
+#include "store.h"
+
+#include <algorithm>
+#include <fstream>
+#include <sstream>
+#include <system_error>
+
+#include "json.h"
+
+namespace fs = std::filesystem;
+
+namespace shunti {
+
+bool read_file(const fs::path& p, std::string& out) {
+    std::ifstream f(p, std::ios::binary);
+    if (!f) return false;
+    std::ostringstream ss;
+    ss << f.rdbuf();
+    out = ss.str();
+    return true;
+}
+
+bool write_file_atomic(const fs::path& p, const std::string& data) {
+    std::error_code ec;
+    fs::create_directories(p.parent_path(), ec);
+    fs::path tmp = p;
+    tmp += ".tmp";
+    {
+        std::ofstream f(tmp, std::ios::binary | std::ios::trunc);
+        if (!f) return false;
+        f.write(data.data(), std::streamsize(data.size()));
+        if (!f) return false;
+    }
+    fs::rename(tmp, p, ec);
+    if (ec) { fs::remove(tmp, ec); return false; }
+    return true;
+}
+
+namespace {
+bool stamp_of(const fs::path& p, fs::file_time_type& t) {
+    std::error_code ec;
+    t = fs::last_write_time(p, ec);
+    return !ec;
+}
+}  // namespace
+
+// ---------------------------------------------------------------- 学習
+
+void Learning::refresh() {
+    fs::file_time_type t{};
+    bool exists = stamp_of(file_, t);
+    if (loaded_ && (!exists || t == stamp_)) return;
+    loaded_ = true;
+    stamp_ = t;
+    entries_.clear();
+    std::string s;
+    if (!exists || !read_file(file_, s)) return;
+    json::Value v;
+    if (!json::Parser(s).parse(v) || v.type != json::Value::Object) return;
+    for (auto& r : v.obj) {
+        if (r.second.type != json::Value::Object) continue;
+        Entry e{from_utf8(r.first), {}};
+        for (auto& c : r.second.obj)
+            if (c.second.type == json::Value::Number) e.counts.push_back({from_utf8(c.first), int(c.second.num)});
+        if (!e.counts.empty()) entries_.push_back(std::move(e));
+    }
+}
+
+void Learning::save() {
+    std::string o = "{";
+    bool first = true;
+    for (auto& e : entries_) {
+        if (!first) o += ",";
+        first = false;
+        o += json::quote(to_utf8(e.reading)) + ":{";
+        for (size_t i = 0; i < e.counts.size(); i++) {
+            if (i) o += ",";
+            o += json::quote(to_utf8(e.counts[i].first)) + ":" + std::to_string(e.counts[i].second);
+        }
+        o += "}";
+    }
+    o += "}";
+    if (write_file_atomic(file_, o)) stamp_of(file_, stamp_);
+}
+
+Learning::Entry* Learning::find(const u16& reading) {
+    for (auto& e : entries_) if (e.reading == reading) return &e;
+    return nullptr;
+}
+
+void Learning::record(const u16& reading, const u16& surface) {
+    if (reading.empty() || surface.empty() || surface == reading) return;
+    refresh();
+    Entry* e = find(reading);
+    if (!e) {
+        if (entries_.size() >= MAX_READINGS) {   // いちばん使われていない読みを捨てる
+            auto weakest = std::min_element(entries_.begin(), entries_.end(), [](const Entry& a, const Entry& b) {
+                auto mx = [](const Entry& x) { int m = 0; for (auto& c : x.counts) m = std::max(m, c.second); return m; };
+                return mx(a) < mx(b);
+            });
+            entries_.erase(weakest);
+        }
+        entries_.push_back({reading, {}});
+        e = &entries_.back();
+    }
+    for (auto& c : e->counts) {
+        if (c.first == surface) { c.second++; save(); return; }
+    }
+    if (e->counts.size() < MAX_SURFACES) {
+        e->counts.push_back({surface, 1});
+        save();
+    }
+}
+
+void Learning::forget(const u16& reading, const u16& surface) {
+    refresh();
+    for (size_t i = 0; i < entries_.size(); i++) {
+        auto& cs = entries_[i].counts;
+        if (entries_[i].reading != reading) continue;
+        auto it = std::find_if(cs.begin(), cs.end(), [&](auto& c) { return c.first == surface; });
+        if (it == cs.end()) return;
+        cs.erase(it);
+        if (cs.empty()) entries_.erase(entries_.begin() + long(i));
+        save();
+        return;
+    }
+}
+
+std::vector<u16> Learning::apply_order(const u16& reading, const std::vector<u16>& cands) {
+    refresh();
+    Entry* e = find(reading);
+    if (!e) return cands;
+    auto count = [&](const u16& s) { for (auto& c : e->counts) if (c.first == s) return c.second; return 0; };
+    std::vector<u16> boosted, rest;
+    for (auto& c : cands) (count(c) > 0 ? boosted : rest).push_back(c);
+    std::stable_sort(boosted.begin(), boosted.end(), [&](const u16& a, const u16& b) { return count(a) > count(b); });
+    boosted.insert(boosted.end(), rest.begin(), rest.end());
+    return boosted;
+}
+
+u16 Learning::top(const u16& reading) {
+    refresh();
+    Entry* e = find(reading);
+    if (!e) return u16();
+    u16 best;
+    int n = 0;
+    for (auto& c : e->counts) if (c.second > n) { n = c.second; best = c.first; }
+    return best;
+}
+
+void Learning::clear() {
+    entries_.clear();
+    loaded_ = true;
+    save();
+}
+
+// ---------------------------------------------------------------- ユーザー辞書
+
+namespace {
+struct Tmpl { const char16_t* r; const char16_t* s; };
+// 品詞を写す代表語 (どれも辞書にあることを確かめてある。Android 版と同じ)
+struct Godan { char16_t last; const char16_t* r; const char16_t* s; const char16_t* sufs; };
+const Godan GODAN[] = {
+    {u'う', u"かう", u"買う", u"わいうえおっ"}, {u'く', u"かく", u"書く", u"かきくけこい"},
+    {u'ぐ', u"およぐ", u"泳ぐ", u"がぎぐげごい"}, {u'す', u"はなす", u"話す", u"さしすせそ"},
+    {u'つ', u"まつ", u"待つ", u"たちつてとっ"}, {u'ぬ', u"しぬ", u"死ぬ", u"なにぬねのん"},
+    {u'ぶ', u"あそぶ", u"遊ぶ", u"ばびぶべぼん"}, {u'む', u"よむ", u"読む", u"まみむめもん"},
+    {u'る', u"はしる", u"走る", u"らりるれろっ"},
+};
+const char16_t* ICHIDAN[] = {u"", u"る", u"れ", u"ろ", u"よ"};                          // 代表語 食べる
+const char16_t* ADJ[] = {u"い", u"く", u"かっ", u"けれ", u"かろ", u"き", u"さ", u"そう"};   // 代表語 高い
+
+const Godan* godan_of(char16_t last) {
+    for (auto& g : GODAN) if (g.last == last) return &g;
+    return nullptr;
+}
+bool ends_with(const u16& s, const u16& t) { return s.size() >= t.size() && s.compare(s.size() - t.size(), t.size(), t) == 0; }
+}  // namespace
+
+bool UserDict::refresh() {
+    fs::file_time_type t{};
+    bool exists = stamp_of(file_, t);
+    if (loaded_ && (!exists || t == stamp_)) return false;
+    loaded_ = true;
+    stamp_ = t;
+    entries_.clear();
+    version_++;
+    std::string s;
+    if (!exists || !read_file(file_, s)) return true;
+    json::Value v;
+    if (!json::Parser(s).parse(v) || v.type != json::Value::Array) return true;
+    for (auto& o : v.arr) {
+        if (o.type != json::Value::Object) continue;
+        Entry e{from_utf8(o.get_str("r")), from_utf8(o.get_str("w")), o.get_str("p", "noun"), o.get_str("g")};
+        if (!e.reading.empty() && !e.word.empty()) entries_.push_back(std::move(e));
+    }
+    return true;
+}
+
+std::vector<u16> UserDict::lookup(const u16& reading) const {
+    std::vector<u16> out;
+    for (auto& e : entries_) if (e.reading == reading) out.push_back(e.word);
+    return out;
+}
+
+std::string UserDict::add(const u16& reading0, const u16& word0, const std::string& pos, const std::string& group) {
+    refresh();
+    auto trim = [](u16 s) {
+        while (!s.empty() && (s.back() == u' ' || s.back() == 0x3000)) s.pop_back();
+        size_t i = 0;
+        while (i < s.size() && (s[i] == u' ' || s[i] == 0x3000)) i++;
+        return s.substr(i);
+    };
+    u16 r = to_hiragana(trim(reading0)), w = trim(word0);
+    if (r.empty() || w.empty()) return "読みと単語を入れてください";
+    for (char16_t c : r) if (!is_hira(c) && c != u'ー') return "読みはひらがなで入れてください";
+    if (pos == "verb") {
+        if (group == "ichidan") {
+            if (!ends_with(r, u"る") || !ends_with(w, u"る")) return "一段の動詞は「る」で終わる形で入れてください (例: たべる / 食べる)";
+        } else if (!godan_of(r.back()) || w.back() != r.back()) {
+            return "動詞は終止形で、読みと単語の最後を同じかなにしてください (例: ぐぐる / ググる)";
+        }
+    } else if (pos == "adjective") {
+        if (!ends_with(r, u"い") || !ends_with(w, u"い")) return "形容詞は「い」で終わる形で入れてください (例: えもい / エモい)";
+    }
+    for (auto& e : entries_) if (e.reading == r && e.word == w) return "もう登録してあります";
+    entries_.push_back({r, w, pos, pos == "verb" ? group : ""});
+    save();
+    return "";
+}
+
+void UserDict::remove(const u16& reading, const u16& word) {
+    refresh();
+    auto it = std::remove_if(entries_.begin(), entries_.end(), [&](const Entry& e) { return e.reading == reading && e.word == word; });
+    if (it == entries_.end()) return;
+    entries_.erase(it, entries_.end());
+    save();
+}
+
+void UserDict::save() {
+    version_++;
+    std::string o = "[";
+    for (size_t i = 0; i < entries_.size(); i++) {
+        auto& e = entries_[i];
+        if (i) o += ",";
+        o += "{\"r\":" + json::quote(to_utf8(e.reading)) + ",\"w\":" + json::quote(to_utf8(e.word)) +
+             ",\"p\":" + json::quote(e.pos) + ",\"g\":" + json::quote(e.group) + "}";
+    }
+    o += "]";
+    if (write_file_atomic(file_, o)) stamp_of(file_, stamp_);
+}
+
+std::vector<UserDict::Form> UserDict::engine_forms() const {
+    std::vector<Form> out;
+    for (auto& e : entries_) {
+        const u16& r = e.reading;
+        const u16& w = e.word;
+        auto stem = [&](const u16& tr, const u16& ts, const u16& suf) {
+            out.push_back({r.substr(0, r.size() - 1) + suf, w.substr(0, w.size() - 1) + suf,
+                           tr.substr(0, tr.size() - 1) + suf, ts.substr(0, ts.size() - 1) + suf});
+        };
+        if (e.pos == "verb") {
+            if (e.group == "ichidan") {
+                for (auto s : ICHIDAN) stem(u"たべる", u"食べる", s);
+            } else if (const Godan* g = godan_of(r.back())) {
+                for (const char16_t* p = g->sufs; *p; p++) stem(g->r, g->s, u16(1, *p));
+            }
+        } else if (e.pos == "adjective") {
+            for (auto s : ADJ) stem(u"たかい", u"高い", s);
+        } else {
+            Tmpl t = e.pos == "person" ? Tmpl{u"やまだ", u"山田"} : e.pos == "place" ? Tmpl{u"とうきょう", u"東京"} : Tmpl{u"ねこ", u"猫"};
+            out.push_back({r, w, t.r, t.s});
+        }
+    }
+    return out;
+}
+
+}  // namespace shunti
