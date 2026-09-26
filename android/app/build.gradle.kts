@@ -21,7 +21,9 @@ android {
     ndkVersion = ndkVer
 
     defaultConfig {
-        applicationId = "com.shunti.japaneseime"
+        // AppGallery では HarmonyOS 版 (bundleName com.shunti.japaneseime) と同じ名前を使えないので .android を足す。
+        // コードの中の名前 (namespace・Kotlin のパッケージ・JNI の関数名) は com.shunti.japaneseime のまま
+        applicationId = "com.shunti.japaneseime.android"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
