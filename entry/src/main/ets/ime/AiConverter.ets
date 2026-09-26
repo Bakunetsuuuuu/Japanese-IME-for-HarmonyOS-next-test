@@ -22,7 +22,12 @@ export class AiConverter {
   }
 
   // 何度呼んでもよい。読み込みは 1 回だけ (裏のスレッドで)
-  static ensureLoaded(ctx: common.Context): void {
+  // 読み込みに失敗したら onFail (呼ぶ側が別のエンジンに切り替える)
+  static ensureLoaded(ctx: common.Context, onFail: () => void = () => {}): void {
+    if (AiConverter.failed) {
+      onFail();
+      return;
+    }
     if (AiConverter.ready || AiConverter.loading) {
       return;
     }
@@ -33,10 +38,14 @@ export class AiConverter {
       AiConverter.failed = !ok;
       AiConverter.loading = false;
       console.info(`shuntiIME AiConverter load ${ok ? 'ok' : 'failed'} ${Date.now() - t0}ms`);
+      if (!ok) {
+        onFail();
+      }
     }).catch((e: Error) => {
       AiConverter.loading = false;
       AiConverter.failed = true;
       console.error('shuntiIME AiConverter load error', JSON.stringify(e));
+      onFail();
     });
   }
 

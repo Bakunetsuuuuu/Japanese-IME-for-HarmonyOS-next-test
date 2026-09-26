@@ -685,9 +685,17 @@ export class InputHandler {
   // (isMozcLoaded() short-circuits), and setEngine('custom') is always cheap.
   private applyConversionEngine(engine: string): void {
     if (engine === 'ai') {
-      // AI 変換 (shuntelligence)。読み込みが済むまで・使えない読みのときは独自辞書で変換する
+      // AI 変換 (shuntelligence)。読み込みが済むまで・使えない読みのときは独自辞書で変換する。
+      // 辞書とモデルが無い (tools/fetch_ai_assets.py を実行せずにビルドした) ときは hybrid に戻る
       KanaKanjiConverter.setEngine('custom');
-      if (this.imeContext) { AiConverter.ensureLoaded(this.imeContext); }
+      if (this.imeContext) {
+        const ctx = this.imeContext;
+        AiConverter.ensureLoaded(ctx, () => {
+          if (AppStorage.get<string>('conversionEngine') === 'ai') {
+            if (KanaKanjiConverter.isMozcLoaded()) { KanaKanjiConverter.setEngine('hybrid'); } else { this.loadMozcRawfiles(ctx, 'hybrid'); }
+          }
+        });
+      }
       return;
     }
     if (engine !== 'mozc' && engine !== 'hybrid') {
