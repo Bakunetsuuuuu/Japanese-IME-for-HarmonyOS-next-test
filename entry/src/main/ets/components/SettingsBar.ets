@@ -632,6 +632,16 @@ export struct SettingsBar {
             .backgroundColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).accent : 'transparent')
             .fontColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
             .onClick(() => { InputHandler.getInstance().setConversionEngine('mozc'); })
+
+          Text('AI変換')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.conversionEngine === 'ai' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.conversionEngine === 'ai' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .onClick(() => { InputHandler.getInstance().setConversionEngine('ai'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
         .borderRadius(TRACK_RADIUS)
@@ -645,7 +655,9 @@ export struct SettingsBar {
       .opacity(this.conversionEngine === 'hybrid' ? 0.4 : 1)
       .enabled(this.conversionEngine !== 'hybrid')
 
-      Text(this.conversionEngine === 'mozc'
+      Text(this.conversionEngine === 'ai'
+        ? '文脈を読んで変換（実験中）'
+        : this.conversionEngine === 'mozc'
         ? '高性能だが比較的鈍重（推奨）'
         : this.conversionEngine === 'hybrid' ? '' : '軽量だが発展途上')
         .fontFamily(JP_FONT_FAMILY)

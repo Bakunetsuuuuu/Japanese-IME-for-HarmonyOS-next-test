@@ -27,6 +27,7 @@ import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
 import { EmojiSuggest } from './EmojiSuggest';
 import { AppMaintenance } from './AppMaintenance';
+import { AiConverter } from './AiConverter';
 
 interface InputMethodSubtype {
   id: string;
@@ -683,6 +684,20 @@ export class InputHandler {
   // repeatedly: loadMozcEngine() is a no-op cost-wise once already loaded
   // (isMozcLoaded() short-circuits), and setEngine('custom') is always cheap.
   private applyConversionEngine(engine: string): void {
+    if (engine === 'ai') {
+      // AI 変換 (shuntelligence)。読み込みが済むまで・使えない読みのときは独自辞書で変換する。
+      // 辞書とモデルが無い (tools/fetch_ai_assets.py を実行せずにビルドした) ときは hybrid に戻る
+      KanaKanjiConverter.setEngine('custom');
+      if (this.imeContext) {
+        const ctx = this.imeContext;
+        AiConverter.ensureLoaded(ctx, () => {
+          if (AppStorage.get<string>('conversionEngine') === 'ai') {
+            if (KanaKanjiConverter.isMozcLoaded()) { KanaKanjiConverter.setEngine('hybrid'); } else { this.loadMozcRawfiles(ctx, 'hybrid'); }
+          }
+        });
+      }
+      return;
+    }
     if (engine !== 'mozc' && engine !== 'hybrid') {
       KanaKanjiConverter.setEngine('custom');
       return;
@@ -2454,6 +2469,23 @@ export class InputHandler {
     this.updateCandidates();
   }
 
+  // AI 変換で固定された前の方 (読み fk -> 表記 fs) を確定し、残りのかなを入力中に残す。
+  // ローマ字の打ちかけ・文節の編集中・変換範囲を縮めているときはしない。
+  private autoCommitFrozen(target: string, fk: string, fs: string): void {
+    // 速く打つと、ここに来るまでに入力がもう進んでいる。固定した読みが頭に残っていれば確定してよい
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    if (fk.length === 0 || !composing.startsWith(fk) || !target.startsWith(fk) || this.conversionEnd !== 0) { return; }
+    if ((AppStorage.get<string>('pendingRomaji') ?? '') !== '') { return; }
+    if ((AppStorage.get<string>('inputState') ?? InputState.IDLE) !== InputState.COMPOSING) { return; }
+    this.insertText(fs);
+    KanaKanjiConverter.addContext(fs);
+    AiConverter.clearFrozen(fk, fs);
+    this.continueWithTail(composing.slice(fk.length));
+    // continueWithTail は変換範囲を残りの長さに張るが、続けて打った字も変換したいので全体に戻す
+    this.conversionEnd = 0;
+    AppStorage.setOrCreate('convEnd', 0);
+  }
+
   private resetComposition(): void {
     // 入力欄に残っているプレビューを必ず消す。insertText を経ない経路
     // (取消・欄の切り替えなど) でもここを通るので、消し忘れの受け皿になる。
@@ -3062,7 +3094,11 @@ export class InputHandler {
     }
     const t0 = Date.now();
     this.updateCandidatesInner();
-    InputLog.notePerf(this.enrichRun ? 'enrich' : 'conv', Date.now() - t0);
+    const ms = Date.now() - t0;
+    InputLog.notePerf(this.enrichRun ? 'enrich' : 'conv', ms);
+    if (AppStorage.get<string>('conversionEngine') === 'ai') {
+      console.info(`shuntiIME updateCandidates ${(AppStorage.get<string>('composingText') ?? '').length}字 ${ms}ms`);
+    }
   }
 
   private updateCandidatesInner(): void {
@@ -3100,12 +3136,27 @@ export class InputHandler {
     clearTimeout(this.enrichTimer);
     this.enrichPending = false;
     const fullKatakana = KanaKanjiConverter.toKatakana(target);
-    const segs = this.kanjiConverter.segment(target);
+    // AI 変換: 変換は裏のスレッドで行い、届いたら updateCandidates をもう一度呼ぶ (打鍵を止めない)。
+    // 届くまでは読みのまま出す。AI のときは独自辞書の文節区切りは使わないので計算しない
+    const aiMode = AppStorage.get<string>('conversionEngine') === 'ai' && AiConverter.isReady();
+    let aiCands: string[] = [];
+    if (aiMode) {
+      aiCands = AiConverter.candidates(KanaKanjiConverter.recentContext(), target, () => {
+        if (this.conversionTarget() === target) { this.updateCandidates(); }
+      });
+    }
+    // 前の方が固定されたら、それを入力欄に確定して、残りだけを入力中に残す (長い入力でも変換中の文字列を短く保つ)
+    if (aiMode && AiConverter.frozenKana().length > 0 && this.conversionEnd === 0) {
+      const fk = AiConverter.frozenKana();
+      const fs = AiConverter.frozenSurf();
+      setTimeout(() => { this.autoCommitFrozen(target, fk, fs); }, 0);
+    }
+    const segs = aiMode ? [target] : this.kanjiConverter.segment(target);
     let candidates: string[];
     // 入力ログ用: 各候補をどの段が列に入れたか (InputLog の o 欄)。段ごとに
     // 「まだ印の無い候補」へ印を付けていくので、先に入れた段が勝つ。
-    const segDiag = DEBUG_INPUT_LOG ? this.kanjiConverter.segDiagFor(target) : '';
-    const segCostPerKana = this.kanjiConverter.segCostPerKanaFor(target);
+    const segDiag = (DEBUG_INPUT_LOG && !aiMode) ? this.kanjiConverter.segDiagFor(target) : '';
+    const segCostPerKana = aiMode ? 0 : this.kanjiConverter.segCostPerKanaFor(target);
     const origin = new Map<string, string>();
     const promo = new Map<string, string>();
     const tagNew = (list: string[], tag: string): void => {
@@ -3120,7 +3171,12 @@ export class InputHandler {
     // the plain whole-string recordChoice instead of a stale alignment.
     this.lastAlignment = undefined;
 
-    if (segs.length <= 1) {
+    if (aiCands.length > 0) {
+      baseTag = 'ai';
+      candidates = [...aiCands];
+      if (!candidates.includes(fullKatakana)) { candidates.push(fullKatakana); }
+      if (!candidates.includes(target)) { candidates.push(target); }
+    } else if (segs.length <= 1) {
       candidates = this.kanjiConverter.lookup(target);
     } else {
       // Auto-converted prefix (all but the last segment). Computed once here
@@ -3204,7 +3260,7 @@ export class InputHandler {
     // homophone in any earlier word — 橋/箸 in はしをわたる, 撮る/取る in
     // 写真をとった — never appeared anywhere in the list. (Empty for track B,
     // whose lookup already routed through composeMozcCandidates above.)
-    const alts = skipExtras ? [] as string[] : this.kanjiConverter.sentenceAlternatives(target);
+    const alts = (skipExtras || aiCands.length > 0) ? [] as string[] : this.kanjiConverter.sentenceAlternatives(target);
     // Insert the alternatives just ABOVE the katakana/kana fallbacks, not at a
     // fixed position 1: a whole-phrase dict entry can already carry a genuine
     // kanji alternative at candidate[1] (はなをみる → 花を観る, 花を見る), and
@@ -3254,7 +3310,8 @@ export class InputHandler {
     // 境界の迂回探索は時々 贅金を修める(ぜいきんをおさめる)や 先生似合う
     // (せんせいにあう)のような妙な再解釈を出す。上げると本当に欲しい
     // 税金を納める が押し下げられる(実測: 候補4→5)。
-    const altSeg = skipExtras ? null : this.kanjiConverter.findAlternateSegmentation(target);
+    // AI 変換のときは独自辞書の文節区切りを使わない (入力全体をもう一度区切り直すので長い入力で重い)
+    const altSeg = (skipExtras || aiMode) ? null : this.kanjiConverter.findAlternateSegmentation(target);
     if (altSeg !== null && !candidates.includes(altSeg)) {
       const kanaCount = (t: string): number => {
         let n = 0;

@@ -14,7 +14,11 @@ export interface KeyboardSettings {
   alphabetKeyboardLayout: string;
   oneHandedMode: boolean;
   oneHandedSide: string;
-  // 'hybrid' = 既定。mozc の統計エンジンで文を決めたうえで、候補の2番目以降に
+  // 'ai' = 既定 (2026-09)。AI変換 shuntelligence (AiConverter)。辞書 shuntorge の網を文脈を読むモデルが採点する。
+  //   盲検350文: 1位 57.1% / 3位以内 80.9% / 5位以内 87.4% / リストに無い 11.4%。1位は hybrid より 2.3 点低いが、
+  //   外した文の多くは「私→わたし」「何→なに」の表記の好み (私/わたしを正解に数えると約 64%、Google の記録 62.9%)。
+  //   候補リスト全体では全エンジンで最良。辞書とモデル (rawfile の kkc_*.bin) が無ければ hybrid に戻る。
+  // 'hybrid' = 以前の既定。mozc の統計エンジンで文を決めたうえで、候補の2番目以降に
   // 独自辞書の同音語を織り交ぜる (composeMozcCandidates 参照)。
   // 'mozc' = 織り交ぜ無しの素の mozc。'custom' = 独自の手作り辞書のみ。
   //
@@ -124,7 +128,7 @@ const DEFAULTS: KeyboardSettings = {
   alphabetKeyboardLayout: 'QWERTY',
   oneHandedMode: false,
   oneHandedSide: 'right',
-  conversionEngine: 'hybrid',
+  conversionEngine: 'ai',
   numericPadEnabled: false,
   hapticEnabled: false,
   themeMode: 'system',

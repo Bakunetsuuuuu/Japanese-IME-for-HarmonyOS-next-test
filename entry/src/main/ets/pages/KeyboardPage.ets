@@ -181,6 +181,27 @@ struct KeyboardPage {
 
   // かな表示帯・候補バーの高さ (vp)。STRIP_HEIGHT_RATIO/CANDIDATE_BAR_
   // HEIGHT_RATIO 参照。
+  // 入力中の文字列の帯の幅 (vp)。長い入力を帯に収めるための字間の計算に使う
+  @State composingStripWidthVp: number = 0;
+
+  // 入力中の文字列が帯からはみ出すとき、文字の横幅を縮めて全体を収める (字は重ならない)。
+  // 文字列の本来の幅 (vp) と、横の縮小率 (1 = 縮めない) を返す。縮めるのは 0.4 倍まで
+  private composingFit(text: string): number[] {
+    const fs: number = this.isLandscape ? 12 : 16;
+    const avail = this.composingStripWidthVp - 24;   // 左右の余白
+    if (avail <= 0 || text.length < 2) {
+      return [0, 1];
+    }
+    const px = this.getUIContext().getMeasureUtils().measureText({
+      textContent: text, fontSize: fs, fontWeight: FontWeight.Medium, fontFamily: JP_FONT_FAMILY
+    });
+    const w = this.getUIContext().px2vp(px);
+    if (w <= avail) {
+      return [w, 1];
+    }
+    return [w, Math.max(0.4, avail / w)];
+  }
+
   private stripHeightVp(): number {
     return Math.max(STRIP_MIN_VP, Math.min(STRIP_MAX_VP, this.keyboardHeightVp * STRIP_HEIGHT_RATIO));
   }
@@ -683,12 +704,16 @@ struct KeyboardPage {
                         .fontWeight(FontWeight.Medium)
                         .fontColor(kbTheme(this.isDark).textPrimary)
                         .maxLines(1)
-                        .textOverflow({ overflow: TextOverflow.Ellipsis })
+                        .textOverflow({ overflow: TextOverflow.Clip })
                         .padding({ left: 12, right: 8 })
                         .border((this.composingText + this.pendingRomaji).length > 0 ?
                           { width: { bottom: 2 }, color: kbTheme(this.isDark).accent } :
                           { width: { bottom: 0 } })
-                        .layoutWeight(1)
+                        // はみ出すときは本来の幅で並べてから横だけ縮める (左端を基準に)
+                        .width(this.composingFit(this.composingText + this.pendingRomaji)[1] < 1
+                          ? this.composingFit(this.composingText + this.pendingRomaji)[0] + 24 : '100%')
+                        .layoutWeight(this.composingFit(this.composingText + this.pendingRomaji)[1] < 1 ? 0 : 1)
+                        .scale({ x: this.composingFit(this.composingText + this.pendingRomaji)[1], y: 1, centerX: 0, centerY: '50%' })
                     }
                   }
                   Blank()
@@ -697,6 +722,8 @@ struct KeyboardPage {
                 .height('100%')
                 .alignItems(VerticalAlign.Center)
                 .padding({ left: 12 })
+                .onAreaChange((_old: Area, now: Area) => { this.composingStripWidthVp = Number(now.width) - 12; })
+                .clip(true)
 
                 Row() {
                   SymbolGlyph($r('sys.symbol.gearshape'))

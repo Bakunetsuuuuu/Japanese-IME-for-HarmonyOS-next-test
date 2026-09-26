@@ -31,3 +31,11 @@ entry/.preview/
 
 # 端末ごとの SDK パス。個人のユーザー名が入るので追跡しない
 local.properties
+
+# AI 変換 (shuntelligence) の辞書とモデル。大きいので GitHub Releases に置く
+# (tools/ai_assets.json と tools/fetch_ai_assets.py)。ネイティブのビルドの生成物も入れない
+entry/src/main/resources/rawfile/kkc_lex.bin
+entry/src/main/resources/rawfile/kkc_model.bin
+entry/.cxx/
+entry/oh_modules/
+oh_modules/

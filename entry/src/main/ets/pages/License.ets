@@ -29,6 +29,14 @@ struct License {
     '・SudachiDict（Works Applications, Apache License 2.0）\n' +
     '  https://github.com/WorksApplications/SudachiDict\n' +
     '詳細なライセンス全文は THIRD_PARTY_NOTICES.md を参照してください。\n\n' +
+    '■ AI変換 (shuntelligence / shuntorge)\n' +
+    '・shuntelligence（変換モデル、shuntilettuce、CC BY 4.0）\n' +
+    '  https://creativecommons.org/licenses/by/4.0/\n' +
+    '・shuntorge（AI変換の辞書）: 独自部分は MIT。以下を含みます\n' +
+    '  mozc（Google, BSD-3-Clause、IPAdic 由来の辞書データを含む）\n' +
+    '  SudachiDict（Works Applications, Apache License 2.0、読みの一部）\n' +
+    '  日本郵便 郵便番号データ（地名の照合）\n' +
+    '学習のコードと教材は公開していません。学習に使った文章の出典は DATA_SOURCES.md を参照してください。\n\n' +
     '■ アプリコード\n' +
     'MIT License\n\n' +
     '■ 開発\n' +

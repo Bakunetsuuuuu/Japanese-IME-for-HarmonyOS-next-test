@@ -1,0 +1,6 @@
+{
+  "name": "libkkc.so",
+  "types": "./index.d.ts",
+  "version": "1.0.0",
+  "description": "shuntelligence (AI 変換) の NAPI"
+}
