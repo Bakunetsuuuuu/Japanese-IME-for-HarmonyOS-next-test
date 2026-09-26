@@ -103,7 +103,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
 
     // ---------------------------------------------------------------- 画面の組み立て
     private fun sig() = listOf(
-        settings.isDark(this), settings.heightPercent, settings.flickHints, settings.widthPercent, settings.offsetPercent,
+        settings.isDark(this), settings.heightPercent, settings.flickHints, settings.widthPercent, settings.offsetPercent, settings.bottomExtraDp,
         settings.oneHanded, settings.floating, resources.configuration.orientation,
     ).joinToString("/")
 
@@ -116,7 +116,8 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         val side = if (floating) "off" else settings.oneHanded
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val scale = settings.heightPercent / 100f * (if (floating) 0.85f else 1f)
-        val rowH = (if (landscape) 44 else 56) * dp * scale
+        // 1 行の高さ (設定の 100% のとき)。以前の 120% を標準にした (前の標準は低すぎた)
+        val rowH = (if (landscape) 53 else 67) * dp * scale
         val kbH = rowH * 4 + 8 * dp
 
         val kb = KeyboardView(this, input, tables, ::tick, ::special).also {
@@ -198,14 +199,18 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
                     leftMargin = if (side == "left") w else 0
                 })
             }
-            // 画面下のナビゲーションバー (ジェスチャーの線・キーボード切替) にキーが重ならないよう、その分だけ下を空ける。
+            // 画面下のナビゲーションバー (キーボードを隠す・切り替えるボタン) にキーが重ならないよう、下を空ける。
+            // 端末によっては知らせてくる高さより大きいボタンを出す (Galaxy で確定キーと隠すボタンが重なった) ので、
+            // 少なくとも 48dp (標準のナビゲーションバーの高さ) は空け、設定の「キーボードの下の余白」を足す。
             // 作り直した画面には余白の知らせが来ないことがあるので、最後に分かった値を先に当てておく
-            r.setPadding(0, 0, 0, navInset)
+            val extra = (settings.bottomExtraDp * dp).toInt()
+            fun pad(nav: Int) = maxOf(nav, (48 * dp).toInt()) + extra
+            r.setPadding(0, 0, 0, pad(navInset))
             r.setOnApplyWindowInsetsListener { v, insets ->
                 val bottom = if (android.os.Build.VERSION.SDK_INT >= 30) insets.getInsets(android.view.WindowInsets.Type.navigationBars()).bottom
                 else @Suppress("DEPRECATION") insets.systemWindowInsetBottom
                 navInset = bottom
-                v.setPadding(0, 0, 0, bottom)
+                v.setPadding(0, 0, 0, pad(bottom))
                 insets
             }
             r.post { r.requestApplyInsets() }

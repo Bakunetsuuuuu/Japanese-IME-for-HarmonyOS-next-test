@@ -12,6 +12,18 @@ import android.os.VibratorManager
 class Settings(context: Context) {
     private val p: SharedPreferences = context.getSharedPreferences("shunti", Context.MODE_PRIVATE)
 
+    init {
+        // 高さの基準を 1.2 倍にした (前の 120% が今の 100%)。前に保存した値は、同じ高さになるよう 1 度だけ換算する
+        if (!p.getBoolean("heightBase2", false)) {
+            val e = p.edit().putBoolean("heightBase2", true)
+            if (p.contains("heightPercent")) {
+                val v = (p.getInt("heightPercent", 100) / 1.2f / 5).let { Math.round(it) * 5 }
+                e.putInt("heightPercent", v.coerceIn(HEIGHT_MIN, HEIGHT_MAX))
+            }
+            e.apply()
+        }
+    }
+
     var haptic: Boolean
         get() = p.getBoolean("haptic", true)
         set(v) = p.edit().putBoolean("haptic", v).apply()
@@ -30,6 +42,11 @@ class Settings(context: Context) {
     var heightPercent: Int
         get() = p.getInt("heightPercent", 100)
         set(v) = p.edit().putInt("heightPercent", v).apply()
+
+    /** キーボードの下の余白 (dp)。画面下のボタンとキーが重なる端末で足す */
+    var bottomExtraDp: Int
+        get() = p.getInt("bottomExtraDp", 0)
+        set(v) = p.edit().putInt("bottomExtraDp", v).apply()
 
     /** フリックの上下左右の小さい字 */
     var flickHints: Boolean

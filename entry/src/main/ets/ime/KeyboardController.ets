@@ -3214,7 +3214,7 @@ export class InputHandler {
 
     if (aiCands.length > 0) {
       baseTag = 'ai';
-      candidates = [...aiCands];
+      candidates = AiConverter.preferGreetings(target, [...aiCands]);
       if (!candidates.includes(fullKatakana)) { candidates.push(fullKatakana); }
       if (!candidates.includes(target)) { candidates.push(target); }
     } else if (segs.length <= 1) {

@@ -49,6 +49,39 @@ export class AiConverter {
     });
   }
 
+  // 挨拶はかな書きを先に。モデルは文脈によって「こんにちは」を「今日は」と書く (教材の読みの入れ替え
+  // 「今日 → こんにち」の副作用。次の学習で直す)。こんにちは は読みのどこにあっても (きょうは も打っていなければ)、
+  // こんばんは は読みがそれだけのとき (今晩は寒い があるので)、1 位の「今日は」「今晩は」をかな書きに直した候補を 1 位に置く
+  static preferGreetings(target: string, cands: string[]): string[] {
+    if (cands.length === 0) {
+      return cands;
+    }
+    const top = cands[0];
+    const bare = target.replace(/[、。！？!?ー〜]+$/, '');
+    let kanji = '';
+    let kana = '';
+    if (target.indexOf('こんにちは') >= 0 && target.indexOf('きょうは') < 0 && top.indexOf('今日は') >= 0) {
+      kanji = '今日は';
+      kana = 'こんにちは';
+    } else if (bare === 'こんばんは' && top.indexOf('今晩は') >= 0) {
+      kanji = '今晩は';
+      kana = 'こんばんは';
+    }
+    if (kanji.length === 0) {
+      return cands;
+    }
+    const fixed = top.split(kanji).join(kana);
+    return [fixed, ...cands.filter((c: string) => c !== fixed)];
+  }
+
+  // 読み reading とその表記 surf の組で、挨拶の「今日は」をかな書きに直す (きょうは を打っていないときだけ)
+  private static greetingFix(reading: string, surf: string): string {
+    if (reading.indexOf('こんにちは') >= 0 && reading.indexOf('きょうは') < 0) {
+      return surf.split('今日は').join('こんにちは');
+    }
+    return surf;
+  }
+
   // ---- 長い入力: 前の方を固定して、後ろだけを変換する ----
   // 1 位の候補の語の区切りのうち、末尾から KEEP 字より前にあって、2 回続けて同じ変換になったところ
   // (または「、」「。」の後ろ) までを固定する。固定した部分は文脈としてモデルに渡すので、後ろの変換の質は落ちない。
@@ -141,7 +174,8 @@ export class AiConverter {
     AiConverter.prevSegs = segs;
     if (freezeEnd > 0) {
       AiConverter.fKana += tail.slice(0, freezeEnd);
-      AiConverter.fSurf += top.slice(0, freezeLen);
+      // 固定して確定する前の方にも、挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が確定されてしまう)
+      AiConverter.fSurf += AiConverter.greetingFix(tail.slice(0, freezeEnd), top.slice(0, freezeLen));
       AiConverter.prevSegs.clear();
     }
   }
