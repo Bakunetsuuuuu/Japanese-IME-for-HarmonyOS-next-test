@@ -96,7 +96,8 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         prevSegs = segs
         if (freezeEnd > 0) {
             fKana += tail.substring(0, freezeEnd)
-            fSurf += top.substring(0, minOf(freezeLen, top.length))
+            // 固定して確定する前の方にも、挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が確定されてしまう)
+            fSurf += greetingFix(tail.substring(0, freezeEnd), top.substring(0, minOf(freezeLen, top.length)))
             prevSegs.clear()
         }
     }
@@ -151,5 +152,9 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
 
     companion object {
         private const val KEEP = 8
+
+        /** 読み reading とその表記 surf の組で、挨拶の「今日は」をかな書きに直す (きょうは を打っていないときだけ) */
+        fun greetingFix(reading: String, surf: String): String =
+            if ("こんにちは" in reading && "きょうは" !in reading) surf.replace("今日は", "こんにちは") else surf
     }
 }
