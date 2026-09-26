@@ -5,7 +5,7 @@
 Last updated: September 2026
 
 - **App name**: shunti IME
-- **Package name**: com.shunti.japaneseime
+- **Package name**: com.shunti.japaneseime.android
 - **Developer**: shuntilettuce
 
 ---

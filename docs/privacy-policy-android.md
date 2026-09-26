@@ -5,7 +5,7 @@
 最終更新: 2026年9月
 
 - **アプリ名**: shunti IME
-- **パッケージ名**: com.shunti.japaneseime
+- **パッケージ名**: com.shunti.japaneseime.android
 - **開発者名**: shuntilettuce
 
 ---
