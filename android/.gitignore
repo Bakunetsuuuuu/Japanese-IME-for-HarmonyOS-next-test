@@ -1,0 +1,10 @@
+# ビルドの生成物・端末ごとの設定 (sdk.dir にユーザー名が入る)・署名の鍵とパスワードは入れない
+.gradle/
+build/
+app/build/
+local.properties
+keystore.properties
+*.jks
+*.keystore
+*.apk
+*.aab

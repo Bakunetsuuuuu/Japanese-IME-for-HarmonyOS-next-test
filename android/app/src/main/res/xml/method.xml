@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- settingsActivity: 端末のキーボードの設定から、このアプリの設定画面を開けるようにする -->
+<input-method xmlns:android="http://schemas.android.com/apk/res/android"
+    android:settingsActivity="com.shunti.japaneseime.MainActivity">
+    <subtype
+        android:imeSubtypeLocale="ja_JP"
+        android:imeSubtypeMode="keyboard"
+        android:label="@string/ime_name" />
+</input-method>
