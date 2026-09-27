@@ -192,14 +192,20 @@ bool Composer::press_input(const KeyEvent& ev) {
         case Key::Tab:   // 打っている間の候補を選び始める
             flush_romaji();
             update_live();
-            if (!live_cands_.empty()) enter_single(live_cands_[0], live_cands_, 0);
+            if (!live_cands_.empty()) {
+                enter_single(live_cands_[0], live_cands_, 0);
+                first_cands_ = live_cands_;
+                first_via_ = "live";
+            }
             return true;
         case Key::Enter:
             flush_romaji();
+            log({"raw", kana_, kana_, ctx_});
             commit_text(kana_);
             to_idle();
             return true;
         case Key::Escape:
+            log({"clear", kana_ + romaji_.pending(), u16(), ctx_});
             to_idle();
             return true;
         case Key::Backspace:
@@ -238,6 +244,7 @@ bool Composer::press_input(const KeyEvent& ev) {
             flush_romaji();
             if (kana_.empty()) { to_idle(); return true; }
             enter_single(kana_, {}, 0);
+            first_via_ = "fkey";
             transform(ev.key);
             return true;
         default:   // ↑・PageUp/Down: 入力中は入力欄に渡さない
@@ -328,6 +335,12 @@ void Composer::select_candidate(int index) {
         if (index < 0 || index >= int(live_cands_.size())) return;
         u16 c = live_cands_[size_t(index)];
         flush_romaji();
+        {
+            LogEvent e{"commit", kana_, c, ctx_, live_cands_, index};
+            e.segs = {c};
+            e.extra = "live,mouse";
+            log(e);
+        }
         if (learning_) learning_->record(kana_, c);
         commit_text(c);
         to_idle();
@@ -340,6 +353,7 @@ void Composer::select_candidate(int index) {
     s.sel = index;
     s.surface = s.cands[size_t(index)];
     s.changed = true;
+    log({"bseg", s.reading, s.surface, left_context(focus_), s.cands, index, {}, "mouse"});
     if (!options.always_cands) cand_open_ = false;
     rebuild_view();
 }
@@ -425,6 +439,12 @@ bool Composer::live_commit(const Conversion& c) {
     if (!freeze_end) return false;
     // 確定する前の方にも挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が確定されてしまう)
     u16 fs = greeting_fix(kana_.substr(0, freeze_end), top.substr(0, std::min(freeze_len, top.size())));
+    {
+        std::vector<u16> cs(c.cands.begin(), c.cands.begin() + long(std::min<size_t>(c.cands.size(), 5)));
+        LogEvent e{"auto", kana_.substr(0, freeze_end), fs, ctx_, cs, -1};
+        e.extra = to_utf8(kana_.substr(freeze_end));   // まだ確定していない残りの読み
+        log(e);
+    }
     commit_text(fs);
     ctx_ = tail(ctx_ + fs, CTX_MAX);
     kana_.erase(0, freeze_end);
@@ -477,6 +497,8 @@ void Composer::convert_all() {
     if (kana_.empty()) { to_idle(); return; }
     sync_user_dict();
     segs_ = convert_phrases(ctx_, kana_, &whole_);
+    first_cands_ = whole_;
+    first_via_ = "space";
     if (segs_.size() != 1) whole_.clear();
     focus_ = 0;
     cand_open_ = false;
@@ -596,6 +618,11 @@ void Composer::transform(Key f) {
 }
 
 void Composer::back_to_input() {
+    {
+        u16 shown, reading;
+        for (auto& s : segs_) { shown += s.surface; reading += s.reading; }
+        log({"cancel", reading, shown, ctx_, first_cands_});
+    }
     kana_.clear();
     for (auto& s : segs_) kana_ += s.reading;
     caret_ = kana_.size();
@@ -608,13 +635,32 @@ void Composer::back_to_input() {
 }
 
 void Composer::commit_all() {
-    u16 t;
+    u16 t, reading;
+    std::vector<u16> segs;
+    int changed = 0;
     for (auto& s : segs_) {
         t += s.surface;
-        if (s.changed && learning_) learning_->record(s.reading, s.surface);
+        reading += s.reading;
+        segs.push_back(s.surface);
+        if (s.changed) {
+            changed++;
+            if (learning_) learning_->record(s.reading, s.surface);
+            log({"bseg", s.reading, s.surface, u16(), s.cands, s.sel});
+        }
+    }
+    if (on_log) {
+        int idx = -1;
+        for (size_t i = 0; i < first_cands_.size(); i++) if (first_cands_[i] == t) idx = int(i);
+        LogEvent e{"commit", reading, t, ctx_, first_cands_, idx, segs};
+        e.extra = first_via_ + ",changed=" + std::to_string(changed);
+        log(e);
     }
     commit_text(t);
     to_idle();
+}
+
+void Composer::log(LogEvent e) {
+    if (on_log) on_log(e);
 }
 
 void Composer::commit_text(const u16& t) {
@@ -629,6 +675,8 @@ void Composer::to_idle() {
     romaji_.reset();
     segs_.clear();
     whole_.clear();
+    first_cands_.clear();
+    first_via_.clear();
     cand_open_ = false;
     alpha_run_ = false;
     live_key_.clear();

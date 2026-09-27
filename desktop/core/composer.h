@@ -51,6 +51,20 @@ struct View {
     int cand_sel = -1;            // 選んでいる候補 (-1 = まだ選んでいない。打っている間の候補)
 };
 
+// 入力の記録 (デバッグ用のビルドだけが受け取って書く。HarmonyOS 版 InputLog.ets と同じ種別とキー)。
+//   commit = 変換して確定 (r 読み・s 表記・c 候補・i 選んだ番号・b 左の文脈・g 文節)
+//   bseg   = 文節を選び直した (r・s・c・i)
+//   auto   = リアルタイム確定で前の方を確定した (r・s・c = そのときの変換の候補・b)
+//   raw    = かなのまま確定した / cancel = 変換をやめてかなに戻した (s = 出ていた変換) / clear = 入力を捨てた
+struct LogEvent {
+    const char* kind = "";
+    u16 reading, surface, ctx;
+    std::vector<u16> cands;
+    int index = -1;
+    std::vector<u16> segs;      // 文節の表記 (commit のとき)
+    std::string extra;          // x (補足)
+};
+
 struct ComposerOptions {
     bool live = true;          // 打っている間も AI 変換して候補の窓に出す
     bool live_commit = true;   // リアルタイム確定
@@ -68,6 +82,8 @@ public:
     Composer(Converter* conv, Learning* learning, UserDict* dict);
 
     ComposerOptions options;
+    // 入力の記録を受け取る (空なら何もしない。リリース用のビルドでは空のまま)
+    std::function<void(const LogEvent&)> on_log;
 
     // 入力欄のカーソルの左の文 (変換の文脈)。読めない入力欄では空を返してよい (そのときはこれまでに確定した文を使う)
     void set_context_provider(std::function<u16()> f) { context_ = std::move(f); }
@@ -119,6 +135,7 @@ private:
     void commit_all();
     void commit_text(const u16& t);
     void to_idle();
+    void log(LogEvent e);
     void update_live();
     bool live_commit(const Conversion& c);
     void rebuild_view();
@@ -150,6 +167,8 @@ private:
     // 変換
     std::vector<Seg> segs_;
     std::vector<u16> whole_;   // 文全体の候補 (文節が 1 つのとき、その候補に使う)
+    std::vector<u16> first_cands_;   // 変換したときの文全体の候補 (記録用)
+    std::string first_via_;          // どうやって変換を始めたか (space・live・fkey。記録用)
     size_t focus_ = 0;
     bool cand_open_ = false;
     uint32_t dict_version_ = 0;   // 変換の網に入れたユーザー辞書の版

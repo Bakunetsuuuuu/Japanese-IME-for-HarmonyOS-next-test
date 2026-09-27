@@ -190,7 +190,10 @@ void build() {
     y += 70;
 
     std::wstring about = std::wstring(L"shunti IME ") + VERSION;
-    make(L"STATIC", about.c_str(), 0, 14, y + 6, 150, 20, 0);
+#ifdef SHUNTI_INPUT_LOG
+    about += L" (デバッグ版: 入力を記録しています)";
+#endif
+    make(L"STATIC", about.c_str(), 0, 14, y + 6, 200, 36, 0);
     make(L"BUTTON", L"ライセンス", BS_PUSHBUTTON | WS_TABSTOP, 222, y, 80, 25, ID_LICENSE);
     make(L"BUTTON", L"GitHub", BS_PUSHBUTTON | WS_TABSTOP, 308, y, 76, 25, ID_GITHUB);
     make(L"BUTTON", L"閉じる", BS_DEFPUSHBUTTON | WS_TABSTOP, 390, y, 80, 25, IDCANCEL);
