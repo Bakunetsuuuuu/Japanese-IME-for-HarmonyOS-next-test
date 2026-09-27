@@ -24,7 +24,6 @@ bool load_settings(const fs::path& p, Settings& s) {
         if (x && x->type == json::Value::Bool) out = x->b;
     };
     str("theme", s.theme);
-    str("input", s.input);
     boolean("space_fullwidth", s.space_fullwidth);
     boolean("digits_fullwidth", s.digits_fullwidth);
     boolean("live", s.live);
@@ -38,7 +37,6 @@ bool save_settings(const fs::path& p, const Settings& s) {
     auto b = [](bool x) { return x ? "true" : "false"; };
     std::string o = "{\n";
     o += "  \"theme\": " + json::quote(s.theme) + ",\n";
-    o += "  \"input\": " + json::quote(s.input) + ",\n";
     o += std::string("  \"space_fullwidth\": ") + b(s.space_fullwidth) + ",\n";
     o += "  \"punct\": " + std::to_string(s.punct) + ",\n";
     o += std::string("  \"digits_fullwidth\": ") + b(s.digits_fullwidth) + ",\n";

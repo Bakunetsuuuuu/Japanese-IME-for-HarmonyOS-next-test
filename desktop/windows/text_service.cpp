@@ -260,28 +260,6 @@ STDMETHODIMP TextService::OnChange(REFGUID guid) {
 
 // ---------------------------------------------------------------- キー
 
-namespace {
-// かな入力 (JIS 配列の刻印どおり)。Shift は小さい字 (ぁぃぅぇぉゃゅょっ・を・「」、。・)
-char16_t kana_for_vk(WPARAM vk, bool shift) {
-    struct K { WPARAM vk; char16_t base, shifted; };
-    static const K KEYS[] = {
-        {'1', u'ぬ', 0}, {'2', u'ふ', 0}, {'3', u'あ', u'ぁ'}, {'4', u'う', u'ぅ'}, {'5', u'え', u'ぇ'},
-        {'6', u'お', u'ぉ'}, {'7', u'や', u'ゃ'}, {'8', u'ゆ', u'ゅ'}, {'9', u'よ', u'ょ'}, {'0', u'わ', u'を'},
-        {VK_OEM_MINUS, u'ほ', 0}, {VK_OEM_7, u'へ', 0}, {VK_OEM_5, u'ー', 0},
-        {'Q', u'た', 0}, {'W', u'て', 0}, {'E', u'い', u'ぃ'}, {'R', u'す', 0}, {'T', u'か', 0}, {'Y', u'ん', 0},
-        {'U', u'な', 0}, {'I', u'に', 0}, {'O', u'ら', 0}, {'P', u'せ', 0}, {VK_OEM_3, 0x309B, 0}, {VK_OEM_4, 0x309C, u'「'},
-        {'A', u'ち', 0}, {'S', u'と', 0}, {'D', u'し', 0}, {'F', u'は', 0}, {'G', u'き', 0}, {'H', u'く', 0},
-        {'J', u'ま', 0}, {'K', u'の', 0}, {'L', u'り', 0}, {VK_OEM_PLUS, u'れ', 0}, {VK_OEM_1, u'け', 0}, {VK_OEM_6, u'む', u'」'},
-        {'Z', u'つ', u'っ'}, {'X', u'さ', 0}, {'C', u'そ', 0}, {'V', u'ひ', 0}, {'B', u'こ', 0}, {'N', u'み', 0},
-        {'M', u'も', 0}, {VK_OEM_COMMA, u'ね', u'、'}, {VK_OEM_PERIOD, u'る', u'。'}, {VK_OEM_2, u'め', u'・'},
-        {VK_OEM_102, u'ろ', 0},
-    };
-    for (auto& k : KEYS)
-        if (k.vk == vk) return shift && k.shifted ? k.shifted : k.base;
-    return 0;
-}
-}  // namespace
-
 void TextService::apply_settings() {
     Core& c = core();
     c.settings.refresh();
@@ -338,12 +316,6 @@ bool TextService::to_key_event(WPARAM vk, LPARAM lp, KeyEvent& ev) {
         return true;
     }
     if (ev.ctrl || ev.alt) return false;
-    if (core().settings.get().input == "kana") {
-        if (char16_t k = kana_for_vk(vk, ev.shift)) {
-            ev.ch = k;
-            return true;
-        }
-    }
     BYTE ks[256];
     if (!GetKeyboardState(ks)) return false;
     WCHAR buf[4];

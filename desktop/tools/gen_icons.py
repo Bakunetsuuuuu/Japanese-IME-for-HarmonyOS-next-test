@@ -8,7 +8,7 @@ Windows 版のアイコンを Zori-chan の絵 (desktop/windows/art/zori-chan.pn
                                           IME の登録アイコン (タスクバーの「あ」の隣に出る) にも使う
   mode_off_white.ico / mode_off_black.ico オフ (目の縦棒を消して、寝ている目にしたもの)
   shunti.ico                              設定画面の exe のアイコン (スタートメニュー用。白い角丸の上に黒い Zori-chan)
-絵の下の「Zori-chan」の字は使わない。どれも 16〜256px を 1 つの .ico に入れる。
+どれも 16〜256px を 1 つの .ico に入れる。
 """
 import os
 from collections import deque
@@ -26,7 +26,6 @@ def load_mask():
     a = np.asarray(im).astype(np.int32)
     lum = (a[..., 0] * 299 + a[..., 1] * 587 + a[..., 2] * 114) // 1000
     filled = (a[..., 3] > 128) & (lum < 128)
-    filled[400:, :] = False                      # 下の「Zori-chan」の字
     ys, xs = np.nonzero(filled)
     return filled[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
 
@@ -67,13 +66,13 @@ def sleeping(mask):
             rows.setdefault(y, []).append(x)
         widest = max(len(v) for v in rows.values())
         for y, xs in rows.items():
-            if len(xs) < widest * 0.5:           # 横線より細い段 = 縦棒
+            if len(xs) < widest * 0.65:          # 横線より細い段 = 縦棒
                 for x in xs:
                     out[y, x] = True
     return out, len(eyes)
 
 
-def square(mask, stretch=1.25):
+def square(mask, stretch=1.1):
     """正方形のアイコンに置く。横長の絵なので縦に stretch 倍伸ばして (デフォルメ)、横いっぱいに置く。
     上下は形の外枠でなく重心で真ん中に置く (下が平らで上が丸い形は、外枠で真ん中に置くと上に寄って見える)"""
     h, w = mask.shape

@@ -8,7 +8,6 @@ namespace shunti {
 
 struct Settings {
     std::string theme = "auto";      // 候補の窓の色: auto (Windows に合わせる)・light・dark
-    std::string input = "romaji";    // 入力方式: romaji (ローマ字)・kana (かな入力。JIS 配列)
     bool space_fullwidth = true;     // 何も打っていないときの空白を全角に (Shift で逆)
     int punct = 0;                   // 句読点: 0 = 、。 1 = ，． 2 = 、． 3 = ，。
     bool digits_fullwidth = false;   // 数字を全角で入れる

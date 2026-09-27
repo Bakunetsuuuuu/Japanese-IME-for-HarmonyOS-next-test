@@ -21,7 +21,7 @@ namespace {
 constexpr wchar_t VERSION[] = L"0.1.0";
 
 enum Id {
-    ID_THEME = 100, ID_INPUT, ID_PUNCT, ID_SPACE, ID_DIGITS, ID_LIVE, ID_LIVECOMMIT, ID_CTRLSPACE,
+    ID_THEME = 100, ID_PUNCT, ID_SPACE, ID_DIGITS, ID_LIVE, ID_LIVECOMMIT, ID_CTRLSPACE,
     ID_LIST, ID_READING, ID_WORD, ID_POS, ID_ADD, ID_REMOVE, ID_RESET, ID_LICENSE, ID_GITHUB, ID_ICON,
 };
 
@@ -35,7 +35,7 @@ fs::path g_dir;
 Settings g_s;
 UserDict* g_dict = nullptr;
 HWND g_wnd = nullptr, g_list = nullptr;
-HFONT g_font = nullptr, g_bold = nullptr;
+HFONT g_font = nullptr;
 UINT g_dpi = 96;
 bool g_loading = false;
 
@@ -53,12 +53,14 @@ std::wstring text_of(int id) {
     return s;
 }
 
-HWND make(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id, bool bold = false) {
+HWND make(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id) {
     HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, S(x), S(y), S(w), S(h), g_wnd,
                              reinterpret_cast<HMENU>(INT_PTR(id)), GetModuleHandleW(nullptr), nullptr);
-    SendMessageW(c, WM_SETFONT, WPARAM(bold ? g_bold : g_font), TRUE);
+    SendMessageW(c, WM_SETFONT, WPARAM(g_font), TRUE);
     return c;
 }
+
+void group(const wchar_t* title, int y, int h) { make(L"BUTTON", title, BS_GROUPBOX, 10, y, 460, h, 0); }
 
 HWND combo(int x, int y, int w, int id, std::initializer_list<const wchar_t*> items) {
     HWND c = make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, x, y, w, 200, id);
@@ -75,7 +77,6 @@ void save() {
     if (g_loading) return;
     const char* themes[] = {"auto", "light", "dark"};
     g_s.theme = themes[std::max(0, selected(ID_THEME))];
-    g_s.input = selected(ID_INPUT) == 1 ? "kana" : "romaji";
     g_s.punct = std::max(0, selected(ID_PUNCT));
     g_s.space_fullwidth = checked(ID_SPACE);
     g_s.digits_fullwidth = checked(ID_DIGITS);
@@ -142,40 +143,28 @@ void reset_learning() {
 }
 
 void build() {
-    int y = 12;
-    make(L"STATIC", L"見た目", 0, 16, y, 440, 20, 0, true);
-    y += 26;
-    make(L"STATIC", L"候補の窓の色", 0, 28, y + 3, 150, 20, 0);
-    combo(190, y, 250, ID_THEME, {L"Windows に合わせる", L"ライト", L"ダーク"});
-    y += 34;
-    make(L"BUTTON", L"アイコンの色をタスクバーに合わせる", BS_PUSHBUTTON | WS_TABSTOP, 28, y, 260, 26, ID_ICON);
-    y += 40;
+    int y = 8;
+    group(L"表示", y, 86);
+    make(L"STATIC", L"候補ウィンドウの色:", 0, 24, y + 27, 170, 20, 0);
+    combo(200, y + 23, 250, ID_THEME, {L"Windows の設定に合わせる", L"ライト", L"ダーク"});
+    make(L"BUTTON", L"アイコンの色をタスクバーに合わせる", BS_PUSHBUTTON | WS_TABSTOP, 24, y + 52, 250, 25, ID_ICON);
+    y += 94;
 
-    make(L"STATIC", L"入力", 0, 16, y, 440, 20, 0, true);
-    y += 26;
-    make(L"STATIC", L"入力方式", 0, 28, y + 3, 150, 20, 0);
-    combo(190, y, 250, ID_INPUT, {L"ローマ字入力", L"かな入力 (JIS 配列)"});
-    y += 32;
-    make(L"STATIC", L"句読点", 0, 28, y + 3, 150, 20, 0);
-    combo(190, y, 250, ID_PUNCT, {L"、。", L"，．", L"、．", L"，。"});
-    y += 34;
-    make(L"BUTTON", L"何も打っていないときの空白を全角にする (Shift で逆)", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_SPACE);
-    y += 26;
-    make(L"BUTTON", L"数字を全角で入れる", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_DIGITS);
-    y += 26;
-    make(L"BUTTON", L"打っている間も変換の候補を出す", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_LIVE);
-    y += 26;
-    make(L"BUTTON", L"長く打つと前の方から自動で確定する (リアルタイム確定)", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_LIVECOMMIT);
-    y += 26;
-    make(L"BUTTON", L"Ctrl + Space でも日本語入力をオン・オフする", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_CTRLSPACE);
-    y += 38;
+    group(L"入力", y, 184);
+    make(L"STATIC", L"句読点:", 0, 24, y + 27, 170, 20, 0);
+    combo(200, y + 23, 120, ID_PUNCT, {L"、。", L"，．", L"、．", L"，。"});
+    make(L"BUTTON", L"何も入力していないときのスペースを全角にする", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 54, 430, 22, ID_SPACE);
+    make(L"BUTTON", L"数字を全角で入力する", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 79, 430, 22, ID_DIGITS);
+    make(L"BUTTON", L"入力中も変換候補を表示する", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 104, 430, 22, ID_LIVE);
+    make(L"BUTTON", L"変換を自動で確定する", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 129, 430, 22, ID_LIVECOMMIT);
+    make(L"BUTTON", L"Ctrl + Space でも日本語入力をオン/オフする", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 154, 430, 22, ID_CTRLSPACE);
+    y += 192;
 
-    make(L"STATIC", L"ユーザー辞書", 0, 16, y, 440, 20, 0, true);
-    y += 26;
-    g_list = make(WC_LISTVIEWW, L"", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 28, y, 412, 150, ID_LIST);
+    group(L"ユーザー辞書", y, 266);
+    g_list = make(WC_LISTVIEWW, L"", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 24, y + 22, 432, 140, ID_LIST);
     ListView_SetExtendedListViewStyle(g_list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
     const wchar_t* cols[] = {L"読み", L"単語", L"品詞"};
-    int widths[] = {130, 130, 130};
+    int widths[] = {130, 130, 150};
     for (int i = 0; i < 3; i++) {
         LVCOLUMNW c = {};
         c.mask = LVCF_TEXT | LVCF_WIDTH;
@@ -183,35 +172,31 @@ void build() {
         c.cx = S(widths[i]);
         ListView_InsertColumn(g_list, i, &c);
     }
-    y += 158;
-    make(L"STATIC", L"読み", 0, 28, y + 3, 40, 20, 0);
-    make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 70, y, 140, 24, ID_READING);
-    make(L"STATIC", L"単語", 0, 222, y + 3, 40, 20, 0);
-    make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 262, y, 178, 24, ID_WORD);
-    y += 32;
-    make(L"STATIC", L"品詞", 0, 28, y + 3, 40, 20, 0);
-    HWND pos = make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 70, y, 200, 200, ID_POS);
+    make(L"STATIC", L"読み:", 0, 24, y + 175, 44, 20, 0);
+    make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 70, y + 172, 150, 23, ID_READING);
+    make(L"STATIC", L"単語:", 0, 232, y + 175, 44, 20, 0);
+    make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 278, y + 172, 178, 23, ID_WORD);
+    make(L"STATIC", L"品詞:", 0, 24, y + 206, 44, 20, 0);
+    HWND pos = make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 70, y + 202, 210, 200, ID_POS);
     for (auto& p : POS) SendMessageW(pos, CB_ADDSTRING, 0, LPARAM(p.label));
-    make(L"BUTTON", L"登録", BS_PUSHBUTTON | WS_TABSTOP, 280, y - 1, 70, 26, ID_ADD);
-    make(L"BUTTON", L"削除", BS_PUSHBUTTON | WS_TABSTOP, 360, y - 1, 80, 26, ID_REMOVE);
-    y += 34;
-    make(L"STATIC", L"読みはひらがな。動詞・形容詞は終止形で (ぐぐる / ググる)。活用した形でも変換に出ます。", 0, 28, y, 412, 36, 0);
-    y += 46;
+    make(L"BUTTON", L"追加", BS_PUSHBUTTON | WS_TABSTOP, 290, y + 201, 80, 25, ID_ADD);
+    make(L"BUTTON", L"削除", BS_PUSHBUTTON | WS_TABSTOP, 376, y + 201, 80, 25, ID_REMOVE);
+    make(L"STATIC", L"読みはひらがなで入力します。動詞と形容詞は終止形で登録します (例: ぐぐる / ググる)",
+         0, 24, y + 232, 432, 30, 0);
+    y += 274;
 
-    make(L"STATIC", L"学習", 0, 16, y, 440, 20, 0, true);
-    y += 26;
-    make(L"BUTTON", L"学習をリセット", BS_PUSHBUTTON | WS_TABSTOP, 28, y, 150, 28, ID_RESET);
-    y += 44;
+    group(L"学習", y, 60);
+    make(L"BUTTON", L"学習をリセット", BS_PUSHBUTTON | WS_TABSTOP, 24, y + 24, 140, 25, ID_RESET);
+    y += 70;
 
-    std::wstring about = std::wstring(L"shunti IME ") + VERSION + L"  変換はこのパソコンの中だけで行います";
-    make(L"STATIC", about.c_str(), 0, 16, y, 424, 20, 0);
-    y += 26;
-    make(L"BUTTON", L"ライセンス", BS_PUSHBUTTON | WS_TABSTOP, 28, y, 90, 26, ID_LICENSE);
-    make(L"BUTTON", L"GitHub", BS_PUSHBUTTON | WS_TABSTOP, 126, y, 90, 26, ID_GITHUB);
+    std::wstring about = std::wstring(L"shunti IME ") + VERSION;
+    make(L"STATIC", about.c_str(), 0, 14, y + 6, 150, 20, 0);
+    make(L"BUTTON", L"ライセンス", BS_PUSHBUTTON | WS_TABSTOP, 222, y, 80, 25, ID_LICENSE);
+    make(L"BUTTON", L"GitHub", BS_PUSHBUTTON | WS_TABSTOP, 308, y, 76, 25, ID_GITHUB);
+    make(L"BUTTON", L"閉じる", BS_DEFPUSHBUTTON | WS_TABSTOP, 390, y, 80, 25, IDCANCEL);
 
     g_loading = true;
     select(ID_THEME, g_s.theme == "light" ? 1 : g_s.theme == "dark" ? 2 : 0);
-    select(ID_INPUT, g_s.input == "kana" ? 1 : 0);
     select(ID_PUNCT, g_s.punct);
     select(ID_POS, 0);
     check(ID_SPACE, g_s.space_fullwidth);
@@ -227,7 +212,8 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
         case WM_COMMAND: {
             int id = LOWORD(w), code = HIWORD(w);
-            if ((id == ID_THEME || id == ID_INPUT || id == ID_PUNCT) && code == CBN_SELCHANGE) save();
+            if ((id == ID_THEME || id == ID_PUNCT) && code == CBN_SELCHANGE) save();
+            else if (id == IDCANCEL) DestroyWindow(h);   // 「閉じる」と Esc
             else if (id >= ID_SPACE && id <= ID_CTRLSPACE && code == BN_CLICKED) save();
             else if (id == ID_ADD) add_word();
             else if (id == ID_REMOVE) remove_word();
@@ -253,9 +239,6 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
             }
             return 0;
         }
-        case WM_CTLCOLORSTATIC:
-            SetBkMode(HDC(w), TRANSPARENT);
-            return LRESULT(GetSysColorBrush(COLOR_WINDOW));
         case WM_DESTROY:
             PostQuitMessage(0);
             return 0;
@@ -290,19 +273,21 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     wc.lpfnWndProc = proc;
     wc.hInstance = inst;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
-    wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    wc.hbrBackground = GetSysColorBrush(COLOR_BTNFACE);   // ダイアログの既定の色
     wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(101));
     wc.lpszClassName = L"ShuntiImeSettings";
     RegisterClassExW(&wc);
 
     g_dpi = GetDpiForSystem();
-    RECT rc = {0, 0, S(470), S(760)};
+    RECT rc = {0, 0, S(480), S(712)};
     AdjustWindowRectExForDpi(&rc, WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME), FALSE, 0, g_dpi);
     g_wnd = CreateWindowExW(0, wc.lpszClassName, L"shunti IME の設定", WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME),
                             CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, inst, nullptr);
     g_dpi = GetDpiForWindow(g_wnd);
-    g_font = CreateFontW(-S(14), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Yu Gothic UI");
-    g_bold = CreateFontW(-S(15), 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Yu Gothic UI");
+    // Windows の既定のメッセージ用の文字 (ダイアログと同じ)
+    NONCLIENTMETRICSW ncm = {sizeof ncm};
+    SystemParametersInfoForDpi(SPI_GETNONCLIENTMETRICS, sizeof ncm, &ncm, 0, g_dpi);
+    g_font = CreateFontIndirectW(&ncm.lfMessageFont);
     build();
     ShowWindow(g_wnd, show);
 
