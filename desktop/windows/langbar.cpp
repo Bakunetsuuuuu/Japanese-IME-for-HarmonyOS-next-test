@@ -84,6 +84,25 @@ STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT pt, const RECT*) {
     if (cmd == 2) open_settings();
     return S_OK;
 }
+// タスクバーのアイコンを右クリックすると、Windows がここで中身を頼んできて、Windows 自身がメニューを出す
+enum { MENU_TOGGLE = 1, MENU_SETTINGS = 2 };
+
+STDMETHODIMP LangBarButton::InitMenu(ITfMenu* menu) {
+    if (!menu) return E_INVALIDARG;
+    const wchar_t* toggle = ts_ && ts_->is_open() ? L"日本語入力をオフ" : L"日本語入力をオン";
+    menu->AddMenuItem(MENU_TOGGLE, 0, nullptr, nullptr, toggle, ULONG(wcslen(toggle)), nullptr);
+    menu->AddMenuItem(UINT(-1), TF_LBMENUF_SEPARATOR, nullptr, nullptr, L"", 0, nullptr);
+    const wchar_t* settings = L"設定・ユーザー辞書...";
+    menu->AddMenuItem(MENU_SETTINGS, 0, nullptr, nullptr, settings, ULONG(wcslen(settings)), nullptr);
+    return S_OK;
+}
+
+STDMETHODIMP LangBarButton::OnMenuSelect(UINT id) {
+    if (id == MENU_TOGGLE && ts_) ts_->set_open(!ts_->is_open());
+    if (id == MENU_SETTINGS) open_settings();
+    return S_OK;
+}
+
 STDMETHODIMP LangBarButton::GetIcon(HICON* icon) {
     if (!icon) return E_INVALIDARG;
     *icon = load_mode_icon(ts_ && ts_->is_open());

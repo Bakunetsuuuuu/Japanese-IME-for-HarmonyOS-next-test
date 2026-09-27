@@ -27,8 +27,8 @@ public:
 
     // ITfLangBarItemButton
     STDMETHODIMP OnClick(TfLBIClick click, POINT pt, const RECT* area) override;
-    STDMETHODIMP InitMenu(ITfMenu*) override { return S_OK; }
-    STDMETHODIMP OnMenuSelect(UINT) override { return S_OK; }
+    STDMETHODIMP InitMenu(ITfMenu* menu) override;   // 右クリックのメニュー (タスクバーの入力モードのアイコン)
+    STDMETHODIMP OnMenuSelect(UINT id) override;
     STDMETHODIMP GetIcon(HICON* icon) override;
     STDMETHODIMP GetText(BSTR* text) override;
 
