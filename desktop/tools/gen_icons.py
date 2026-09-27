@@ -73,13 +73,20 @@ def sleeping(mask):
     return out, len(eyes)
 
 
-def square(mask, pad_ratio=0.0):
+def square(mask, stretch=1.25):
+    """正方形のアイコンに置く。横長の絵なので縦に stretch 倍伸ばして (デフォルメ)、横いっぱいに置く。
+    上下は形の外枠でなく重心で真ん中に置く (下が平らで上が丸い形は、外枠で真ん中に置くと上に寄って見える)"""
     h, w = mask.shape
-    side = int(max(h, w) * (1 + 2 * pad_ratio))
-    sq = np.zeros((side, side), dtype=np.uint8)
-    y0, x0 = (side - h) // 2, (side - w) // 2
-    sq[y0:y0 + h, x0:x0 + w] = mask * 255
-    return Image.fromarray(sq, 'L')
+    img = Image.fromarray((mask * 255).astype(np.uint8), 'L').resize((w, int(h * stretch)), Image.LANCZOS)
+    a = np.asarray(img).astype(np.float64)
+    h2 = a.shape[0]
+    side = max(w, h2)
+    cy = (a.sum(1) * np.arange(h2)).sum() / a.sum()        # 重心の高さ
+    y0 = int(round(side / 2 - cy))
+    y0 = max(0, min(side - h2, y0))
+    sq = Image.new('L', (side, side), 0)
+    sq.paste(img, ((side - w) // 2, y0))
+    return sq
 
 
 def mono_icon(alpha, rgb, path):
