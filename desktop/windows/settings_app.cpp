@@ -22,7 +22,7 @@ constexpr wchar_t VERSION[] = L"0.1.0";
 
 enum Id {
     ID_THEME = 100, ID_INPUT, ID_PUNCT, ID_SPACE, ID_DIGITS, ID_LIVE, ID_LIVECOMMIT, ID_CTRLSPACE,
-    ID_LIST, ID_READING, ID_WORD, ID_POS, ID_ADD, ID_REMOVE, ID_RESET, ID_LICENSE, ID_GITHUB,
+    ID_LIST, ID_READING, ID_WORD, ID_POS, ID_ADD, ID_REMOVE, ID_RESET, ID_LICENSE, ID_GITHUB, ID_ICON,
 };
 
 struct PosItem { const wchar_t* label; const char* pos; const char* group; };
@@ -147,6 +147,8 @@ void build() {
     y += 26;
     make(L"STATIC", L"候補の窓の色", 0, 28, y + 3, 150, 20, 0);
     combo(190, y, 250, ID_THEME, {L"Windows に合わせる", L"ライト", L"ダーク"});
+    y += 34;
+    make(L"BUTTON", L"アイコンの色をタスクバーに合わせる", BS_PUSHBUTTON | WS_TABSTOP, 28, y, 260, 26, ID_ICON);
     y += 40;
 
     make(L"STATIC", L"入力", 0, 16, y, 440, 20, 0, true);
@@ -230,6 +232,17 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
             else if (id == ID_ADD) add_word();
             else if (id == ID_REMOVE) remove_word();
             else if (id == ID_RESET) reset_learning();
+            else if (id == ID_ICON) {
+                // IME を登録し直すと、登録アイコンをいまのタスクバーの色 (ダーク = 白、ライト = 黒) で選び直す (管理者の許可が要る)
+                wchar_t exe[MAX_PATH], sys[MAX_PATH];
+                GetModuleFileNameW(nullptr, exe, MAX_PATH);
+                GetSystemDirectoryW(sys, MAX_PATH);
+                std::wstring args = L"/s \"" + (fs::path(exe).parent_path() / L"shunti_ime_x64.dll").wstring() + L"\"";
+                std::wstring reg = std::wstring(sys) + L"\\regsvr32.exe";
+                if (reinterpret_cast<INT_PTR>(ShellExecuteW(h, L"runas", reg.c_str(), args.c_str(), nullptr, SW_HIDE)) > 32)
+                    MessageBoxW(h, L"アイコンの色を合わせました。タスクバーに出るまで、IME を切り替え直すか、少し待ってください。",
+                                L"shunti IME", MB_ICONINFORMATION);
+            }
             else if (id == ID_LICENSE) {
                 wchar_t exe[MAX_PATH];
                 GetModuleFileNameW(nullptr, exe, MAX_PATH);
@@ -283,7 +296,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     RegisterClassExW(&wc);
 
     g_dpi = GetDpiForSystem();
-    RECT rc = {0, 0, S(470), S(726)};
+    RECT rc = {0, 0, S(470), S(760)};
     AdjustWindowRectExForDpi(&rc, WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME), FALSE, 0, g_dpi);
     g_wnd = CreateWindowExW(0, wc.lpszClassName, L"shunti IME の設定", WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME),
                             CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, inst, nullptr);

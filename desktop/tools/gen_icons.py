@@ -4,9 +4,10 @@ Windows 版のアイコンを Zori-chan の絵 (desktop/windows/art/zori-chan.pn
   python desktop/tools/gen_icons.py      (Pillow と numpy が要る)
 
 出来上がり (desktop/windows/):
-  mode_on_white.ico / mode_on_black.ico   日本語入力オン (そのままの Zori-chan)。タスクバーがダークなら白、ライトなら黒
+  mode_on_white.ico / mode_on_black.ico   そのままの Zori-chan (箱なし・余白なし)。タスクバーがダークなら白、ライトなら黒。
+                                          IME の登録アイコン (タスクバーの「あ」の隣に出る) にも使う
   mode_off_white.ico / mode_off_black.ico オフ (目の縦棒を消して、寝ている目にしたもの)
-  shunti.ico                              入力の方法の一覧・インストーラーに出すアイコン (白い角丸の上に黒い Zori-chan)
+  shunti.ico                              設定画面の exe のアイコン (スタートメニュー用。白い角丸の上に黒い Zori-chan)
 絵の下の「Zori-chan」の字は使わない。どれも 16〜256px を 1 つの .ico に入れる。
 """
 import os
@@ -72,7 +73,7 @@ def sleeping(mask):
     return out, len(eyes)
 
 
-def square(mask, pad_ratio=0.04):
+def square(mask, pad_ratio=0.0):
     h, w = mask.shape
     side = int(max(h, w) * (1 + 2 * pad_ratio))
     sq = np.zeros((side, side), dtype=np.uint8)

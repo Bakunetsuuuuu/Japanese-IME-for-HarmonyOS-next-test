@@ -94,8 +94,11 @@ HRESULT register_profile() {
     HRESULT hr = CoCreateInstance(CLSID_TF_InputProcessorProfiles, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&pm));
     if (FAILED(hr)) return hr;
     std::wstring path = module_path();
+    // 登録アイコンはタスクバーの色で白 (0) か黒 (1) を選ぶ (Windows は登録した 1 つを出すだけで、色を変えても切り替えない。
+    // タスクバーの色を変えたら、設定画面の「アイコンの色をタスクバーに合わせる」で登録し直す)
+    ULONG icon = system_dark() ? 0 : 1;
     hr = pm->RegisterProfile(CLSID_TextService, LANG_JA, GUID_Profile, DISPLAY_NAME, ULONG(wcslen(DISPLAY_NAME)),
-                             path.c_str(), ULONG(path.size()), 0, nullptr, 0, TRUE, 0);
+                             path.c_str(), ULONG(path.size()), icon, nullptr, 0, TRUE, 0);
     if (FAILED(hr)) return hr;
     ComPtr<ITfCategoryMgr> cm;
     hr = CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&cm));
