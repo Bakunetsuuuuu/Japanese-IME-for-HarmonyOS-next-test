@@ -9,7 +9,9 @@ param([switch]$Uninstall, [switch]$Elevated)
 $ErrorActionPreference = 'Stop'
 
 $Dest = Join-Path $env:ProgramFiles 'shunti IME'
-$Files = @('shunti_ime_x64.dll', 'shunti_ime_x86.dll', 'kkc_lex.bin', 'kkc_model.bin', 'LICENSE.txt')
+$Files = @('shunti_ime_x64.dll', 'shunti_ime_x86.dll', 'shunti_settings.exe', 'kkc_lex.bin', 'kkc_model.bin', 'LICENSE.txt')
+# スタートメニューの「shunti IME の設定」(全員分)
+$Shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\shunti IME の設定.lnk'
 $Is64 = [Environment]::Is64BitOperatingSystem
 $Reg64 = Join-Path $env:windir 'System32\regsvr32.exe'
 $Reg32 = if ($Is64) { Join-Path $env:windir 'SysWOW64\regsvr32.exe' } else { $Reg64 }
@@ -53,6 +55,7 @@ function Unregister-All {
 function Invoke-AdminPart {
     if ($Uninstall) {
         Unregister-All
+        Remove-Item -LiteralPath $Shortcut -Force -ErrorAction SilentlyContinue
         if (Test-Path -LiteralPath $Dest) {
             Get-ChildItem -LiteralPath $Dest -File | ForEach-Object { Remove-OrRetire $_.FullName }
             try { Remove-Item -LiteralPath $Dest -Force -ErrorAction SilentlyContinue } catch {}
@@ -77,6 +80,13 @@ function Invoke-AdminPart {
         $p = Start-Process $pair.Reg -ArgumentList @('/s', "`"$(Join-Path $Dest $pair.Dll)`"") -Wait -PassThru
         if ($p.ExitCode -ne 0) { throw "登録に失敗しました ($($pair.Dll): $($p.ExitCode))" }
     }
+    try {
+        $lnk = (New-Object -ComObject WScript.Shell).CreateShortcut($Shortcut)
+        $lnk.TargetPath = Join-Path $Dest 'shunti_settings.exe'
+        $lnk.WorkingDirectory = $Dest
+        $lnk.Description = 'shunti IME の設定とユーザー辞書'
+        $lnk.Save()
+    } catch {}   # スタートメニューに置けなくても IME は使える (タスクバーのアイコンの右クリックからも開ける)
 }
 
 if ($Elevated) {

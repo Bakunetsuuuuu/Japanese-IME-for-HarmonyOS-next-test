@@ -75,7 +75,7 @@ bool Composer::press(const KeyEvent& ev) {
     switch (state_) {
         case State::Idle:
             if (ev.key == Key::Space) {   // 何も打っていないときの空白: 全角 (Shift で半角)
-                commit_text(ev.shift ? u" " : u"　");
+                commit_text(ev.shift != options.space_fullwidth ? u"　" : u" ");
                 handled = true;
             } else if (ev.key == Key::Char) {
                 start_input();
@@ -145,12 +145,37 @@ void Composer::type_char(char16_t c, bool raw) {
         return;
     }
     if (is_lower(c) || romaji_.accepts(c) || c == u'-') {
+        // 打ち間違いを消して、ローマ字にならなかった英字 (子音) だけが残っているとき (「ps」→ s を消す → 「p」):
+        // その英字を溜めている分に戻して、続けて打ったキーとつなぐ (p + a → ぱ)。つながる綴りになるときだけ
+        if (romaji_.pending().empty() && is_lower(c)) {
+            size_t n = 0;
+            while (n < 3 && caret_ > n && is_lower(kana_[caret_ - 1 - n])) n++;
+            for (; n > 0; n--) {
+                u16 back = kana_.substr(caret_ - n, n);
+                bool sokuon = n == 1 && back[0] == c && c != u'n' && u16(u"aiueo").find(c) == u16::npos;   // t + t → っt
+                if (!romaji_.is_prefix(back + c) && !sokuon) continue;
+                kana_.erase(caret_ - n, n);
+                caret_ -= n;
+                romaji_.unread(back);
+                break;
+            }
+        }
         Romaji::Result r = romaji_.process(c);
         insert(r.committed);
         return;
     }
     flush_romaji();
-    if (is_digit(c)) insert(u16(1, c));
+    if ((c == 0x309B || c == 0x309C) && caret_ > 0) {   // かな入力の濁点・半濁点: 前のかなにつける (か + ゛ → が)
+        char16_t p = kana_[caret_ - 1];
+        const char16_t* voiced = u"かきくけこさしすせそたちつてとはひふへほ";
+        const char16_t* semi = u"はひふへほ";
+        if (c == 0x309B && u16(voiced).find(p) != u16::npos) { kana_[caret_ - 1] = char16_t(p + 1); return; }
+        if (c == 0x309B && p == u'う') { kana_[caret_ - 1] = u'ゔ'; return; }
+        if (c == 0x309C && u16(semi).find(p) != u16::npos) { kana_[caret_ - 1] = char16_t(p + 2); return; }
+    }
+    if (is_digit(c)) insert(u16(1, options.digits_fullwidth ? char16_t(c + 0xFEE0) : c));
+    else if (c == u',') insert(options.punct == 1 || options.punct == 3 ? u"，" : u"、");
+    else if (c == u'.') insert(options.punct == 1 || options.punct == 2 ? u"．" : u"。");
     else insert(u16(1, japanese_symbol(c)));
 }
 

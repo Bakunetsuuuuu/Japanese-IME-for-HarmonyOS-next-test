@@ -16,8 +16,8 @@ constexpr wchar_t CLASS_NAME[] = L"ShuntiImeCandidates";
 
 struct Colors { COLORREF bg, border, text, sub, sel_bg, sel_text, accent; };
 // Android 版・HarmonyOS 版の色 (LIGHT_THEME・DARK_THEME) に合わせる
-Colors colors() {
-    if (apps_dark()) return {RGB(0x2A, 0x2A, 0x2A), RGB(0x41, 0x41, 0x41), RGB(0xF2, 0xF2, 0xF7), RGB(0x9A, 0x9A, 0xA0),
+Colors colors(const std::string& theme) {
+    if (theme == "dark" || (theme != "light" && apps_dark())) return {RGB(0x2A, 0x2A, 0x2A), RGB(0x41, 0x41, 0x41), RGB(0xF2, 0xF2, 0xF7), RGB(0x9A, 0x9A, 0xA0),
                              RGB(0x27, 0x40, 0x70), RGB(0xFF, 0xFF, 0xFF), RGB(0x5B, 0x9B, 0xFF)};
     return {RGB(0xFB, 0xFB, 0xFC), RGB(0xD7, 0xD8, 0xDB), RGB(0x1C, 0x1C, 0x1E), RGB(0x7A, 0x7F, 0x87),
             RGB(0xDC, 0xE7, 0xFD), RGB(0x1C, 0x1C, 0x1E), RGB(0x1E, 0x54, 0xC7)};
@@ -159,7 +159,7 @@ int CandWindow::hit(int x, int y) const {
 }
 
 void CandWindow::paint(HDC wdc) {
-    Colors c = colors();
+    Colors c = colors(theme);
     RECT rc = {0, 0, width_, height_};
     // ちらつかないように裏で描いてから写す
     HDC dc = CreateCompatibleDC(wdc);

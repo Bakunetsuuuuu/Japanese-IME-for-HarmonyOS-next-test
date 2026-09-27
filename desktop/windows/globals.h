@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../core/converter.h"
+#include "../core/settings.h"
 #include "../core/store.h"
 
 namespace shunti {
@@ -42,6 +43,7 @@ struct Core {
     Converter conv;
     Learning learning;
     UserDict dict;
+    SettingsFile settings;   // 設定画面が書く settings.json (入力を始めるたびに読み直す)
     Core();
 };
 Core& core();

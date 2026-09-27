@@ -68,6 +68,7 @@ public:
 
 private:
     enum class Action { None, Compose, Open, Close, Toggle };
+    void apply_settings();
     Action classify(WPARAM vk, LPARAM lp, KeyEvent& ev);
     bool to_key_event(WPARAM vk, LPARAM lp, KeyEvent& ev);
     HRESULT edit(ITfContext* ctx, DWORD flags, std::function<void(TfEditCookie)> fn);

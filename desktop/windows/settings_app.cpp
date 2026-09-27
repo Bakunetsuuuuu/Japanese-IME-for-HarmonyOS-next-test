@@ -1,0 +1,305 @@
+// shunti IME の設定 (shunti_settings.exe)。Windows の標準の部品だけで作った小さな窓。
+// 変えるとすぐ %APPDATA%\shunti IME\settings.json に書き、IME は次に打ち始めたときに読み直す。
+// ユーザー辞書 (userdict.json) の登録・削除と、学習 (learned.json) のリセットもここで行う。
+#include <windows.h>
+#include <commctrl.h>
+#include <shellapi.h>
+#include <shlobj.h>
+
+#include <string>
+#include <vector>
+
+#include "../core/settings.h"
+#include "../core/store.h"
+#include "../core/text.h"
+
+using namespace shunti;
+namespace fs = std::filesystem;
+
+namespace {
+
+constexpr wchar_t VERSION[] = L"0.1.0";
+
+enum Id {
+    ID_THEME = 100, ID_INPUT, ID_PUNCT, ID_SPACE, ID_DIGITS, ID_LIVE, ID_LIVECOMMIT, ID_CTRLSPACE,
+    ID_LIST, ID_READING, ID_WORD, ID_POS, ID_ADD, ID_REMOVE, ID_RESET, ID_LICENSE, ID_GITHUB,
+};
+
+struct PosItem { const wchar_t* label; const char* pos; const char* group; };
+const PosItem POS[] = {
+    {L"名詞", "noun", ""}, {L"人名", "person", ""}, {L"地名", "place", ""},
+    {L"動詞 (五段: 書く・ググる)", "verb", "godan"}, {L"動詞 (一段: 食べる)", "verb", "ichidan"}, {L"形容詞 (高い・エモい)", "adjective", ""},
+};
+
+fs::path g_dir;
+Settings g_s;
+UserDict* g_dict = nullptr;
+HWND g_wnd = nullptr, g_list = nullptr;
+HFONT g_font = nullptr, g_bold = nullptr;
+UINT g_dpi = 96;
+bool g_loading = false;
+
+int S(int v) { return MulDiv(v, int(g_dpi), 96); }
+std::wstring W(const u16& s) { return std::wstring(s.begin(), s.end()); }
+u16 U(const std::wstring& s) { return u16(s.begin(), s.end()); }
+std::wstring W8(const std::string& s) { return W(from_utf8(s)); }
+
+std::wstring text_of(int id) {
+    HWND h = GetDlgItem(g_wnd, id);
+    int n = GetWindowTextLengthW(h);
+    std::wstring s(size_t(n) + 1, L'\0');
+    GetWindowTextW(h, s.data(), n + 1);
+    s.resize(size_t(n));
+    return s;
+}
+
+HWND make(const wchar_t* cls, const wchar_t* text, DWORD style, int x, int y, int w, int h, int id, bool bold = false) {
+    HWND c = CreateWindowExW(0, cls, text, WS_CHILD | WS_VISIBLE | style, S(x), S(y), S(w), S(h), g_wnd,
+                             reinterpret_cast<HMENU>(INT_PTR(id)), GetModuleHandleW(nullptr), nullptr);
+    SendMessageW(c, WM_SETFONT, WPARAM(bold ? g_bold : g_font), TRUE);
+    return c;
+}
+
+HWND combo(int x, int y, int w, int id, std::initializer_list<const wchar_t*> items) {
+    HWND c = make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, x, y, w, 200, id);
+    for (auto it : items) SendMessageW(c, CB_ADDSTRING, 0, LPARAM(it));
+    return c;
+}
+
+void check(int id, bool on) { SendDlgItemMessageW(g_wnd, id, BM_SETCHECK, on ? BST_CHECKED : BST_UNCHECKED, 0); }
+bool checked(int id) { return SendDlgItemMessageW(g_wnd, id, BM_GETCHECK, 0, 0) == BST_CHECKED; }
+void select(int id, int i) { SendDlgItemMessageW(g_wnd, id, CB_SETCURSEL, WPARAM(i), 0); }
+int selected(int id) { return int(SendDlgItemMessageW(g_wnd, id, CB_GETCURSEL, 0, 0)); }
+
+void save() {
+    if (g_loading) return;
+    const char* themes[] = {"auto", "light", "dark"};
+    g_s.theme = themes[std::max(0, selected(ID_THEME))];
+    g_s.input = selected(ID_INPUT) == 1 ? "kana" : "romaji";
+    g_s.punct = std::max(0, selected(ID_PUNCT));
+    g_s.space_fullwidth = checked(ID_SPACE);
+    g_s.digits_fullwidth = checked(ID_DIGITS);
+    g_s.live = checked(ID_LIVE);
+    g_s.live_commit = checked(ID_LIVECOMMIT);
+    g_s.ctrl_space = checked(ID_CTRLSPACE);
+    if (!save_settings(g_dir / L"settings.json", g_s))
+        MessageBoxW(g_wnd, L"設定を保存できませんでした。", L"shunti IME", MB_ICONWARNING);
+}
+
+std::wstring pos_label(const UserDict::Entry& e) {
+    for (auto& p : POS)
+        if (e.pos == p.pos && (e.pos != "verb" || e.group == p.group || (e.group.empty() && std::string(p.group) == "godan"))) return p.label;
+    return W8(e.pos);
+}
+
+void refresh_list() {
+    g_dict->refresh();
+    ListView_DeleteAllItems(g_list);
+    int i = 0;
+    for (auto& e : g_dict->entries()) {
+        std::wstring r = W(e.reading), w = W(e.word), p = pos_label(e);
+        LVITEMW it = {};
+        it.mask = LVIF_TEXT;
+        it.iItem = i;
+        it.pszText = r.data();
+        ListView_InsertItem(g_list, &it);
+        ListView_SetItemText(g_list, i, 1, w.data());
+        ListView_SetItemText(g_list, i, 2, p.data());
+        i++;
+    }
+}
+
+void add_word() {
+    std::wstring r = text_of(ID_READING), w = text_of(ID_WORD);
+    int p = std::max(0, selected(ID_POS));
+    std::string err = g_dict->add(U(r), U(w), POS[p].pos, POS[p].group);
+    if (!err.empty()) {
+        MessageBoxW(g_wnd, W8(err).c_str(), L"ユーザー辞書", MB_ICONINFORMATION);
+        return;
+    }
+    SetDlgItemTextW(g_wnd, ID_READING, L"");
+    SetDlgItemTextW(g_wnd, ID_WORD, L"");
+    refresh_list();
+    SetFocus(GetDlgItem(g_wnd, ID_READING));
+}
+
+void remove_word() {
+    int i = ListView_GetNextItem(g_list, -1, LVNI_SELECTED);
+    if (i < 0) return;
+    g_dict->refresh();
+    if (i >= int(g_dict->entries().size())) return;
+    UserDict::Entry e = g_dict->entries()[size_t(i)];
+    g_dict->remove(e.reading, e.word);
+    refresh_list();
+}
+
+void reset_learning() {
+    if (MessageBoxW(g_wnd, L"変換で選び直して覚えた語を、すべて忘れます。よろしいですか?", L"学習をリセット",
+                    MB_OKCANCEL | MB_ICONQUESTION) != IDOK)
+        return;
+    Learning(g_dir / L"learned.json").clear();
+    MessageBoxW(g_wnd, L"学習をリセットしました。", L"shunti IME", MB_ICONINFORMATION);
+}
+
+void build() {
+    int y = 12;
+    make(L"STATIC", L"見た目", 0, 16, y, 440, 20, 0, true);
+    y += 26;
+    make(L"STATIC", L"候補の窓の色", 0, 28, y + 3, 150, 20, 0);
+    combo(190, y, 250, ID_THEME, {L"Windows に合わせる", L"ライト", L"ダーク"});
+    y += 40;
+
+    make(L"STATIC", L"入力", 0, 16, y, 440, 20, 0, true);
+    y += 26;
+    make(L"STATIC", L"入力方式", 0, 28, y + 3, 150, 20, 0);
+    combo(190, y, 250, ID_INPUT, {L"ローマ字入力", L"かな入力 (JIS 配列)"});
+    y += 32;
+    make(L"STATIC", L"句読点", 0, 28, y + 3, 150, 20, 0);
+    combo(190, y, 250, ID_PUNCT, {L"、。", L"，．", L"、．", L"，。"});
+    y += 34;
+    make(L"BUTTON", L"何も打っていないときの空白を全角にする (Shift で逆)", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_SPACE);
+    y += 26;
+    make(L"BUTTON", L"数字を全角で入れる", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_DIGITS);
+    y += 26;
+    make(L"BUTTON", L"打っている間も変換の候補を出す", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_LIVE);
+    y += 26;
+    make(L"BUTTON", L"長く打つと前の方から自動で確定する (リアルタイム確定)", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_LIVECOMMIT);
+    y += 26;
+    make(L"BUTTON", L"Ctrl + Space でも日本語入力をオン・オフする", BS_AUTOCHECKBOX | WS_TABSTOP, 28, y, 420, 22, ID_CTRLSPACE);
+    y += 38;
+
+    make(L"STATIC", L"ユーザー辞書", 0, 16, y, 440, 20, 0, true);
+    y += 26;
+    g_list = make(WC_LISTVIEWW, L"", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 28, y, 412, 150, ID_LIST);
+    ListView_SetExtendedListViewStyle(g_list, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER);
+    const wchar_t* cols[] = {L"読み", L"単語", L"品詞"};
+    int widths[] = {130, 130, 130};
+    for (int i = 0; i < 3; i++) {
+        LVCOLUMNW c = {};
+        c.mask = LVCF_TEXT | LVCF_WIDTH;
+        c.pszText = const_cast<wchar_t*>(cols[i]);
+        c.cx = S(widths[i]);
+        ListView_InsertColumn(g_list, i, &c);
+    }
+    y += 158;
+    make(L"STATIC", L"読み", 0, 28, y + 3, 40, 20, 0);
+    make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 70, y, 140, 24, ID_READING);
+    make(L"STATIC", L"単語", 0, 222, y + 3, 40, 20, 0);
+    make(L"EDIT", L"", ES_AUTOHSCROLL | WS_BORDER | WS_TABSTOP, 262, y, 178, 24, ID_WORD);
+    y += 32;
+    make(L"STATIC", L"品詞", 0, 28, y + 3, 40, 20, 0);
+    HWND pos = make(WC_COMBOBOXW, L"", CBS_DROPDOWNLIST | WS_TABSTOP | WS_VSCROLL, 70, y, 200, 200, ID_POS);
+    for (auto& p : POS) SendMessageW(pos, CB_ADDSTRING, 0, LPARAM(p.label));
+    make(L"BUTTON", L"登録", BS_PUSHBUTTON | WS_TABSTOP, 280, y - 1, 70, 26, ID_ADD);
+    make(L"BUTTON", L"削除", BS_PUSHBUTTON | WS_TABSTOP, 360, y - 1, 80, 26, ID_REMOVE);
+    y += 34;
+    make(L"STATIC", L"読みはひらがな。動詞・形容詞は終止形で (ぐぐる / ググる)。活用した形でも変換に出ます。", 0, 28, y, 412, 36, 0);
+    y += 46;
+
+    make(L"STATIC", L"学習", 0, 16, y, 440, 20, 0, true);
+    y += 26;
+    make(L"BUTTON", L"学習をリセット", BS_PUSHBUTTON | WS_TABSTOP, 28, y, 150, 28, ID_RESET);
+    y += 44;
+
+    std::wstring about = std::wstring(L"shunti IME ") + VERSION + L"  変換はこのパソコンの中だけで行います";
+    make(L"STATIC", about.c_str(), 0, 16, y, 424, 20, 0);
+    y += 26;
+    make(L"BUTTON", L"ライセンス", BS_PUSHBUTTON | WS_TABSTOP, 28, y, 90, 26, ID_LICENSE);
+    make(L"BUTTON", L"GitHub", BS_PUSHBUTTON | WS_TABSTOP, 126, y, 90, 26, ID_GITHUB);
+
+    g_loading = true;
+    select(ID_THEME, g_s.theme == "light" ? 1 : g_s.theme == "dark" ? 2 : 0);
+    select(ID_INPUT, g_s.input == "kana" ? 1 : 0);
+    select(ID_PUNCT, g_s.punct);
+    select(ID_POS, 0);
+    check(ID_SPACE, g_s.space_fullwidth);
+    check(ID_DIGITS, g_s.digits_fullwidth);
+    check(ID_LIVE, g_s.live);
+    check(ID_LIVECOMMIT, g_s.live_commit);
+    check(ID_CTRLSPACE, g_s.ctrl_space);
+    g_loading = false;
+    refresh_list();
+}
+
+LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
+    switch (m) {
+        case WM_COMMAND: {
+            int id = LOWORD(w), code = HIWORD(w);
+            if ((id == ID_THEME || id == ID_INPUT || id == ID_PUNCT) && code == CBN_SELCHANGE) save();
+            else if (id >= ID_SPACE && id <= ID_CTRLSPACE && code == BN_CLICKED) save();
+            else if (id == ID_ADD) add_word();
+            else if (id == ID_REMOVE) remove_word();
+            else if (id == ID_RESET) reset_learning();
+            else if (id == ID_LICENSE) {
+                wchar_t exe[MAX_PATH];
+                GetModuleFileNameW(nullptr, exe, MAX_PATH);
+                std::wstring lic = (fs::path(exe).parent_path() / L"LICENSE.txt").wstring();
+                ShellExecuteW(h, L"open", L"notepad.exe", lic.c_str(), nullptr, SW_SHOWNORMAL);
+            } else if (id == ID_GITHUB) {
+                ShellExecuteW(h, L"open", L"https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next", nullptr, nullptr, SW_SHOWNORMAL);
+            }
+            return 0;
+        }
+        case WM_CTLCOLORSTATIC:
+            SetBkMode(HDC(w), TRANSPARENT);
+            return LRESULT(GetSysColorBrush(COLOR_WINDOW));
+        case WM_DESTROY:
+            PostQuitMessage(0);
+            return 0;
+        default:
+            return DefWindowProcW(h, m, w, l);
+    }
+}
+
+}  // namespace
+
+int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    // 2 つ目は開かずに、開いている窓を前に出す
+    HANDLE once = CreateMutexW(nullptr, TRUE, L"ShuntiImeSettings");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        if (HWND other = FindWindowW(L"ShuntiImeSettings", nullptr)) SetForegroundWindow(other);
+        return 0;
+    }
+    INITCOMMONCONTROLSEX icc = {sizeof icc, ICC_LISTVIEW_CLASSES | ICC_STANDARD_CLASSES};
+    InitCommonControlsEx(&icc);
+
+    PWSTR app = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_RoamingAppData, 0, nullptr, &app))) g_dir = fs::path(app) / L"shunti IME";
+    CoTaskMemFree(app);
+    std::error_code ec;
+    fs::create_directories(g_dir, ec);
+    load_settings(g_dir / L"settings.json", g_s);
+    UserDict dict(g_dir / L"userdict.json");
+    g_dict = &dict;
+
+    WNDCLASSEXW wc = {sizeof wc};
+    wc.lpfnWndProc = proc;
+    wc.hInstance = inst;
+    wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
+    wc.hbrBackground = GetSysColorBrush(COLOR_WINDOW);
+    wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(101));
+    wc.lpszClassName = L"ShuntiImeSettings";
+    RegisterClassExW(&wc);
+
+    g_dpi = GetDpiForSystem();
+    RECT rc = {0, 0, S(470), S(726)};
+    AdjustWindowRectExForDpi(&rc, WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME), FALSE, 0, g_dpi);
+    g_wnd = CreateWindowExW(0, wc.lpszClassName, L"shunti IME の設定", WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME),
+                            CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, inst, nullptr);
+    g_dpi = GetDpiForWindow(g_wnd);
+    g_font = CreateFontW(-S(14), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Yu Gothic UI");
+    g_bold = CreateFontW(-S(15), 0, 0, 0, FW_BOLD, 0, 0, 0, DEFAULT_CHARSET, 0, 0, CLEARTYPE_QUALITY, 0, L"Yu Gothic UI");
+    build();
+    ShowWindow(g_wnd, show);
+
+    MSG msg;
+    while (GetMessageW(&msg, nullptr, 0, 0)) {
+        if (!IsDialogMessageW(g_wnd, &msg)) {
+            TranslateMessage(&msg);
+            DispatchMessageW(&msg);
+        }
+    }
+    CloseHandle(once);
+    return 0;
+}

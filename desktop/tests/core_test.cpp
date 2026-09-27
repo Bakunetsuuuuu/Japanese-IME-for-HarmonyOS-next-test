@@ -224,6 +224,16 @@ int main(int argc, char** argv) {
     keys(c, "{sp}{enter}");
     printf("     rest: %s\n", u8(c.take_commit()).c_str());
 
+    // ---- 打ち間違いを消して子音だけが残ったとき、続けて打った字とつながる
+    keys(c, "ps{bs}a{enter}");
+    expect("typo p+a", c.take_commit(), u"ぱ");
+    keys(c, "kx{bs}ya{enter}");
+    expect("typo k+ya", c.take_commit(), u"きゃ");
+    keys(c, "kitx{bs}te{enter}");
+    expect("typo t+te", c.take_commit(), u"きって");
+    keys(c, "tq{bs}su{enter}");
+    expect("typo t+su", c.take_commit(), u"つ");
+
     // ---- 英字・数字・記号
     keys(c, "Google{enter}");
     expect("uppercase run", c.take_commit(), u"Google");

@@ -3,6 +3,7 @@
 #include <windows.h>
 
 #include <functional>
+#include <string>
 #include <vector>
 
 #include "../core/text.h"
@@ -19,6 +20,7 @@ public:
     void destroy();
     bool visible() const { return hwnd_ && IsWindowVisible(hwnd_); }
     std::function<void(int)> on_click;   // 候補をマウスで選んだ (候補の番号)
+    std::string theme = "auto";          // auto (Windows に合わせる)・light・dark
 
 private:
     static LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l);

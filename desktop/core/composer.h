@@ -55,6 +55,9 @@ struct ComposerOptions {
     bool live = true;          // 打っている間も AI 変換して候補の窓に出す
     bool live_commit = true;   // リアルタイム確定
     bool always_cands = true;  // 変換中は候補の窓をいつも出す
+    bool space_fullwidth = true;   // 何も打っていないときの空白を全角に (Shift で逆)
+    int punct = 0;                 // 句読点: 0 = 、。 1 = ，． 2 = 、． 3 = ，。
+    bool digits_fullwidth = false; // 数字を全角で入れる
 };
 
 class Composer {

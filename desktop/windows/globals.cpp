@@ -48,7 +48,8 @@ const void* map_file(const std::filesystem::path& p, size_t& size) {
 }
 }  // namespace
 
-Core::Core() : learning(user_dir() / L"learned.json"), dict(user_dir() / L"userdict.json") {
+Core::Core()
+    : learning(user_dir() / L"learned.json"), dict(user_dir() / L"userdict.json"), settings(user_dir() / L"settings.json") {
     std::filesystem::path dir = module_dir();
     size_t ls = 0, ms = 0;
     const void* lex = map_file(dir / L"kkc_lex.bin", ls);

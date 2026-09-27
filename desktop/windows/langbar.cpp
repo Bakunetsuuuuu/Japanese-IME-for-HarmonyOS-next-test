@@ -1,5 +1,7 @@
 #include "langbar.h"
 
+#include <shellapi.h>
+
 #include "globals.h"
 #include "text_service.h"
 
@@ -9,51 +11,18 @@ namespace win {
 namespace {
 constexpr DWORD SINK_COOKIE = 0x5348;   // 流し先は 1 つだけ
 
-// 「あ」か「A」を描いたアイコン (タスクバーの色に合わせた 1 色。字の形を透明度にする)
-HICON make_icon(const wchar_t* text) {
-    int size = GetSystemMetrics(SM_CXSMICON);
-    UINT dpi = GetDpiForSystem();
-    BITMAPINFO bi = {};
-    bi.bmiHeader.biSize = sizeof bi.bmiHeader;
-    bi.bmiHeader.biWidth = size;
-    bi.bmiHeader.biHeight = -size;
-    bi.bmiHeader.biPlanes = 1;
-    bi.bmiHeader.biBitCount = 32;
-    bi.bmiHeader.biCompression = BI_RGB;
-    void* bits = nullptr;
-    HDC dc = CreateCompatibleDC(nullptr);
-    HBITMAP color = CreateDIBSection(dc, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
-    if (!color) { DeleteDC(dc); return nullptr; }
-    HGDIOBJ old = SelectObject(dc, color);
-    RECT rc = {0, 0, size, size};
-    FillRect(dc, &rc, static_cast<HBRUSH>(GetStockObject(BLACK_BRUSH)));
-    HFONT font = CreateFontW(-MulDiv(size, 15, 16), 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0, ANTIALIASED_QUALITY, 0, L"Yu Gothic UI");
-    HGDIOBJ oldf = SelectObject(dc, font);
-    SetBkMode(dc, TRANSPARENT);
-    SetTextColor(dc, RGB(255, 255, 255));
-    DrawTextW(dc, text, -1, &rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE | DT_NOPREFIX);
-    SelectObject(dc, oldf);
-    DeleteObject(font);
-    GdiFlush();
-    (void)dpi;
-    // 白く描いた字の明るさを透明度に、色はタスクバーに合わせる
-    BYTE fg = system_dark() ? 255 : 0;
-    auto* px = static_cast<BYTE*>(bits);
-    for (int i = 0; i < size * size; i++) {
-        BYTE a = px[i * 4 + 1];
-        px[i * 4 + 0] = BYTE(fg * a / 255);
-        px[i * 4 + 1] = BYTE(fg * a / 255);
-        px[i * 4 + 2] = BYTE(fg * a / 255);
-        px[i * 4 + 3] = a;
-    }
-    SelectObject(dc, old);
-    DeleteDC(dc);
-    HBITMAP mask = CreateBitmap(size, size, 1, 1, nullptr);
-    ICONINFO ii = {TRUE, 0, 0, mask, color};
-    HICON icon = CreateIconIndirect(&ii);
-    DeleteObject(mask);
-    DeleteObject(color);
-    return icon;
+// Zori-chan のアイコン (オン = 起きている、オフ = 寝ている)。タスクバーがダークなら白、ライトなら黒。
+// .ico には 16〜256px が入っているので、いまの表示倍率に合う大きさを選んで読む
+HICON load_mode_icon(bool open) {
+    int id = open ? (system_dark() ? 201 : 202) : (system_dark() ? 203 : 204);
+    int size = GetSystemMetricsForDpi(SM_CXSMICON, GetDpiForSystem());
+    return static_cast<HICON>(LoadImageW(g_inst, MAKEINTRESOURCEW(id), IMAGE_ICON, size, size, LR_DEFAULTCOLOR));
+}
+
+// 設定画面 (この DLL と同じフォルダの shunti_settings.exe) を開く
+void open_settings() {
+    std::wstring exe = (module_dir() / L"shunti_settings.exe").wstring();
+    ShellExecuteW(nullptr, L"open", exe.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }
 }  // namespace
 
@@ -97,13 +66,27 @@ STDMETHODIMP LangBarButton::GetTooltipString(BSTR* tip) {
     *tip = SysAllocString(ts_ && ts_->is_open() ? L"ひらがな (shunti IME)" : L"半角英数 (shunti IME)");
     return *tip ? S_OK : E_OUTOFMEMORY;
 }
-STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT, const RECT*) {
-    if (click == TF_LBI_CLK_LEFT && ts_) ts_->set_open(!ts_->is_open());
+STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT pt, const RECT*) {
+    if (click == TF_LBI_CLK_LEFT && ts_) {
+        ts_->set_open(!ts_->is_open());
+        return S_OK;
+    }
+    if (click != TF_LBI_CLK_RIGHT) return S_OK;
+    // 右クリック: 小さなメニュー (オン・オフと設定)
+    HMENU m = CreatePopupMenu();
+    AppendMenuW(m, MF_STRING, 1, ts_ && ts_->is_open() ? L"日本語入力をオフ" : L"日本語入力をオン");
+    AppendMenuW(m, MF_SEPARATOR, 0, nullptr);
+    AppendMenuW(m, MF_STRING, 2, L"設定・ユーザー辞書...");
+    HWND owner = GetForegroundWindow();
+    int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON, pt.x, pt.y, 0, owner, nullptr);
+    DestroyMenu(m);
+    if (cmd == 1 && ts_) ts_->set_open(!ts_->is_open());
+    if (cmd == 2) open_settings();
     return S_OK;
 }
 STDMETHODIMP LangBarButton::GetIcon(HICON* icon) {
     if (!icon) return E_INVALIDARG;
-    *icon = make_icon(ts_ && ts_->is_open() ? L"あ" : L"A");
+    *icon = load_mode_icon(ts_ && ts_->is_open());
     return *icon ? S_OK : E_FAIL;
 }
 STDMETHODIMP LangBarButton::GetText(BSTR* text) {

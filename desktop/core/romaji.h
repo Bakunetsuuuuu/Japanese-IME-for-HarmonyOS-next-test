@@ -29,6 +29,10 @@ public:
     void reset() { buffer_.clear(); }
     // key が溜めている分に続けてローマ字として意味を持つか (z の後の記号など)
     bool accepts(char16_t key) const;
+    // s (小文字のローマ字) が表のどれかの綴りの頭になっているか
+    bool is_prefix(const u16& s) const { return prefixes_.count(s) > 0; }
+    // 溜めている分の前に字を戻す (打ち間違いを消して子音だけが残ったとき、それを続きのローマ字として使う)
+    void unread(const u16& s) { buffer_ = s + buffer_; }
 
     // かな → ローマ字 (F9・F10 で英字に戻すとき、打ったキーが分からない場合に使う)
     u16 to_romaji(const u16& kana) const;
