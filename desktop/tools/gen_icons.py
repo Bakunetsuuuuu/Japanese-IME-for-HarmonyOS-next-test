@@ -6,7 +6,7 @@ Windows 版のアイコンを Zori-chan の絵 (desktop/windows/art/zori-chan.pn
 出来上がり (desktop/windows/):
   mode_on_white.ico / mode_on_black.ico   そのままの Zori-chan (箱なし・余白なし)。タスクバーがダークなら白、ライトなら黒。
                                           IME の登録アイコン (タスクバーの「あ」の隣に出る) にも使う
-  mode_off_white.ico / mode_off_black.ico オフ (目の縦棒を消して、寝ている目にしたもの)
+  mode_off_white.ico / mode_off_black.ico オフ (寝ている Zori-chan。art/zori-chan-off.png。無ければオンの絵の目を閉じて作る)
   shunti.ico                              設定画面の exe のアイコン (スタートメニュー用。白い角丸の上に黒い Zori-chan)
 どれも 16〜256px を 1 つの .ico に入れる。
 """
@@ -21,13 +21,21 @@ WIN = os.path.join(HERE, '..', 'windows')
 SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256]
 
 
-def load_mask():
-    im = Image.open(os.path.join(WIN, 'art', 'zori-chan.png')).convert('RGBA')
+def load_filled(name):
+    im = Image.open(os.path.join(WIN, 'art', name)).convert('RGBA')
     a = np.asarray(im).astype(np.int32)
     lum = (a[..., 0] * 299 + a[..., 1] * 587 + a[..., 2] * 114) // 1000
-    filled = (a[..., 3] > 128) & (lum < 128)
-    ys, xs = np.nonzero(filled)
-    return filled[ys.min():ys.max() + 1, xs.min():xs.max() + 1]
+    return (a[..., 3] > 128) & (lum < 128)
+
+
+def load_masks():
+    """オンの絵 (zori-chan.png) と、あればオフの絵 (zori-chan-off.png)。同じ枠で切り出す (切り替えたときに形がずれないように)"""
+    on = load_filled('zori-chan.png')
+    off = load_filled('zori-chan-off.png') if os.path.exists(os.path.join(WIN, 'art', 'zori-chan-off.png')) else None
+    both = on | off if off is not None else on
+    ys, xs = np.nonzero(both)
+    box = (slice(ys.min(), ys.max() + 1), slice(xs.min(), xs.max() + 1))
+    return on[box], (off[box] if off is not None else None)
 
 
 def components(mask):
@@ -57,18 +65,16 @@ def components(mask):
 
 
 def sleeping(mask):
-    """目 (T の字) の縦棒を塗りつぶして、横線だけの寝ている目にする"""
+    """目 (T の字) の上の横線だけを残して下を塗りつぶし、両目とも閉じた寝ている目にする"""
     out = mask.copy()
     eyes = [c for c in components(mask) if len(c) > 200]
     for pts in eyes:
-        rows = {}
+        ys = [y for y, _ in pts]
+        top, bottom = min(ys), max(ys)
+        keep = top + (bottom - top) * 0.38          # 目の上から 4 割 = 横線
         for y, x in pts:
-            rows.setdefault(y, []).append(x)
-        widest = max(len(v) for v in rows.values())
-        for y, xs in rows.items():
-            if len(xs) < widest * 0.65:          # 横線より細い段 = 縦棒
-                for x in xs:
-                    out[y, x] = True
+            if y > keep:
+                out[y, x] = True
     return out, len(eyes)
 
 
@@ -115,9 +121,10 @@ def app_icon(alpha, path):
 
 
 def main():
-    on = load_mask()
-    off, n_eyes = sleeping(on)
-    assert n_eyes == 2, f'目が {n_eyes} 個見つかった (2 個のはず)'
+    on, off = load_masks()
+    if off is None:   # オフの絵が無ければ、オンの絵の目を閉じて作る
+        off, n_eyes = sleeping(on)
+        assert n_eyes == 2, f'目が {n_eyes} 個見つかった (2 個のはず)'
     a_on, a_off = square(on), square(off)
     for name, alpha in (('on', a_on), ('off', a_off)):
         mono_icon(alpha, (255, 255, 255), os.path.join(WIN, f'mode_{name}_white.ico'))
