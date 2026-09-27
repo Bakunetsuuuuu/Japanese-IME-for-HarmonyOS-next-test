@@ -28,7 +28,6 @@ void open_settings() {
 }
 }  // namespace
 
-void trace(const wchar_t* what);
 
 LangBarButton::LangBarButton(TextService* ts) : ts_(ts) { dll_add_ref(); }
 LangBarButton::~LangBarButton() { dll_release(); }
@@ -52,7 +51,6 @@ STDMETHODIMP_(ULONG) LangBarButton::Release() {
 }
 
 STDMETHODIMP LangBarButton::GetInfo(TF_LANGBARITEMINFO* info) {
-    trace(L"GetInfo");
     if (!info) return E_INVALIDARG;
     info->clsidService = CLSID_TextService;
     info->guidItem = GUID_LBI_INPUTMODE;   // タスクバーの入力モードの表示になる
@@ -71,24 +69,6 @@ STDMETHODIMP LangBarButton::GetTooltipString(BSTR* tip) {
     *tip = SysAllocString(ts_ && ts_->is_open() ? L"ひらがな (shunti IME)" : L"半角英数 (shunti IME)");
     return *tip ? S_OK : E_OUTOFMEMORY;
 }
-// 調べもの用の記録 (%TEMP%\shunti_ime_langbar.log)。右クリックで Windows が何を呼ぶかを見る。確かめたら外す
-void trace(const wchar_t* what) {
-    wchar_t tmp[MAX_PATH];
-    if (!GetTempPathW(MAX_PATH, tmp)) return;
-    std::wstring path = std::wstring(tmp) + L"shunti_ime_langbar.log";
-    HANDLE f = CreateFileW(path.c_str(), FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, 0, nullptr);
-    if (f == INVALID_HANDLE_VALUE) return;
-    SYSTEMTIME t;
-    GetLocalTime(&t);
-    wchar_t line[256];
-    int n = swprintf_s(line, L"%02d:%02d:%02d pid %lu %s\r\n", t.wHour, t.wMinute, t.wSecond, GetCurrentProcessId(), what);
-    std::string u8;
-    for (int i = 0; i < n; i++) u8 += line[i] < 0x80 ? char(line[i]) : '?';
-    DWORD w;
-    WriteFile(f, u8.data(), DWORD(u8.size()), &w, nullptr);
-    CloseHandle(f);
-}
-
 // メニューを出すための見えない窓 (この IME を動かしているスレッドのもの。TrackPopupMenu は同じスレッドの窓が要る)
 HWND menu_owner() {
     static thread_local HWND h = nullptr;
@@ -98,7 +78,6 @@ HWND menu_owner() {
 }
 
 STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT pt, const RECT*) {
-    trace(click == TF_LBI_CLK_RIGHT ? L"OnClick right" : L"OnClick left");
     if (click == TF_LBI_CLK_LEFT && ts_) {
         ts_->set_open(!ts_->is_open());
         return S_OK;
@@ -114,7 +93,6 @@ STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT pt, const RECT*) {
     int cmd = TrackPopupMenu(m, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON | TPM_BOTTOMALIGN, pt.x, pt.y, 0, owner, nullptr);
     PostMessageW(owner, WM_NULL, 0, 0);
     DestroyMenu(m);
-    trace(cmd ? L"menu chosen" : L"menu closed");
     if (cmd == 1 && ts_) ts_->set_open(!ts_->is_open());
     if (cmd == 2) open_settings();
     return S_OK;
@@ -123,7 +101,6 @@ STDMETHODIMP LangBarButton::OnClick(TfLBIClick click, POINT pt, const RECT*) {
 enum { MENU_TOGGLE = 1, MENU_SETTINGS = 2 };
 
 STDMETHODIMP LangBarButton::InitMenu(ITfMenu* menu) {
-    trace(L"InitMenu");
     if (!menu) return E_INVALIDARG;
     const wchar_t* toggle = ts_ && ts_->is_open() ? L"日本語入力をオフ" : L"日本語入力をオン";
     menu->AddMenuItem(MENU_TOGGLE, 0, nullptr, nullptr, toggle, ULONG(wcslen(toggle)), nullptr);
@@ -134,7 +111,6 @@ STDMETHODIMP LangBarButton::InitMenu(ITfMenu* menu) {
 }
 
 STDMETHODIMP LangBarButton::OnMenuSelect(UINT id) {
-    trace(L"OnMenuSelect");
     if (id == MENU_TOGGLE && ts_) ts_->set_open(!ts_->is_open());
     if (id == MENU_SETTINGS) open_settings();
     return S_OK;

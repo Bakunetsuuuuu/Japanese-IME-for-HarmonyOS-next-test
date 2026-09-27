@@ -181,8 +181,8 @@ void build() {
     for (auto& p : POS) SendMessageW(pos, CB_ADDSTRING, 0, LPARAM(p.label));
     make(L"BUTTON", L"追加", BS_PUSHBUTTON | WS_TABSTOP, 290, y + 201, 80, 25, ID_ADD);
     make(L"BUTTON", L"削除", BS_PUSHBUTTON | WS_TABSTOP, 376, y + 201, 80, 25, ID_REMOVE);
-    make(L"STATIC", L"読みはひらがなで入力します。動詞と形容詞は終止形で登録します (例: ぐぐる / ググる)",
-         0, 24, y + 232, 432, 30, 0);
+    make(L"STATIC", L"読みはひらがなで登録してください\n動詞と形容詞は終止形で登録してください(例:エモい、ググる)",
+         0, 24, y + 230, 432, 34, 0);
     y += 274;
 
     group(L"学習", y, 60);
