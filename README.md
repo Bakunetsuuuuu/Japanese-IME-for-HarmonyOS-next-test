@@ -51,6 +51,26 @@ AI変換（shuntelligence）だけで打つ、Android 向けの軽い日本語�
 
 ---
 
+## Windows 版（shunti IME・試用版）
+
+大手の IME を超える変換精度を、630 万パラメータの小さな AI（shuntelligence S4）で。Windows 10 / 11（64 ビット版）で動く日本語入力です。[GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) から zip を入手し、展開して `install.bat` を実行します（署名していないので「Windows によって PC が保護されました」と出たら「詳細情報」→「実行」）。
+
+| 1 位の正解率 | AJIMEE-Bench（182 問） | 日常の文（105 文） |
+|---|---|---|
+| Google 日本語入力 | 53.8% | 81.0% |
+| Microsoft IME | 54.9% | 79.0% |
+| **shunti IME（S4）** | **67.6%** | **87.6%** |
+
+どの IME にも同じ打鍵（ローマ字で打つ → スペースで変換 → Enter で確定）を TSF 越しに流し込み、確定した文を採点した（2026 年 9 月、Windows 11）。AJIMEE-Bench（azooKey、CC BY-SA 3.0）は、ローマ字で打てない字を含む 18 問を除いた 182 問。全角・半角の違いは問わない。
+
+- 変換はパソコンの中だけで行い、**通信する機能を持ちません**。1 回の変換は 10 ms 台（CPU だけ）
+- 入力欄のカーソルの左の文を読んで、文脈に合った変換を選ぶ。長く打つと前の方から自動で確定（スマホ版と同じ）
+- 打っている間も変換候補を表示、文節ごとの変換（Shift + ← → で伸び縮み）、F6〜F10、無変換キーでカタカナ・半角カタカナ
+- 学習、ユーザー辞書（品詞つき。登録した語は文の途中でも AI 変換が選ぶ）、候補ウィンドウのライト / ダーク
+- 設定はタスクバーの Zori-chan を右クリック、またはスタートメニューの「shunti IME の設定」
+
+---
+
 ## 機能一覧
 
 ### 入力方式
@@ -144,6 +164,27 @@ cd android && ./gradlew assembleDebug
 # リリースビルド (android/keystore.properties に署名の鍵を書いておく。git には入れない)
 cd android && ./gradlew assembleRelease
 ```
+
+### Windows 版
+
+`desktop/` にあります。`desktop/core` は PC 版の共通部分（ローマ字・AI 変換・文節・学習・ユーザー辞書・入力の状態）、`desktop/windows` は TSF のテキストサービス（x64 / x86 の DLL）と設定画面です。Visual Studio 2022 Build Tools（C++）が要ります。
+
+```bat
+rem 辞書とモデル (entry/src/main/resources/rawfile/kkc_*.bin)
+python tools/fetch_ai_assets.py
+
+rem 試験 (打鍵を流し込んで入力の決まりを確かめる)
+desktop\tests\build_test.bat
+
+rem DLL・設定画面をビルドして desktop\build\dist に集める。install.ps1 でこのパソコンに入れる (管理者の許可が要る)
+desktop\windows\build.bat
+powershell -ExecutionPolicy Bypass -File desktop\build\dist\install.ps1
+
+rem 配る zip を作る
+powershell -ExecutionPolicy Bypass -File desktop\windows\package.ps1 -Version 0.1.0
+```
+
+アイコンは `desktop/windows/art/` の Zori-chan の絵から `python desktop/tools/gen_icons.py` で作る。
 
 HarmonyOS 版のソースを正本として、Android 版に取り込むもの:
 
