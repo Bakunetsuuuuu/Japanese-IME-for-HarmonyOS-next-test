@@ -1,0 +1,40 @@
+#pragma code_page(65001)
+#include <winver.h>
+
+// IME の登録アイコン (タスクバーの「あ」の隣・入力の方法の一覧)。番号 0 = 白 (タスクバーがダーク)、1 = 黒 (ライト)
+101 ICON "mode_on_white.ico"
+102 ICON "mode_on_black.ico"
+
+// タスクバーの入力モード (Zori-chan。オン = 起きている / オフ = 寝ている、ダーク用の白 / ライト用の黒)
+201 ICON "mode_on_white.ico"
+202 ICON "mode_on_black.ico"
+203 ICON "mode_off_white.ico"
+204 ICON "mode_off_black.ico"
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION 0,1,0,0
+ PRODUCTVERSION 0,1,0,0
+ FILEFLAGSMASK 0x3fL
+ FILEFLAGS 0x0L
+ FILEOS VOS_NT_WINDOWS32
+ FILETYPE VFT_DLL
+ FILESUBTYPE VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "041104b0"
+        BEGIN
+            VALUE "CompanyName", "shuntilettuce"
+            VALUE "FileDescription", "shunti IME (日本語入力)"
+            VALUE "FileVersion", "0.1.0"
+            VALUE "InternalName", "shunti_ime"
+            VALUE "LegalCopyright", "MIT License"
+            VALUE "ProductName", "shunti IME"
+            VALUE "ProductVersion", "0.1.0"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x411, 1200
+    END
+END

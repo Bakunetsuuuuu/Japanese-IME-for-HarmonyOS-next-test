@@ -42,6 +42,9 @@ static_assert(sizeof(Ent) == 16, "Ent");
 
 struct Edge { int s, e; ustr surf; int32_t lid, rid, cost; Kind kind; };
 
+// 1 位の候補の語: 読みの終わりの位置・表記の長さ (UTF-16)・品詞の左右 ID
+struct SegInfo { int e, l16, lid, rid; };
+
 // ユーザー辞書の語 (読み・表記・品詞の左右 ID・コスト)。辞書の語と同じく網に入れ、モデルが文脈で採点する
 struct UserWord { ustr r, s; int32_t lid, rid, cost; };
 
@@ -511,7 +514,7 @@ struct kkc_engine {
     std::unordered_map<ustr, int> kcache;
     std::vector<float> K;
     std::vector<float> last_u;
-    std::vector<std::pair<int, int>> last_segs;   // 直前の変換の 1 位の語の区切り
+    std::vector<SegInfo> last_segs;   // 直前の変換の 1 位の語の区切り
     std::vector<UserWord> user;                   // ユーザー辞書の語 (kkc_user_add_like で足す)
     // 作業用
     std::vector<float> x, xn, qkv, att, tmp, ffb, h;
@@ -696,7 +699,7 @@ void scores(kkc_engine* E, int rstart, int n, const std::vector<Edge>& ed, std::
 
 // 上位 k (lattice.nbest / kkcnative の kkc_nbest と同じ)
 int nbest(const Lex& L, const std::vector<Edge>& E, int n, const float* u, double beta, double gamma, int k, int maxout,
-          std::vector<ustr>& res, std::vector<std::pair<int, int>>* segs = nullptr) {
+          std::vector<ustr>& res, std::vector<SegInfo>* segs = nullptr) {
     const int M = int(E.size());
     std::vector<std::vector<int>> by_start(n + 1), by_end(n + 1);
     for (int i = 0; i < M; i++) { by_start[E[i].s].push_back(i); by_end[E[i].e].push_back(i); }
@@ -757,7 +760,7 @@ int nbest(const Lex& L, const std::vector<Edge>& E, int n, const float* u, doubl
             for (auto it = path.rbegin(); it != path.rend(); ++it) {
                 int l16 = 0;
                 for (char32_t c : E[*it].surf) l16 += c >= 0x10000 ? 2 : 1;
-                segs->push_back({E[*it].e, l16});
+                segs->push_back({E[*it].e, l16, E[*it].lid, E[*it].rid});
             }
         }
         res.push_back(surf);
@@ -874,7 +877,15 @@ KKC_API int kkc_last_segments(kkc_engine* e, int32_t* ends, int32_t* lens, int c
     if (!e) return -2;
     int n = int(e->last_segs.size());
     if (n > cap) return -1;
-    for (int i = 0; i < n; i++) { ends[i] = e->last_segs[i].first; lens[i] = e->last_segs[i].second; }
+    for (int i = 0; i < n; i++) { ends[i] = e->last_segs[i].e; lens[i] = e->last_segs[i].l16; }
+    return n;
+}
+
+KKC_API int kkc_last_segment_pos(kkc_engine* e, int32_t* lids, int32_t* rids, int cap) {
+    if (!e) return -2;
+    int n = int(e->last_segs.size());
+    if (n > cap) return -1;
+    for (int i = 0; i < n; i++) { lids[i] = e->last_segs[i].lid; rids[i] = e->last_segs[i].rid; }
     return n;
 }
 
