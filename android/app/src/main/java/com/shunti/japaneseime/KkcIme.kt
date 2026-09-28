@@ -223,8 +223,33 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         menu = mv
         block = blk
         root = r
+        styleNavBar()
         render()
         return r
+    }
+
+    /**
+     * ナビゲーションバーの下地をキーボードと続いて見えるようにする。
+     * targetSdk 35 以降の Android 15 以降は画面の端まで描く決まり (edge-to-edge) で、3 ボタンのときだけ
+     * システムがバーの裏に半透明の暗い幕を掛ける (ジェスチャーのときは掛けない)。キーボードは下の余白を自分の色で塗っているので、
+     * 幕を外せば続いて見える。Android 14 以前はバーの色そのものをキーボードの色にする。
+     * ボタンの色も背景の明るさに合わせる (明るいテーマで白いボタンだと見えない)
+     */
+    @Suppress("DEPRECATION")
+    private fun styleNavBar() {
+        val w = window?.window ?: return
+        val sdk = android.os.Build.VERSION.SDK_INT
+        if (sdk >= 29) w.isNavigationBarContrastEnforced = false
+        if (sdk < 35) w.navigationBarColor = theme.getValue("panelBg")
+        val light = !settings.isDark(this)
+        if (sdk >= 30) {
+            val flag = android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            w.insetsController?.setSystemBarsAppearance(if (light) flag else 0, flag)
+        } else {
+            val v = w.decorView
+            v.systemUiVisibility = if (light) v.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            else v.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        }
     }
 
     private fun sideButton(label: String, onClick: () -> Unit) = TextView(this).apply {
@@ -333,6 +358,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         if (root != null && sig() != viewSig) setInputView(onCreateInputView())
+        styleNavBar()   // 開くたびに当て直す (窓を作り直すと戻ることがある)
         readClip()
         syncUserWords()
     }
