@@ -52,6 +52,51 @@ void prefer_greetings(const u16& target, std::vector<u16>& cands) {
         return;
     }
 }
+
+// 括弧の全種類 (開き, 閉じ)。どの括弧も必ず打てるように、変換の候補はここから出す。
+// スマホ版 ime/Brackets.ets・Android 版 Brackets.kt も同じ並び (変えるときは 3 つとも)
+const char16_t* const BRACKETS[][2] = {
+    {u"（", u"）"}, {u"(", u")"}, {u"「", u"」"}, {u"『", u"』"}, {u"【", u"】"}, {u"［", u"］"}, {u"[", u"]"},
+    {u"｛", u"｝"}, {u"{", u"}"}, {u"〔", u"〕"}, {u"〈", u"〉"}, {u"《", u"》"}, {u"〖", u"〗"}, {u"〘", u"〙"},
+    {u"〚", u"〛"}, {u"｢", u"｣"}, {u"＜", u"＞"}, {u"<", u">"}, {u"«", u"»"}, {u"‹", u"›"}, {u"“", u"”"},
+    {u"‘", u"’"}, {u"〝", u"〟"}, {u"｟", u"｠"},
+};
+
+// 読みに合う括弧の候補 (スマホ版 bracketVariants と同じ決まり)。括弧 1 字 → 同じ側 (開き・閉じ) の全種類 (打った字が先頭)、
+// かっこ → 全種類の組、かっこひらき・かっことじ → 開き・閉じの全種類。括弧でない読みは空
+std::vector<u16> bracket_variants(const u16& reading) {
+    std::vector<u16> opens, closes, out;
+    for (auto& b : BRACKETS) {
+        opens.push_back(b[0]);
+        closes.push_back(b[1]);
+    }
+    if (reading == u"かっこ") {
+        for (auto& b : BRACKETS) out.push_back(u16(b[0]) + b[1]);
+        return out;
+    }
+    if (reading == u"かっこひらき") return opens;
+    if (reading == u"かっことじ") return closes;
+    for (const std::vector<u16>* side : {&opens, &closes}) {
+        if (!contains(*side, reading)) continue;
+        out.push_back(reading);
+        for (auto& c : *side) if (c != reading) out.push_back(c);
+        break;
+    }
+    return out;
+}
+
+// 括弧の候補を入れる: 括弧 1 字なら同じ側の全種類を先頭から (打った字が 1 位)、かっこ などは 1 位の後ろに足す
+void add_brackets(const u16& reading, std::vector<u16>& cands) {
+    std::vector<u16> br = bracket_variants(reading);
+    if (br.empty()) return;
+    if (br[0] == reading) {
+        for (auto& c : cands) if (!contains(br, c)) br.push_back(c);
+        cands = std::move(br);
+        return;
+    }
+    size_t at = std::min<size_t>(1, cands.size());
+    for (auto& b : br) if (!contains(cands, b)) cands.insert(cands.begin() + long(at++), b);
+}
 }  // namespace
 
 u16 greeting_fix(const u16& reading, const u16& surf) {
@@ -376,6 +421,7 @@ void Composer::update_live() {
     }
     live_key_ = key;
     std::vector<u16> cands = c.cands;
+    add_brackets(kana_, cands);   // 学習の並べ替えより前に (よく選ぶ括弧が上に来るように)
     if (learning_) cands = learning_->apply_order(kana_, cands);
     prefer_greetings(kana_, cands);
     // 予測 (スマホ版と同じ置き方): 決まり文句は先頭に、読みの続く語 (学習した語・辞書の語) は 1 位の直後に 3 つまで
@@ -542,6 +588,7 @@ void Composer::load_cands(size_t i) {
         for (auto& c : conv_->convert(left_context(i), head, 10).cands) push_unique(list, c + s.tail_s);
         if (!s.tail_r.empty()) push_unique(list, head + s.tail_s);
     }
+    add_brackets(s.reading, list);   // 学習の並べ替えより前に (よく選ぶ括弧が上に来るように)
     if (learning_) list = learning_->apply_order(s.reading, list);
     // いまの表記を先頭に (選ぶ前の並びがいちばん上から始まるように)
     auto it = std::find(list.begin(), list.end(), s.surface);

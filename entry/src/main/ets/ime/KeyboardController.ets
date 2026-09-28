@@ -25,6 +25,7 @@ import { InputLog, DEBUG_INPUT_LOG } from './InputLog';
 import { SuppressedCandidates, SUPPRESSED_STORE, SUPPRESSED_KEY } from './SuppressedCandidates';
 import { DateTimePredictor } from './DateTimePredictor';
 import { NumberFormatter } from './NumberFormatter';
+import { bracketVariants } from './Brackets';
 import { EmojiSuggest } from './EmojiSuggest';
 import { AppMaintenance } from './AppMaintenance';
 import { AiConverter } from './AiConverter';
@@ -84,6 +85,8 @@ const BRACKET_PAIRS: Record<string, string> = {
   '〖': '〗', '〔': '〕', '〈': '〉', '《': '》',
   '(': ')', '[': ']', '{': '}',
   '［': '］', '｛': '｝', '〝': '〟',
+  // Brackets.ets の全種類のうち、括弧以外にも使う < ＜ (不等号) と ‘ (アポストロフィ) は自動で閉じない
+  '〘': '〙', '〚': '〛', '｢': '｣', '«': '»', '‹': '›', '“': '”', '｟': '｠',
 };
 
 // Cap for tablet/foldable content width (see computeKeyWidths / applyKeyboardWidthsForVp).
@@ -3434,6 +3437,18 @@ export class InputHandler {
     for (const nf of numForms) {
       if (!candidates.includes(nf)) { candidates.splice(insAt, 0, nf); insAt++; }
     }
+
+    // 括弧は全種類を必ず出す (Brackets.ets)。括弧 1 字を打ったときは同じ側の全種類を先頭から
+    // (打った字が 1 位)、かっこ などの読みでは全種類の組を 1 位の後ろに足す。
+    const brackets = bracketVariants(target);
+    if (brackets.length > 0 && brackets[0] === target) {
+      candidates = [...brackets, ...candidates.filter((c: string) => !brackets.includes(c))];
+    } else {
+      for (const b of brackets) {
+        if (!candidates.includes(b)) { candidates.splice(insAt, 0, b); insAt++; }
+      }
+    }
+    tagNew(candidates, 'bracket');
 
     // Now that every source has contributed, pull whatever this user has
     // actually been picking for this reading to the front. Applied here rather

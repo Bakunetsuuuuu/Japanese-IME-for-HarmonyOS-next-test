@@ -384,6 +384,12 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         input.onInputStart(attribute, restarting)
     }
 
+    /** キーボードだけを隠したとき (ナビゲーションバーの ∨ など)。標準の処理より先に、入力中の文字を確定して状態を空にする */
+    override fun onFinishInputView(finishingInput: Boolean) {
+        if (!finishingInput) input.onViewHidden()
+        super.onFinishInputView(finishingInput)
+    }
+
     override fun onFinishInput() {
         super.onFinishInput()
         input.onInputStop()
