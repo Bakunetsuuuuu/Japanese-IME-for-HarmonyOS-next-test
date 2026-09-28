@@ -223,8 +223,33 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         menu = mv
         block = blk
         root = r
+        styleNavBar()
         render()
         return r
+    }
+
+    /**
+     * ナビゲーションバーの下地をキーボードと続いて見えるようにする。
+     * targetSdk 35 以降の Android 15 以降は画面の端まで描く決まり (edge-to-edge) で、3 ボタンのときだけ
+     * システムがバーの裏に半透明の暗い幕を掛ける (ジェスチャーのときは掛けない)。キーボードは下の余白を自分の色で塗っているので、
+     * 幕を外せば続いて見える。Android 14 以前はバーの色そのものをキーボードの色にする。
+     * ボタンの色も背景の明るさに合わせる (明るいテーマで白いボタンだと見えない)
+     */
+    @Suppress("DEPRECATION")
+    private fun styleNavBar() {
+        val w = window?.window ?: return
+        val sdk = android.os.Build.VERSION.SDK_INT
+        if (sdk >= 29) w.isNavigationBarContrastEnforced = false
+        if (sdk < 35) w.navigationBarColor = theme.getValue("panelBg")
+        val light = !settings.isDark(this)
+        if (sdk >= 30) {
+            val flag = android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+            w.insetsController?.setSystemBarsAppearance(if (light) flag else 0, flag)
+        } else {
+            val v = w.decorView
+            v.systemUiVisibility = if (light) v.systemUiVisibility or View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR
+            else v.systemUiVisibility and View.SYSTEM_UI_FLAG_LIGHT_NAVIGATION_BAR.inv()
+        }
     }
 
     private fun sideButton(label: String, onClick: () -> Unit) = TextView(this).apply {
@@ -333,6 +358,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         if (root != null && sig() != viewSig) setInputView(onCreateInputView())
+        styleNavBar()   // 開くたびに当て直す (窓を作り直すと戻ることがある)
         readClip()
         syncUserWords()
     }
@@ -358,6 +384,12 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         input.onInputStart(attribute, restarting)
     }
 
+    /** キーボードだけを隠したとき (ナビゲーションバーの ∨ など)。標準の処理より先に、入力中の文字を確定して状態を空にする */
+    override fun onFinishInputView(finishingInput: Boolean) {
+        if (!finishingInput) input.onViewHidden()
+        super.onFinishInputView(finishingInput)
+    }
+
     override fun onFinishInput() {
         super.onFinishInput()
         input.onInputStop()
@@ -379,13 +411,19 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
 
     // ---------------------------------------------------------------- クリップボード
     private var lastClip: String? = null
+    private var lastClipStamp = 0L
 
-    /** 新しくコピーされた文を履歴に足し、候補の帯に貼り付けのチップを出す (読めるのは選ばれているキーボードのときだけ) */
+    /**
+     * 新しくコピーされた文を履歴に足し、候補の帯に貼り付けのチップを出す (読めるのは選ばれているキーボードのときだけ)。
+     * 同じ文をもう一度コピーしたときも出す (コピーした時刻で見分ける。前は文が同じだと出なかった)
+     */
     private fun readClip() {
-        val t = runCatching { clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() }
-            .getOrNull()
-        if (t.isNullOrEmpty() || t == lastClip) return
+        val clip = runCatching { clipboard?.primaryClip }.getOrNull() ?: return
+        val t = runCatching { clip.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull()
+        val stamp = clip.description?.timestamp ?: 0L
+        if (t.isNullOrEmpty() || (t == lastClip && stamp == lastClipStamp)) return
         lastClip = t
+        lastClipStamp = stamp
         clips.remove(t)
         clips.add(0, t)
         while (clips.size > 8) clips.removeAt(clips.size - 1)
@@ -438,6 +476,22 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         closeMenu()
     }
 
+    /**
+     * 候補の帯の「貼り付け」(新しいコピーを読めなかったときに出す): 入力欄のアプリに貼り付けを頼む (長押しメニューの
+     * 「貼り付け」と同じ)。アプリ自身がクリップボードを読むので、キーボードがクリップボードを読めないとき
+     * (端末の設定や機種によって止められることがある) でも貼り付けられる。頼めない入力欄では、読めればキーボードから入れる
+     */
+    private fun pasteFromClipboard() {
+        val ok = currentInputConnection?.performContextMenuAction(android.R.id.paste) == true
+        if (!ok) {
+            val t = runCatching { clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() }
+                .getOrNull()
+            if (!t.isNullOrEmpty()) input.insertText(t)
+        }
+        freshClip = null
+        render()
+    }
+
     override fun closeMenu() {
         input.subMode = InputHandler.SubMode.KANA
         render()
@@ -445,6 +499,11 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
 
     /** 貼り付けのチップの字: 小さい「貼り付け」を色の字で、その後ろにコピーした文 (キーボードの 2 色の見た目に合わせ、絵文字の印は使わない) */
     private fun clipLabel(preview: String): CharSequence {
+        if (preview.isEmpty()) {   // 中身の見えない「貼り付け」だけのチップ: 色の字で普通の大きさ
+            return android.text.SpannableString("貼り付け").apply {
+                setSpan(android.text.style.ForegroundColorSpan(theme.getValue("accent")), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
         val head = "貼り付け  "
         return android.text.SpannableStringBuilder(head + preview).apply {
             setSpan(android.text.style.ForegroundColorSpan(theme.getValue("accent")), 0, head.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -484,6 +543,8 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
                 chips.add(CLIP_PREFIX + preview to { paste(c) })
             }
             for ((i, s) in input.predictions.withIndex()) chips.add(s to { input.commitPrediction(i) })
+            // 新しいコピーのチップが無いときも、帯の端にいつも「貼り付け」を置く (中身を読めない端末でも、ここから貼り付けられる)
+            if (freshClip == null) chips.add(CLIP_PREFIX to { pasteFromClipboard() })
         }
         b.removeAllViews()
         for ((i, c) in chips.withIndex()) {

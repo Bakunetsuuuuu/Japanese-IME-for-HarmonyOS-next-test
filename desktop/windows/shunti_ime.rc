@@ -25,7 +25,11 @@ BEGIN
         BLOCK "041104b0"
         BEGIN
             VALUE "CompanyName", "shuntilettuce"
+#ifdef SHUNTI_INPUT_LOG
+            VALUE "FileDescription", "shunti IME (日本語入力) デバッグ版・入力を記録する"
+#else
             VALUE "FileDescription", "shunti IME (日本語入力)"
+#endif
             VALUE "FileVersion", "0.1.0"
             VALUE "InternalName", "shunti_ime"
             VALUE "LegalCopyright", "MIT License"

@@ -1,9 +1,11 @@
 #include "text_service.h"
 
+#include <inputscope.h>
 #include <wrl/client.h>
 
 #include "display_attr.h"
 #include "globals.h"
+#include "input_log.h"
 #include "langbar.h"
 
 using Microsoft::WRL::ComPtr;
@@ -99,6 +101,12 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* tm, TfClientId cid, DWORD) {
     Core& c = core();
     composer_ = std::make_unique<Composer>(c.conv.ok() ? &c.conv : nullptr, &c.learning, &c.dict);
     composer_->set_context_provider([this] { return left_ctx_; });
+    if (INPUT_LOG_ENABLED) {   // デバッグ用のビルドだけ (リリース用では INPUT_LOG_ENABLED が false で、書き出す関数も空)
+        composer_->on_log = [this](const LogEvent& e) {
+            if (!secure_) input_log(e);
+        };
+        input_log_simple("diag", "activate");
+    }
     cand_.on_click = [this](int i) { on_candidate_clicked(i); };
 
     ComPtr<ITfSource> src;
@@ -351,6 +359,9 @@ STDMETHODIMP TextService::OnTestKeyDown(ITfContext*, WPARAM wp, LPARAM lp, BOOL*
 STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL* eaten) {
     KeyEvent ev;
     Action a = classify(wp, lp, ev);
+    // 確定したあとの Backspace (直したしるし。消した中身は記録しない)
+    if (INPUT_LOG_ENABLED && a == Action::None && wp == VK_BACK && composer_ && !composer_->composing() && !secure_ && is_open())
+        input_log_simple("delchar", "IDLE");
     *eaten = a != Action::None;
     switch (a) {
         case Action::Open: set_open(true); break;
@@ -360,7 +371,10 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL*
             ComPtr<ITfContext> keep(ctx);
             edit(ctx, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep, ev](TfEditCookie ec) {
                 if (!composer_) return;
-                if (!composer_->composing()) left_ctx_ = read_left_context(ec, keep.Get());
+                if (!composer_->composing()) {
+                    if (INPUT_LOG_ENABLED) secure_ = is_secure_field(ec, keep.Get());
+                    left_ctx_ = read_left_context(ec, keep.Get());
+                }
                 composer_->press(ev);
                 apply(ec, keep.Get());
             });
@@ -572,7 +586,37 @@ STDMETHODIMP TextService::OnCompositionTerminated(TfEditCookie, ITfComposition* 
     return S_OK;
 }
 
+bool TextService::is_secure_field(TfEditCookie ec, ITfContext* ctx) {
+    ComPtr<ITfReadOnlyProperty> prop;
+    TF_SELECTION sel = {};
+    ULONG n = 0;
+    // GUID_PROP_INPUTSCOPE (uuid.lib に入っていないので値を書く)
+    static const GUID PROP_INPUTSCOPE = {0x1713dd5a, 0x68e7, 0x4a5b, {0x9a, 0xf6, 0x59, 0x2a, 0x59, 0x5c, 0x77, 0x8d}};
+    if (FAILED(ctx->GetAppProperty(PROP_INPUTSCOPE, &prop)) || !prop) return false;
+    if (FAILED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) || !n || !sel.range) return false;
+    ComPtr<ITfRange> r;
+    r.Attach(sel.range);
+    VARIANT v;
+    VariantInit(&v);
+    bool secure = false;
+    if (SUCCEEDED(prop->GetValue(ec, r.Get(), &v)) && v.vt == VT_UNKNOWN && v.punkVal) {
+        ComPtr<ITfInputScope> is;
+        InputScope* scopes = nullptr;
+        UINT count = 0;
+        if (SUCCEEDED(v.punkVal->QueryInterface(IID_PPV_ARGS(&is))) && SUCCEEDED(is->GetInputScopes(&scopes, &count))) {
+            for (UINT i = 0; i < count; i++)
+                if (scopes[i] == IS_PASSWORD || scopes[i] == IS_NUMERIC_PASSWORD || scopes[i] == IS_NUMERIC_PIN ||
+                    scopes[i] == IS_ALPHANUMERIC_PIN || scopes[i] == IS_ALPHANUMERIC_PIN_SET)
+                    secure = true;
+            CoTaskMemFree(scopes);
+        }
+    }
+    VariantClear(&v);
+    return secure;
+}
+
 STDMETHODIMP TextService::OnSetFocus(ITfDocumentMgr*, ITfDocumentMgr*) {
+    if (INPUT_LOG_ENABLED) input_log_simple("field");
     // 別の入力欄に移った: 入力中のものは確定し、文脈の代わりに覚えていた文を忘れる
     finish_composition();
     cand_.hide();

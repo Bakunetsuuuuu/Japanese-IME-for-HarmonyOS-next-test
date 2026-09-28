@@ -69,6 +69,7 @@ public:
 private:
     enum class Action { None, Compose, Open, Close, Toggle };
     void apply_settings();
+    bool is_secure_field(TfEditCookie ec, ITfContext* ctx);   // パスワードの欄か (入力の記録を止める)
     Action classify(WPARAM vk, LPARAM lp, KeyEvent& ev);
     bool to_key_event(WPARAM vk, LPARAM lp, KeyEvent& ev);
     HRESULT edit(ITfContext* ctx, DWORD flags, std::function<void(TfEditCookie)> fn);
@@ -99,6 +100,7 @@ private:
     TfGuidAtom atom_input_ = TF_INVALID_GUIDATOM, atom_converted_ = TF_INVALID_GUIDATOM, atom_focused_ = TF_INVALID_GUIDATOM;
     std::unique_ptr<Composer> composer_;
     u16 left_ctx_;
+    bool secure_ = false;   // いまの入力欄がパスワードの欄 (デバッグ用のビルドの入力の記録だけが使う)
     CandWindow cand_;
     LangBarButton* langbar_ = nullptr;
 };

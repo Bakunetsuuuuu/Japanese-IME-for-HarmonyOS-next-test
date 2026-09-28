@@ -52,6 +52,51 @@ void prefer_greetings(const u16& target, std::vector<u16>& cands) {
         return;
     }
 }
+
+// 括弧の全種類 (開き, 閉じ)。どの括弧も必ず打てるように、変換の候補はここから出す。
+// スマホ版 ime/Brackets.ets・Android 版 Brackets.kt も同じ並び (変えるときは 3 つとも)
+const char16_t* const BRACKETS[][2] = {
+    {u"（", u"）"}, {u"(", u")"}, {u"「", u"」"}, {u"『", u"』"}, {u"【", u"】"}, {u"［", u"］"}, {u"[", u"]"},
+    {u"｛", u"｝"}, {u"{", u"}"}, {u"〔", u"〕"}, {u"〈", u"〉"}, {u"《", u"》"}, {u"〖", u"〗"}, {u"〘", u"〙"},
+    {u"〚", u"〛"}, {u"｢", u"｣"}, {u"＜", u"＞"}, {u"<", u">"}, {u"«", u"»"}, {u"‹", u"›"}, {u"“", u"”"},
+    {u"‘", u"’"}, {u"〝", u"〟"}, {u"｟", u"｠"},
+};
+
+// 読みに合う括弧の候補 (スマホ版 bracketVariants と同じ決まり)。括弧 1 字 → 同じ側 (開き・閉じ) の全種類 (打った字が先頭)、
+// かっこ → 全種類の組、かっこひらき・かっことじ → 開き・閉じの全種類。括弧でない読みは空
+std::vector<u16> bracket_variants(const u16& reading) {
+    std::vector<u16> opens, closes, out;
+    for (auto& b : BRACKETS) {
+        opens.push_back(b[0]);
+        closes.push_back(b[1]);
+    }
+    if (reading == u"かっこ") {
+        for (auto& b : BRACKETS) out.push_back(u16(b[0]) + b[1]);
+        return out;
+    }
+    if (reading == u"かっこひらき") return opens;
+    if (reading == u"かっことじ") return closes;
+    for (const std::vector<u16>* side : {&opens, &closes}) {
+        if (!contains(*side, reading)) continue;
+        out.push_back(reading);
+        for (auto& c : *side) if (c != reading) out.push_back(c);
+        break;
+    }
+    return out;
+}
+
+// 括弧の候補を入れる: 括弧 1 字なら同じ側の全種類を先頭から (打った字が 1 位)、かっこ などは 1 位の後ろに足す
+void add_brackets(const u16& reading, std::vector<u16>& cands) {
+    std::vector<u16> br = bracket_variants(reading);
+    if (br.empty()) return;
+    if (br[0] == reading) {
+        for (auto& c : cands) if (!contains(br, c)) br.push_back(c);
+        cands = std::move(br);
+        return;
+    }
+    size_t at = std::min<size_t>(1, cands.size());
+    for (auto& b : br) if (!contains(cands, b)) cands.insert(cands.begin() + long(at++), b);
+}
 }  // namespace
 
 u16 greeting_fix(const u16& reading, const u16& surf) {
@@ -192,14 +237,20 @@ bool Composer::press_input(const KeyEvent& ev) {
         case Key::Tab:   // 打っている間の候補を選び始める
             flush_romaji();
             update_live();
-            if (!live_cands_.empty()) enter_single(live_cands_[0], live_cands_, 0);
+            if (!live_cands_.empty()) {
+                enter_single(live_cands_[0], live_cands_, 0);
+                first_cands_ = live_cands_;
+                first_via_ = "live";
+            }
             return true;
         case Key::Enter:
             flush_romaji();
+            log({"raw", kana_, kana_, ctx_});
             commit_text(kana_);
             to_idle();
             return true;
         case Key::Escape:
+            log({"clear", kana_ + romaji_.pending(), u16(), ctx_});
             to_idle();
             return true;
         case Key::Backspace:
@@ -238,6 +289,7 @@ bool Composer::press_input(const KeyEvent& ev) {
             flush_romaji();
             if (kana_.empty()) { to_idle(); return true; }
             enter_single(kana_, {}, 0);
+            first_via_ = "fkey";
             transform(ev.key);
             return true;
         default:   // ↑・PageUp/Down: 入力中は入力欄に渡さない
@@ -328,6 +380,12 @@ void Composer::select_candidate(int index) {
         if (index < 0 || index >= int(live_cands_.size())) return;
         u16 c = live_cands_[size_t(index)];
         flush_romaji();
+        {
+            LogEvent e{"commit", kana_, c, ctx_, live_cands_, index};
+            e.segs = {c};
+            e.extra = "live,mouse";
+            log(e);
+        }
         if (learning_) learning_->record(kana_, c);
         commit_text(c);
         to_idle();
@@ -340,6 +398,7 @@ void Composer::select_candidate(int index) {
     s.sel = index;
     s.surface = s.cands[size_t(index)];
     s.changed = true;
+    log({"bseg", s.reading, s.surface, left_context(focus_), s.cands, index, {}, "mouse"});
     if (!options.always_cands) cand_open_ = false;
     rebuild_view();
 }
@@ -362,6 +421,7 @@ void Composer::update_live() {
     }
     live_key_ = key;
     std::vector<u16> cands = c.cands;
+    add_brackets(kana_, cands);   // 学習の並べ替えより前に (よく選ぶ括弧が上に来るように)
     if (learning_) cands = learning_->apply_order(kana_, cands);
     prefer_greetings(kana_, cands);
     // 予測 (スマホ版と同じ置き方): 決まり文句は先頭に、読みの続く語 (学習した語・辞書の語) は 1 位の直後に 3 つまで
@@ -425,6 +485,12 @@ bool Composer::live_commit(const Conversion& c) {
     if (!freeze_end) return false;
     // 確定する前の方にも挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が確定されてしまう)
     u16 fs = greeting_fix(kana_.substr(0, freeze_end), top.substr(0, std::min(freeze_len, top.size())));
+    {
+        std::vector<u16> cs(c.cands.begin(), c.cands.begin() + long(std::min<size_t>(c.cands.size(), 5)));
+        LogEvent e{"auto", kana_.substr(0, freeze_end), fs, ctx_, cs, -1};
+        e.extra = to_utf8(kana_.substr(freeze_end));   // まだ確定していない残りの読み
+        log(e);
+    }
     commit_text(fs);
     ctx_ = tail(ctx_ + fs, CTX_MAX);
     kana_.erase(0, freeze_end);
@@ -477,6 +543,8 @@ void Composer::convert_all() {
     if (kana_.empty()) { to_idle(); return; }
     sync_user_dict();
     segs_ = convert_phrases(ctx_, kana_, &whole_);
+    first_cands_ = whole_;
+    first_via_ = "space";
     if (segs_.size() != 1) whole_.clear();
     focus_ = 0;
     cand_open_ = false;
@@ -520,6 +588,7 @@ void Composer::load_cands(size_t i) {
         for (auto& c : conv_->convert(left_context(i), head, 10).cands) push_unique(list, c + s.tail_s);
         if (!s.tail_r.empty()) push_unique(list, head + s.tail_s);
     }
+    add_brackets(s.reading, list);   // 学習の並べ替えより前に (よく選ぶ括弧が上に来るように)
     if (learning_) list = learning_->apply_order(s.reading, list);
     // いまの表記を先頭に (選ぶ前の並びがいちばん上から始まるように)
     auto it = std::find(list.begin(), list.end(), s.surface);
@@ -596,6 +665,11 @@ void Composer::transform(Key f) {
 }
 
 void Composer::back_to_input() {
+    {
+        u16 shown, reading;
+        for (auto& s : segs_) { shown += s.surface; reading += s.reading; }
+        log({"cancel", reading, shown, ctx_, first_cands_});
+    }
     kana_.clear();
     for (auto& s : segs_) kana_ += s.reading;
     caret_ = kana_.size();
@@ -608,13 +682,32 @@ void Composer::back_to_input() {
 }
 
 void Composer::commit_all() {
-    u16 t;
+    u16 t, reading;
+    std::vector<u16> segs;
+    int changed = 0;
     for (auto& s : segs_) {
         t += s.surface;
-        if (s.changed && learning_) learning_->record(s.reading, s.surface);
+        reading += s.reading;
+        segs.push_back(s.surface);
+        if (s.changed) {
+            changed++;
+            if (learning_) learning_->record(s.reading, s.surface);
+            log({"bseg", s.reading, s.surface, u16(), s.cands, s.sel});
+        }
+    }
+    if (on_log) {
+        int idx = -1;
+        for (size_t i = 0; i < first_cands_.size(); i++) if (first_cands_[i] == t) idx = int(i);
+        LogEvent e{"commit", reading, t, ctx_, first_cands_, idx, segs};
+        e.extra = first_via_ + ",changed=" + std::to_string(changed);
+        log(e);
     }
     commit_text(t);
     to_idle();
+}
+
+void Composer::log(LogEvent e) {
+    if (on_log) on_log(e);
 }
 
 void Composer::commit_text(const u16& t) {
@@ -629,6 +722,8 @@ void Composer::to_idle() {
     romaji_.reset();
     segs_.clear();
     whole_.clear();
+    first_cands_.clear();
+    first_via_.clear();
     cand_open_ = false;
     alpha_run_ = false;
     live_key_.clear();

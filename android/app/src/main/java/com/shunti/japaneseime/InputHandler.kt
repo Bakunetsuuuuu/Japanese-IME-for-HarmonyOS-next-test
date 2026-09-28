@@ -93,6 +93,16 @@ class InputHandler(
         learning.save()
     }
 
+    /**
+     * キーボードだけを隠したとき (入力欄は続いている)。Android の標準の処理は入力中の文字をそのまま入力欄に確定するので、
+     * その前に見えているとおりに自分で確定して、入力中の状態を空にする。
+     * (空にしないと読みが残ったまま、次に打った字を足して入力中に出し直し「かに」+「かにあ」と二重になる)
+     */
+    fun onViewHidden() {
+        if (inputState == InputState.SELECTING) commitTopCandidate()   // 選んでいる候補 (+ 範囲の外の残りのかな) が見えている
+        if (inputState == InputState.COMPOSING) commitRaw()
+    }
+
     // ---------------------------------------------------------------- キー
     /** かな・数字のキー (フリックのかなキー、数字パッド) */
     fun handleDirectKana(kana: String) {
@@ -519,6 +529,14 @@ class InputHandler(
         var insAt = if (cands.isNotEmpty()) 1 else 0
         for (d in DateTimePredictor.predict(target, Calendar.getInstance()) + NumberFormatter.predict(target)) {
             if (d !in cands) cands.add(insAt++, d)
+        }
+        // 括弧は全種類を必ず出す (Brackets.kt)。括弧 1 字を打ったときは同じ側の全種類を先頭から (打った字が 1 位)、
+        // かっこ などの読みでは全種類の組を 1 位の後ろに足す
+        val brackets = Brackets.variants(target)
+        if (brackets.firstOrNull() == target) {
+            cands = ArrayList(brackets + cands.filter { it !in brackets })
+        } else {
+            for (b in brackets) if (b !in cands) cands.add(insAt++, b)
         }
         preferGreetings(target, cands)
         // 予測 (HarmonyOS 版と同じ置き方): 決まり文句は先頭に、読みの続く語 (学習した語・辞書の語) は 1 位の直後に 3 つまで

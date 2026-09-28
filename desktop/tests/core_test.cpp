@@ -1,6 +1,7 @@
 // PC 版の共通部分 (desktop/core) の試験。IME なしで打鍵を流し込み、入力中の見せ方と確定した文を確かめる。
 //   core_test.exe <kkc_lex.bin> <kkc_model.bin> [作業用のフォルダ]
 // 期待と違えば FAIL を出し、終了コードを 1 にする。変換の時間も出す。
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
@@ -277,6 +278,36 @@ int main(int argc, char** argv) {
     ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
     printf("     long (%zu kana) convert %.1f ms: %s\n", size_t(12 * 11), ms, u8(c.view().text).substr(0, 60).c_str());
     keys(c, "{esc}{esc}");
+
+    // ---- 括弧は全種類を候補に出す (24 種類。打った字が 1 位、かっこ は組で)
+    {
+        auto count_in = [](const std::vector<u16>& cands, std::initializer_list<const char16_t*> want) {
+            int n = 0;
+            for (auto* w : want) n += std::find(cands.begin(), cands.end(), u16(w)) != cands.end();
+            return n;
+        };
+        auto check = [&](const char* name, const std::string& seq, const char16_t* top, std::initializer_list<const char16_t*> want) {
+            keys(c, seq);
+            const std::vector<u16>& cs = c.view().cands;
+            expect(name, cs.empty() ? u"" : cs[0], top);
+            int n = count_in(cs, want);
+            if (n != int(want.size())) { printf("FAIL %s: %d / %zu kinds in cands\n", name, n, want.size()); failures++; }
+            keys(c, "{esc}{esc}");
+        };
+        std::initializer_list<const char16_t*> opens = {u"（", u"(", u"「", u"『", u"【", u"［", u"[", u"｛", u"{", u"〔", u"〈", u"《",
+                                                         u"〖", u"〘", u"〚", u"｢", u"＜", u"<", u"«", u"‹", u"“", u"‘", u"〝", u"｟"};
+        std::initializer_list<const char16_t*> closes = {u"）", u")", u"」", u"』", u"】", u"］", u"]", u"｝", u"}", u"〕", u"〉", u"》",
+                                                          u"〗", u"〙", u"〛", u"｣", u"＞", u">", u"»", u"›", u"”", u"’", u"〟", u"｠"};
+        check("bracket open (live)", "[", u"「", opens);
+        check("bracket open (convert)", "[{sp}", u"「", opens);
+        check("bracket close (convert)", "]{sp}", u"」", closes);
+        check("bracket paren (convert)", "({sp}", u"（", opens);
+        keys(c, "kakko{sp}");
+        int pairs = count_in(c.view().cands, {u"（）", u"「」", u"『』", u"【】", u"〘〙", u"〚〛", u"｟｠", u"«»", u"“”", u"〝〟"});
+        if (pairs != 10) { printf("FAIL kakko: %d / 10 pairs in cands\n", pairs); failures++; }
+        else printf("ok   kakko: all pairs in cands\n");
+        keys(c, "{esc}{esc}");
+    }
 
     printf(failures ? "\n%d FAILED\n" : "\nall ok\n", failures);
     return failures ? 1 : 0;
