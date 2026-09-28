@@ -29,6 +29,7 @@ class MenuView(context: Context, private val host: Host, private val haptic: () 
         fun openApp(section: String?)
         fun showImePicker()
         fun paste(text: String)
+        fun pasteFromClipboard()   // 入力欄のアプリに貼り付けを頼む (キーボードがクリップボードを読めない端末でも貼り付けられる)
         fun closeMenu()
     }
 
@@ -80,11 +81,18 @@ class MenuView(context: Context, private val host: Host, private val haptic: () 
         text.textAlign = Paint.Align.LEFT
         canvas.drawText("クリップボード (タップで貼り付け。保存はしません)", 10 * dp, y + 12 * dp, text)
         y += 20 * dp
-        val clips = host.clipHistory
-        if (clips.isEmpty()) {
-            canvas.drawText("コピーした文がここに出ます", 10 * dp, y + 18 * dp, text)
-        }
         val rowH = 38 * dp
+        // 1 行目はいつも「貼り付け」: 入力欄のアプリ自身に貼り付けてもらう。端末によってはキーボードにクリップボードを
+        // 読ませない (権限で止める) ので、そのときも貼り付けられるように。下の履歴はキーボードが読めたコピーだけ
+        run {
+            val r = RectF(6 * dp, y + 2 * dp, width - 6 * dp, y + rowH - 2 * dp)
+            paint.color = theme.getValue(if (r == pressed) "funcBg" else "specialBg")
+            canvas.drawRoundRect(r, 8 * dp, 8 * dp, paint)
+            label(canvas, "貼り付け (いまクリップボードにあるもの)", RectF(r.left + 10 * dp, r.top, r.right - 10 * dp, r.bottom), 14f, "accentStrong", center = false)
+            out.add(r to { host.pasteFromClipboard() })
+            y += rowH
+        }
+        val clips = host.clipHistory
         for (c in clips) {
             if (y + rowH > height - 4 * dp) break
             val r = RectF(6 * dp, y + 2 * dp, width - 6 * dp, y + rowH - 2 * dp)

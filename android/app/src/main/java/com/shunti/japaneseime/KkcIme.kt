@@ -470,6 +470,23 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         closeMenu()
     }
 
+    /**
+     * 入力欄のアプリに貼り付けを頼む (長押しメニューの「貼り付け」と同じ)。アプリ自身がクリップボードを読むので、
+     * キーボードがクリップボードを読めない端末 (Play ストア以外から入れたアプリの読み取りを止める機種がある) でも貼り付けられる。
+     * 頼めない入力欄では、読めればキーボードから入れる
+     */
+    override fun pasteFromClipboard() {
+        input.commitTopCandidate()   // 入力中の文字を先に確定する (入力中でなければ何もしない)
+        val ok = currentInputConnection?.performContextMenuAction(android.R.id.paste) == true
+        if (!ok) {
+            val t = runCatching { clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() }
+                .getOrNull()
+            if (!t.isNullOrEmpty()) input.insertText(t)
+        }
+        freshClip = null
+        closeMenu()
+    }
+
     override fun closeMenu() {
         input.subMode = InputHandler.SubMode.KANA
         render()
