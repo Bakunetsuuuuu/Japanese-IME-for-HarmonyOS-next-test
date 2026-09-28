@@ -411,13 +411,19 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
 
     // ---------------------------------------------------------------- クリップボード
     private var lastClip: String? = null
+    private var lastClipStamp = 0L
 
-    /** 新しくコピーされた文を履歴に足し、候補の帯に貼り付けのチップを出す (読めるのは選ばれているキーボードのときだけ) */
+    /**
+     * 新しくコピーされた文を履歴に足し、候補の帯に貼り付けのチップを出す (読めるのは選ばれているキーボードのときだけ)。
+     * 同じ文をもう一度コピーしたときも出す (コピーした時刻で見分ける。前は文が同じだと出なかった)
+     */
     private fun readClip() {
-        val t = runCatching { clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() }
-            .getOrNull()
-        if (t.isNullOrEmpty() || t == lastClip) return
+        val clip = runCatching { clipboard?.primaryClip }.getOrNull() ?: return
+        val t = runCatching { clip.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() }.getOrNull()
+        val stamp = clip.description?.timestamp ?: 0L
+        if (t.isNullOrEmpty() || (t == lastClip && stamp == lastClipStamp)) return
         lastClip = t
+        lastClipStamp = stamp
         clips.remove(t)
         clips.add(0, t)
         while (clips.size > 8) clips.removeAt(clips.size - 1)
@@ -471,12 +477,11 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
     }
 
     /**
-     * 入力欄のアプリに貼り付けを頼む (長押しメニューの「貼り付け」と同じ)。アプリ自身がクリップボードを読むので、
-     * キーボードがクリップボードを読めない端末 (Play ストア以外から入れたアプリの読み取りを止める機種がある) でも貼り付けられる。
-     * 頼めない入力欄では、読めればキーボードから入れる
+     * 候補の帯の「貼り付け」(新しいコピーを読めなかったときに出す): 入力欄のアプリに貼り付けを頼む (長押しメニューの
+     * 「貼り付け」と同じ)。アプリ自身がクリップボードを読むので、キーボードがクリップボードを読めないとき
+     * (端末の設定や機種によって止められることがある) でも貼り付けられる。頼めない入力欄では、読めればキーボードから入れる
      */
-    override fun pasteFromClipboard() {
-        input.commitTopCandidate()   // 入力中の文字を先に確定する (入力中でなければ何もしない)
+    private fun pasteFromClipboard() {
         val ok = currentInputConnection?.performContextMenuAction(android.R.id.paste) == true
         if (!ok) {
             val t = runCatching { clipboard?.primaryClip?.takeIf { it.itemCount > 0 }?.getItemAt(0)?.coerceToText(this)?.toString() }
@@ -484,7 +489,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
             if (!t.isNullOrEmpty()) input.insertText(t)
         }
         freshClip = null
-        closeMenu()
+        render()
     }
 
     override fun closeMenu() {
@@ -494,6 +499,11 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
 
     /** 貼り付けのチップの字: 小さい「貼り付け」を色の字で、その後ろにコピーした文 (キーボードの 2 色の見た目に合わせ、絵文字の印は使わない) */
     private fun clipLabel(preview: String): CharSequence {
+        if (preview.isEmpty()) {   // 中身の見えない「貼り付け」だけのチップ: 色の字で普通の大きさ
+            return android.text.SpannableString("貼り付け").apply {
+                setSpan(android.text.style.ForegroundColorSpan(theme.getValue("accent")), 0, length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+            }
+        }
         val head = "貼り付け  "
         return android.text.SpannableStringBuilder(head + preview).apply {
             setSpan(android.text.style.ForegroundColorSpan(theme.getValue("accent")), 0, head.length, android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
@@ -533,6 +543,8 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
                 chips.add(CLIP_PREFIX + preview to { paste(c) })
             }
             for ((i, s) in input.predictions.withIndex()) chips.add(s to { input.commitPrediction(i) })
+            // 新しいコピーのチップが無いときも、帯の端にいつも「貼り付け」を置く (中身を読めない端末でも、ここから貼り付けられる)
+            if (freshClip == null) chips.add(CLIP_PREFIX to { pasteFromClipboard() })
         }
         b.removeAllViews()
         for ((i, c) in chips.withIndex()) {
