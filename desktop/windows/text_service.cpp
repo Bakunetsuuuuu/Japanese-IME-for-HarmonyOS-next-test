@@ -333,6 +333,16 @@ bool TextService::to_key_event(WPARAM vk, LPARAM lp, KeyEvent& ev) {
     return true;
 }
 
+namespace {
+// 入力の記録用のキーの名前: 字はそのまま、それ以外は {bs} {sp} のように (Shift つきは {S-left})
+std::string key_name(const KeyEvent& ev) {
+    if (ev.key == Key::Char) return to_utf8(u16(1, ev.ch));
+    static const char* names[] = {"", "sp", "enter", "bs", "del", "esc", "left", "right", "up", "down", "home", "end", "tab",
+                                  "pgup", "pgdn", "f6", "f7", "f8", "f9", "f10", "henkan", "muhenkan"};
+    return std::string("{") + (ev.shift ? "S-" : "") + names[int(ev.key)] + "}";
+}
+}  // namespace
+
 TextService::Action TextService::classify(WPARAM vk, LPARAM lp, KeyEvent& ev) {
     if (!composer_) return Action::None;
     bool composing = composer_->composing();
@@ -377,6 +387,8 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL*
                 }
                 composer_->press(ev);
                 apply(ec, keep.Get());
+                // 入力中の 1 打鍵 (デバッグ用のビルドだけ): 押したキーと、押した後の入力中の文字列
+                if (INPUT_LOG_ENABLED && !secure_) input_log_key(key_name(ev), composer_->view().text);
             });
             break;
         }
