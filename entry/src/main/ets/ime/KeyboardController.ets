@@ -3445,7 +3445,11 @@ export class InputHandler {
       candidates = [...brackets, ...candidates.filter((c: string) => !brackets.includes(c))];
     } else {
       for (const b of brackets) {
-        if (!candidates.includes(b)) { candidates.splice(insAt, 0, b); insAt++; }
+        // 辞書に下の方で入っている組 (（）「」 など) も引き上げる
+        const at = candidates.indexOf(b);
+        if (at >= 0 && at < insAt) continue;
+        if (at >= 0) candidates.splice(at, 1);
+        candidates.splice(insAt, 0, b); insAt++;
       }
     }
     tagNew(candidates, 'bracket');

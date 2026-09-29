@@ -40,6 +40,21 @@ long long now_ms() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
 }
+
+// 打っているアプリ (exe の名前)。IME はアプリの中に読み込まれて動くので、自分のプロセスの名前がそのアプリ。
+// チャットと文書で口調が違うのを後で分けられるように、全部の行に付ける ("a")
+const std::string& app_name() {
+    static const std::string name = [] {
+        wchar_t buf[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, buf, MAX_PATH);
+        const wchar_t* base = wcsrchr(buf, L'\\');
+        std::wstring w = base ? base + 1 : buf;
+        return to_utf8(u16(w.begin(), w.end()));
+    }();
+    return name;
+}
+
+std::string tail_fields() { return ",\"a\":" + json::quote(app_name()) + ",\"v\":\"win\"}\n"; }
 }  // namespace
 
 void input_log(const LogEvent& e) {
@@ -50,13 +65,17 @@ void input_log(const LogEvent& e) {
     if (!e.cands.empty()) o += ",\"c\":" + json::quote(join(e.cands, ",", 10));
     if (!e.ctx.empty()) o += ",\"b\":" + json::quote(to_utf8(e.ctx));
     if (!e.segs.empty()) o += ",\"g\":" + json::quote(join(e.segs, "|", 64));
-    o += ",\"v\":\"win\"}\n";
-    append(o);
+    append(o + tail_fields());
 }
 
 void input_log_simple(const char* kind, const std::string& extra) {
     append("{\"t\":" + std::to_string(now_ms()) + ",\"k\":" + json::quote(kind) + ",\"r\":\"\",\"s\":\"\",\"i\":-1,\"n\":0,\"x\":" +
-           json::quote(extra) + ",\"v\":\"win\"}\n");
+           json::quote(extra) + tail_fields());
+}
+
+void input_log_key(const std::string& key, const u16& shown) {
+    append("{\"t\":" + std::to_string(now_ms()) + ",\"k\":\"key\",\"r\":" + json::quote(to_utf8(shown)) +
+           ",\"s\":\"\",\"i\":-1,\"n\":0,\"x\":" + json::quote(key) + tail_fields());
 }
 
 }  // namespace win

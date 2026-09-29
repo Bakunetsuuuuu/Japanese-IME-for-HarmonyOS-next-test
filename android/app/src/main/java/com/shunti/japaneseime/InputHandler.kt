@@ -536,7 +536,13 @@ class InputHandler(
         if (brackets.firstOrNull() == target) {
             cands = ArrayList(brackets + cands.filter { it !in brackets })
         } else {
-            for (b in brackets) if (b !in cands) cands.add(insAt++, b)
+            // 辞書に下の方で入っている組 (（）「」 など) も引き上げる
+            for (b in brackets) {
+                val at = cands.indexOf(b)
+                if (at in 0 until insAt) continue
+                if (at >= 0) cands.removeAt(at)
+                cands.add(insAt++, b)
+            }
         }
         preferGreetings(target, cands)
         // 予測 (HarmonyOS 版と同じ置き方): 決まり文句は先頭に、読みの続く語 (学習した語・辞書の語) は 1 位の直後に 3 つまで
