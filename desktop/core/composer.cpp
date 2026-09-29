@@ -85,7 +85,7 @@ std::vector<u16> bracket_variants(const u16& reading) {
     return out;
 }
 
-// 括弧の候補を入れる: 括弧 1 字なら同じ側の全種類を先頭から (打った字が 1 位)、かっこ などは 1 位の後ろに足す
+// 括弧の候補を入れる: 括弧 1 字なら同じ側の全種類を先頭から (打った字が 1 位)、かっこ などは 1 位の後ろに (すでにあれば引き上げて) 並べる
 void add_brackets(const u16& reading, std::vector<u16>& cands) {
     std::vector<u16> br = bracket_variants(reading);
     if (br.empty()) return;
@@ -94,8 +94,14 @@ void add_brackets(const u16& reading, std::vector<u16>& cands) {
         cands = std::move(br);
         return;
     }
+    // 辞書に下の方で入っている組 (（）「」 など) も 1 位の後ろへ引き上げる
     size_t at = std::min<size_t>(1, cands.size());
-    for (auto& b : br) if (!contains(cands, b)) cands.insert(cands.begin() + long(at++), b);
+    for (auto& b : br) {
+        auto it = std::find(cands.begin(), cands.end(), b);
+        if (it != cands.end() && size_t(it - cands.begin()) < at) continue;
+        if (it != cands.end()) cands.erase(it);
+        cands.insert(cands.begin() + long(at++), b);
+    }
 }
 }  // namespace
 
