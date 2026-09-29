@@ -71,6 +71,18 @@ AI変換（shuntelligence）だけで打つ、Android 向けの軽い日本語�
 
 ---
 
+## Linux 版（shunti IME・試用版）
+
+Windows 版と同じ変換（shuntelligence S4・同じ入力の決まり）を、Linux の入力の仕組み **Fcitx5** の上で動かします。Ubuntu 24.04 以降・Debian 13 以降（64 ビットの Intel・AMD）向けの `.deb` を [GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) に置いています。
+
+```bash
+sudo apt install ./fcitx5-shunti_0.1.0_amd64.deb
+```
+
+入れたあと Fcitx5 に切り替えて「shunti IME」を足す手順・設定・ユーザー辞書は [desktop/linux/README.md](./desktop/linux/README.md) にあります。通信する機能を持たないのは Windows 版と同じです。
+
+---
+
 ## 機能一覧
 
 ### 入力方式
@@ -181,10 +193,14 @@ desktop\windows\build.bat
 powershell -ExecutionPolicy Bypass -File desktop\build\dist\install.ps1
 
 rem 配る zip を作る
-powershell -ExecutionPolicy Bypass -File desktop\windows\package.ps1 -Version 0.1.0
+powershell -ExecutionPolicy Bypass -File desktop\windows\package.ps1 -Version 0.1.1
 ```
 
 アイコンは `desktop/windows/art/` の Zori-chan の絵から `python desktop/tools/gen_icons.py` で作る。
+
+### Linux 版
+
+`desktop/linux` にあります。Fcitx5 の入力メソッドのアドオンで、変換は Windows 版と同じ `desktop/core` を使います。ビルドと試験の手順は [desktop/linux/README.md](./desktop/linux/README.md) の「ソースからビルドする」へ。
 
 HarmonyOS 版のソースを正本として、Android 版に取り込むもの:
 
