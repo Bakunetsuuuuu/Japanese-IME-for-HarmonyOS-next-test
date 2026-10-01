@@ -31,6 +31,28 @@
 #include <unordered_set>
 #include <vector>
 
+// x86 (PC) では、AVX2 + FMA が使える CPU のときだけ速い版の計算 (engine_simd.h) を使う (起動時に CPU を見て選ぶ)。
+// ビルドは古い命令のまま (どの x86 の CPU でも動く)。ARM (スマホ) は今までどおり (コンパイラが NEON にする)
+#include <cstdlib>
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#define KKC_X86 1
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+// MSVC は engine_avx2.cpp (/arch:AVX2) にある
+extern "C" void kkc_avx2_lin(const float* X, int T, int in, const float* WT, int ldw, const float* B, float* Y, int ldy, int o0, int o1);
+extern "C" void kkc_avx2_gelu(float* v, size_t n);
+extern "C" void kkc_avx2_attend(const float* qkv, int T, int d, int dh, int hh, float scale, float* sc, float* att);
+#else
+#define KKC_AVX2_FN __attribute__((target("avx2,fma")))
+#include "engine_simd.h"
+#define kkc_avx2_lin kkc_simd_lin
+#define kkc_avx2_gelu kkc_simd_gelu
+#define kkc_avx2_attend kkc_simd_attend
+#endif
+#else
+#define KKC_X86 0
+#endif
+
 namespace {
 
 typedef std::u32string ustr;
@@ -478,14 +500,62 @@ void lin_part(const float* X, int T, int in, const float* WT, int ldw, const flo
         }
 }
 
+#if KKC_X86
+// この CPU で AVX2 と FMA が使えるか (OS がレジスタの保存に対応しているかも見る)
+bool cpu_has_avx2() {
+#if defined(_MSC_VER) && !defined(__clang__)
+    int r[4];
+    __cpuid(r, 0);
+    if (r[0] < 7) return false;
+    __cpuid(r, 1);
+    const bool fma = (r[2] >> 12) & 1, osxsave = (r[2] >> 27) & 1, avx = (r[2] >> 28) & 1;
+    if (!fma || !osxsave || !avx || (_xgetbv(0) & 6) != 6) return false;
+    __cpuidex(r, 7, 0);
+    return (r[1] >> 5) & 1;
+#else
+    __builtin_cpu_init();
+    return __builtin_cpu_supports("avx2") && __builtin_cpu_supports("fma");
+#endif
+}
+#endif
+
+// 環境変数 KKC_NO_SIMD=1 で、速い版を使わない (比べるため)
+bool use_avx2() {
+#if KKC_X86
+    static const bool on = cpu_has_avx2() && !getenv("KKC_NO_SIMD");
+    return on;
+#else
+    return false;
+#endif
+}
+
+void lin_any(const float* X, int T, int in, const float* WT, int ldw, const float* B, float* Y, int ldy, int o0, int o1) {
+#if KKC_X86
+    if (use_avx2()) {
+        const int o16 = o0 + (o1 - o0) / 16 * 16;
+        kkc_avx2_lin(X, T, in, WT, ldw, B, Y, ldy, o0, o16);
+        if (o16 < o1) lin_part(X, T, in, WT, ldw, B, Y, ldy, o16, o1);   // 16 で割り切れない残り
+        return;
+    }
+#endif
+    lin_part(X, T, in, WT, ldw, B, Y, ldy, o0, o1);
+}
+
+void gelu_all(float* v, size_t n) {
+#if KKC_X86
+    if (use_avx2()) { kkc_avx2_gelu(v, n); return; }
+#endif
+    for (size_t i = 0; i < n; i++) v[i] = gelu(v[i]);
+}
+
 // 出力を 16 本単位でスレッドに分ける
 void linear(Pool* P, const float* X, int T, int in, const float* WT, int ldw, const float* B, int out, float* Y) {
     const int nth = P ? P->n : 1;
-    if (nth <= 1 || out < 64 || T * out < 4096) { lin_part(X, T, in, WT, ldw, B, Y, out, 0, out); return; }
+    if (nth <= 1 || out < 64 || T * out < 4096) { lin_any(X, T, in, WT, ldw, B, Y, out, 0, out); return; }
     const int tiles = (out + 15) / 16, per = (tiles + nth - 1) / nth;
     P->run([&](int k) {
         const int a = std::min(out, k * per * 16), b = std::min(out, (k + 1) * per * 16);
-        if (a < b) lin_part(X, T, in, WT, ldw, B, Y, out, a, b);
+        if (a < b) lin_any(X, T, in, WT, ldw, B, Y, out, a, b);
     });
 }
 
@@ -584,11 +654,16 @@ void encode(kkc_engine* E, const std::vector<int>& tok, const std::vector<int>& 
         const float *a = M.emb + size_t(tok[t]) * d, *b = M.seg + size_t(seg[t]) * d, *c = M.pos + size_t(t) * d;
         for (int i = 0; i < d; i++) x[size_t(t) * d + i] = a[i] + b[i] + c[i];
     }
-    std::vector<float> sc(T);
+    std::vector<float> sc(size_t(T) + 8);   // AVX2 版は 8 本単位で使う
     const float scale = 1.0f / std::sqrt(float(dh));
     for (const LayerW& w : M.L) {
         layernorm(x.data(), T, d, w.ln1w, w.ln1b, xn.data());
         linear(&E->pool, xn.data(), T, d, w.inw, 3 * d, w.inb, 3 * d, qkv.data());
+#if KKC_X86
+        if (use_avx2() && dh % 8 == 0) {
+            for (int hh = 0; hh < H; hh++) kkc_avx2_attend(qkv.data(), T, d, dh, hh, scale, sc.data(), att.data());
+        } else
+#endif
         for (int hh = 0; hh < H; hh++) {
             for (int t = 0; t < T; t++) {
                 const float* q = qkv.data() + size_t(t) * 3 * d + hh * dh;
@@ -615,7 +690,7 @@ void encode(kkc_engine* E, const std::vector<int>& tok, const std::vector<int>& 
         for (size_t i = 0; i < x.size(); i++) x[i] += tmp[i];
         layernorm(x.data(), T, d, w.ln2w, w.ln2b, xn.data());
         linear(&E->pool, xn.data(), T, d, w.l1w, ff, w.l1b, ff, fb.data());
-        for (auto& v : fb) v = gelu(v);
+        gelu_all(fb.data(), fb.size());
         linear(&E->pool, fb.data(), T, ff, w.l2w, d, w.l2b, d, tmp.data());
         for (size_t i = 0; i < x.size(); i++) x[i] += tmp[i];
     }
@@ -652,7 +727,8 @@ void scores(kkc_engine* E, int rstart, int n, const std::vector<Edge>& ed, std::
         if (it != span_id.end()) return it->second;
         const float inv = 1.0f / float(std::max(e - s, 1));
         for (int j = 0; j < d; j++)
-            hid[j] = gelu(QA[size_t(s) * d + j] + QB[size_t(e) * d + j] + float(CQ[size_t(e) * d + j] - CQ[size_t(s) * d + j]) * inv + M.q1b[j]);
+            hid[j] = QA[size_t(s) * d + j] + QB[size_t(e) * d + j] + float(CQ[size_t(e) * d + j] - CQ[size_t(s) * d + j]) * inv + M.q1b[j];
+        gelu_all(hid.data(), size_t(d));
         int id = int(Q.size() / dk);
         Q.resize(Q.size() + dk);
         linear(nullptr, hid.data(), 1, d, M.q2w, dk, M.q2b, dk, Q.data() + size_t(id) * dk);
@@ -679,7 +755,8 @@ void scores(kkc_engine* E, int rstart, int n, const std::vector<Edge>& ed, std::
         const float* pc = M.Pc + size_t(M.vid(e.surf.back())) * d;
         const float* kk = M.Kkind + size_t(e.kind) * d;
         const float* kl = M.Klen + size_t(std::min(nc, 16)) * d;
-        for (int j = 0; j < d; j++) hid[j] = gelu(hid[j] * inv + pb[j] + kk[j] + pc[j] + kl[j] + M.k1b[j]);
+        for (int j = 0; j < d; j++) hid[j] = hid[j] * inv + pb[j] + kk[j] + pc[j] + kl[j] + M.k1b[j];
+        gelu_all(hid.data(), size_t(d));
         int id = int(K.size() / dk);
         K.resize(K.size() + dk);
         linear(nullptr, hid.data(), 1, d, M.k2w, dk, M.k2b, dk, K.data() + size_t(id) * dk);
