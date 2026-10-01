@@ -11,4 +11,11 @@ extern "C" void kkc_avx2_gelu(float* v, size_t n) { kkc_simd_gelu(v, n); }
 extern "C" void kkc_avx2_attend(const float* qkv, int T, int d, int dh, int hh, float scale, float* sc, float* att) {
     kkc_simd_attend(qkv, T, d, dh, hh, scale, sc, att);
 }
+extern "C" void kkc_avx2_quant_rows(const float* X, int T, int in, int inp, short* Xq, float* xs) {
+    kkc_simd_quant_rows(X, T, in, inp, Xq, xs);
+}
+extern "C" void kkc_avx2_lin_q(const short* Xq, const float* xs, int T, int inp, const short* Wp, const float* ws,
+                               const float* B, float* Y, int ldy, int o0, int o1) {
+    kkc_simd_lin_q(Xq, xs, T, inp, Wp, ws, B, Y, ldy, o0, o1);
+}
 #endif

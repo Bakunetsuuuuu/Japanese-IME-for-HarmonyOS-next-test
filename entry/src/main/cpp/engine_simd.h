@@ -91,6 +91,96 @@ static KKC_AVX2_FN void kkc_simd_lin(const float* X, int T, int in, const float*
     }
 }
 
+// ---------------------------------------------------------------- 整数版の全結合 (重みは ±KKC_QW、入力は ±KKC_QX の段階に丸める)
+// 16 ビット整数の「2 つずつ掛けて足す」命令 (vpmaddwd) は、8 ビットに丸めても 11 ビットに丸めても速さが同じなので、
+// 重みは ±511、入力は ±2047 に丸める (dev・AJIMEE・日常の 9305 文で、float 版と 1 位が違ったのは 2 文。±127 同士の 8 ビットでは 13 文)。
+// 合計は 511 × 2047 × 入力の数 (2048 で 21.4 億) で 32 ビットに収まる (入力の数が 2048 を超えるモデルには、呼ぶ側で使わない)
+#ifndef KKC_QX
+#define KKC_QX 2047   // 入力の段階 (±)
+#endif
+#ifndef KKC_QW
+#define KKC_QW 511    // 重みの段階 (±)。KKC_QX × KKC_QW × 入力の数 が 21.47 億を超えないこと
+#endif
+
+// 16 ビット 2 つを 32 ビット 1 つとして読む (GCC の型による別名の仮定を外す。MSVC はその仮定をしない)
+#if defined(__GNUC__)
+typedef int kkc_pair32 __attribute__((may_alias));
+#else
+typedef int kkc_pair32;
+#endif
+
+// 重みの詰め方 (16 出力 × 入力 2 つずつ): 出力のかたまり (16 本) ごとに、入力 i, i+1 の組ごとに
+// [o..o+7 の (w[i][o], w[i+1][o])] [o+8..o+15 の (w[i][o], w[i+1][o])] の 32 個。入力の数は偶数に詰める (0 で埋める)
+
+// 行ごとに ±KKC_QX に丸める。Xq は T × inp (inp は in を偶数に)、xs は行ごとの倍率 (元の値 = Xq × xs)
+static KKC_AVX2_FN void kkc_simd_quant_rows(const float* X, int T, int in, int inp, short* Xq, float* xs) {
+    const __m256 absmask = _mm256_castsi256_ps(_mm256_set1_epi32(0x7fffffff));
+    for (int t = 0; t < T; t++) {
+        const float* x = X + (size_t)t * in;
+        __m256 m8 = _mm256_setzero_ps();
+        int i = 0;
+        for (; i + 8 <= in; i += 8) m8 = _mm256_max_ps(m8, _mm256_and_ps(_mm256_loadu_ps(x + i), absmask));
+        float m = 0;
+        {
+            float buf[8];
+            _mm256_storeu_ps(buf, m8);
+            for (int j = 0; j < 8; j++) m = buf[j] > m ? buf[j] : m;
+            for (; i < in; i++) { const float a = x[i] < 0 ? -x[i] : x[i]; m = a > m ? a : m; }
+        }
+        const float s = m > 0 ? m / KKC_QX : 1.0f, inv = 1.0f / s;
+        xs[t] = s;
+        short* q = Xq + (size_t)t * inp;
+        const __m256 iv = _mm256_set1_ps(inv);
+        i = 0;
+        for (; i + 16 <= in; i += 16) {
+            const __m256i a = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(x + i), iv));
+            const __m256i b = _mm256_cvtps_epi32(_mm256_mul_ps(_mm256_loadu_ps(x + i + 8), iv));
+            _mm256_storeu_si256((__m256i*)(q + i), _mm256_permute4x64_epi64(_mm256_packs_epi32(a, b), 0xD8));
+        }
+        for (; i < in; i++) {
+            const float v = x[i] * inv;
+            q[i] = (short)(v < 0 ? v - 0.5f : v + 0.5f);
+        }
+        for (; i < inp; i++) q[i] = 0;
+    }
+}
+
+// Y[t][o] = (Σ_i Xq[t][i] · Wq[i][o]) · xs[t] · ws[o] + B[o]。出力は [o0, o1) (16 の倍数)。行は 6 本ずつ
+static KKC_AVX2_FN void kkc_simd_lin_q(const short* Xq, const float* xs, int T, int inp, const short* Wp, const float* ws,
+                                       const float* B, float* Y, int ldy, int o0, int o1) {
+    const int pairs = inp / 2;
+    for (int o = o0; o + 16 <= o1; o += 16) {
+        const short* wt = Wp + (size_t)(o / 16) * inp * 16;
+        const __m256 s0 = _mm256_loadu_ps(ws + o), s1 = _mm256_loadu_ps(ws + o + 8);
+        const __m256 b0 = B ? _mm256_loadu_ps(B + o) : _mm256_setzero_ps();
+        const __m256 b1 = B ? _mm256_loadu_ps(B + o + 8) : _mm256_setzero_ps();
+        for (int t = 0; t < T; t += 6) {
+            const int tn = T - t < 6 ? T - t : 6;
+            const kkc_pair32* x[6];
+            for (int r = 0; r < 6; r++) x[r] = (const kkc_pair32*)(Xq + (size_t)(t + (r < tn ? r : tn - 1)) * inp);
+            __m256i a00 = _mm256_setzero_si256(), a01 = a00, a10 = a00, a11 = a00, a20 = a00, a21 = a00;
+            __m256i a30 = a00, a31 = a00, a40 = a00, a41 = a00, a50 = a00, a51 = a00;
+            for (int p = 0; p < pairs; p++) {
+                const __m256i w0 = _mm256_loadu_si256((const __m256i*)(wt + (size_t)p * 32));
+                const __m256i w1 = _mm256_loadu_si256((const __m256i*)(wt + (size_t)p * 32 + 16));
+                __m256i v = _mm256_set1_epi32(x[0][p]); a00 = _mm256_add_epi32(a00, _mm256_madd_epi16(v, w0)); a01 = _mm256_add_epi32(a01, _mm256_madd_epi16(v, w1));
+                v = _mm256_set1_epi32(x[1][p]); a10 = _mm256_add_epi32(a10, _mm256_madd_epi16(v, w0)); a11 = _mm256_add_epi32(a11, _mm256_madd_epi16(v, w1));
+                v = _mm256_set1_epi32(x[2][p]); a20 = _mm256_add_epi32(a20, _mm256_madd_epi16(v, w0)); a21 = _mm256_add_epi32(a21, _mm256_madd_epi16(v, w1));
+                v = _mm256_set1_epi32(x[3][p]); a30 = _mm256_add_epi32(a30, _mm256_madd_epi16(v, w0)); a31 = _mm256_add_epi32(a31, _mm256_madd_epi16(v, w1));
+                v = _mm256_set1_epi32(x[4][p]); a40 = _mm256_add_epi32(a40, _mm256_madd_epi16(v, w0)); a41 = _mm256_add_epi32(a41, _mm256_madd_epi16(v, w1));
+                v = _mm256_set1_epi32(x[5][p]); a50 = _mm256_add_epi32(a50, _mm256_madd_epi16(v, w0)); a51 = _mm256_add_epi32(a51, _mm256_madd_epi16(v, w1));
+            }
+            const __m256i acc[12] = {a00, a01, a10, a11, a20, a21, a30, a31, a40, a41, a50, a51};
+            float* y = Y + (size_t)t * ldy + o;
+            for (int r = 0; r < tn; r++) {
+                const __m256 sx = _mm256_set1_ps(xs[t + r]);
+                _mm256_storeu_ps(y + (size_t)r * ldy, _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc[2 * r]), _mm256_mul_ps(sx, s0), b0));
+                _mm256_storeu_ps(y + (size_t)r * ldy + 8, _mm256_fmadd_ps(_mm256_cvtepi32_ps(acc[2 * r + 1]), _mm256_mul_ps(sx, s1), b1));
+            }
+        }
+    }
+}
+
 // gelu(x) = x/2 · (1 + erf(x/√2)) を 8 本ずつ。erf は Abramowitz & Stegun 7.1.26 (誤差 1.5e-7、float の丸めと同じくらい)
 static KKC_AVX2_FN inline __m256 kkc_gelu8(__m256 x) {
     const __m256 sign = _mm256_set1_ps(-0.0f), one = _mm256_set1_ps(1.0f);

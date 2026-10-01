@@ -42,12 +42,17 @@
 extern "C" void kkc_avx2_lin(const float* X, int T, int in, const float* WT, int ldw, const float* B, float* Y, int ldy, int o0, int o1);
 extern "C" void kkc_avx2_gelu(float* v, size_t n);
 extern "C" void kkc_avx2_attend(const float* qkv, int T, int d, int dh, int hh, float scale, float* sc, float* att);
+extern "C" void kkc_avx2_quant_rows(const float* X, int T, int in, int inp, short* Xq, float* xs);
+extern "C" void kkc_avx2_lin_q(const short* Xq, const float* xs, int T, int inp, const short* Wp, const float* ws,
+                               const float* B, float* Y, int ldy, int o0, int o1);
 #else
 #define KKC_AVX2_FN __attribute__((target("avx2,fma")))
 #include "engine_simd.h"
 #define kkc_avx2_lin kkc_simd_lin
 #define kkc_avx2_gelu kkc_simd_gelu
 #define kkc_avx2_attend kkc_simd_attend
+#define kkc_avx2_quant_rows kkc_simd_quant_rows
+#define kkc_avx2_lin_q kkc_simd_lin_q
 #endif
 #else
 #define KKC_X86 0
@@ -548,6 +553,50 @@ void gelu_all(float* v, size_t n) {
     for (size_t i = 0; i < n; i++) v[i] = gelu(v[i]);
 }
 
+// 整数に丸めた全結合の重み (engine_simd.h の詰め方)。読み込むときに float の重みから作る
+struct QW {
+    int in = 0, inp = 0, out = 0;
+    std::vector<short> w;     // 出力 16 本 × 入力 2 つずつの組
+    std::vector<float> s;     // 出力ごとの倍率 (元の重み = 整数 × 倍率)
+};
+
+#if KKC_X86
+#ifndef KKC_QW
+#define KKC_QW 511    // engine_simd.h と同じ
+#endif
+// WT (入力, 出力) を出力ごとに ±KKC_QW に丸めて詰める
+QW quantize(const float* WT, int in, int out) {
+    QW q;
+    q.in = in; q.inp = (in + 1) & ~1; q.out = out;
+    q.s.assign(size_t(out), 1.0f);
+    for (int o = 0; o < out; o++) {
+        float m = 0;
+        for (int i = 0; i < in; i++) m = std::max(m, std::fabs(WT[size_t(i) * out + o]));
+        if (m > 0) q.s[o] = m / KKC_QW;
+    }
+    q.w.assign(size_t(out / 16) * q.inp * 16, 0);
+    for (int o = 0; o < out; o++) {
+        short* tile = q.w.data() + size_t(o / 16) * q.inp * 16;
+        const int lane = (o % 16) / 8, j = o % 8;
+        for (int i = 0; i < in; i++) {
+            const float v = WT[size_t(i) * out + o] / q.s[o];
+            tile[size_t(i / 2) * 32 + lane * 16 + j * 2 + (i & 1)] = short(std::lround(v));
+        }
+    }
+    return q;
+}
+#endif
+
+// 整数版を使うか (AVX2 のときだけ。環境変数 KKC_NO_QUANT=1 で使わない)
+bool use_quant() {
+#if KKC_X86
+    static const bool on = use_avx2() && !getenv("KKC_NO_QUANT");
+    return on;
+#else
+    return false;
+#endif
+}
+
 // 出力を 16 本単位でスレッドに分ける
 void linear(Pool* P, const float* X, int T, int in, const float* WT, int ldw, const float* B, int out, float* Y) {
     const int nth = P ? P->n : 1;
@@ -557,6 +606,24 @@ void linear(Pool* P, const float* X, int T, int in, const float* WT, int ldw, co
         const int a = std::min(out, k * per * 16), b = std::min(out, (k + 1) * per * 16);
         if (a < b) lin_any(X, T, in, WT, ldw, B, Y, out, a, b);
     });
+}
+
+// linear と同じ計算を整数で。入力は最初に 1 回だけ丸める (xq・xs は作業場所)
+void linear_q(Pool* P, const float* X, int T, const QW& q, const float* B, float* Y, std::vector<short>& xq, std::vector<float>& xs) {
+#if KKC_X86
+    xq.resize(size_t(T) * q.inp);
+    xs.resize(size_t(T));
+    kkc_avx2_quant_rows(X, T, q.in, q.inp, xq.data(), xs.data());
+    const int out = q.out, nth = P ? P->n : 1;
+    if (nth <= 1 || out < 64 || T * out < 4096) { kkc_avx2_lin_q(xq.data(), xs.data(), T, q.inp, q.w.data(), q.s.data(), B, Y, out, 0, out); return; }
+    const int tiles = out / 16, per = (tiles + nth - 1) / nth;
+    P->run([&](int k) {
+        const int a = std::min(out, k * per * 16), b = std::min(out, (k + 1) * per * 16);
+        if (a < b) kkc_avx2_lin_q(xq.data(), xs.data(), T, q.inp, q.w.data(), q.s.data(), B, Y, out, a, b);
+    });
+#else
+    (void)P; (void)X; (void)T; (void)q; (void)B; (void)Y; (void)xq; (void)xs;
+#endif
 }
 
 void layernorm(const float* x, int T, int d, const float* w, const float* b, float* y) {
@@ -586,8 +653,11 @@ struct kkc_engine {
     std::vector<float> last_u;
     std::vector<SegInfo> last_segs;   // 直前の変換の 1 位の語の区切り
     std::vector<UserWord> user;                   // ユーザー辞書の語 (kkc_user_add_like で足す)
+    // 整数に丸めた重み (層ごとに inw, outw, l1w, l2w)。空なら float のまま
+    std::vector<QW> qw;
     // 作業用
-    std::vector<float> x, xn, qkv, att, tmp, ffb, h;
+    std::vector<float> x, xn, qkv, att, tmp, ffb, h, xs;
+    std::vector<short> xq;
 };
 
 namespace {
@@ -656,9 +726,12 @@ void encode(kkc_engine* E, const std::vector<int>& tok, const std::vector<int>& 
     }
     std::vector<float> sc(size_t(T) + 8);   // AVX2 版は 8 本単位で使う
     const float scale = 1.0f / std::sqrt(float(dh));
-    for (const LayerW& w : M.L) {
+    for (int li = 0; li < M.layers; li++) {
+        const LayerW& w = M.L[size_t(li)];
         layernorm(x.data(), T, d, w.ln1w, w.ln1b, xn.data());
-        linear(&E->pool, xn.data(), T, d, w.inw, 3 * d, w.inb, 3 * d, qkv.data());
+        const QW* q = E->qw.empty() ? nullptr : &E->qw[size_t(li) * 4];
+        if (q) linear_q(&E->pool, xn.data(), T, q[0], w.inb, qkv.data(), E->xq, E->xs);
+        else linear(&E->pool, xn.data(), T, d, w.inw, 3 * d, w.inb, 3 * d, qkv.data());
 #if KKC_X86
         if (use_avx2() && dh % 8 == 0) {
             for (int hh = 0; hh < H; hh++) kkc_avx2_attend(qkv.data(), T, d, dh, hh, scale, sc.data(), att.data());
@@ -686,12 +759,15 @@ void encode(kkc_engine* E, const std::vector<int>& tok, const std::vector<int>& 
                 }
             }
         }
-        linear(&E->pool, att.data(), T, d, w.outw, d, w.outb, d, tmp.data());
+        if (q) linear_q(&E->pool, att.data(), T, q[1], w.outb, tmp.data(), E->xq, E->xs);
+        else linear(&E->pool, att.data(), T, d, w.outw, d, w.outb, d, tmp.data());
         for (size_t i = 0; i < x.size(); i++) x[i] += tmp[i];
         layernorm(x.data(), T, d, w.ln2w, w.ln2b, xn.data());
-        linear(&E->pool, xn.data(), T, d, w.l1w, ff, w.l1b, ff, fb.data());
+        if (q) linear_q(&E->pool, xn.data(), T, q[2], w.l1b, fb.data(), E->xq, E->xs);
+        else linear(&E->pool, xn.data(), T, d, w.l1w, ff, w.l1b, ff, fb.data());
         gelu_all(fb.data(), fb.size());
-        linear(&E->pool, fb.data(), T, ff, w.l2w, d, w.l2b, d, tmp.data());
+        if (q) linear_q(&E->pool, fb.data(), T, q[3], w.l2b, tmp.data(), E->xq, E->xs);
+        else linear(&E->pool, fb.data(), T, ff, w.l2w, d, w.l2b, d, tmp.data());
         for (size_t i = 0; i < x.size(); i++) x[i] += tmp[i];
     }
     E->h.resize(size_t(T) * d);
@@ -856,6 +932,18 @@ KKC_API kkc_engine* kkc_open(const void* lex, size_t lex_size, const void* model
     init_numbers();
     auto* e = new kkc_engine();
     if (!load_lex(e->lex, lex, lex_size) || !load_model(e->m, model, model_size)) { delete e; return nullptr; }
+#if KKC_X86
+    // 整数版の重み (16 出力単位・入力の数が 2048 以下のときだけ。合計が 32 ビットに収まる範囲)
+    const Model& M = e->m;
+    if (use_quant() && M.d % 16 == 0 && M.ff % 16 == 0 && M.ff <= 2048 && M.d <= 2048) {
+        for (const LayerW& w : M.L) {
+            e->qw.push_back(quantize(w.inw, M.d, 3 * M.d));
+            e->qw.push_back(quantize(w.outw, M.d, M.d));
+            e->qw.push_back(quantize(w.l1w, M.d, M.ff));
+            e->qw.push_back(quantize(w.l2w, M.ff, M.d));
+        }
+    }
+#endif
     return e;
 }
 
