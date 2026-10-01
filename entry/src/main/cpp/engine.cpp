@@ -15,6 +15,7 @@
 //             読み u16[]  表記 u16[]
 //   model.bin "KKM1" int32×12 (版, 語彙, d, 層, 頭, ff, dk, 最大長, 区分, 文脈, 下書きの最大, 下書きあり) float×2 (β, γ)
 //             int32 文字数, u32 文字[] (語彙の 4 番から)、あとは float32 の重み (export_model の順)
+//             版 3 は最後にダイヤル (辺ごとに Mozc の語のコストをどれだけ信じるか、学習の --cost-gate) の重み (dk, dk) と (dk) が付く
 #include "engine.h"
 
 #include <algorithm>
@@ -407,6 +408,7 @@ struct Model {
     const float *emb, *seg, *pos;
     std::vector<LayerW> L;
     const float *normw, *normb, *end, *q1w, *q1b, *q2w, *q2b, *Pa, *Pb, *Pc, *Kkind, *Klen, *k1b, *k2w, *k2b;
+    const float *gw = nullptr, *gb = nullptr;   // ダイヤル (版 3 のときだけ)
     int vid(char32_t c) const { auto it = vocab.find(c); return it == vocab.end() ? UNK : it->second; }
 };
 
@@ -686,7 +688,8 @@ bool load_model(Model& M, const void* data, size_t size) {
     Reader r{static_cast<const uint8_t*>(data), static_cast<const uint8_t*>(data) + size};
     if (size < 4 || memcmp(data, "KKM1", 4)) return false;
     r.off = 4;
-    if (r.val<int32_t>() != 2) return false;   // 版 2: 全結合の重みは (入力, 出力)
+    const int32_t ver = r.val<int32_t>();
+    if (ver != 2 && ver != 3) return false;   // 版 2: 全結合の重みは (入力, 出力)。版 3: + ダイヤル
     M.V = r.val<int32_t>(); M.d = r.val<int32_t>(); M.layers = r.val<int32_t>(); M.heads = r.val<int32_t>();
     M.ff = r.val<int32_t>(); M.dk = r.val<int32_t>(); M.max_len = r.val<int32_t>(); M.n_seg = r.val<int32_t>();
     M.ctx = r.val<int32_t>(); M.draft_max = r.val<int32_t>(); M.draft = r.val<int32_t>();
@@ -710,6 +713,7 @@ bool load_model(Model& M, const void* data, size_t size) {
     M.Pa = r.arr<float>(size_t(V) * d); M.Pb = r.arr<float>(size_t(V) * d); M.Pc = r.arr<float>(size_t(V) * d);
     M.Kkind = r.arr<float>(size_t(5) * d); M.Klen = r.arr<float>(size_t(17) * d);
     M.k1b = r.arr<float>(d); M.k2w = r.arr<float>(size_t(dk) * d); M.k2b = r.arr<float>(dk);
+    if (ver == 3) { M.gw = r.arr<float>(size_t(dk) * dk); M.gb = r.arr<float>(dk); }
     return r.ok;
 }
 
@@ -841,12 +845,26 @@ void scores(kkc_engine* E, int rstart, int n, const std::vector<Edge>& ed, std::
     };
     u.resize(ed.size());
     const float sc = 1.0f / std::sqrt(float(dk));
+    // ダイヤル: 辺ごとに g = 2·sigmoid(gate(q)·k / √dk) (0〜2)。経路の語のコストを β·g·cost にするため、
+    // nbest が足す β·cost との差 β·(g-1)·cost を u の側で引く (学習側の forward_u と同じ)。gate(q) は区間ごとに 1 回
+    std::vector<float> GQ;
+    std::vector<char> gq_done;
     for (size_t i = 0; i < ed.size(); i++) {
         const int a = span_q(ed[i].s, ed[i].e), b = word_k(ed[i]);
         const float *q = Q.data() + size_t(a) * dk, *k = K.data() + size_t(b) * dk;
         float s = 0;
         for (int j = 0; j < dk; j++) s += q[j] * k[j];
-        u[i] = s * sc;
+        float ui = s * sc;
+        if (M.gw) {
+            if (size_t(a) >= gq_done.size()) { gq_done.resize(size_t(a) + 1, 0); GQ.resize((size_t(a) + 1) * dk); }
+            if (!gq_done[size_t(a)]) { linear(nullptr, q, 1, dk, M.gw, dk, M.gb, dk, GQ.data() + size_t(a) * dk); gq_done[size_t(a)] = 1; }
+            const float* gq = GQ.data() + size_t(a) * dk;
+            float t = 0;
+            for (int j = 0; j < dk; j++) t += gq[j] * k[j];
+            const float g = 2.0f / (1.0f + std::exp(-t * sc));
+            ui -= M.beta * (g - 1.0f) * float(ed[i].cost) / 1000.0f;
+        }
+        u[i] = ui;
     }
 }
 
