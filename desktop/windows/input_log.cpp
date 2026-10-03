@@ -25,7 +25,22 @@ std::string join(const std::vector<u16>& v, const char* sep, size_t max) {
     return o;
 }
 
+// 打っているアプリ (exe の名前)。IME はアプリの中に読み込まれて動くので、自分のプロセスの名前がそのアプリ。
+// チャットと文書で口調が違うのを後で分けられるように、全部の行に付ける ("a")
+const std::string& app_name() {
+    static const std::string name = [] {
+        wchar_t buf[MAX_PATH] = {};
+        GetModuleFileNameW(nullptr, buf, MAX_PATH);
+        const wchar_t* base = wcsrchr(buf, L'\\');
+        std::wstring w = base ? base + 1 : buf;
+        return to_utf8(u16(w.begin(), w.end()));
+    }();
+    return name;
+}
+
 void append(const std::string& line) {
+    // 変換の計測 (shuntllim の ime_bench.exe) が打ち込む問題は、本人の入力ではないので書かない
+    if (app_name() == "ime_bench.exe") return;
     std::wstring path = (user_dir() / L"debug_input_log.jsonl").wstring();
     CreateDirectoryW(user_dir().wstring().c_str(), nullptr);
     // 別のアプリのプロセスからも同じファイルに足すので、足すたびに開いて閉じる (1 行ずつなので混ざらない)
@@ -39,19 +54,6 @@ void append(const std::string& line) {
 long long now_ms() {
     using namespace std::chrono;
     return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
-}
-
-// 打っているアプリ (exe の名前)。IME はアプリの中に読み込まれて動くので、自分のプロセスの名前がそのアプリ。
-// チャットと文書で口調が違うのを後で分けられるように、全部の行に付ける ("a")
-const std::string& app_name() {
-    static const std::string name = [] {
-        wchar_t buf[MAX_PATH] = {};
-        GetModuleFileNameW(nullptr, buf, MAX_PATH);
-        const wchar_t* base = wcsrchr(buf, L'\\');
-        std::wstring w = base ? base + 1 : buf;
-        return to_utf8(u16(w.begin(), w.end()));
-    }();
-    return name;
 }
 
 std::string tail_fields() { return ",\"a\":" + json::quote(app_name()) + ",\"v\":\"win\"}\n"; }
