@@ -654,6 +654,7 @@ struct kkc_engine {
     std::vector<float> K;
     std::vector<float> last_u;
     std::vector<SegInfo> last_segs;   // 直前の変換の 1 位の語の区切り
+    double last_cost[2] = {0, 0};     // 直前の変換の 1 位・2 位 (表記が違う最初の 2 つ) の経路のコスト。2 位が無ければ大きな値
     std::vector<UserWord> user;                   // ユーザー辞書の語 (kkc_user_add_like で足す)
     // 整数に丸めた重み (層ごとに inw, outw, l1w, l2w)。空なら float のまま
     std::vector<QW> qw;
@@ -870,7 +871,7 @@ void scores(kkc_engine* E, int rstart, int n, const std::vector<Edge>& ed, std::
 
 // 上位 k (lattice.nbest / kkcnative の kkc_nbest と同じ)
 int nbest(const Lex& L, const std::vector<Edge>& E, int n, const float* u, double beta, double gamma, int k, int maxout,
-          std::vector<ustr>& res, std::vector<SegInfo>* segs = nullptr) {
+          std::vector<ustr>& res, std::vector<SegInfo>* segs = nullptr, double* top2 = nullptr) {
     const int M = int(E.size());
     std::vector<std::vector<int>> by_start(n + 1), by_end(n + 1);
     for (int i = 0; i < M; i++) { by_start[E[i].s].push_back(i); by_end[E[i].e].push_back(i); }
@@ -919,6 +920,7 @@ int nbest(const Lex& L, const std::vector<Edge>& E, int n, const float* u, doubl
     std::unordered_set<ustr> seen;
     std::vector<int> path;
     res.clear();
+    if (top2) { top2[0] = 0; top2[1] = 1e18; }
     for (auto& f : fin) {
         path.clear();
         int j = f.j, r = f.r;
@@ -934,6 +936,7 @@ int nbest(const Lex& L, const std::vector<Edge>& E, int n, const float* u, doubl
                 segs->push_back({E[*it].e, l16, E[*it].lid, E[*it].rid});
             }
         }
+        if (top2 && res.size() < 2) top2[res.size()] = f.c;
         res.push_back(surf);
         if (int(res.size()) >= maxout) break;
     }
@@ -990,6 +993,14 @@ KKC_API kkc_engine* kkc_open_files(const char* lex_path, const char* model_path)
 KKC_API void kkc_close(kkc_engine* e) { delete e; }
 KKC_API void kkc_set_threads(kkc_engine* e, int n) { if (e) e->pool.resize(n); }
 
+// 段階式のしきい値 (読み 1 字あたりのコストの差)。dev・AJIMEE・日常・入力ログで測った (kkc/engine/cascade.cpp)。
+// S6 で 300 のとき、正解率は毎回モデルを通すのとほぼ同じ (dev 86.1→85.6、ほかは同じ) で、
+// 普段の入力 (入力ログ) ではモデルを呼ぶのが 4 割ほどに減る
+constexpr double CASCADE_PER_CHAR = 300.0;
+constexpr int CASCADE_K = 3;   // 判定に使う上位の数
+// これより長い読みは辞書だけで決まることがない (測った 1,590 例で 16 字以上は 0 例) ので、判定をせずにモデルへ
+constexpr int CASCADE_MAX_LEN = 16;
+
 KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint16_t* kana, int nk,
                         int maxout, int use_model, uint16_t* out, int cap) {
     if (!e) return -2;
@@ -1002,12 +1013,21 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
     std::vector<ustr> res;
     e->last_u.clear();
     e->last_segs.clear();
-    if (!use_model || n == 0) {
+    bool done = false;
+    if (use_model == 2 && n >= CASCADE_MAX_LEN) use_model = 1;
+    if (!use_model || n == 0 || use_model == 2) {
+        // 辞書だけ。use_model = 2 (段階式) なら、1 位と 2 位のコストの差が読み 1 字あたり CASCADE_PER_CHAR 以上
+        // (辞書が迷っていない) ときだけこれで決め、そうでなければモデルで変換し直す
         for (int i = 1; i < 5; i++) e->times[i] = 0;
         t0 = std::chrono::steady_clock::now();
-        nbest(e->lex, E, n, nullptr, 1.0, 1.0, 10, maxout, res, &e->last_segs);
+        // 段階式の判定は上位 3 で足りる (上位 10 は重い。迷っていればどのみちモデルで変換し直すので無駄になる)
+        const int k0 = use_model == 2 && n > 0 ? CASCADE_K : 10;
+        nbest(e->lex, E, n, nullptr, 1.0, 1.0, k0, k0 == 10 ? maxout : 2, res, &e->last_segs, e->last_cost);
+        done = use_model != 2 || n == 0 || (e->last_cost[1] - e->last_cost[0]) >= CASCADE_PER_CHAR * n;
+        if (done && k0 != 10) nbest(e->lex, E, n, nullptr, 1.0, 1.0, 10, maxout, res, &e->last_segs, e->last_cost);
         e->times[4] = ms_since(t0);
-    } else {
+    }
+    if (!done) {
         // 入力: [文脈] SEP [読み] (SEP [下書き])
         t0 = std::chrono::steady_clock::now();
         ustr c = from16(ctx, size_t(nctx));
@@ -1036,7 +1056,7 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         scores(e, rstart, n, E, e->last_u);
         e->times[3] = ms_since(t0);
         t0 = std::chrono::steady_clock::now();
-        nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs);
+        nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
         e->times[4] = ms_since(t0);
     }
     std::vector<uint16_t> buf;
@@ -1045,6 +1065,8 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
     std::copy(buf.begin(), buf.end(), out);
     return int(res.size());
 }
+
+KKC_API double kkc_last_margin(kkc_engine* e) { return e ? e->last_cost[1] - e->last_cost[0] : 0; }
 
 KKC_API void kkc_last_times(kkc_engine* e, double* t5) { for (int i = 0; i < 5; i++) t5[i] = e ? e->times[i] : 0; }
 

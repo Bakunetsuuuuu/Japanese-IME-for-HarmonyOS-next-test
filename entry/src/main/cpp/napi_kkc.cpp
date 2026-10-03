@@ -33,6 +33,9 @@ struct Mapped {
 
 const char* LEX = "kkc_lex.bin";     // rawfile の名前 (Mozc の資産と区別する)
 const char* MODEL = "kkc_model.bin";
+// 変換の方式 (engine.h の use_model)。2 = 段階式: 辞書が迷っていないときは辞書だけで決め、迷ったときだけモデルを通す
+// (正解率はほぼそのままで、普段の入力ではモデルの計算が半分以下になる)
+const int KKC_MODE = 2;
 kkc_engine* g_engine = nullptr;
 std::mutex g_mu;   // エンジンは同時に 2 つの変換をできないので、呼び出しを 1 つずつにする
 Mapped g_lex, g_model;
@@ -210,7 +213,7 @@ napi_value Convert(napi_env env, napi_callback_info info) {
     std::vector<uint16_t> out(1 << 15);
     std::lock_guard<std::mutex> lk(g_mu);
     int r = kkc_convert(g_engine, reinterpret_cast<const uint16_t*>(ctx.data()), int(ctx.size()),
-                        reinterpret_cast<const uint16_t*>(kana.data()), int(kana.size()), maxout, 1, out.data(), int(out.size()));
+                        reinterpret_cast<const uint16_t*>(kana.data()), int(kana.size()), maxout, KKC_MODE, out.data(), int(out.size()));
     size_t st = 0;
     for (int i = 0; i < r; i++) {
         size_t e = st;
@@ -255,7 +258,7 @@ napi_value ConvertAsync(napi_env env, napi_callback_info info) {
             if (!g_engine || j->kana.empty()) return;
             std::vector<uint16_t> out(1 << 15);
             int r = kkc_convert(g_engine, reinterpret_cast<const uint16_t*>(j->ctx.data()), int(j->ctx.size()),
-                                reinterpret_cast<const uint16_t*>(j->kana.data()), int(j->kana.size()), j->maxout, 1,
+                                reinterpret_cast<const uint16_t*>(j->kana.data()), int(j->kana.size()), j->maxout, KKC_MODE,
                                 out.data(), int(out.size()));
             size_t st = 0;
             for (int i = 0; i < r; i++) {

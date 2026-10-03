@@ -22,9 +22,13 @@ KKC_API void kkc_set_threads(kkc_engine* e, int n);
 
 // 変換。ctx = 左の文脈 (確定済みの文)、kana = 読み (UTF-16)。上位 maxout 個の表記を 0 区切りの UTF-16 で out に書く。
 // 返り値は候補の数 (out が足りなければ -1)。use_model = 0 なら辞書のコストだけ (採点器を通さない)。
+// use_model = 2 なら段階式: まず辞書だけで変換し、辞書が迷っている (1 位と 2 位のコストの差が小さい) ときだけ採点器を通す。
 KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint16_t* kana, int nk,
                         int maxout, int use_model, uint16_t* out, int cap);
 
+// 直前の kkc_convert の 1 位と 2 位 (表記が違う最初の 2 つ) の経路のコストの差 (大きいほど迷いが少ない)。
+// 段階式 (辞書だけで決まるときはモデルを呼ばない) の判定に使う。2 位が無ければとても大きな値
+KKC_API double kkc_last_margin(kkc_engine* e);
 // 直前の kkc_convert の時間の内訳 (ミリ秒): [網, 下書き, エンコーダ, 区間と語, 上位 k]
 KKC_API void kkc_last_times(kkc_engine* e, double* t5);
 
