@@ -394,6 +394,8 @@ export struct NumericPadView {
       .alignItems(VerticalAlign.Center)
       .backgroundColor(kbTheme(this.isDark).accent)
       .borderRadius(8).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        // 長押しは、アプリの指定 (送信など) に関係なく改行
+        .gesture(LongPressGesture({ duration: 400 }).onAction(() => { this.h().handleEnterLongPress(); }))
         .onClick(() => { this.h().handleEnterKey(); })
     }
   }

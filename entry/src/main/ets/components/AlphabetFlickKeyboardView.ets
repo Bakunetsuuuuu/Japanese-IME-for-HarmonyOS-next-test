@@ -420,6 +420,12 @@ export struct AlphabetFlickKeyboardView {
       .alignItems(VerticalAlign.Center)
       .backgroundColor(kbTheme(this.isDark).accent)
       .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+        // 長押しは、アプリの指定 (送信など) に関係なく改行
+        .gesture(LongPressGesture({ duration: 400 }).onAction(() => {
+          this.h().hapticTick();
+          this.h().handleEnterLongPress();
+          this.lastChar = '';
+        }))
         .onClick(() => {
           this.h().hapticTick();
           const st = AppStorage.get<string>('inputState') ?? 'IDLE';

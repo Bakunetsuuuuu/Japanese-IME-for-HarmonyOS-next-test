@@ -364,6 +364,11 @@ export struct KeyboardView {
     .backgroundColor(kbTheme(this.isDark).accent)
     .borderRadius(KEY_RADIUS)
     .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+      // 長押しは、アプリの指定 (送信など) に関係なく改行
+      .gesture(LongPressGesture({ duration: 400 }).onAction(() => {
+        this.getHandler().hapticTick();
+        this.getHandler().handleEnterLongPress();
+      }))
       .onClick(() => {
         this.getHandler().hapticTick();
         this.getHandler().handleEnterKey();

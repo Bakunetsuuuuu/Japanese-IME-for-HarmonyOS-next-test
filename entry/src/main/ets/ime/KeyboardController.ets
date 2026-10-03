@@ -2302,14 +2302,47 @@ export class InputHandler {
       // 閉じておく。
       this.flushPendingBracketClose();
       this.inputClient?.getEditorAttribute().then((attr: inputMethodEngine.EditorAttribute) => {
-        this.inputClient?.sendKeyFunction(attr.enterKeyType);
+        this.sendEnter(attr.enterKeyType);
       }).catch((_e: Error) => {
-        this.inputClient?.sendKeyFunction(0);
+        this.sendEnter(0);
       });
       // Enter in an idle field sends the message (or inserts a newline): either
       // way the current sentence is finished, so reset context and offer the
       // next-message openers.
       this.markSentenceBoundary();
+    }
+  }
+
+  // Enter の長押し: アプリが Enter を「送信」などに指定していても、必ず改行を入れる
+  // (複数行の欄なのに送信に指定して、受け取っても何もしないアプリへの逃げ道)。
+  // 入力中の文字があれば、先にふつうの Enter と同じく確定してから改行する。
+  handleEnterLongPress(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.BUNSETSU) {
+      this.commitBunsetsu();
+    } else if (state === InputState.SELECTING) {
+      this.commitTopCandidate();
+    } else if (state === InputState.COMPOSING) {
+      this.commitRaw();
+    }
+    this.inputClient?.insertText('\n');
+    this.markSentenceBoundary();
+  }
+
+  // 何も入力していないときの Enter をホストへ渡す。
+  // sendKeyFunction は「送信」「検索」などのアクションをアプリに伝えるだけで、
+  // 改行を入れるかどうかはアプリ次第。改行のアクション (NEWLINE) や、複数行の欄で
+  // アクション未指定 (UNSPECIFIED / NONE) を受け取っても何もしないアプリがあり、
+  // そこでは改行できなかった。アプリが明示的なアクション (送信・検索・次へ・完了など)
+  // を指定していない欄では、アプリに頼らず改行文字を直接入れる (他の IME と同じく、
+  // Enter は改行として使う場面のほうが多い)。ArkUI の 1 行の欄 (TextInput) は既定が
+  // DONE なので、ここで改行になるのは複数行の欄か、ウェブ・他の UI 部品の欄。
+  //   enterKeyType: 0 UNSPECIFIED, 1 NONE, 2 GO, 3 SEARCH, 4 SEND, 5 NEXT, 6 DONE, 7 PREVIOUS, 8 NEWLINE
+  private sendEnter(enterKeyType: number): void {
+    if (enterKeyType === 8 || enterKeyType === 0 || enterKeyType === 1) {
+      this.inputClient?.insertText('\n');
+    } else {
+      this.inputClient?.sendKeyFunction(enterKeyType);
     }
   }
 

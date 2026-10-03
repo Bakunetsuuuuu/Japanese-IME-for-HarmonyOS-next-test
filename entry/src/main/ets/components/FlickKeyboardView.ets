@@ -605,6 +605,11 @@ export struct FlickKeyboardView {
       }
       .width(this.flickSideKeyWidthVp).height('100%')
       .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
+      // 長押しは、アプリの指定 (送信など) に関係なく改行
+      .gesture(LongPressGesture({ duration: 400 }).onAction(() => {
+        this.h().hapticTick();
+        this.h().handleEnterLongPress();
+      }))
       .onClick(() => {
         this.h().hapticTick();
         const st = AppStorage.get<string>('inputState') ?? 'IDLE';
