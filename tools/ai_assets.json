@@ -1,10 +1,18 @@
 {
   "note": "AI 変換 (shuntelligence) の辞書とモデル。GitHub Releases に置き、ビルド前に tools/fetch_ai_assets.py で取得する",
-  "release": "shuntelligence-v1",
-  "url": "https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases/download/shuntelligence-v1/",
+  "release": "shuntelligence-v2",
+  "url": "https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases/download/shuntelligence-v2/",
   "dest": "entry/src/main/resources/rawfile",
   "files": {
-    "kkc_lex.bin": { "size": 63188680, "sha256": "81ab94c4758c7513c1182ec1b1c6ffcfb0cef5a4cea1b27f821c18d35e84f2d0", "license": "shuntorge: MIT (独自部分) + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0" },
-    "kkc_model.bin": { "size": 55630576, "sha256": "770b99ef5e373eb605c9cc6c2c83c8f67f81dc5787ace1deda31f6cc34f11820", "license": "shuntelligence: CC BY 4.0" }
+    "kkc_lex.bin": {
+      "size": 63188680,
+      "sha256": "81ab94c4758c7513c1182ec1b1c6ffcfb0cef5a4cea1b27f821c18d35e84f2d0",
+      "license": "shuntorge: MIT (独自部分) + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0"
+    },
+    "kkc_model.bin": {
+      "size": 56471520,
+      "sha256": "1192aba8d947cccd5cbd26077278e2eed5467024170d4c21038dc85d2e7f5315",
+      "license": "shuntelligence: CC BY 4.0"
+    }
   }
 }

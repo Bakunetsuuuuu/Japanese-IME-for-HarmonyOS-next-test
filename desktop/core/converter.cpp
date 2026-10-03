@@ -56,7 +56,8 @@ bool Converter::convert_once(const u16& ctx, const u16& kana, int max, Conversio
     int want = max * 2;
     std::vector<uint16_t> buf(size_t(want) * (kana.size() * 4 + 16) + 64);
     // 変換の方式 (engine.h の use_model。1 = 毎回モデル、2 = 段階式)。計測用に SHUNTI_KKC_MODE で替えられる
-    static const int mode = [] { const char* m = getenv("SHUNTI_KKC_MODE"); return m && *m ? atoi(m) : 1; }();
+    // (atoi は使わない: glibc 2.38 の __isoc23_strtol を要求して、Linux 版の動く範囲が狭まる)
+    static const int mode = [] { const char* m = getenv("SHUNTI_KKC_MODE"); return m && *m >= '0' && *m <= '9' ? *m - '0' : 1; }();
     int n = kkc_convert(e_, p16(ctx), int(ctx.size()), p16(kana), int(kana.size()), want, mode, buf.data(), int(buf.size()));
     if (n == -3) return false;
     if (n <= 0) return true;

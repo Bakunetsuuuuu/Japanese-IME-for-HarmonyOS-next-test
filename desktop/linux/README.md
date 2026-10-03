@@ -4,10 +4,10 @@ shuntelligence でかな漢字変換をする日本語入力です。Windows 版
 
 ## 入れ方 (Ubuntu・Debian など)
 
-[GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) から `fcitx5-shunti_0.1.0_amd64.deb` を入手して、端末 (ターミナル) で:
+[GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) から `fcitx5-shunti_0.2.0_amd64.deb` を入手して、端末 (ターミナル) で:
 
 ```bash
-sudo apt install ./fcitx5-shunti_0.1.0_amd64.deb
+sudo apt install ./fcitx5-shunti_0.2.0_amd64.deb
 ```
 
 Fcitx5 が入っていなければ一緒に入ります。Ubuntu 24.04 以降・Debian 13 以降 (64 ビットの Intel・AMD。Fcitx5 5.1 以上) で動きます。
