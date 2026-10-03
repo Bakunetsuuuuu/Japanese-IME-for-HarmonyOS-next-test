@@ -1937,12 +1937,9 @@ export class InputHandler {
         wordGroups.push(words);
       }
     };
-    if (NextWordPredictor.isSentenceEnd(w2)) {
-      // Just finished a sentence: offer this user's habitual next-sentence
-      // openers instead of continuations of the punctuation-tailed word (which
-      // has none). Keeps the strip useful across sentence boundaries.
-      for (const w of NextWordPredictor.openers()) { pushChip(w, [w]); }
-    } else if (w2.length > 0) {
+    // 文が終わった直後は何も出さない。以前は書き出しの口癖 (openers) を出していたが、
+    // 変な文を打つとそれが出てきてしまい、使われることもほぼなかった (1.6.1 で廃止)。
+    if (!NextWordPredictor.isSentenceEnd(w2) && w2.length > 0) {
       const phrase = NextWordPredictor.phraseCompletion(w2, w1);
       if (phrase.length >= 2) { pushChip(phrase.join(''), phrase); }
       for (const e of EmojiSuggest.forSurface(w2)) { pushChip(e, [e]); }
@@ -1957,16 +1954,15 @@ export class InputHandler {
   // 全角スペース, a newline, or by sending (Enter). Treat those the same way a
   // sentence-ending mark is treated in pushPredictions: drop the running word
   // context so the NEXT commit is learned as a fresh opener (口癖 の書き出し)
-  // rather than chained across the break, and surface this user's habitual
-  // openers right now.
+  // rather than chained across the break. 何も打っていない状態なので、予測の帯は空にする
+  // (書き出しの候補は出さない。pushPredictions の説明)。
   private markSentenceBoundary(): void {
     InputLog.recordBoundary('sentence');
     this.recentWords = [];
     // A finished sentence also finishes whatever word was being assembled.
     this.endUnknownWordRun();
-    const openers = NextWordPredictor.openers();
-    AppStorage.setOrCreate('predictions', openers);
-    this.predictionWordGroups = openers.map((w: string): string[] => [w]);
+    AppStorage.setOrCreate('predictions', [] as string[]);
+    this.predictionWordGroups = [];
   }
 
   // Reorder conversion candidates so any the user has actually written after the
@@ -2307,8 +2303,7 @@ export class InputHandler {
         this.sendEnter(0);
       });
       // Enter in an idle field sends the message (or inserts a newline): either
-      // way the current sentence is finished, so reset context and offer the
-      // next-message openers.
+      // way the current sentence is finished, so reset context and clear the strip.
       this.markSentenceBoundary();
     }
   }
