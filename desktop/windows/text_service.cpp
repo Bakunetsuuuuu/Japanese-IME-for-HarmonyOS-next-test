@@ -275,6 +275,7 @@ void TextService::apply_settings() {
     if (composer_) {
         composer_->options.live = s.live;
         composer_->options.live_commit = s.live_commit;
+        composer_->options.live_display = s.live_display;
         composer_->options.space_fullwidth = s.space_fullwidth;
         composer_->options.punct = s.punct;
         composer_->options.digits_fullwidth = s.digits_fullwidth;

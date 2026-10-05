@@ -28,6 +28,7 @@ bool load_settings(const fs::path& p, Settings& s) {
     boolean("digits_fullwidth", s.digits_fullwidth);
     boolean("live", s.live);
     boolean("live_commit", s.live_commit);
+    boolean("live_display", s.live_display);
     boolean("ctrl_space", s.ctrl_space);
     if (const json::Value* x = v.get("punct"); x && x->type == json::Value::Number) s.punct = int(x->num) & 3;
     return true;
@@ -42,6 +43,7 @@ bool save_settings(const fs::path& p, const Settings& s) {
     o += std::string("  \"digits_fullwidth\": ") + b(s.digits_fullwidth) + ",\n";
     o += std::string("  \"live\": ") + b(s.live) + ",\n";
     o += std::string("  \"live_commit\": ") + b(s.live_commit) + ",\n";
+    o += std::string("  \"live_display\": ") + b(s.live_display) + ",\n";
     o += std::string("  \"ctrl_space\": ") + b(s.ctrl_space) + "\n";
     o += "}\n";
     return write_file_atomic(p, o);

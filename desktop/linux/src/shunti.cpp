@@ -246,6 +246,7 @@ Core& ShuntiEngine::core() {
 void ShuntiEngine::applyConfig(Composer& c) const {
     c.options.live = *config_.live;
     c.options.live_commit = *config_.liveCommit;
+    c.options.live_display = *config_.liveDisplay;
     c.options.space_fullwidth = *config_.spaceFullwidth;
     c.options.digits_fullwidth = *config_.digitsFullwidth;
     c.options.punct = *config_.punct;

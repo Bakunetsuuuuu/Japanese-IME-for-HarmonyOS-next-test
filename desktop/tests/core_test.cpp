@@ -225,6 +225,19 @@ int main(int argc, char** argv) {
     keys(c, "{sp}{enter}");
     printf("     rest: %s\n", u8(c.take_commit()).c_str());
 
+    // ---- ライブ変換: 入力中の文字を、空白を押す前から変換して見せ、Enter でそのまま確定する
+    c.options.live_commit = false;
+    c.options.live_display = true;
+    keys(c, "kyouhaiitenki");
+    printf("     live display: [%s]\n", u8(c.view().text).c_str());
+    if (c.view().text == u"きょうはいいてんき") { printf("FAIL live display shows kana\n"); failures++; }
+    u16 shown = c.view().text;
+    keys(c, "{enter}");
+    expect("live display enter commits what is shown", c.take_commit(), shown);
+    keys(c, "kyouhaiiten{left}{enter}");   // 読みの途中にカーソルを動かしたら、かなで見せてかなで確定
+    expect("live display falls back to kana mid-reading", c.take_commit(), u"きょうはいいてん");
+    c.options.live_display = false;
+
     // ---- 打ち間違いを消して子音だけが残ったとき、続けて打った字とつながる
     keys(c, "ps{bs}a{enter}");
     expect("typo p+a", c.take_commit(), u"ぱ");

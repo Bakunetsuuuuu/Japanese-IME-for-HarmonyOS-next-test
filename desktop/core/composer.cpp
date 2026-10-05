@@ -251,6 +251,14 @@ bool Composer::press_input(const KeyEvent& ev) {
             return true;
         case Key::Enter:
             flush_romaji();
+            if (live_shown()) {   // ライブ変換: 見えている変換をそのまま確定する
+                update_live();
+                u16 t = live_top_;
+                log({"commit", kana_, t, ctx_, live_cands_, 0, {}, "live"});
+                commit_text(t);
+                to_idle();
+                return true;
+            }
             log({"raw", kana_, kana_, ctx_});
             commit_text(kana_);
             to_idle();
@@ -430,6 +438,7 @@ void Composer::update_live() {
     add_brackets(kana_, cands);   // 学習の並べ替えより前に (よく選ぶ括弧が上に来るように)
     if (learning_) cands = learning_->apply_order(kana_, cands);
     prefer_greetings(kana_, cands);
+    live_top_ = cands.empty() ? kana_ : cands[0];
     // 予測 (スマホ版と同じ置き方): 決まり文句は先頭に、読みの続く語 (学習した語・辞書の語) は 1 位の直後に 3 つまで
     const Phrase2* phrase = nullptr;
     for (auto& p : PREDICTIVE_PHRASES) {
@@ -755,13 +764,27 @@ void Composer::cancel() {
 
 // ---------------------------------------------------------------- 見せ方
 
+// ライブ変換で変換した文を見せられるか: 設定がオンで、カーソルが読みの末尾にあり、今の読みの変換が出ている
+// (読みの途中にカーソルを動かして直しているときは、かなで見せる)
+bool Composer::live_shown() const {
+    return options.live_display && options.live && state_ == State::Input && !kana_.empty() && caret_ == kana_.size() &&
+           !alpha_run_ && !live_top_.empty() && live_key_ == ctx_ + u'\x01' + kana_;
+}
+
 void Composer::rebuild_view() {
     View v;
     if (state_ == State::Input) {
         const u16& p = romaji_.pending();
-        v.text = kana_.substr(0, caret_) + p + kana_.substr(caret_);
-        v.caret = int(caret_ + p.size());
-        if (!v.text.empty()) v.spans.push_back({0, int(v.text.size()), SpanKind::Input});
+        if (live_shown()) {   // ライブ変換: 変換した文 + 打ちかけのローマ字
+            v.text = live_top_ + p;
+            v.caret = int(v.text.size());
+            if (!live_top_.empty()) v.spans.push_back({0, int(live_top_.size()), SpanKind::Converted});
+            if (!p.empty()) v.spans.push_back({int(live_top_.size()), int(p.size()), SpanKind::Input});
+        } else {
+            v.text = kana_.substr(0, caret_) + p + kana_.substr(caret_);
+            v.caret = int(caret_ + p.size());
+            if (!v.text.empty()) v.spans.push_back({0, int(v.text.size()), SpanKind::Input});
+        }
         if (!live_cands_.empty()) {
             v.cand_open = true;
             v.cands = live_cands_;

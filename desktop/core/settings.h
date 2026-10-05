@@ -13,6 +13,7 @@ struct Settings {
     bool digits_fullwidth = false;   // 数字を全角で入れる
     bool live = true;                // 打っている間も候補を出す
     bool live_commit = true;         // リアルタイム確定
+    bool live_display = false;       // ライブ変換: 入力中の文字を、空白を押す前から変換して見せる
     bool ctrl_space = false;         // Ctrl+Space でも日本語入力のオン・オフ
 };
 

@@ -68,6 +68,7 @@ struct LogEvent {
 struct ComposerOptions {
     bool live = true;          // 打っている間も AI 変換して候補の窓に出す
     bool live_commit = true;   // リアルタイム確定
+    bool live_display = false; // ライブ変換: 入力中の文字を、空白を押す前から AI の 1 位で見せる (Enter でそのまま確定)
     bool always_cands = true;  // 変換中は候補の窓をいつも出す
     bool space_fullwidth = true;   // 何も打っていないときの空白を全角に (Shift で逆)
     int punct = 0;                 // 句読点: 0 = 、。 1 = ，． 2 = 、． 3 = ，。
@@ -138,6 +139,7 @@ private:
     void log(LogEvent e);
     void update_live();
     bool live_commit(const Conversion& c);
+    bool live_shown() const;
     void rebuild_view();
 
     Converter* conv_;
@@ -162,6 +164,7 @@ private:
     // 打っている間の変換
     u16 live_key_;                       // live_cands_ を作ったときの文脈と読み
     std::vector<u16> live_cands_;
+    u16 live_top_;                       // 打っている間の変換そのものの 1 位 (予測・決まり文句を足す前)。ライブ変換で見せる
     std::map<size_t, u16> prev_segs_;    // 前回の 1 位の (語の区切りの読みの位置 -> そこまでの表記)
 
     // 変換
