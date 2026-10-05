@@ -13,12 +13,23 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         private set
 
     // ---- 長い入力: 前の方を固定して、後ろだけを変換する ----
-    // 1 位の候補の語の区切りのうち、末尾から KEEP 字より前にあって、2 回続けて同じ変換になったところ
-    // (または「、」「。」の後ろ) までを固定する。固定した部分は文脈としてモデルに渡すので、後ろの変換の質は落ちない。
+    // 変換 1 回が BUDGET_MS を超えて遅れを感じる長さになったら、1 位の候補の語の区切りのうち、最後の KEEP_WORDS 語より前にあって、
+    // 2 回続けて同じ変換になったところ (または「、」「。」の後ろ) までを固定する。それより短いうちは文全体に AI をかけ続ける。
+    // 固定した部分は文脈としてモデルに渡すので、後ろの変換の質は落ちない。
     // 固定した読みまで消して戻ったら・確定して文脈が変わったら、固定を解く。
+    //
+    // 既定 (保留) では、固定した部分は入力欄に確定しない。固定した時点でその部分だけを 1 回変換して上位 ALT 個の候補を持たせ、
+    // 以後は AI にかけない。候補の一覧には「前の方を持たせた候補に替えた文」も並べ、そこから確定できる。
+    // 設定「どんどん確定」(liveCommit) がオンなら、以前のように末尾 LIVE_KEEP 字より前の固まった所を固定し、呼ぶ側が入力欄に確定する。
+    // (HarmonyOS 版 AiConverter.ets と同じ決まり)
+    /** 長い入力で固定した前の方の 1 か所 (読みと、選び直せる候補。cands[0] が今の表記) */
+    private class FrozenChunk(val kana: String, var cands: List<String>)
+
+    var liveCommit = false
+    private var chunks = ArrayList<FrozenChunk>()
     private var fCtx = ""      // 固定を始めたときの文脈
-    private var fKana = ""     // 固定した読み
-    private var fSurf = ""     // 固定した表記
+    private var fKana = ""     // 固定した読み (chunks の読みをつないだもの)
+    private var fSurf = ""     // 固定した表記 (chunks の cands[0] をつないだもの)
     private var prevSegs = HashMap<Int, String>()   // 前回の結果の (区切りの位置 -> そこまでの表記)
     private var lastTarget = ""                     // 最後に出した読みと、その候補 (結果を待つ間の表示に使う)
     private var lastCands: List<String> = emptyList()
@@ -32,6 +43,7 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
             fCtx = context
             fKana = ""
             fSurf = ""
+            chunks = ArrayList()
             prevSegs.clear()
         }
         val tail = target.substring(fKana.length)
@@ -39,7 +51,7 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         val ctx2 = (context + fSurf).takeLast(40)
         val hit = cache[key(ctx2, tail)]
         if (hit != null && hit.cands.isNotEmpty()) {
-            val out = hit.cands.map { fSurf + it }
+            val out = withFrozenAlternatives(hit.cands.map { fSurf + it }, hit.cands[0])
             lastTarget = target
             lastCands = out
             maybeFreeze(tail, hit)
@@ -54,7 +66,23 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         return listOf(fSurf + tail)
     }
 
-    /** 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す) */
+    /**
+     * 候補の一覧: AI の上位 3 つ (前の方は固定したまま) → 前の方の 1 か所を持たせた候補に替えた文 (後ろは AI の 1 位)
+     * → AI の残り。前の方を替えた文は、後ろの方の固定ほど先に (直したいのは、たいてい直前に固定された所)
+     */
+    private fun withFrozenAlternatives(full: List<String>, tailTop: String): List<String> {
+        if (chunks.isEmpty()) return full
+        val variants = ArrayList<String>()
+        for (i in chunks.indices.reversed()) {
+            if (variants.size >= 8) break
+            for (j in 1 until chunks[i].cands.size) {
+                variants.add(chunks.mapIndexed { idx, c -> if (idx == i) c.cands[j] else c.cands[0] }.joinToString("") + tailTop)
+            }
+        }
+        return (full.take(3) + variants + full.drop(3)).distinct()
+    }
+
+    /** どんどん確定のとき: 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す) */
     fun frozenKana() = fKana
     fun frozenSurf() = fSurf
 
@@ -65,6 +93,7 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
     fun clearFrozen(fk: String = "", fs: String = "") {
         fKana = ""
         fSurf = ""
+        chunks = ArrayList()
         prevSegs.clear()
         if (fk.isNotEmpty() && lastTarget.startsWith(fk)) {
             lastTarget = lastTarget.substring(fk.length)
@@ -88,17 +117,32 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
             segs[end] = surf
             val punct = "、。！？!?".indexOf(tail[end - 1]) >= 0
             val stable = prevSegs[end] == surf
-            if (end <= tail.length - KEEP && (stable || punct)) {
+            val wordsAfter = r.ends.size - 1 - i   // この語より後ろに残る語の数
+            // 速くても、読みが長すぎるとモデルの入力の長さの上限に届いて変換できなくなるので、MAX_TAIL 字を超えたら固定する
+            val slow = lastMs > BUDGET_MS || tail.length > MAX_TAIL
+            val ready = if (liveCommit) end <= tail.length - LIVE_KEEP else slow && wordsAfter >= KEEP_WORDS
+            if (ready && (stable || punct)) {
                 freezeEnd = end
                 freezeLen = cum
             }
         }
         prevSegs = segs
         if (freezeEnd > 0) {
-            fKana += tail.substring(0, freezeEnd)
-            // 固定して確定する前の方にも、挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が確定されてしまう)
-            fSurf += greetingFix(tail.substring(0, freezeEnd), top.substring(0, minOf(freezeLen, top.length)))
+            val kana = tail.substring(0, freezeEnd)
+            // 固定する前の方にも、挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が固定されてしまう)
+            val surf = greetingFix(kana, top.substring(0, minOf(freezeLen, top.length)))
+            val chunk = FrozenChunk(kana, listOf(surf))
+            val ctx = (fCtx + fSurf).takeLast(40)
+            chunks.add(chunk)
+            fKana += kana
+            fSurf += surf
             prevSegs.clear()
+            if (liveCommit) return   // すぐ入力欄に確定されるので、選び直しの候補は要らない
+            // 固定した部分だけを 1 回変換して、選び直せる候補を持たせる (以後この部分は AI にかけない)
+            worker.execute {
+                val alts = runCatching { engine.convert(ctx, kana, 8, true) }.getOrElse { emptyList() }
+                main.post { chunk.cands = listOf(surf) + alts.filter { it != surf }.take(ALT - 1) }
+            }
         }
     }
 
@@ -151,7 +195,11 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
     }
 
     companion object {
-        private const val KEEP = 8
+        private const val KEEP_WORDS = 4      // 固定しても、最後のこの語数は必ず AI に残す
+        private const val BUDGET_MS = 80.0    // 変換 1 回がこれより速いうちは固定しない (遅れを感じない限界)
+        private const val MAX_TAIL = 60
+        private const val LIVE_KEEP = 8       // どんどん確定のときに、末尾に残す字数 (以前の決まり)
+        private const val ALT = 4             // 固定した部分に持たせる候補の数
 
         /** 読み reading とその表記 surf の組で、挨拶の「今日は」をかな書きに直す (きょうは を打っていないときだけ) */
         fun greetingFix(reading: String, surf: String): String =

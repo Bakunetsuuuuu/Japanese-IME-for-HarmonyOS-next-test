@@ -63,6 +63,11 @@ class Settings(context: Context) {
         get() = p.getString("alphaLayout", "QWERTY") ?: "QWERTY"
         set(v) = p.edit().putString("alphaLayout", v).apply()
 
+    /** 長い入力の扱い: false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = どんどん確定 (前の方から次々に確定) */
+    var liveCommit: Boolean
+        get() = p.getBoolean("liveCommit", false)
+        set(v) = p.edit().putBoolean("liveCommit", v).apply()
+
     /** あA キーで 日本語 → 英字 → 数字パッド と回すか (HarmonyOS 版と同じく既定はオフ) */
     var numericPad: Boolean
         get() = p.getBoolean("numericPad", false)

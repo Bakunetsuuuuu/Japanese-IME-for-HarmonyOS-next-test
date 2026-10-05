@@ -515,10 +515,12 @@ class InputHandler(
         val ai = host.ai
         var cands = ArrayList<String>()
         if (ai != null) {
+            ai.liveCommit = settings.liveCommit
             cands.addAll(ai.candidates(ctx, target) { if (conversionTarget() == target) updateCandidates() })
-            // 前の方が固定されたら、それを入力欄に確定して、残りだけを入力中に残す (長い入力でも変換中の文字列を短く保つ)
+            // 長い入力で前の方が固定されたとき: 既定 (保留) では入力欄に確定しない (固定した部分に候補を持たせ、一覧から選び直せる)。
+            // 設定「どんどん確定」がオンなら、固定した所を入力欄に確定して、残りだけを入力中に残す
             val fk = ai.frozenKana()
-            if (fk.isNotEmpty() && !isRangeShrunk()) {
+            if (ai.liveCommit && fk.isNotEmpty() && !isRangeShrunk()) {
                 val fs = ai.frozenSurf()
                 host.post { autoCommitFrozen(target, fk, fs) }
             }
