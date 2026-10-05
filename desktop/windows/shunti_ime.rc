@@ -1,9 +1,10 @@
 #pragma code_page(65001)
 #include <winver.h>
 
-// IME の登録アイコン (タスクバーの「あ」の隣・入力の方法の一覧)。番号 0 = 白 (タスクバーがダーク)、1 = 黒 (ライト)
-101 ICON "mode_on_white.ico"
-102 ICON "mode_on_black.ico"
+// IME の登録アイコン (タスクバーの「あ」の隣・入力の方法の一覧)。番号 0 = 白 (タスクバーがダーク)、1 = 黒 (ライト)。
+// 角丸の正方形から Zori-chan をくり抜いた形 (入力モードの Zori-chan と並んでも見分けがつくように)
+101 ICON "profile_white.ico"
+102 ICON "profile_black.ico"
 
 // タスクバーの入力モード (Zori-chan。オン = 起きている / オフ = 寝ている、ダーク用の白 / ライト用の黒)
 201 ICON "mode_on_white.ico"

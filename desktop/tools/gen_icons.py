@@ -5,7 +5,9 @@ Windows 版のアイコンを Zori-chan の絵 (desktop/windows/art/zori-chan.pn
 
 出来上がり (desktop/windows/):
   mode_on_white.ico / mode_on_black.ico   そのままの Zori-chan (箱なし・余白なし)。タスクバーがダークなら白、ライトなら黒。
-                                          IME の登録アイコン (タスクバーの「あ」の隣に出る) にも使う
+                                          タスクバーの入力モード (オン)
+  profile_white.ico / profile_black.ico   IME の登録アイコン (タスクバーの「あ」の隣・入力の方法の一覧)。角丸の正方形を塗りつぶし、
+                                          Zori-chan をくり抜いた形 (入力モードの Zori-chan と並んでも見分けがつくように。2026-10-05)
   mode_off_white.ico / mode_off_black.ico オフ (寝ている Zori-chan。art/zori-chan-off.png。無ければオンの絵の目を閉じて作る)
   shunti.ico                              設定画面の exe のアイコン (スタートメニュー用。白い角丸の上に黒い Zori-chan)
 どれも 16〜256px を 1 つの .ico に入れる。
@@ -104,6 +106,22 @@ def mono_icon(alpha, rgb, path):
     imgs[-1].save(path, sizes=[(s, s) for s in SIZES], append_images=imgs[:-1])
 
 
+def profile_icon(alpha, rgb, path):
+    """角丸の正方形を rgb で塗り、Zori-chan の形をくり抜く (透明。下のタスクバーの色が見える)"""
+    imgs = []
+    for s in SIZES:
+        tile = Image.new('L', (s, s), 0)
+        ImageDraw.Draw(tile).rounded_rectangle((0, 0, s - 1, s - 1), radius=max(2, s // 5), fill=255)
+        inner = max(1, int(round(s * 0.74)))
+        hole = Image.new('L', (s, s), 0)
+        hole.paste(alpha.resize((inner, inner), Image.LANCZOS), ((s - inner) // 2, (s - inner) // 2))
+        a = np.clip(np.asarray(tile).astype(np.int32) - np.asarray(hole).astype(np.int32), 0, 255).astype(np.uint8)
+        im = Image.new('RGBA', (s, s), rgb + (0,))
+        im.putalpha(Image.fromarray(a, 'L'))
+        imgs.append(im)
+    imgs[-1].save(path, sizes=[(s, s) for s in SIZES], append_images=imgs[:-1])
+
+
 def app_icon(alpha, path):
     imgs = []
     for s in SIZES:
@@ -129,6 +147,8 @@ def main():
     for name, alpha in (('on', a_on), ('off', a_off)):
         mono_icon(alpha, (255, 255, 255), os.path.join(WIN, f'mode_{name}_white.ico'))
         mono_icon(alpha, (28, 28, 30), os.path.join(WIN, f'mode_{name}_black.ico'))
+    profile_icon(a_on, (255, 255, 255), os.path.join(WIN, 'profile_white.ico'))
+    profile_icon(a_on, (28, 28, 30), os.path.join(WIN, 'profile_black.ico'))
     app_icon(a_on, os.path.join(WIN, 'shunti.ico'))
     # 確かめ用の見本 (タスクバーの実寸 16〜48px をダークとライトに置いたもの)
     prev = Image.new('RGB', (2 * (16 + 20 + 24 + 32 + 48 + 5 * 12) + 24, 2 * 72), (255, 255, 255))
