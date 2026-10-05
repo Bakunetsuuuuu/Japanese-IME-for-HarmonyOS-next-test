@@ -10,8 +10,9 @@
       "license": "shuntorge: MIT (独自部分) + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0"
     },
     "kkc_model.bin": {
-      "size": 56471520,
-      "sha256": "1192aba8d947cccd5cbd26077278e2eed5467024170d4c21038dc85d2e7f5315",
+      "src": "kkc_model_q8.bin",
+      "size": 24848032,
+      "sha256": "090360da8195837e786e184b56dbd4cfccde6adb679b6923807377f8adaaff00",
       "license": "shuntelligence: CC BY 4.0"
     }
   }

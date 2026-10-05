@@ -4,8 +4,7 @@ rawfile に置く。どちらも大きいので Git には入れていない (to
 
   python tools/fetch_ai_assets.py
 
-既に同じもの (SHA-256 が一致) があれば何もしない。無くてもアプリはビルドでき、AI 変換を選んだときに
-読み込みに失敗して独自辞書の変換に戻るだけ。
+既に同じもの (SHA-256 が一致) があれば何もしない。
 """
 import hashlib
 import json
@@ -35,7 +34,8 @@ def main():
             continue
         print(f'{name}: 取得中 ({info["size"] / 1e6:.0f}MB) ...', flush=True)
         tmp = path + '.part'
-        urllib.request.urlretrieve(m['url'] + name, tmp)
+        # リリースの中の名前 (src) は置く名前と違ってよい (古いチェックアウトが使う同じ名前の資産を残したまま差し替えるため)
+        urllib.request.urlretrieve(m['url'] + info.get('src', name), tmp)
         if sha256(tmp) != info['sha256']:
             os.remove(tmp)
             print(f'{name}: SHA-256 が合わない (取得失敗)', file=sys.stderr)
