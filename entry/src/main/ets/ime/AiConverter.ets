@@ -7,11 +7,18 @@ import kkc, { KkcResult } from 'libkkc.so';
 import type common from '@ohos.app.ability.common';
 import { DEBUG_INPUT_LOG } from './InputLog';
 
+// 長い入力で固定した前の方の 1 か所 (読みと、選び直せる候補。cands[0] が今の表記)
+interface FrozenChunk {
+  kana: string;
+  cands: string[];
+}
+
 export class AiConverter {
   private static ready: boolean = false;
   private static loading: boolean = false;
   private static failed: boolean = false;
   static lastMs: number = 0;
+  private static lastRunMs: number = 0;   // 直前の変換そのものにかかった時間 (順番待ち・受け渡しを除く)
 
   static isReady(): boolean {
     return AiConverter.ready;
@@ -83,13 +90,22 @@ export class AiConverter {
   }
 
   // ---- 長い入力: 前の方を固定して、後ろだけを変換する ----
-  // 1 位の候補の語の区切りのうち、末尾から KEEP 字より前にあって、2 回続けて同じ変換になったところ
-  // (または「、」「。」の後ろ) までを固定する。固定した部分は文脈としてモデルに渡すので、後ろの変換の質は落ちない。
+  // 変換 1 回が BUDGET_MS を超えて遅れを感じる長さになったら、1 位の候補の語の区切りのうち、最後の KEEP_WORDS 語より前にあって、
+  // 2 回続けて同じ変換になったところ (または「、」「。」の後ろ) までを固定する。それより短いうちは文全体に AI をかけ続ける。
+  // 固定した部分は文脈としてモデルに渡すので、後ろの変換の質は落ちない。
   // 固定した読みまで消して戻ったら・確定して文脈が変わったら、固定を解く。
-  private static KEEP: number = 8;
+  //
+  // 固定した部分は入力欄に確定しない (以前は確定していて、間違っていたら直せずストレスだった)。
+  // 代わりに、固定した時点でその部分だけを 1 回変換して上位 ALT 個の候補を持たせ、以後は AI にかけない。
+  // 候補の一覧には「後ろだけ AI の候補を替えた文」に加えて「前の方を持たせた候補に替えた文」も並べ、そこから確定できる。
+  private static KEEP_WORDS: number = 4;     // 固定しても、最後のこの語数は必ず AI に残す
+  private static BUDGET_MS: number = 80;     // 変換 1 回がこれより速いうちは固定しない (遅れを感じない限界)
+  private static MAX_TAIL: number = 60;
+  private static ALT: number = 4;
+  private static chunks: FrozenChunk[] = [];   // 固定した部分 (前から順に)。表記は cands[0]
   private static fCtx: string = '';      // 固定を始めたときの文脈
-  private static fKana: string = '';     // 固定した読み
-  private static fSurf: string = '';     // 固定した表記
+  private static fKana: string = '';     // 固定した読み (chunks の読みをつないだもの)
+  private static fSurf: string = '';     // 固定した表記 (chunks の cands[0] をつないだもの)
   private static prevSegs: Map<number, string> = new Map<number, string>();   // 前回の結果の (区切りの位置 -> そこまでの表記)
   private static lastTarget: string = '';  // 最後に出した読みと、その候補 (結果を待つ間の表示に使う)
   private static lastTop: string = '';
@@ -102,6 +118,7 @@ export class AiConverter {
       AiConverter.fCtx = context;
       AiConverter.fKana = '';
       AiConverter.fSurf = '';
+      AiConverter.chunks = [];
       AiConverter.prevSegs.clear();
     }
     const tail = target.slice(AiConverter.fKana.length);
@@ -111,7 +128,7 @@ export class AiConverter {
     const ctx2 = (context + AiConverter.fSurf).slice(-40);
     const hit = AiConverter.cache.get(AiConverter.key(ctx2, tail));
     if (hit !== undefined && hit.cands.length > 0) {
-      const out = hit.cands.map((c: string) => AiConverter.fSurf + c);
+      const out = AiConverter.withFrozenAlternatives(hit.cands.map((c: string) => AiConverter.fSurf + c), hit.cands[0]);
       AiConverter.lastTarget = target;
       AiConverter.lastTop = out[0];
       AiConverter.lastCands = out;
@@ -127,30 +144,26 @@ export class AiConverter {
     return [AiConverter.fSurf + tail];
   }
 
-  // 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す)
-  static frozenKana(): string {
-    return AiConverter.fKana;
-  }
-
-  static frozenSurf(): string {
-    return AiConverter.fSurf;
-  }
-
-  // 固定した部分 (読み fk、表記 fs) を確定したあと。前回の候補も、確定した分だけ前を削って残す
-  // (消してしまうと、次の結果が届くまで残りがかなで出てちらつく)
-  static clearFrozen(fk: string = '', fs: string = ''): void {
-    AiConverter.fKana = '';
-    AiConverter.fSurf = '';
-    AiConverter.prevSegs.clear();
-    if (fk.length > 0 && AiConverter.lastTarget.startsWith(fk)) {
-      AiConverter.lastTarget = AiConverter.lastTarget.slice(fk.length);
-      AiConverter.lastCands = AiConverter.lastCands.filter((c: string) => c.startsWith(fs)).map((c: string) => c.slice(fs.length));
-      AiConverter.lastTop = AiConverter.lastCands.length > 0 ? AiConverter.lastCands[0] : '';
-    } else {
-      AiConverter.lastTarget = '';
-      AiConverter.lastTop = '';
-      AiConverter.lastCands = [];
+  // 候補の一覧: AI の上位 3 つ (前の方は固定したまま) → 前の方の 1 か所を持たせた候補に替えた文 (後ろは AI の 1 位)
+  // → AI の残り。前の方を替えた文は、後ろの方の固定ほど先に (直したいのは、たいてい直前に固定された所)
+  private static withFrozenAlternatives(full: string[], tailTop: string): string[] {
+    const chunks = AiConverter.chunks;
+    if (chunks.length === 0) {
+      return full;
     }
+    const variants: string[] = [];
+    for (let i = chunks.length - 1; i >= 0 && variants.length < 8; i--) {
+      for (let j = 1; j < chunks[i].cands.length; j++) {
+        variants.push(chunks.map((c: FrozenChunk, idx: number) => idx === i ? c.cands[j] : c.cands[0]).join('') + tailTop);
+      }
+    }
+    const out: string[] = [];
+    for (const c of full.slice(0, 3).concat(variants, full.slice(3))) {
+      if (out.indexOf(c) < 0) {
+        out.push(c);
+      }
+    }
+    return out;
   }
 
   private static maybeFreeze(tail: string, r: KkcResult): void {
@@ -166,17 +179,30 @@ export class AiConverter {
       segs.set(end, surf);
       const punct = '、。！？!?'.indexOf(tail.charAt(end - 1)) >= 0;
       const stable = AiConverter.prevSegs.get(end) === surf;
-      if (end <= tail.length - AiConverter.KEEP && (stable || punct)) {
+      const wordsAfter = r.ends.length - 1 - i;   // この語より後ろに残る語の数
+      // 速くても、読みが長すぎるとモデルの入力の長さの上限に届いて変換できなくなるので、MAX_TAIL 字を超えたら固定する
+      const slow = AiConverter.lastRunMs > AiConverter.BUDGET_MS || tail.length > AiConverter.MAX_TAIL;
+      if (slow && wordsAfter >= AiConverter.KEEP_WORDS && (stable || punct)) {
         freezeEnd = end;
         freezeLen = cum;
       }
     }
     AiConverter.prevSegs = segs;
     if (freezeEnd > 0) {
-      AiConverter.fKana += tail.slice(0, freezeEnd);
-      // 固定して確定する前の方にも、挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が確定されてしまう)
-      AiConverter.fSurf += AiConverter.greetingFix(tail.slice(0, freezeEnd), top.slice(0, freezeLen));
+      const kana = tail.slice(0, freezeEnd);
+      // 固定する前の方にも、挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が固定されてしまう)
+      const surf = AiConverter.greetingFix(kana, top.slice(0, freezeLen));
+      const chunk: FrozenChunk = { kana: kana, cands: [surf] };
+      const ctx = (AiConverter.fCtx + AiConverter.fSurf).slice(-40);
+      AiConverter.chunks.push(chunk);
+      AiConverter.fKana += kana;
+      AiConverter.fSurf += surf;
       AiConverter.prevSegs.clear();
+      // 固定した部分だけを 1 回変換して、選び直せる候補を持たせる (以後この部分は AI にかけない)
+      kkc.convertAsync(ctx, kana, 8).then((r2: KkcResult) => {
+        const alts = r2.cands.filter((c: string) => c !== surf && !AiConverter.SLURS.test(c));
+        chunk.cands = [surf].concat(alts.slice(0, AiConverter.ALT - 1));
+      }).catch((_e: Error) => {});
     }
   }
 
@@ -212,6 +238,7 @@ export class AiConverter {
     const t0 = Date.now();
     kkc.convertAsync(ctx, kana, 10).then((r: KkcResult) => {
       AiConverter.lastMs = Date.now() - t0;
+      AiConverter.lastRunMs = r.runMs;
       if (DEBUG_INPUT_LOG) {   // 変換 1 回の時間の内訳 (開発版のログだけ)
         const tt: number[] = kkc.times();
         console.info(`shuntiIME AiConverter ${kana.length}字 全体 ${AiConverter.lastMs}ms = 順番待ち ${r.waitMs.toFixed(0)} + 変換 ${r.runMs.toFixed(0)} + 受け取り ${r.deliverMs.toFixed(0)} [${tt.map((x: number) => x.toFixed(1)).join(' ')}]`);

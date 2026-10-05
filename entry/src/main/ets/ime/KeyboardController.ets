@@ -2541,23 +2541,6 @@ export class InputHandler {
     this.updateCandidates();
   }
 
-  // AI 変換で固定された前の方 (読み fk -> 表記 fs) を確定し、残りのかなを入力中に残す。
-  // ローマ字の打ちかけ・文節の編集中・変換範囲を縮めているときはしない。
-  private autoCommitFrozen(target: string, fk: string, fs: string): void {
-    // 速く打つと、ここに来るまでに入力がもう進んでいる。固定した読みが頭に残っていれば確定してよい
-    const composing = AppStorage.get<string>('composingText') ?? '';
-    if (fk.length === 0 || !composing.startsWith(fk) || !target.startsWith(fk) || this.isRangeShrunk(composing)) { return; }
-    if ((AppStorage.get<string>('pendingRomaji') ?? '') !== '') { return; }
-    if ((AppStorage.get<string>('inputState') ?? InputState.IDLE) !== InputState.COMPOSING) { return; }
-    this.insertText(fs);
-    KanaKanjiConverter.addContext(fs);
-    AiConverter.clearFrozen(fk, fs);
-    this.continueWithTail(composing.slice(fk.length));
-    // continueWithTail は変換範囲を残りの長さに張るが、続けて打った字も変換したいので全体に戻す
-    this.conversionEnd = 0;
-    AppStorage.setOrCreate('convEnd', 0);
-  }
-
   private resetComposition(): void {
     // 入力欄に残っているプレビューを必ず消す。insertText を経ない経路
     // (取消・欄の切り替えなど) でもここを通るので、消し忘れの受け皿になる。
@@ -3217,12 +3200,7 @@ export class InputHandler {
         if (this.conversionTarget() === target) { this.updateCandidates(); }
       });
     }
-    // 前の方が固定されたら、それを入力欄に確定して、残りだけを入力中に残す (長い入力でも変換中の文字列を短く保つ)
-    if (aiMode && AiConverter.frozenKana().length > 0 && !this.isRangeShrunk(composing)) {
-      const fk = AiConverter.frozenKana();
-      const fs = AiConverter.frozenSurf();
-      setTimeout(() => { this.autoCommitFrozen(target, fk, fs); }, 0);
-    }
+    // 長い入力で前の方が固定されても、入力欄には確定しない (AiConverter が固定した部分に候補を持たせ、一覧から選び直せる)
     const segs = aiMode ? [target] : this.kanjiConverter.segment(target);
     let candidates: string[];
     // 入力ログ用: 各候補をどの段が列に入れたか (InputLog の o 欄)。段ごとに
