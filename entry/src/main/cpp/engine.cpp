@@ -998,6 +998,9 @@ KKC_API void kkc_set_threads(kkc_engine* e, int n) { if (e) e->pool.resize(n); }
 // 普段の入力 (入力ログ) ではモデルを呼ぶのが 4 割ほどに減る
 constexpr double CASCADE_PER_CHAR = 300.0;
 constexpr int CASCADE_K = 3;   // 判定に使う上位の数
+// 短い読みの候補の並べ方 (下の kkc_convert)。この字数までの読みは、採点器の上位 SHORT_KEEP_MODEL 個の後ろを辞書の順にする
+constexpr int SHORT_READING = 3;
+constexpr int SHORT_KEEP_MODEL = 3;
 // これより長い読みは辞書だけで決まることがない (測った 1,590 例で 16 字以上は 0 例) ので、判定をせずにモデルへ
 constexpr int CASCADE_MAX_LEN = 16;
 
@@ -1057,6 +1060,27 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         e->times[3] = ms_since(t0);
         t0 = std::chrono::steady_clock::now();
         nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
+        if (n <= SHORT_READING && !res.empty()) {
+            // 短い読み (単漢字・2 字の語) は、文脈の手がかりが少なく、採点器の 2 位以下の並びが当てにならない
+            // (かん: 上位 20 に「間」が無い)。1 位〜SHORT_KEEP_MODEL 位は文脈を読む採点器のまま (神/紙/髪の使い分け)、
+            // その後ろは辞書のコストの順 (Mozc と同じ並び)、最後に採点器の残り
+            // 辞書の順は、読み全体で 1 語の語 (Mozc の単語の候補) を、文頭・文末とのつなぎを足したコストの順に先に。
+            // 語のつなぎ (は死・は歯) はその後ろ
+            std::vector<std::pair<int, ustr>> whole;
+            for (const Edge& ed : E)
+                if (ed.s == 0 && ed.e == n)
+                    whole.push_back({e->lex.conn(0, ed.lid) + ed.cost + e->lex.conn(ed.rid, 0), ed.surf});
+            std::stable_sort(whole.begin(), whole.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
+            std::vector<ustr> dict, merged;
+            nbest(e->lex, E, n, nullptr, 1.0, 1.0, 10, maxout, dict);
+            std::unordered_set<ustr> seen;
+            auto add = [&](const ustr& s) { if (int(merged.size()) < maxout && seen.insert(s).second) merged.push_back(s); };
+            for (size_t i = 0; i < res.size() && int(i) < SHORT_KEEP_MODEL; i++) add(res[i]);
+            for (auto& w : whole) add(w.second);
+            for (auto& s : res) add(s);
+            for (auto& s : dict) add(s);
+            res.swap(merged);
+        }
         e->times[4] = ms_since(t0);
     }
     std::vector<uint16_t> buf;

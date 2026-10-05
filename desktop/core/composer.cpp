@@ -6,6 +6,9 @@
 
 namespace shunti {
 
+// 変換で受け取る候補の数。10 では短い読み (き・かん) の単漢字が足りない (期・季・記が 11 位より後ろにある)
+constexpr int kCandidates = 30;
+
 namespace {
 constexpr size_t CTX_MAX = 40;   // モデルの文脈の長さ
 
@@ -428,7 +431,7 @@ void Composer::update_live() {
     u16 key = ctx_ + u'\x01' + kana_;
     if (key == live_key_) return;
     sync_user_dict();
-    Conversion c = conv_->convert(ctx_, kana_, 10);
+    Conversion c = conv_->convert(ctx_, kana_, kCandidates);
     if (options.live_commit && caret_ == kana_.size() && !alpha_run_ && live_commit(c)) {
         update_live();   // 前の方を確定した: 残りを変換し直す
         return;
@@ -530,7 +533,7 @@ void Composer::sync_user_dict() {
 
 std::vector<Composer::Seg> Composer::convert_phrases(const u16& ctx, const u16& reading, std::vector<u16>* whole) {
     std::vector<Seg> out;
-    Conversion c = conv_ ? conv_->convert(ctx, reading, 10) : Conversion();
+    Conversion c = conv_ ? conv_->convert(ctx, reading, kCandidates) : Conversion();
     if (whole) {
         *whole = c.cands;
         prefer_greetings(reading, *whole);
@@ -600,7 +603,7 @@ void Composer::load_cands(size_t i) {
         // 自立語だけを変換して付属語をつなぐ (がくせい|です → 学生です・楽聖です・学制です)。
         // 付属語が無い文節 (または分けられない文節) は文節ごと変換する
         u16 head = s.reading.substr(0, s.reading.size() - s.tail_r.size());
-        for (auto& c : conv_->convert(left_context(i), head, 10).cands) push_unique(list, c + s.tail_s);
+        for (auto& c : conv_->convert(left_context(i), head, kCandidates).cands) push_unique(list, c + s.tail_s);
         if (!s.tail_r.empty()) push_unique(list, head + s.tail_s);
     }
     add_brackets(s.reading, list);   // 学習の並べ替えより前に (よく選ぶ括弧が上に来るように)
@@ -626,7 +629,7 @@ void Composer::resize_focus(int delta) {
     u16 all = s.reading + rest;
     u16 mine = all.substr(0, size_t(len));
     rest = all.substr(size_t(len));
-    Conversion c = conv_ ? conv_->convert(left_context(focus_), mine, 10) : Conversion();
+    Conversion c = conv_ ? conv_->convert(left_context(focus_), mine, kCandidates) : Conversion();
     Seg ns{mine, c.cands.empty() ? mine : c.cands[0]};
     std::vector<Phrase> ph = group_phrases(c.words);   // 伸び縮みした文節の付属語 (候補を作るときに使う)
     if (ph.size() == 1 && ph[0].reading == mine && ph[0].head_r < mine.size() && ph[0].head_s < ph[0].surface.size()) {

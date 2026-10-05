@@ -47,7 +47,7 @@ export struct SettingsBar {
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
-  @StorageLink('conversionEngine') conversionEngine: string = 'hybrid';
+  @StorageLink('conversionEngine') conversionEngine: string = 'ai';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @StorageLink('liveCommit') liveCommit: boolean = false;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
@@ -610,7 +610,7 @@ export struct SettingsBar {
       // オンは Mac の IME のように、前の方が固まったら次々に確定していく
       Row() {
         Column({ space: 2 }) {
-          Text('どんどん確定')
+          Text('オート確定')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(14)
             .fontColor(kbTheme(this.isDark).textPrimary)
@@ -633,95 +633,6 @@ export struct SettingsBar {
       }
       .width('100%')
       .padding({ top: 12, bottom: 12 })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      Row() {
-        Text('変換エンジン')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(14)
-          .fontColor(kbTheme(this.isDark).textPrimary)
-          .layoutWeight(1)
-
-        Row({ space: 2 }) {
-          Text('独自辞書')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.conversionEngine === 'custom' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.conversionEngine === 'custom' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .onClick(() => { InputHandler.getInstance().setConversionEngine('custom'); })
-
-          Text('統計データ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.conversionEngine === 'mozc' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .onClick(() => { InputHandler.getInstance().setConversionEngine('mozc'); })
-
-          Text('AI変換')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.conversionEngine === 'ai' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.conversionEngine === 'ai' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .onClick(() => { InputHandler.getInstance().setConversionEngine('ai'); })
-        }
-        .backgroundColor(kbTheme(this.isDark).funcBg)
-        .borderRadius(TRACK_RADIUS)
-        .padding(2)
-      }
-      .width('100%')
-      .padding({ top: 12, bottom: 4 })
-      // hybrid supersedes this 2-way choice entirely while active -- see the
-      // beta toggle below. Dimmed + non-interactive rather than hidden, so
-      // switching back off is discoverable (just turn the beta toggle off).
-      .opacity(this.conversionEngine === 'hybrid' ? 0.4 : 1)
-      .enabled(this.conversionEngine !== 'hybrid')
-
-      Text(this.conversionEngine === 'ai'
-        ? '文脈を読んで変換（実験中）'
-        : this.conversionEngine === 'mozc'
-        ? '高性能だが比較的鈍重（推奨）'
-        : this.conversionEngine === 'hybrid' ? '' : '軽量だが発展途上')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(10)
-        .fontColor(kbTheme(this.isDark).textSecondary)
-        .width('100%')
-        .padding({ bottom: this.conversionEngine === 'hybrid' ? 4 : 12 })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      Row() {
-        Column({ space: 2 }) {
-          Text('ハイブリッド')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-          Text('独自辞書と統計データを融合。有効にすると上の選択は一時的に無効になります')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(10)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.conversionEngine === 'hybrid' })
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            // 切ったときの戻り先は 'mozc'。hybrid は mozc の上に乗る位置づけ
-            // なので、切っただけで独自辞書まで落ちるのは選んでいない変更になる。
-            InputHandler.getInstance().setConversionEngine(isOn ? 'hybrid' : 'mozc');
-          })
-      }
-      .width('100%')
-      .padding({ top: 10, bottom: 12 })
 
       Divider().color(kbTheme(this.isDark).divider)
 

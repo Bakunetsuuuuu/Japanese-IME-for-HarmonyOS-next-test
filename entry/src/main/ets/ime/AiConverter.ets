@@ -101,8 +101,10 @@ export class AiConverter {
   private static KEEP_WORDS: number = 4;     // 固定しても、最後のこの語数は必ず AI に残す
   private static BUDGET_MS: number = 80;     // 変換 1 回がこれより速いうちは固定しない (遅れを感じない限界)
   private static MAX_TAIL: number = 60;
-  private static LIVE_KEEP: number = 8;      // どんどん確定のときに、末尾に残す字数 (以前の決まり)
-  static liveCommit: boolean = false;        // 設定「どんどん確定」(既定はオフ = 保留)
+  private static LIVE_KEEP: number = 8;      // オート確定のときに、末尾に残す字数 (以前の決まり)
+  // 変換で受け取る候補の数。10 では短い読み (き・かん) の単漢字が足りない (期・季・記が 11 位より後ろにある)
+  private static CANDIDATES: number = 30;
+  static liveCommit: boolean = false;        // 設定「オート確定」(既定はオフ = 保留)
   private static ALT: number = 4;
   private static chunks: FrozenChunk[] = [];   // 固定した部分 (前から順に)。表記は cands[0]
   private static fCtx: string = '';      // 固定を始めたときの文脈
@@ -146,7 +148,7 @@ export class AiConverter {
     return [AiConverter.fSurf + tail];
   }
 
-  // どんどん確定のとき: 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す)
+  // オート確定のとき: 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す)
   static frozenKana(): string {
     return AiConverter.fKana;
   }
@@ -211,7 +213,7 @@ export class AiConverter {
       const wordsAfter = r.ends.length - 1 - i;   // この語より後ろに残る語の数
       // 速くても、読みが長すぎるとモデルの入力の長さの上限に届いて変換できなくなるので、MAX_TAIL 字を超えたら固定する
       const slow = AiConverter.lastRunMs > AiConverter.BUDGET_MS || tail.length > AiConverter.MAX_TAIL;
-      // どんどん確定 (Mac の IME のような動き) では、遅さに関係なく、末尾から LIVE_KEEP 字より前で固まった所を固定する
+      // オート確定 (Mac の IME のような動き) では、遅さに関係なく、末尾から LIVE_KEEP 字より前で固まった所を固定する
       // (固定した所は呼ぶ側が入力欄に確定する)
       const ready = AiConverter.liveCommit ? end <= tail.length - AiConverter.LIVE_KEEP : slow && wordsAfter >= AiConverter.KEEP_WORDS;
       if (ready && (stable || punct)) {
@@ -271,7 +273,7 @@ export class AiConverter {
     const kana = AiConverter.wantKana;
     const cb = AiConverter.wantCb;
     const t0 = Date.now();
-    kkc.convertAsync(ctx, kana, 10).then((r: KkcResult) => {
+    kkc.convertAsync(ctx, kana, AiConverter.CANDIDATES).then((r: KkcResult) => {
       AiConverter.lastMs = Date.now() - t0;
       AiConverter.lastRunMs = r.runMs;
       if (DEBUG_INPUT_LOG) {   // 変換 1 回の時間の内訳 (開発版のログだけ)

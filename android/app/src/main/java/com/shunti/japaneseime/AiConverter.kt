@@ -20,7 +20,7 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
     //
     // 既定 (保留) では、固定した部分は入力欄に確定しない。固定した時点でその部分だけを 1 回変換して上位 ALT 個の候補を持たせ、
     // 以後は AI にかけない。候補の一覧には「前の方を持たせた候補に替えた文」も並べ、そこから確定できる。
-    // 設定「どんどん確定」(liveCommit) がオンなら、以前のように末尾 LIVE_KEEP 字より前の固まった所を固定し、呼ぶ側が入力欄に確定する。
+    // 設定「オート確定」(liveCommit) がオンなら、以前のように末尾 LIVE_KEEP 字より前の固まった所を固定し、呼ぶ側が入力欄に確定する。
     // (HarmonyOS 版 AiConverter.ets と同じ決まり)
     /** 長い入力で固定した前の方の 1 か所 (読みと、選び直せる候補。cands[0] が今の表記) */
     private class FrozenChunk(val kana: String, var cands: List<String>)
@@ -82,7 +82,7 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         return (full.take(3) + variants + full.drop(3)).distinct()
     }
 
-    /** どんどん確定のとき: 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す) */
+    /** オート確定のとき: 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す) */
     fun frozenKana() = fKana
     fun frozenSurf() = fSurf
 
@@ -181,7 +181,7 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         val cb = wantCb
         worker.execute {
             val t = DoubleArray(5)
-            val r = runCatching { engine.convertWithSegments(ctx, kana, 10, true, t) }
+            val r = runCatching { engine.convertWithSegments(ctx, kana, CANDIDATES, true, t) }
                 .getOrElse { Engine.Result(emptyList(), IntArray(0), IntArray(0)) }
             main.post {
                 lastMs = t.sum()
@@ -198,7 +198,8 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
         private const val KEEP_WORDS = 4      // 固定しても、最後のこの語数は必ず AI に残す
         private const val BUDGET_MS = 80.0    // 変換 1 回がこれより速いうちは固定しない (遅れを感じない限界)
         private const val MAX_TAIL = 60
-        private const val LIVE_KEEP = 8       // どんどん確定のときに、末尾に残す字数 (以前の決まり)
+        private const val LIVE_KEEP = 8       // オート確定のときに、末尾に残す字数 (以前の決まり)
+        private const val CANDIDATES = 30     // 10 では短い読み (き・かん) の単漢字が足りない
         private const val ALT = 4             // 固定した部分に持たせる候補の数
 
         /** 読み reading とその表記 surf の組で、挨拶の「今日は」をかな書きに直す (きょうは を打っていないときだけ) */

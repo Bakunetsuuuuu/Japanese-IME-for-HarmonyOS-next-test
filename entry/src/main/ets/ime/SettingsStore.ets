@@ -49,7 +49,7 @@ export interface KeyboardSettings {
   numericPadEnabled: boolean;
   // キーを押したときに短く振動させるか。
   hapticEnabled: boolean;
-  // 長い入力の扱い。false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = どんどん確定 (Mac の IME のように前から確定)
+  // 長い入力の扱い。false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = オート確定 (Mac の IME のように前から確定)
   liveCommit: boolean;
   // キーボードのライト／ダーク。'system' は端末のカラーモードに従う（既定）。
   // 'light' / 'dark' はキーボードだけ固定する（ホストアプリの色は変えない）。
@@ -175,7 +175,6 @@ export class SettingsStore {
       const alphabetLayout = await prefs.get('alphabetKeyboardLayout', legacyLayout);
       const oneHanded = await prefs.get('oneHandedMode', DEFAULTS.oneHandedMode);
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
-      const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
       const numericPad = await prefs.get('numericPadEnabled', DEFAULTS.numericPadEnabled);
       const haptic = await prefs.get('hapticEnabled', DEFAULTS.hapticEnabled);
       const liveCommit = await prefs.get('liveCommit', DEFAULTS.liveCommit);
@@ -215,13 +214,15 @@ export class SettingsStore {
           if (Array.isArray(legacy)) { for (const id of legacy) { packs[id] = true; } }
         } catch (_e) {}
       }
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, engine, numericPad, themeMode, keyChrome, packs, forceReload }));
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, numericPad, themeMode, keyChrome, packs, forceReload }));
       return {
         kanaKeyboardLayout: String(kanaLayout),
         alphabetKeyboardLayout: String(alphabetLayout),
         oneHandedMode: oneHanded === true,
         oneHandedSide: String(side),
-        conversionEngine: String(engine),
+        // 変換方式は AI だけ (独自辞書・統計データ・ハイブリッドの選択は 1.6.1 の次で設定から外した)。前に別のものを選んで
+        // 保存していた人も AI にする。旧エンジン (KanaKanjiConverter) は、AI の答えが届くまでの表示や予測・学習のために中で使い続ける
+        conversionEngine: DEFAULTS.conversionEngine,
         numericPadEnabled: numericPad === true,
         hapticEnabled: haptic === true,
         liveCommit: liveCommit === true,

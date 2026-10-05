@@ -1008,7 +1008,7 @@ export class InputHandler {
     }
   }
 
-  // 長い入力の扱い: false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = どんどん確定 (Mac の IME のように前から確定)
+  // 長い入力の扱い: false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = オート確定 (Mac の IME のように前から確定)
   setLiveCommit(enabled: boolean): void {
     AppStorage.setOrCreate('liveCommit', enabled);
     AiConverter.liveCommit = enabled;
@@ -2552,7 +2552,7 @@ export class InputHandler {
     this.updateCandidates();
   }
 
-  // どんどん確定: AI 変換で固定された前の方 (読み fk -> 表記 fs) を確定し、残りのかなを入力中に残す。
+  // オート確定: AI 変換で固定された前の方 (読み fk -> 表記 fs) を確定し、残りのかなを入力中に残す。
   // ローマ字の打ちかけ・文節の編集中・変換範囲を縮めているときはしない。
   private autoCommitFrozen(target: string, fk: string, fs: string): void {
     // 速く打つと、ここに来るまでに入力がもう進んでいる。固定した読みが頭に残っていれば確定してよい
@@ -3229,7 +3229,7 @@ export class InputHandler {
       });
     }
     // 長い入力で前の方が固定されたとき: 既定 (保留) では入力欄に確定しない (AiConverter が固定した部分に候補を持たせ、
-    // 一覧から選び直せる)。設定「どんどん確定」がオンなら、固定した所を入力欄に確定して、残りだけを入力中に残す
+    // 一覧から選び直せる)。設定「オート確定」がオンなら、固定した所を入力欄に確定して、残りだけを入力中に残す
     if (aiMode && AiConverter.liveCommit && AiConverter.frozenKana().length > 0 && !this.isRangeShrunk(composing)) {
       const fk = AiConverter.frozenKana();
       const fs = AiConverter.frozenSurf();
