@@ -44,7 +44,6 @@ import fs from '@ohos.file.fs';
 import util from '@ohos.util';
 import zlib from '@ohos.zlib';
 import BuildProfile from 'BuildProfile';
-import { KanaKanjiConverter } from './KanaKanjiConverter';
 
 export const DEBUG_INPUT_LOG: boolean = BuildProfile.DEBUG;
 
@@ -294,7 +293,7 @@ export class InputLog {
   static recordVersion(appVersion: string): void {
     if (!DEBUG_INPUT_LOG) { return; }
     InputLog.write(LK_DIAG, '', '', -1, 0,
-      `ver=${appVersion} engine=${KanaKanjiConverter.getEngine()}`);
+      `ver=${appVersion} engine=ai`);
   }
 
   // パネル (KeyboardPage) からの保険。本来の初期化は setContext 経由だが、

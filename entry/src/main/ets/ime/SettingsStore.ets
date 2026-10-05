@@ -65,13 +65,6 @@ export interface KeyboardSettings {
   // field は入力欄側が setPreviewText に対応している場合のみ実際に効く。
   composingInPanel: boolean;
   composingInField: boolean;
-  // 語彙パックのうち、利用者が自分で切り替えたものだけの ON/OFF。
-  //
-  // 「有効なIDの一覧」ではなく「明示的に触ったものだけ」を持つのが要点。
-  // 一覧方式だと、載っていない = OFF になるので、あとから既定ONのパック
-  // (地名など) を足しても既存利用者には一生届かない。ここに無いパックは
-  // .pack の default: ヘッダに従う (KanaKanjiConverter.resolveEnabledPacks)。
-  vocabPackOverrides: Record<string, boolean>;
   // 設定 → レイアウト調整。どちらも既定 1.0 で今までどおりの見た目になる。
   // keyboardHeightScale: キーボード全体の縦の長さの倍率 (0.7〜1.3、横向きは下限0.4)。
   // flickSideColumnRatio: フリック5列の「左右特殊キー1列 / 中央かなキー1列」
@@ -138,7 +131,6 @@ const DEFAULTS: KeyboardSettings = {
   keyChromeEnabled: true,
   composingInPanel: true,
   composingInField: true,
-  vocabPackOverrides: {},
   keyboardHeightScalePortrait: 1.0,
   keyboardHeightScaleLandscape: 1.0,
   flickSideColumnRatioPortrait: 1.0,
@@ -199,29 +191,14 @@ export class SettingsStore {
       const floatY = await prefs.get('floatingYFrac', DEFAULTS.floatingYFrac);
       const floatW = await prefs.get('floatingWFrac', DEFAULTS.floatingWFrac);
       const floatH = await prefs.get('floatingHFrac', DEFAULTS.floatingHFrac);
-      const ovRaw = await prefs.get('vocabPackOverrides', '');
-      let packs: Record<string, boolean> = {};
-      try {
-        const parsed = JSON.parse(String(ovRaw)) as Record<string, boolean>;
-        if (parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)) { packs = parsed; }
-      } catch (_e) { packs = {}; }
-      if (String(ovRaw).length === 0) {
-        // 旧形式 (有効なIDの配列) からの移行。載っていたものは本人が明示的に
-        // ONにしたものなので override として引き継ぐ。載っていなかったものは
-        // 触っていない扱いにして、パック側の既定に従わせる。
-        try {
-          const legacy = JSON.parse(String(await prefs.get('enabledVocabPacks', '[]'))) as string[];
-          if (Array.isArray(legacy)) { for (const id of legacy) { packs[id] = true; } }
-        } catch (_e) {}
-      }
-      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, numericPad, themeMode, keyChrome, packs, forceReload }));
+      console.info('shuntiIME SettingsStore.load ok', JSON.stringify({ kanaLayout, alphabetLayout, oneHanded, side, numericPad, themeMode, keyChrome, forceReload }));
       return {
         kanaKeyboardLayout: String(kanaLayout),
         alphabetKeyboardLayout: String(alphabetLayout),
         oneHandedMode: oneHanded === true,
         oneHandedSide: String(side),
-        // 変換方式は AI だけ (独自辞書・統計データ・ハイブリッドの選択は 1.6.1 の次で設定から外した)。前に別のものを選んで
-        // 保存していた人も AI にする。旧エンジン (KanaKanjiConverter) は、AI の答えが届くまでの表示や予測・学習のために中で使い続ける
+        // 変換方式は AI だけ (独自辞書・統計データ・ハイブリッドの旧エンジンは 1.6.1 の次で外した)。前に別のものを選んで
+        // 保存していた人も AI にする
         conversionEngine: DEFAULTS.conversionEngine,
         numericPadEnabled: numericPad === true,
         hapticEnabled: haptic === true,
@@ -230,7 +207,6 @@ export class SettingsStore {
         keyChromeEnabled: keyChrome !== false,
         composingInPanel: inPanel !== false,
         composingInField: inField !== false,
-        vocabPackOverrides: packs,
         keyboardHeightScalePortrait: Number(heightScaleP),
         keyboardHeightScaleLandscape: Number(heightScaleL),
         flickSideColumnRatioPortrait: Number(flickRatioP),
@@ -260,7 +236,6 @@ export class SettingsStore {
         keyChromeEnabled: DEFAULTS.keyChromeEnabled,
         composingInPanel: DEFAULTS.composingInPanel,
         composingInField: DEFAULTS.composingInField,
-        vocabPackOverrides: DEFAULTS.vocabPackOverrides,
         keyboardHeightScalePortrait: DEFAULTS.keyboardHeightScalePortrait,
         keyboardHeightScaleLandscape: DEFAULTS.keyboardHeightScaleLandscape,
         flickSideColumnRatioPortrait: DEFAULTS.flickSideColumnRatioPortrait,
@@ -458,19 +433,6 @@ export class SettingsStore {
       await prefs.put('floatingHFrac', hFrac);
       await prefs.flush();
     } catch (_e) {}
-  }
-
-  static async saveVocabPackOverrides(context: common.Context,
-      overrides: Record<string, boolean>): Promise<void> {
-    InputLog.recordSetting('vocabPackOverrides', String(overrides));
-    try {
-      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('vocabPackOverrides', JSON.stringify(overrides));
-      await prefs.flush();
-      console.info('shuntiIME SettingsStore.saveVocabPackOverrides ok', JSON.stringify(overrides));
-    } catch (e) {
-      console.error('shuntiIME SettingsStore.saveVocabPackOverrides error', JSON.stringify(e));
-    }
   }
 }
 

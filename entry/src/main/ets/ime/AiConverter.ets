@@ -1,11 +1,12 @@
-// AI 変換 (shuntelligence)。変換エンジンの 3 つ目の選択肢 (conversionEngine = 'ai')。
+// AI 変換 (shuntelligence)。かな漢字変換はこれだけ (1.6.1 の次で、独自辞書・統計データ・ハイブリッドの旧エンジンを外した)。
 // 中身は C++ (entry/src/main/cpp, libkkc.so): 辞書 shuntorge の単語の網 + 文脈を読む小さな Transformer (約 630 万
 // パラメータ) + 上位 k。学習のコードと教材は公開していない (モデルの重みと推論のコードだけを同梱)。
-// 辞書とモデル (rawfile の kkc_lex.bin / kkc_model.bin、合わせて約 120MB) は初回だけ filesDir に写し、
-// 以降は mmap して使う (ArkTS の heap には載せない)。
+// 辞書とモデル (rawfile の kkc_lex.bin / kkc_model.bin、合わせて約 115MB) は HAP の中のまま mmap して使う
+// (端末に写さない。ArkTS の heap にも載せない)。
 import kkc, { KkcResult } from 'libkkc.so';
 import type common from '@ohos.app.ability.common';
 import { DEBUG_INPUT_LOG } from './InputLog';
+import type { UserPosEntry } from './ConjugationEngine';
 
 // 長い入力で固定した前の方の 1 か所 (読みと、選び直せる候補。cands[0] が今の表記)
 interface FrozenChunk {
@@ -47,6 +48,8 @@ export class AiConverter {
       console.info(`shuntiIME AiConverter load ${ok ? 'ok' : 'failed'} ${Date.now() - t0}ms`);
       if (!ok) {
         onFail();
+      } else {
+        AiConverter.applyUserWords();   // 読み込みより先に届いたユーザー辞書を入れる
       }
     }).catch((e: Error) => {
       AiConverter.loading = false;
@@ -54,6 +57,104 @@ export class AiConverter {
       console.error('shuntiIME AiConverter load error', JSON.stringify(e));
       onFail();
     });
+  }
+
+  // ---- 予測・ユーザー辞書・その場の変換 ----
+
+  // 予測: 読みが prefix で始まる、より長い辞書の語を、よく使う順に最大 max 個 (辞書を読むだけ。変換中でも待たない)
+  static complete(prefix: string, max: number): string[] {
+    if (!AiConverter.ready || prefix.length === 0) {
+      return [];
+    }
+    return kkc.complete(prefix, 6, max);
+  }
+
+  // その場で変換する (呼んだスレッドで。裏で変換中なら終わるまで待つ)。文節を選ぶとき・語を作れるかを確かめるときに
+  static convertNow(context: string, kana: string, max: number): KkcResult {
+    if (!AiConverter.ready || kana.length === 0) {
+      return { cands: [], ends: [], lens: [], waitMs: 0, runMs: 0, deliverMs: 0 } as KkcResult;
+    }
+    const r = kkc.convert(context, kana, max);
+    const cands = r.cands.filter((c: string) => !AiConverter.SLURS.test(c));
+    const ok = cands.length > 0 && cands[0] === r.cands[0];
+    return { cands: cands, ends: ok ? r.ends : [], lens: ok ? r.lens : [], waitMs: 0, runMs: 0, deliverMs: 0 } as KkcResult;
+  }
+
+  // AI 変換がこの読みからこの表記を出せるか (文脈なしで上位 30 個に入るか)。未知語の学習 (UnknownWordLearner) が、
+  // 単漢字を組み立てて作った語が「変換で出せない語」かを確かめるのに使う
+  static canProduce(reading: string, surface: string): boolean {
+    return AiConverter.convertNow('', reading, 30).cands.indexOf(surface) >= 0;
+  }
+
+  // ユーザー辞書。登録した語を辞書の語と同じく変換の網に入れ、モデルが文脈で採点する
+  // (読みが文の途中に出てきても候補になる)。品詞の左右 ID とコストは、辞書にある同じ品詞・同じ活用の形の代表語から写す
+  // (Android 版 UserDict.kt・PC 版と同じ決まり)。動詞と形容詞は、代表語の活用形と同じ語尾の形も作って入れる
+  private static userForms: string[] = [];   // [読み, 表記, 代表語の読み, 代表語の表記] を 4 つずつ
+  private static readonly USER_BONUS: number = 800;
+  private static readonly NOUN_TMPL: Record<string, string[]> = {
+    'noun': ['ねこ', '猫'], 'person': ['やまだ', '山田'], 'place': ['とうきょう', '東京'],
+  };
+  // 五段: 終止形の最後のかな -> [代表語の読み, 代表語の表記, 活用の語尾 (未然・連用・終止・仮定・意志・音便)]
+  private static readonly GODAN: Record<string, string[]> = {
+    'う': ['かう', '買う', 'わいうえおっ'], 'く': ['かく', '書く', 'かきくけこい'], 'ぐ': ['およぐ', '泳ぐ', 'がぎぐげごい'],
+    'す': ['はなす', '話す', 'さしすせそ'], 'つ': ['まつ', '待つ', 'たちつてとっ'], 'ぬ': ['しぬ', '死ぬ', 'なにぬねのん'],
+    'ぶ': ['あそぶ', '遊ぶ', 'ばびぶべぼん'], 'む': ['よむ', '読む', 'まみむめもん'], 'る': ['はしる', '走る', 'らりるれろっ'],
+  };
+  private static readonly ICHIDAN: string[] = ['', 'る', 'れ', 'ろ', 'よ'];   // 代表語 食べる
+  private static readonly ADJ: string[] = ['い', 'く', 'かっ', 'けれ', 'かろ', 'き', 'さ', 'そう'];   // 代表語 高い
+
+  // dict = 読み -> 表記 (UserDictStore)、pos = 「読み	表記」-> 品詞 (UserPosStore。無ければ名詞)
+  static setUserDict(dict: Record<string, string[]>, pos: Record<string, UserPosEntry>): void {
+    const out: string[] = [];
+    const stem = (r: string, w: string, tr: string, ts: string, sufs: string[]): void => {
+      for (const x of sufs) {
+        out.push(r.slice(0, -1) + x, w.slice(0, -1) + x, tr.slice(0, -1) + x, ts.slice(0, -1) + x);
+      }
+    };
+    if (!dict) {
+      dict = {} as Record<string, string[]>;
+    }
+    for (const r of Object.keys(dict)) {
+      const words = dict[r];
+      if (!Array.isArray(words)) {
+        continue;
+      }
+      for (const w of words) {
+        if (typeof w !== 'string' || w.length === 0 || r.length === 0) {
+          continue;
+        }
+        const e: UserPosEntry | undefined = pos ? pos[r + '	' + w] : undefined;
+        const kind: string = e && typeof e === 'object' ? String(e.pos) : 'noun';
+        const last = r.charAt(r.length - 1);
+        if (kind === 'verb') {
+          const group = e?.group ?? (last === 'る' ? undefined : 'godan');
+          if (group === 'ichidan' && r.endsWith('る') && w.endsWith('る')) {
+            stem(r, w, 'たべる', '食べる', AiConverter.ICHIDAN);
+          } else if (group === 'godan' && AiConverter.GODAN[last] !== undefined && w.endsWith(last)) {
+            const g = AiConverter.GODAN[last];
+            stem(r, w, g[0], g[1], g[2].split(''));
+          }
+        } else if (kind === 'adjective') {
+          if (r.endsWith('い') && w.endsWith('い')) {
+            stem(r, w, 'たかい', '高い', AiConverter.ADJ);
+          }
+        } else {
+          const t = AiConverter.NOUN_TMPL[kind] ?? AiConverter.NOUN_TMPL['noun'];
+          out.push(r, w, t[0], t[1]);
+        }
+      }
+    }
+    AiConverter.userForms = out;
+    AiConverter.applyUserWords();
+  }
+
+  private static applyUserWords(): void {
+    if (!AiConverter.ready) {
+      return;
+    }
+    const n = kkc.setUserWords(AiConverter.userForms, AiConverter.USER_BONUS);
+    AiConverter.cache.clear();   // 前の辞書で変換した結果を使わない
+    console.info(`shuntiIME AiConverter user words ${n}/${AiConverter.userForms.length / 4}`);
   }
 
   // 挨拶はかな書きを先に。モデルは文脈によって「こんにちは」を「今日は」と書く (教材の読みの入れ替え

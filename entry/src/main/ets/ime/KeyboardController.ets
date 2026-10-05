@@ -9,11 +9,10 @@ import vibrator from '@ohos.vibrator';
 import bundleManager from '@ohos.bundle.bundleManager';
 
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
-import { KanaKanjiConverter, MozcMatrixData, MozcPackedTables, VocabPackInfo } from './KanaKanjiConverter';
+import { KanaKanjiConverter } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
 import type { UserPosEntry, PosKind, VerbGroup } from './ConjugationEngine';
-import { buildUserExpansion } from './ConjugationEngine';
 import { SettingsStore, KeyboardSettings, isDarkFromConfiguration, isDarkFromResourceManager, resolveIsDark } from './SettingsStore';
 import { findPredictiveCompletion } from './PredictivePhrases';
 import { NextWordPredictor } from './NextWordPredictor';
@@ -266,7 +265,6 @@ export class InputHandler {
   private kbController: inputMethodEngine.KeyboardController | undefined;
   private inputClient: inputMethodEngine.InputClient | undefined;
   private converter: JapaneseConverter = new JapaneseConverter();
-  private kanjiConverter: KanaKanjiConverter = new KanaKanjiConverter();
   // bunsetsu state
   private bSegs: string[] = [];
   private bChosen: string[] = [];
@@ -521,7 +519,6 @@ export class InputHandler {
   // ので、setWritableDir が実際に開いて確かめる。
   private setupInputLog(ctx: InputMethodExtensionContext): void {
     if (!DEBUG_INPUT_LOG) { return; }
-    KanaKanjiConverter.collectSegDiag = true;
     try {
       let appDir = '';
       try { appDir = ctx.getApplicationContext().filesDir; } catch (_e) { appDir = ''; }
@@ -603,19 +600,16 @@ export class InputHandler {
       console.info('shuntiIME reloadUserDict loaded');
       // 設定パネルの「登録済み」一覧が出す元データ (展開前の生の登録内容)。
       this.userDictRaw = results[0];
+      // 登録した語を AI 変換の網に入れる (AiConverter.setUserDict)
       try {
-        const expansion = buildUserExpansion(results[0], results[1]);
-        KanaKanjiConverter.setUserDict(expansion.dict);
-        KanaKanjiConverter.setUserClassMap(expansion.classMap);
+        AiConverter.setUserDict(results[0], results[1]);
       } catch (e) {
-        console.error('shuntiIME reloadUserDict expansion failed', JSON.stringify(e));
-        KanaKanjiConverter.setUserDict({});
-        KanaKanjiConverter.setUserClassMap({});
+        console.error('shuntiIME reloadUserDict apply failed', JSON.stringify(e));
+        AiConverter.setUserDict({}, {});
       }
     }).catch((err: Error) => {
       console.error('shuntiIME reloadUserDict load failed', JSON.stringify(err));
-      KanaKanjiConverter.setUserDict({});
-      KanaKanjiConverter.setUserClassMap({});
+      AiConverter.setUserDict({}, {});
     });
   }
 
@@ -642,11 +636,10 @@ export class InputHandler {
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
         AppStorage.setOrCreate('flickHintsEnabled', s.flickHintsEnabled);
         AppStorage.setOrCreate('bracketCloseMode', s.bracketCloseMode);
-        this.applyVocabPacks(s.vocabPackOverrides);
         this.applyComposingDisplay(s.composingInPanel, s.composingInField);
         this.hapticEnabled = s.hapticEnabled;
         this.probeHapticSupportSilently();
-        this.applyConversionEngine(s.conversionEngine);
+        this.loadAiConverter();
         this.applyThemeMode(s.themeMode);
         // computeKeyHeight/applyKeyboardWidthsForVp は AppStorage の
         // keyboardHeightScale*/flickSideColumnRatio* (縦横別) を読むが、
@@ -683,112 +676,13 @@ export class InputHandler {
     }
   }
 
-  // Track B (mozc-derived) is loaded lazily -- only the first time the
-  // conversionEngine setting is actually 'mozc' -- so users who never touch
-  // the toggle pay zero extra startup cost/memory for it. Safe to call
-  // repeatedly: loadMozcEngine() is a no-op cost-wise once already loaded
-  // (isMozcLoaded() short-circuits), and setEngine('custom') is always cheap.
-  private applyConversionEngine(engine: string): void {
-    if (engine === 'ai') {
-      // AI 変換 (shuntelligence)。読み込みが済むまで・使えない読みのときは独自辞書で変換する。
-      // 辞書とモデルが無い (tools/fetch_ai_assets.py を実行せずにビルドした) ときは hybrid に戻る
-      KanaKanjiConverter.setEngine('custom');
-      if (this.imeContext) {
-        const ctx = this.imeContext;
-        AiConverter.ensureLoaded(ctx, () => {
-          if (AppStorage.get<string>('conversionEngine') === 'ai') {
-            if (KanaKanjiConverter.isMozcLoaded()) { KanaKanjiConverter.setEngine('hybrid'); } else { this.loadMozcRawfiles(ctx, 'hybrid'); }
-          }
-        });
-      }
-      return;
-    }
-    if (engine !== 'mozc' && engine !== 'hybrid') {
-      KanaKanjiConverter.setEngine('custom');
-      return;
-    }
-    const target: 'mozc' | 'hybrid' = engine === 'hybrid' ? 'hybrid' : 'mozc';
-    if (KanaKanjiConverter.isMozcLoaded()) {
-      KanaKanjiConverter.setEngine(target);
-      return;
-    }
-    if (!this.imeContext) { return; }
-    this.loadMozcRawfiles(this.imeContext, target);
-  }
-
-  // Fetch + parse the mozc rawfiles and hand them to the converter. Every
-  // per-reading structure (dict surfaces, cost/class/surface per sense) is
-  // pre-flattened at build time by tools/mozc_data/convert_to_binary.py --
-  // the device only JSON.parses three plain string[] arrays (no per-key
-  // object/hash overhead, unlike the old Record<string, ...> shape) and
-  // reads the rest as typed-array binaries with zero parse cost. This is
-  // what fixed the OOM crash: the old code's JSON.parse of mozc_dict.json/
-  // mozc_costs.json built a transient object tree (~183MB + ~286MB
-  // resident) that coexisted with its own flattened output at the peak,
-  // well over the extension's ~464MB heap budget. A catchable failure just
-  // falls back to custom.
-  // 読み終わるまで isMozcLoaded() は false のままなので、起動直後に
-  // applyConversionEngine が二度呼ばれると読み込みも二度走る (実機ログで確認)。
-  // 読み込み中であることを別に覚えておいて、二本目は目標エンジンだけ更新する。
-  private mozcLoading: boolean = false;
-  private mozcLoadTarget: 'mozc' | 'hybrid' = 'mozc';
-
-  private loadMozcRawfiles(ctx: InputMethodExtensionContext, target: 'mozc' | 'hybrid' = 'mozc'): void {
-    this.mozcLoadTarget = target;
-    if (this.mozcLoading) { return; }
-    this.mozcLoading = true;
-    const rm = ctx.resourceManager;
-    // toAligned: getRawFileContent's Uint8Array may sit at a non-even
-    // byteOffset, which Uint32Array/Int32Array/Uint16Array can't wrap
-    // directly -- copy into a fresh aligned buffer first. Device is
-    // little-endian, matching the files written by the build scripts.
-    // The big UTF-8 blobs are read as Uint8Array and used as-is (no copy).
-    const toBuf = (data: Uint8Array, byteOffset: number, byteLength: number): ArrayBuffer =>
-      data.buffer.slice(data.byteOffset + byteOffset, data.byteOffset + byteOffset + byteLength);
-    // 全ファイルを並行して読む。以前は1本ずつ .then() で繋いでいたが、
-    // ここは純粋な読み込みで互いに依存が無く、直列にする理由が無い。
-    const names: string[] = [
-      'mozc_readings.blob', 'mozc_readings.len', 'mozc_readings.base', 'mozc_readings.srt',
-      'mozc_dict_surfaces.blob', 'mozc_dict_surfaces.len', 'mozc_dict_surfaces.base',
-      'mozc_dict_index.bin',
-      'mozc_costs_surfaces.blob', 'mozc_costs_surfaces.len', 'mozc_costs_surfaces.base',
-      'mozc_costs_index.bin', 'mozc_costs.bin',
-      'mozc_matrix.json', 'mozc_matrix.bin',
-    ];
-    Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
-      .then((all: Uint8Array[]) => {
-        const u32 = (d: Uint8Array): Uint32Array => new Uint32Array(toBuf(d, 0, d.byteLength));
-        const costsIndex = u32(all[11]);
-        // mozc_costs.bin layout: int32 cost[n] + uint16 left[n] + uint16 right[n]
-        // (see convert_to_binary.py write_outputs). n_senses = last cumulative index.
-        const costsBin = all[12];
-        const nSenses = costsIndex[costsIndex.length - 1];
-        const tables: MozcPackedTables = {
-          readBlob: all[0], readLens: all[1], readBase: u32(all[2]), readSorted: u32(all[3]),
-          dictSurfBlob: all[4], dictSurfLens: all[5], dictSurfBase: u32(all[6]),
-          dictIndex: u32(all[7]),
-          costSurfBlob: all[8], costSurfLens: all[9], costSurfBase: u32(all[10]),
-          costsIndex: costsIndex,
-          costsCost: new Int32Array(toBuf(costsBin, 0, nSenses * 4)),
-          costsLeft: new Uint16Array(toBuf(costsBin, nSenses * 4, nSenses * 2)),
-          costsRight: new Uint16Array(toBuf(costsBin, nSenses * 4 + nSenses * 2, nSenses * 2)),
-        };
-        const decoder = new util.TextDecoder('utf-8');
-        const matrix = JSON.parse(decoder.decode(all[13])) as MozcMatrixData;
-        // The connection matrix cells ship as a separate flat uint16 binary
-        // (mozc_matrix.bin) rather than inside the JSON, so it can be read
-        // straight into a Uint16Array without a multi-megabyte JSON parse or
-        // a boxed number[][] -- the change that keeps mozc inside the heap.
-        const cells = new Uint16Array(toBuf(all[14], 0, all[14].byteLength));
-        this.mozcLoading = false;
-        KanaKanjiConverter.loadMozcEngine(tables, matrix, cells);
-        KanaKanjiConverter.setEngine(this.mozcLoadTarget);
-      })
-      .catch((e: Error) => {
-        this.mozcLoading = false;
-        console.error('shuntiIME mozc engine load failed, staying on custom', JSON.stringify(e));
-        KanaKanjiConverter.setEngine('custom');
+  // AI 変換を読み込む (何度呼んでもよい。読み込みは 1 回だけ、裏のスレッドで)。読み込みが済むまでは候補は読みのまま
+  private loadAiConverter(): void {
+    if (this.imeContext) {
+      AiConverter.ensureLoaded(this.imeContext, () => {
+        console.error('shuntiIME AiConverter unavailable: candidates stay as typed');
       });
+    }
   }
 
   // One-handed mode is toggled from the keyboard's own settings panel, so it
@@ -1048,14 +942,10 @@ export class InputHandler {
     InputLog.recordMode(`input=${InputMode.ALPHANUMERIC}`);
   }
 
-  // Same immediate-switch pattern as setKanaKeyboardLayout above. applyConversionEngine
-  // lazily fetches the mozc rawfiles the first time 'mozc' is actually selected.
-  setConversionEngine(engine: string): void {
-    AppStorage.setOrCreate('conversionEngine', engine);
-    this.applyConversionEngine(engine);
-    if (this.imeContext) {
-      SettingsStore.saveConversionEngine(this.imeContext, engine);
-    }
+  // 変換方式は AI だけ。設定の読み直し (KeyboardPage) から呼ばれたら、AI 変換の読み込みを確かめるだけ
+  setConversionEngine(_engine: string): void {
+    AppStorage.setOrCreate('conversionEngine', 'ai');
+    this.loadAiConverter();
   }
 
   // 入力中のかなの表示先の切替 (設定画面 → SettingsBar)。2つは独立で、
@@ -1237,70 +1127,6 @@ export class InputHandler {
 
   endFloatingDrag(): void {
     this.kbCtrlRef?.endFloatingDrag();
-  }
-
-  // 語彙パックの明示的な ON/OFF (利用者が自分で触ったものだけ)。
-  // ここに無いパックは .pack の default: ヘッダに従う。
-  private vocabPackOverrides: Record<string, boolean> = {};
-
-  // manifest が届いたあとに呼ばれる。保存済みの指定でもう一度反映する。
-  refreshVocabPacks(): void {
-    this.applyVocabPacks(this.vocabPackOverrides);
-  }
-
-  // 有効なパックの語彙バイナリだけを読む。
-  //
-  // 地名パックは1つで最大8千語あるので、無効なものまで読むとパックに分けた
-  // 意味が無くなる。読み込みは一度きり (isVocabPackLoaded) で、以後の
-  // ON/OFF は enabledPacks の出し入れだけで済む -- 一度読んだものを捨てて
-  // また読み直すほうが、切り替えのたびに待たされて体感が悪い。
-  private loadEnabledPackData(ids: string[]): void {
-    const ctx = this.imeContext;
-    if (!ctx) { return; }
-    const rm = ctx.resourceManager;
-    const toU32 = (d: Uint8Array): Uint32Array =>
-      new Uint32Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
-    for (const id of ids) {
-      if (KanaKanjiConverter.isVocabPackLoaded(id)) { continue; }
-      const base = 'pack_' + id;
-      const names: string[] = [
-        base + '.keys.blob', base + '.keys.len', base + '.keys.base',
-        base + '.vals.blob', base + '.vals.len', base + '.vals.base',
-        base + '.idx.bin',
-      ];
-      Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
-        .then((all: Uint8Array[]) => {
-          KanaKanjiConverter.setVocabPackPacked(id, all[0], all[1], toU32(all[2]),
-            all[3], all[4], toU32(all[5]), toU32(all[6]));
-        })
-        .catch((e: Error) => {
-          console.error('shuntiIME vocab pack load failed: ' + id, JSON.stringify(e));
-        });
-    }
-  }
-
-  // 明示指定 (overrides) と .pack の既定から実際に有効なパックを決めて反映する。
-  private applyVocabPacks(overrides: Record<string, boolean>): void {
-    this.vocabPackOverrides = overrides;
-    const enabled = KanaKanjiConverter.resolveEnabledPacks(overrides);
-    KanaKanjiConverter.setEnabledPackIds(enabled);
-    AppStorage.setOrCreate('enabledVocabPacks', enabled);
-    AppStorage.setOrCreate('vocabPackOverrides', overrides);
-    this.loadEnabledPackData(enabled);
-  }
-
-  // 語彙パックのON/OFF切替 (設定画面 → SettingsBar)。パック自体の中身は
-  // loadVocabPacks で既に読み込み済み (どのパックもロードだけでは効かない)
-  // なので、ここは有効/無効の集合を切り替えて保存するだけで即座に候補へ
-  // 反映される。
-  setVocabPackEnabled(id: string, enabled: boolean): void {
-    const next: Record<string, boolean> = {};
-    for (const k of Object.keys(this.vocabPackOverrides)) { next[k] = this.vocabPackOverrides[k]; }
-    next[id] = enabled;
-    this.applyVocabPacks(next);
-    if (this.imeContext) {
-      SettingsStore.saveVocabPackOverrides(this.imeContext, next);
-    }
   }
 
   // 学習系の保存はどれもデバウンスされている。打鍵のたびに数万件の JSON を
@@ -1604,7 +1430,7 @@ export class InputHandler {
     // 内蔵辞書で作れない語は、抑制を解いただけでは戻らない。自分で登録して
     // 消した語がこれにあたる (削除時に登録からも外しているため)。
     // 作れないと分かったときだけ登録し直す。
-    if (this.kanjiConverter.lookup(reading).indexOf(surface) < 0) {
+    if (!AiConverter.canProduce(reading, surface)) {
       this.registerUserWord(reading, surface);
     }
     // 削除で候補から外れていた語をその場で戻す。
@@ -1650,8 +1476,7 @@ export class InputHandler {
         UnknownWordLearner.setLearned({});
         SuppressedCandidates.clear();
         this.userDictRaw = {};
-        KanaKanjiConverter.setUserDict({});
-        KanaKanjiConverter.setUserClassMap({});
+        AiConverter.setUserDict({}, {});
         this.publishDictRows();
         this.publishSuppressedRows();
         console.info('shuntiIME resetAllData ok');
@@ -1816,8 +1641,7 @@ export class InputHandler {
     if (reading.length === 0 || surface.length === 0) { return ''; }
     if (!SuppressedCandidates.suppress(reading, surface)) { return ''; }
     InputLog.recordDeleteCandidate(reading, surface, index, candidates.length,
-      this.candidatePickVia(),
-      DEBUG_INPUT_LOG ? KanaKanjiConverter.explainSources(reading, surface) : '');
+      this.candidatePickVia(), '');
     KanaKanjiConverter.forgetChoice(reading, surface);
     UnknownWordLearner.forget(reading, surface);
     // 自分で登録した語を消した場合は登録からも外す (両方の一覧の辻褄を合わせる)。
@@ -1827,12 +1651,10 @@ export class InputHandler {
     this.saveUnknownWords();
     // Rebuild what's on screen so the chip disappears immediately.
     if (bunsetsu) {
-      // The segment's chosen surface is held separately from the candidate
-      // list (autoConvert, not lookup), so deleting the surface it currently
-      // shows would otherwise leave the deleted text in the 文節 display and
-      // commit it. Fall back to the best surviving candidate.
+      // 文節の今の表記は候補の一覧とは別に持っているので、それを消したら残った候補の先頭に替える
+      // (替えないと、消した表記が文節の表示に残って確定される)
       if (this.bChosen[this.bCur] === surface) {
-        const left = SuppressedCandidates.filter(reading, this.kanjiConverter.lookup(reading));
+        const left = SuppressedCandidates.filter(reading, this.bunsetsuCandidates(this.bCur));
         this.bChosen[this.bCur] = left.length > 0 ? left[0] : reading;
       }
       this.updateBunsetsuStorage();
@@ -1851,20 +1673,9 @@ export class InputHandler {
   // re-learned as if it were missing.
   private isKnownConversion(reading: string, surface: string): boolean {
     if (UnknownWordLearner.candidates(reading).indexOf(surface) >= 0) { return true; }
-    if (this.kanjiConverter.lookup(reading).indexOf(surface) >= 0) { return true; }
-    // lookup() only answers "is this whole reading a dictionary entry". The
-    // converter also reaches compounds by segmenting and auto-converting each
-    // segment (the multi-segment branch of updateCandidates), and a word THAT
-    // route already produces isn't missing either -- without this check every
-    // ordinary kanji compound typed in two commits (会社→見学) would look like
-    // an unknown word and crowd out the genuinely unreachable ones.
-    const segs = this.kanjiConverter.segment(reading);
-    if (segs.length <= 1) { return false; }
-    let joined = '';
-    for (let i = 0; i < segs.length; i++) {
-      joined += this.kanjiConverter.autoConvert(segs[i], segs[i + 1], segs[i - 1]);
-    }
-    return joined === surface;
+    // AI 変換は読み全体を語に分けて変換するので、2 回に分けて確定した複合語 (会社 -> 見学) も
+    // 読み全体の変換で出せれば「作れない語」ではない
+    return AiConverter.canProduce(reading, surface);
   }
 
   // Feed one committed conversion to the unknown-word learner, then persist if
@@ -2174,8 +1985,8 @@ export class InputHandler {
         AppStorage.setOrCreate('composingText', composing);
         AppStorage.setOrCreate('pendingRomaji', '');
       }
-      const candidates = this.kanjiConverter.lookup(composing);
-      AppStorage.setOrCreate('candidates', candidates);
+      // 候補は打っている間と同じ一覧 (AI 変換)。以前はここだけ旧エンジンで引き直していた
+      this.updateCandidates();
       AppStorage.setOrCreate('selectedCandidateIndex', 0);
       AppStorage.setOrCreate('inputState', InputState.SELECTING);
       return;
@@ -2391,7 +2202,7 @@ export class InputHandler {
       const reading = parts[0];
       const tail = parts[1];
       InputLog.recordCommit(reading, text, index, candidates.length, candidates,
-        this.candidatePickVia(), this.provenanceUpTo(reading, candidates, index));
+        this.candidatePickVia(), [] as string[]);
       // A predictive completion (会社 committed from the prefix かいし) must NOT
       // feed conversion learning: its reading is longer than what was typed, so
       // recordChoice(かいし→会社) would teach a wrong reading. Skip the learn;
@@ -2491,7 +2302,7 @@ export class InputHandler {
       const reading = parts[0];
       const tail = parts[1];
       InputLog.recordCommit(reading, chosen, idx, candidates.length, candidates, 'key',
-        this.provenanceUpTo(reading, candidates, idx));
+        [] as string[]);
       if (!this.isNonLearningCandidate(reading, chosen)) {
         this.learnCommit(reading, chosen);
         this.saveLearning();
@@ -2844,19 +2655,6 @@ export class InputHandler {
   // commitCandidate を呼んでから一覧を閉じるので、呼ばれた時点ではまだ開いている。
   private candidatePickVia(): string {
     return (AppStorage.get<boolean>('candidateExpanded') ?? false) ? 'list' : 'bar';
-  }
-
-  // 選んだ候補と、それより上に並んでいた候補それぞれの出どころ (どの辞書の
-  // 何番目か)。「なぜ正解が下にいたのか = 上の候補はどこから来たのか」を
-  // 独自辞書側で直すための記録。デバッグビルド以外では辞書を引き直さない。
-  private provenanceUpTo(reading: string, candidates: string[], index: number): string[] {
-    if (!DEBUG_INPUT_LOG || index < 0) { return []; }
-    const out: string[] = [];
-    const end = Math.min(index, candidates.length - 1);
-    for (let i = 0; i <= end; i++) {
-      out.push(KanaKanjiConverter.explainSources(reading, candidates[i]));
-    }
-    return out;
   }
 
   // フリック1回の詳細 (FlickKeyboardView から)。
@@ -3220,8 +3018,8 @@ export class InputHandler {
     this.enrichPending = false;
     const fullKatakana = KanaKanjiConverter.toKatakana(target);
     // AI 変換: 変換は裏のスレッドで行い、届いたら updateCandidates をもう一度呼ぶ (打鍵を止めない)。
-    // 届くまでは読みのまま出す。AI のときは独自辞書の文節区切りは使わないので計算しない
-    const aiMode = AppStorage.get<string>('conversionEngine') === 'ai' && AiConverter.isReady();
+    // 届くまでは前回の候補に新しく打ったかなをつないで出す (AiConverter.candidates)。読み込みが済むまでは読みのまま
+    const aiMode = AiConverter.isReady();
     let aiCands: string[] = [];
     if (aiMode) {
       aiCands = AiConverter.candidates(KanaKanjiConverter.recentContext(), target, () => {
@@ -3235,12 +3033,9 @@ export class InputHandler {
       const fs = AiConverter.frozenSurf();
       setTimeout(() => { this.autoCommitFrozen(target, fk, fs); }, 0);
     }
-    const segs = aiMode ? [target] : this.kanjiConverter.segment(target);
-    let candidates: string[];
+    const segs = [target];
     // 入力ログ用: 各候補をどの段が列に入れたか (InputLog の o 欄)。段ごとに
     // 「まだ印の無い候補」へ印を付けていくので、先に入れた段が勝つ。
-    const segDiag = (DEBUG_INPUT_LOG && !aiMode) ? this.kanjiConverter.segDiagFor(target) : '';
-    const segCostPerKana = aiMode ? 0 : this.kanjiConverter.segCostPerKanaFor(target);
     const origin = new Map<string, string>();
     const promo = new Map<string, string>();
     const tagNew = (list: string[], tag: string): void => {
@@ -3249,165 +3044,17 @@ export class InputHandler {
         if (!origin.has(c)) { origin.set(c, tag); }
       }
     };
-    let baseTag = 'look';
-    // Recomputed below whenever the composing text is multi-segment. Reset
-    // here so a single-segment / symbol-prefix / stale commit falls back to
-    // the plain whole-string recordChoice instead of a stale alignment.
     this.lastAlignment = undefined;
-
-    if (aiCands.length > 0) {
-      baseTag = 'ai';
-      candidates = AiConverter.preferGreetings(target, [...aiCands]);
-      if (!candidates.includes(fullKatakana)) { candidates.push(fullKatakana); }
-      if (!candidates.includes(target)) { candidates.push(target); }
-    } else if (segs.length <= 1) {
-      candidates = this.kanjiConverter.lookup(target);
-    } else {
-      // Auto-converted prefix (all but the last segment). Computed once here
-      // so BOTH the whole-reading-hit branch and the decompose branch below
-      // can capture the same per-segment breakdown for learning -- most
-      // natural sentences take the hasRealHit branch (lookup already joins
-      // the segments), so an alignment built only inside the decompose branch
-      // would miss them.
-      const prefixParts = segs.slice(0, -1).map((s: string, i: number) => this.kanjiConverter.autoConvert(s, segs[i + 1], segs[i - 1]));
-      const hasSymbolPrefix = prefixParts.some((p: string) => KanaKanjiConverter.isSymbolOnly(p));
-      const prefixText = hasSymbolPrefix ? '' : prefixParts.join('');
-      // A prefix that resolves to a bare symbol (かっこ→"()") isn't a usable
-      // learning alignment either -- leave lastAlignment undefined so those
-      // commits fall back to whole-string learning.
-      if (!hasSymbolPrefix) {
-        this.lastAlignment = { segs: segs, prefixSurfaces: prefixParts, prefixText: prefixText };
-      }
-
-      // Try full-text lookup first. If it returns a real dictionary hit
-      // (not just the katakana/kana fallback), use it — this prevents
-      // Viterbi mis-segmentation from producing garbage like 足素ト for あしすと.
-      const fullCands = this.kanjiConverter.lookup(target);
-      const fullFirst = fullCands[0];
-      // A dict-authored loanword (こんびに→コンビニ) has fullFirst === the
-      // auto-katakana, so the plain fullFirst!==fullKatakana test would reject
-      // it and fall to segmentation (こんび+に → garbage). Treat a whole
-      // reading that IS a dictionary word as a real hit regardless.
-      const hasRealHit = (fullFirst !== fullKatakana && fullFirst !== target) ||
-        KanaKanjiConverter.isDictionaryWord(target);
-
-      baseTag = hasRealHit ? 'whole' : 'join';
-      if (hasRealHit) {
-        candidates = fullCands;
-      } else {
-        // Multi-segment: auto-convert prefix, show variants for last segment.
-        // Viterbi result goes to position 0; katakana is position 1.
-        // Putting katakana at 0 unconditionally causes long natural Japanese
-        // (e.g. きょうはいいてんきですね) to always show all-katakana first.
-        // A prefix segment that resolves to a bare symbol (e.g. かっこ→"()")
-        // means Viterbi split a casual word across a symbol "word" — joining
-        // it would produce nonsense like "()よ" for かっこよ. Fall back to the
-        // plain kana/katakana candidates instead of using that prefix.
-        const lastSeg = segs[segs.length - 1];
-        let lastCands = this.kanjiConverter.lookup(lastSeg);
-        // The last segment is converted here with no context (unlike prefix
-        // segments, which go through autoConvert). Let a context rule force its
-        // lead -- e.g. a trailing おく auxiliary after a て/で form stays kana
-        // (読んで + おいて → 読んでおいて, not 読んで置いて).
-        const forcedLead = KanaKanjiConverter.contextLead(lastSeg, prefixText);
-        if (forcedLead !== null && lastCands.length > 0 && lastCands[0] !== forcedLead) {
-          lastCands = [forcedLead, ...lastCands.filter((c: string) => c !== forcedLead)];
-        }
-        const segCands = hasSymbolPrefix ? [] : lastCands.map((c: string) => prefixText + c);
-        candidates = [];
-        if (hasSymbolPrefix) {
-          // No usable kanji join — plain kana leads, same as the
-          // segmentJoinFallback bail-out for single-lookup composing text.
-          candidates.push(target);
-        } else if (segCands.length > 0) {
-          // Position 0: best Viterbi candidate
-          candidates.push(segCands[0]);
-        }
-        // Position 1: katakana (loanwords reachable with one Space tap)
-        if (!candidates.includes(fullKatakana)) {
-          candidates.push(fullKatakana);
-        }
-        // Remaining Viterbi variants
-        for (let i = 1; i < segCands.length; i++) {
-          if (!candidates.includes(segCands[i])) { candidates.push(segCands[i]); }
-        }
-        if (!candidates.includes(target)) { candidates.push(target); }
-      }
+    let candidates: string[] = AiConverter.preferGreetings(target, [...aiCands]);
+    if (!candidates.includes(target)) { candidates.push(target); }
+    if (!candidates.includes(fullKatakana)) { candidates.push(fullKatakana); }
+    tagNew(candidates, aiMode ? 'ai' : 'kana');
+    // ユーザー辞書に登録した語は、読みがちょうど一致したら先頭に (AI 変換の網にも入っているが、確実に出す。Android 版と同じ)
+    const user = this.userDictRaw[target];
+    if (user !== undefined && user.length > 0) {
+      candidates = [...user, ...candidates.filter((c: string) => !user.includes(c))];
     }
-
-    tagNew(candidates, baseTag);
-
-    // Per-segment homophone alternatives for the whole sentence, inserted
-    // right after the primary pick and ahead of the katakana/kana fallbacks
-    // the branches above appended. Track A used to offer only the last
-    // segment's variants (or nothing useful for a whole-phrase entry), so a
-    // homophone in any earlier word — 橋/箸 in はしをわたる, 撮る/取る in
-    // 写真をとった — never appeared anywhere in the list. (Empty for track B,
-    // whose lookup already routed through composeMozcCandidates above.)
-    const alts = (skipExtras || aiCands.length > 0) ? [] as string[] : this.kanjiConverter.sentenceAlternatives(target);
-    // Insert the alternatives just ABOVE the katakana/kana fallbacks, not at a
-    // fixed position 1: a whole-phrase dict entry can already carry a genuine
-    // kanji alternative at candidate[1] (はなをみる → 花を観る, 花を見る), and
-    // blindly prepending would bury that real alternative below the injected
-    // ones. Find where the junk (full katakana / as-typed kana) starts and
-    // slot the alternatives right before it, so both the entry's own
-    // alternatives and the per-segment swaps stay above the fallbacks.
-    const kIdx = candidates.indexOf(fullKatakana);
-    const cIdx = candidates.indexOf(target);
-    let insertAt: number;
-    if (kIdx < 0 && cIdx < 0) { insertAt = candidates.length; }
-    else if (kIdx < 0) { insertAt = cIdx; }
-    else if (cIdx < 0) { insertAt = kIdx; }
-    else { insertAt = kIdx < cIdx ? kIdx : cIdx; }
-    // ただし候補0が辞書の実ヒットなら、その上には入れない。
-    //
-    // 上の「カタカナ形はゴミ」という前提は、外来語では成り立たない。
-    // さみっと の候補は [サミット, さみっと] で、カタカナ形がそのまま辞書の
-    // 正解なのに fallback と見なされ、insertAt が 0 になっていた。結果、
-    // さ充っと / さ三と / さミッと が サミット より上に挿し込まれ、実機の
-    // 入力ログでは サミット が7番目まで沈んでいた (こすぷれ→コスプレ も同じ)。
-    // 辞書に載っていない外来語すべてで起きる。
-    // 候補0が「打ったかなそのもの」でないなら実ヒットなので、位置0は明け渡さない。
-    if (insertAt === 0 && candidates.length > 0 && candidates[0] !== target) {
-      insertAt = 1;
-    }
-    for (const a of alts) {
-      if (!candidates.includes(a)) {
-        candidates.splice(insertAt, 0, a);
-        insertAt++;
-      }
-    }
-
-    tagNew(candidates, 'alt');
-
-    // 自動区切り変更: a candidate from a differently-segmented parse of the
-    // same reading (へんかんせいど's single whole-compound entry 変換精度 vs the
-    // へんかん+せいど split's 返還制度).
-    //
-    // 区切りが違う候補が「先頭よりかなが少ない」= 先頭がかなのまま残した所を
-    // 漢字にできているなら、候補1に入れる。はいじんじゃ は 廃人じゃ(かな2文字)
-    // に対し 廃神社(かな0文字)で、区切りを直せば全部漢字になる型。以前はこれが
-    // 同音語(癈人じゃ/俳人じゃ/配陣じゃ)の下、5番目に埋もれていた。
-    //
-    // かなの数が減らないものは今までどおり下に置く。区切りを変えただけで
-    // 漢字の当て方が変わらない候補は、単なる別表記と大差なく、しかも
-    // 境界の迂回探索は時々 贅金を修める(ぜいきんをおさめる)や 先生似合う
-    // (せんせいにあう)のような妙な再解釈を出す。上げると本当に欲しい
-    // 税金を納める が押し下げられる(実測: 候補4→5)。
-    // AI 変換のときは独自辞書の文節区切りを使わない (入力全体をもう一度区切り直すので長い入力で重い)
-    const altSeg = (skipExtras || aiMode) ? null : this.kanjiConverter.findAlternateSegmentation(target);
-    if (altSeg !== null && !candidates.includes(altSeg)) {
-      const kanaCount = (t: string): number => {
-        let n = 0;
-        for (let i = 0; i < t.length; i++) {
-          const c = t.charCodeAt(i);
-          if (c >= 0x3041 && c <= 0x309F) { n++; }
-        }
-        return n;
-      };
-      const lifts = candidates.length > 0 && kanaCount(altSeg) < kanaCount(candidates[0]);
-      candidates.splice(lifts ? 1 : insertAt, 0, altSeg);
-    }
+    tagNew(candidates, 'user');
 
     // General learned-context rerank: if the user has actually written one of
     // these candidates after the current context before (映画を→見る, 資料を→作る),
@@ -3499,10 +3146,6 @@ export class InputHandler {
     // than relying on lookup()'s own learning boost because most of the list
     // above never passed through lookup() -- see applyLearnedOrder.
     tagNew(candidates, 'num');
-    // 分割に自信が無い読みではカタカナを 2 番目へ (外来語の取りこぼし対策)。
-    // 予測補完などを差し込み終えた後に置くのは、それらが位置 1 に入って
-    // カタカナをまた押し下げないようにするため。
-    candidates = KanaKanjiConverter.promoteKatakanaIfUnsure(target, candidates, segCostPerKana);
     const topBeforeLearn = candidates.length > 0 ? candidates[0] : '';
     candidates = KanaKanjiConverter.applyLearnedOrder(target, candidates);
     if (DEBUG_INPUT_LOG && candidates.length > 0 && candidates[0] !== topBeforeLearn) {
@@ -3530,7 +3173,7 @@ export class InputHandler {
         const o = origin.get(c);
         if (o !== undefined) { origin.set(c, `${o}^${mark}`); }
       });
-      InputLog.noteCandidateOrigins(target, origin, segDiag);
+      InputLog.noteCandidateOrigins(target, origin, '');
     }
     InputLog.recordUpdate(composing, AppStorage.get<string>('pendingRomaji') ?? '',
       this.conversionEnd, shown, segs);
@@ -3686,11 +3329,55 @@ export class InputHandler {
       AppStorage.setOrCreate('pendingRomaji', '');
     }
     if (composing.length === 0) { return; }
-    this.bSegs = this.kanjiConverter.segment(composing);
-    this.bChosen = this.bSegs.map((seg: string, i: number) => this.kanjiConverter.autoConvert(seg, this.bSegs[i + 1], this.bSegs[i - 1]));
+    this.splitBunsetsu(composing);
     this.bCur = 0;
     InputLog.recordBunsetsu(composing, this.bSegs);
     this.updateBunsetsuStorage();
+  }
+
+  // 文節に分ける: 入力全体を AI 変換して、1 位の候補の語の区切りで分ける。かなだけの語 (助詞・助動詞・送り) は
+  // 前の語につなげる (しゃしん|を|とっ|た -> 写真を|撮った)。区切りが取れなければ全体を 1 文節に
+  private splitBunsetsu(composing: string): void {
+    const r = AiConverter.convertNow(KanaKanjiConverter.recentContext(), composing, 1);
+    const top = r.cands.length > 0 ? r.cands[0] : composing;
+    this.bSegs = [];
+    this.bChosen = [];
+    if (r.ends.length === 0) {
+      this.bSegs.push(composing);
+      this.bChosen.push(top);
+      return;
+    }
+    const kanaOnly = (t: string): boolean => /^[ぁ-ゖー]+$/.test(t);
+    let rs = 0;
+    let ss = 0;
+    for (let i = 0; i < r.ends.length; i++) {
+      const reading = composing.slice(rs, r.ends[i]);
+      const surf = top.slice(ss, ss + r.lens[i]);
+      rs = r.ends[i];
+      ss += r.lens[i];
+      if (this.bSegs.length > 0 && kanaOnly(surf) && '、。！？!?'.indexOf(reading) < 0) {
+        this.bSegs[this.bSegs.length - 1] += reading;
+        this.bChosen[this.bChosen.length - 1] += surf;
+      } else {
+        this.bSegs.push(reading);
+        this.bChosen.push(surf);
+      }
+    }
+    if (rs < composing.length) {   // 念のため: 区切りが読みの終わりまで届いていなければ、残りを最後の文節に
+      this.bSegs[this.bSegs.length - 1] += composing.slice(rs);
+      this.bChosen[this.bChosen.length - 1] += composing.slice(rs);
+    }
+  }
+
+  // i 番目の文節の候補: 今の表記を先頭に、前の文節 (今の表記) を文脈にして AI 変換した候補
+  private bunsetsuCandidates(i: number): string[] {
+    const seg = this.bSegs[i];
+    const ctx = (KanaKanjiConverter.recentContext() + this.bChosen.slice(0, i).join('')).slice(-40);
+    const out: string[] = [this.bChosen[i]];
+    for (const c of AiConverter.convertNow(ctx, seg, 30).cands.concat([seg, KanaKanjiConverter.toKatakana(seg)])) {
+      if (out.indexOf(c) < 0) { out.push(c); }
+    }
+    return KanaKanjiConverter.applyLearnedOrder(seg, out);
   }
 
   // Navigate to a specific segment and refresh candidates
@@ -3747,7 +3434,7 @@ export class InputHandler {
     if (index < candidates.length) {
       InputLog.recordBunsetsuPick(this.bSegs[this.bCur], candidates[index], index,
         candidates.length, candidates, this.candidatePickVia(),
-        this.provenanceUpTo(this.bSegs[this.bCur], candidates, index));
+        [] as string[]);
       KanaKanjiConverter.recordChoice(this.bSegs[this.bCur], candidates[index]);
       this.bChosen[this.bCur] = candidates[index];
     }
@@ -3769,7 +3456,7 @@ export class InputHandler {
     AppStorage.setOrCreate('bunsetsuCurrent', this.bCur);
     AppStorage.setOrCreate('bunsetsuDisplay', segTexts.join(''));
     const seg = this.bSegs[this.bCur];
-    const cands = SuppressedCandidates.filter(seg, this.kanjiConverter.lookup(seg));
+    const cands = SuppressedCandidates.filter(seg, this.bunsetsuCandidates(this.bCur));
     AppStorage.setOrCreate('candidates', cands);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.BUNSETSU);
@@ -3905,7 +3592,6 @@ export class InputHandler {
       // クリップボード貼り付け...どの経路で来ても、ホストへ実際に文字が
       // 出た時点はここ1箇所なので、取消キー用の記録もここで行う。
       this.pushHostOp('insert', finalText);
-      KanaKanjiConverter.setLastCommitText(finalText);
     }
   }
 
@@ -3915,8 +3601,6 @@ export class InputHandler {
 }
 
 // ---------- KeyboardController ----------
-
-const USE_DICT_JSON: boolean = true;
 
 // 予測変換に渡す辞書由来の前方一致の件数。PredictiveConversion 側は学習・
 // 手書き表を先に詰めてから残り枠にこれを入れるので、実際に表に出るのは
@@ -3952,11 +3636,6 @@ export class KeyboardController {
     this.applyColorMode();
     this.initPanel();
     this.registerListeners();
-    this.loadInlineDictionary();
-    this.loadDictionary();
-    this.loadGlobalDictionary();
-    this.loadVocabPacks();
-    this.loadViterbiData();
   }
 
   // Re-resolves the live OS color mode via resourceManager (see
@@ -3988,131 +3667,6 @@ export class KeyboardController {
       IMEAbility.destroyPanel(this.panel);
       this.panel = undefined;
     }
-  }
-
-  // 独自辞書 (dict.json / global_dict.json) はパック済みバイナリで読む。
-  //
-  // JSON.parse した状態は実機で ArkTS ヒープ約144MB を占めていた -- mozc の
-  // データ全部より重い。読み383,383件と表記594,173個をJSオブジェクトとして
-  // 持てばそうなる。中身は一切変えず、mozc の表と同じ形式 (blob + 長さ +
-  // ブロック基準、触れた文字列だけ復号) に移してある。
-  // 書き出しは tools/pack_dicts.py、等価性の検証は tools/verify_dicts.js。
-  private loadPackedDict(name: string,
-      apply: (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array,
-              vb: Uint8Array, vl: Uint8Array, vbase: Uint32Array,
-              idx: Uint32Array) => void): void {
-    const rm = this.context.resourceManager;
-    const toU32 = (d: Uint8Array): Uint32Array =>
-      new Uint32Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
-    const names: string[] = [
-      name + '.keys.blob', name + '.keys.len', name + '.keys.base',
-      name + '.vals.blob', name + '.vals.len', name + '.vals.base',
-      name + '.idx.bin',
-    ];
-    Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
-      .then((all: Uint8Array[]) => {
-        apply(all[0], all[1], toU32(all[2]), all[3], all[4], toU32(all[5]), toU32(all[6]));
-      })
-      .catch((e: Error) => {
-        // 黙って落とさない。辞書が読めていない状態は変換品質が静かに下がる
-        // だけで表からは見えず、実際 KeyboardPage 側の重複ロードが
-        // dict.json 削除後に無言で死んでいた。
-        console.error('shuntiIME packed dict load failed: ' + name, JSON.stringify(e));
-      });
-  }
-
-  // 手書きの基本辞書 (KanaKanjiConverter.buildInlineDictionary のバイナリ版)。
-  // 先に「バイナリを読むので、読み終わるまで関数からは作るな」と宣言する。
-  // そうしないと読み込み前の最初の変換で 5MB のオブジェクトが作られてしまう。
-  private loadInlineDictionary(): void {
-    KanaKanjiConverter.inlinePackedExpected = true;
-    this.loadPackedDict('inline_dict',
-      (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
-       vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
-        KanaKanjiConverter.loadInlineDictPacked(kb, kl, kbase, vb, vl, vbase, idx);
-      });
-  }
-
-  private loadDictionary(): void {
-    if (!USE_DICT_JSON) { return; }
-    this.loadPackedDict('dict',
-      (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
-       vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
-        KanaKanjiConverter.loadDictionaryPacked(kb, kl, kbase, vb, vl, vbase, idx);
-      });
-  }
-
-  // Build the Viterbi connection matrix from inline grammar rules (no external file).
-  private loadViterbiData(): void {
-    KanaKanjiConverter.initConnectionMatrix();
-  }
-
-  // Developer-curated dictionary bundled as rawfile/global_dict.json.
-  // Bundled with the app and committed to the repo (the old DevDict editor is gone);
-  // applies to all users from the next patch. Highest conversion priority.
-  private loadGlobalDictionary(): void {
-    this.loadPackedDict('global_dict',
-      (kb: Uint8Array, kl: Uint8Array, kbase: Uint32Array, vb: Uint8Array,
-       vl: Uint8Array, vbase: Uint32Array, idx: Uint32Array) => {
-        KanaKanjiConverter.setGlobalDictPacked(kb, kl, kbase, vb, vl, vbase, idx);
-      });
-  }
-
-  // 語彙パック (淫夢語録・なんJ語など、既定OFFの追加インストール的な
-  // ニッチ語彙)。どのパックが存在するかはアプリ側にハードコードせず、
-  // rawfile/pack_manifest.json (tools/build_vocab_packs.py が
-  // tools/vocab_packs/*.pack から生成) を読んで決める -- こうしないと
-  // 「パックを1つ足すのに .ets の編集が要る」ことになり、語彙パックの
-  // 目的 (誰でも語彙を足せる) が崩れる。
-  //
-  // 各パックは数十件しかないので mozc のような遅延読み込みはせず、
-  // manifest が読めた時点で全部バイナリを読んでおく -- ロードしただけでは
-  // まだ何も変換に効かない (KanaKanjiConverter.enabledPacks が空のまま)。
-  // 実際に候補へ混ざるかどうかは reloadSettings 側で setEnabledPackIds を
-  // 呼んだときだけ決まる。
-  private loadVocabPacks(): void {
-    this.context.resourceManager.getRawFileContent('pack_manifest.json')
-      .then((data: Uint8Array) => {
-        const text = util.TextDecoder.create('utf-8').decodeToString(data);
-        const list = JSON.parse(text) as VocabPackInfo[];
-        KanaKanjiConverter.setVocabPackManifest(list);
-        for (const p of list) {
-          // 活用展開 (五段/一段/形容詞) は品詞が付いた語だけの話で、その語は
-          // manifest の pos に読みと表記の両方が入っている。そこから最小限の
-          // 入力を組み立てて ConjugationEngine に通す -- ユーザー辞書と
-          // まったく同じ関数なので活用ロジックの二重実装は無い。
-          // 語彙本体 (バイナリ) を JS へ展開する必要はない。
-          const seed: Record<string, string[]> = {};
-          const posMap: Record<string, UserPosEntry> = {};
-          for (const key of Object.keys(p.pos)) {
-            const v = p.pos[key];
-            posMap[key] = { pos: v.pos as PosKind, group: v.group as VerbGroup | undefined };
-            const parts = key.split('	');
-            if (parts.length === 2) {
-              const cur = seed[parts[0]];
-              if (cur === undefined) { seed[parts[0]] = [parts[1]]; }
-              else if (!cur.includes(parts[1])) { cur.push(parts[1]); }
-            }
-          }
-          const expanded = buildUserExpansion(seed, posMap);
-          // 活用展開で得たクラス (がばって→[14,17] など) の上に、.pack の
-          // @指定を重ねる。明示指定のほうが後勝ちで強い。
-          const classes: Record<string, number[]> = {};
-          for (const k of Object.keys(expanded.classMap)) { classes[k] = expanded.classMap[k]; }
-          for (const k of Object.keys(p.classes)) { classes[k] = p.classes[k]; }
-          KanaKanjiConverter.setVocabPackOverlay(p.id, expanded.dict, classes);
-        }
-        AppStorage.setOrCreate('vocabPackIds', list.map((p: VocabPackInfo) => p.id));
-        // 設定より先に manifest が来るとは限らないので、ここでもう一度
-        // 有効なパックを決め直す (順序に依存させない)。有効判定と読み込みは
-        // 設定を持っている InputHandler 側が担当する。
-        this.inputHandle.refreshVocabPacks();
-      })
-      .catch((e: Error) => {
-        // 語彙パックが読めなくても変換自体は動く (全部OFFと同じ状態)。
-        // ただし黙って消えると原因が分からないので必ず残す。
-        console.error('shuntiIME vocab pack manifest load failed', JSON.stringify(e));
-      });
   }
 
   // フローティングモードの最小サイズ。これより小さいと掴みにくく／候補や

@@ -1,5 +1,4 @@
 import { InputHandler } from '../ime/KeyboardController';
-import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from './JpFont';
@@ -68,14 +67,6 @@ export struct SettingsBar {
   @StorageLink('composingInField') composingInField: boolean = true;
   // 入力欄側に実際に出せているか (設定ONでも入力欄が非対応なら false)。
   @StorageLink('previewInField') previewInField: boolean = false;
-  // 語彙パック (淫夢語録・なんJ語など、既定OFFのニッチ語彙)。有効なIDだけの
-  // 配列。切替のたびに新しい配列で置き換える (setVocabPackEnabled 側で
-  // フィルタ/スプレッドして新しい参照を作っている) ので @StorageLink の
-  // 更新検知に乗る。
-  @StorageLink('enabledVocabPacks') enabledVocabPacks: string[] = [];
-  // 存在するパックのID一覧。rawfile/pack_manifest.json を非同期に読んだ
-  // KeyboardController.loadVocabPacks が入れる。
-  @StorageLink('vocabPackIds') vocabPackIds: string[] = [];
   // この端末では拡張プロセスからの振動が許可されていない、と分かった状態。
   @StorageLink('hapticUnavailable') hapticUnavailable: boolean = false;
   @StorageLink('clipboardUnavailable') clipboardUnavailable: boolean = false;
@@ -84,9 +75,6 @@ export struct SettingsBar {
   @State selectedCategory: string = 'clipboard';
   @State showHistory: boolean = false;
   @State showDict: boolean = false;
-  // 語彙パックの一覧。設定の本体に並べると項目が多すぎるので、辞書と同じく
-  // 下位画面に切り出してある。
-  @State showPacks: boolean = false;
   // ユーザー辞書の中の下位画面。'' = 入口のメニュー / 'suggest' = 登録候補 /
   // 'registered' = 登録済み。どちらも件数が多くなるので画面を分けている。
   @State dictSub: string = '';
@@ -126,7 +114,6 @@ export struct SettingsBar {
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
     this.showHistory = false;
     this.showDict = false;
-    this.showPacks = false;
     this.dictSub = '';
   }
 
@@ -152,7 +139,7 @@ export struct SettingsBar {
       // regardless of which side has a control (design tokens). ──
       Row() {
         Row() {
-          if (this.showHistory || this.showDict || this.showPacks) {
+          if (this.showHistory || this.showDict) {
             Row({ space: 2 }) {
               SymbolGlyph($r('sys.symbol.chevron_left'))
                 .fontSize(16)
@@ -175,7 +162,6 @@ export struct SettingsBar {
               }
               this.showHistory = false;
               this.showDict = false;
-              this.showPacks = false;
             })
           }
         }
@@ -190,7 +176,7 @@ export struct SettingsBar {
             ? (this.dictSub === 'suggest' ? '登録候補'
               : (this.dictSub === 'registered' ? '登録済み'
                 : (this.dictSub === 'suppressed' ? '削除した候補' : 'ユーザー辞書')))
-            : (this.showPacks ? '語彙パック' : '設定')))
+            : '設定'))
           .fontFamily(JP_FONT_FAMILY)
           .fontSize(20)
           .fontWeight(FontWeight.Bold)
@@ -232,7 +218,7 @@ export struct SettingsBar {
       Divider().color(kbTheme(this.isDark).divider)
 
       // ── Content (scrolls if it doesn't fit the panel height) ──
-      if (this.showHistory || this.showDict || this.showPacks) {
+      if (this.showHistory || this.showDict) {
         Scroll() {
           Column() {
             if (this.showHistory) {
@@ -243,10 +229,8 @@ export struct SettingsBar {
               this.DictRegisteredView()
             } else if (this.showDict && this.dictSub === 'suppressed') {
               this.SuppressedView()
-            } else if (this.showDict) {
-              this.DictView()
             } else {
-              this.PackView()
+              this.DictView()
             }
           }
           .padding(16)
@@ -432,31 +416,6 @@ export struct SettingsBar {
       .padding({ top: 14, bottom: 14 })
       .onClick(() => { this.openDict(); })
 
-      Divider().color(kbTheme(this.isDark).divider)
-      Row() {
-        Column({ space: 2 }) {
-          Text('語彙パック')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .width('100%')
-          Text(this.enabledVocabPacks.length > 0
-            ? this.enabledVocabPacks.length + ' / ' + this.vocabPackIds.length + ' 個を使用中'
-            : '地名や界隈語をまとめて切り替えられます')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .width('100%')
-        }
-        .layoutWeight(1)
-        Text('›')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(15)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-      }
-      .width('100%')
-      .padding({ top: 14, bottom: 14 })
-      .onClick(() => { this.showPacks = true; })
 
     }
     .backgroundColor(kbTheme(this.isDark).cardBg)
@@ -1412,77 +1371,6 @@ export struct SettingsBar {
       .padding({ left: 14, right: 14 })
       .divider({ strokeWidth: 1, color: kbTheme(this.isDark).divider })
     }
-  }
-
-  // 語彙パック。「一般語彙ではないが、ある界隈の人はめちゃくちゃ使う」語彙を
-  // 既定OFFの単位でまとめたもの (tools/vocab_packs/*.pack)。
-  @Builder PackView() {
-    Column() {
-      Text('界隈でしか使わないような語彙をまとめて追加できます。使うものだけONにしてください。')
-        .fontFamily(JP_FONT_FAMILY)
-        .fontSize(11)
-        .fontColor(kbTheme(this.isDark).textSecondary)
-        .width('100%')
-        .padding({ left: 2, bottom: 10 })
-
-      Column() {
-        // 一覧は rawfile/pack_manifest.json 由来 (KanaKanjiConverter に
-        // ハードコードは無い)。manifest は非同期に読まれるので、その完了を
-        // vocabPackIds への @StorageLink で受けて再描画する -- ここで
-        // KanaKanjiConverter.listVocabPackIds() を直接呼ぶと、まだ空の
-        // タイミングで描画されたきり更新されない。
-        ForEach(this.vocabPackIds, (id: string) => {
-          Row() {
-            Column({ space: 2 }) {
-              Text(KanaKanjiConverter.vocabPackDisplayName(id))
-                .fontFamily(JP_FONT_FAMILY)
-                .fontSize(14)
-                .fontColor(kbTheme(this.isDark).textPrimary)
-                .width('100%')
-              if (KanaKanjiConverter.vocabPackDescription(id).length > 0) {
-                Text(KanaKanjiConverter.vocabPackDescription(id))
-                  .fontFamily(JP_FONT_FAMILY)
-                  .fontSize(11)
-                  .fontColor(kbTheme(this.isDark).textSecondary)
-                  .width('100%')
-              }
-              // 語数を出す。地名パックは地方ごとに規模がかなり違うので、
-              // どれを切ると効くのかが分かるようにしておく。
-              Text(KanaKanjiConverter.vocabPackCount(id).toLocaleString() + ' 語')
-                .fontFamily(JP_FONT_FAMILY)
-                .fontSize(10)
-                .fontColor(kbTheme(this.isDark).textSecondary)
-                .width('100%')
-            }
-            .alignItems(HorizontalAlign.Start)
-            .layoutWeight(1)
-            Toggle({ type: ToggleType.Switch, isOn: this.enabledVocabPacks.includes(id) })
-              .selectedColor(kbTheme(this.isDark).accent)
-              .onChange((isOn: boolean) => {
-                InputHandler.getInstance().setVocabPackEnabled(id, isOn);
-              })
-          }
-          .width('100%')
-          .padding({ top: 13, bottom: 13 })
-          .borderWidth({ bottom: 1 })
-          .borderColor(kbTheme(this.isDark).divider)
-        }, (id: string) => id)
-      }
-      .backgroundColor(kbTheme(this.isDark).cardBg)
-      .borderRadius(CARD_RADIUS)
-      .padding({ left: 14, right: 14 })
-
-      if (this.vocabPackIds.length === 0) {
-        Text('語彙パックがありません')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(12)
-          .fontColor(kbTheme(this.isDark).textSecondary)
-          .width('100%')
-          .textAlign(TextAlign.Center)
-          .padding({ top: 24, bottom: 24 })
-      }
-    }
-    .width('100%')
   }
 
   // ユーザー辞書。上段が「登録候補」(打った語のうち辞書に無いものを

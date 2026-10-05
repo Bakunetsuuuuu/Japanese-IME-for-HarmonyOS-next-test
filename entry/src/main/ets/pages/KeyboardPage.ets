@@ -2,7 +2,6 @@ import inputMethodEngine from '@ohos.inputMethodEngine';
 import util from '@ohos.util';
 import { promptAction } from '@kit.ArkUI';
 import { InputHandler, InputState, InputMode, applyKeyboardWidthsForVp } from '../ime/KeyboardController';
-import { KanaKanjiConverter } from '../ime/KanaKanjiConverter';
 import { CandidateBar } from '../components/CandidateBar';
 import { PredictionBar } from '../components/PredictionBar';
 import { KeyboardView } from '../components/KeyboardView';
@@ -22,8 +21,6 @@ import { kbTheme } from '../components/Theme';
 import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
 
 let _inputStartRegistered = false;
-let _dictLoaded = false;
-const USE_DICT_JSON: boolean = true;
 
 // フローティング四隅のリサイズハンドル (L字ブラケット) の一辺の長さと太さ。
 // FloatingHandles 参照。
@@ -238,33 +235,6 @@ struct KeyboardPage {
       } catch (_e) { panelAppDir = ''; }
       InputLog.ensureFromPanel([panelAppDir, getContext(this).filesDir]);
     }
-    // KeyboardController 側でも読んでいるが、そちらが走らない実機状態が出た
-    // ため、確実に走るこの場所からも読む (_dictLoaded で一度きり)。
-    //
-    // 読む形式は KeyboardController.loadPackedDict と揃えること。ここだけ
-    // dict.json を JSON で読んでいた間は、(a) 同じ4.7MBを二重にパースし、
-    // (b) 後に完了した方が勝つので、パック済みの状態を JSON の状態で
-    // 上書きしうる、という二重の問題があった。dict.json を rawfile から
-    // 外したあとは、空の catch がその失敗を黙って飲み込むだけになっていた。
-    if (!_dictLoaded && USE_DICT_JSON) {
-      _dictLoaded = true;
-      const rm = getContext(this).resourceManager;
-      const toU32 = (d: Uint8Array): Uint32Array =>
-        new Uint32Array(d.buffer.slice(d.byteOffset, d.byteOffset + d.byteLength));
-      const names: string[] = ['dict.keys.blob', 'dict.keys.len', 'dict.keys.base',
-        'dict.vals.blob', 'dict.vals.len', 'dict.vals.base', 'dict.idx.bin'];
-      Promise.all(names.map((n: string) => rm.getRawFileContent(n)))
-        .then((all: Uint8Array[]) => {
-          KanaKanjiConverter.loadDictionaryPacked(all[0], all[1], toU32(all[2]),
-            all[3], all[4], toU32(all[5]), toU32(all[6]));
-        })
-        .catch((e: Error) => {
-          // 黙って失敗させない。ここが死ぬと変換品質が静かに落ちるだけで、
-          // 表からは何も見えなくなる。
-          console.error('shuntiIME dict load (panel) failed', JSON.stringify(e));
-        });
-    }
-
     // aboutToAppear runs every time this panel's content is (re)constructed —
     // a more reliable reload point than onPageShow, which per ArkUI docs is a
     // Navigation/Router page-lifecycle hook and may never fire for content
