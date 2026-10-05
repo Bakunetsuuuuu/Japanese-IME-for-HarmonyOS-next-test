@@ -5,8 +5,9 @@
   "dest": "entry/src/main/resources/rawfile",
   "files": {
     "kkc_lex.bin": {
-      "size": 63188680,
-      "sha256": "81ab94c4758c7513c1182ec1b1c6ffcfb0cef5a4cea1b27f821c18d35e84f2d0",
+      "src": "kkc_lex_v2.bin",
+      "size": 48490584,
+      "sha256": "e62ace562134a60b9b45f93b352a5706efb185986a8483dbec60d824564fcd7f",
       "license": "shuntorge: MIT (独自部分) + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0"
     },
     "kkc_model.bin": {

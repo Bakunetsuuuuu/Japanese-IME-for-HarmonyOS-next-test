@@ -67,6 +67,9 @@ const int UNK = 1, SEP = 2;
 
 struct Ent { uint32_t soff; uint16_t slen, lid, rid, pad; int32_t cost; };
 static_assert(sizeof(Ent) == 16, "Ent");
+// 辞書の版 2 の語 (10 バイト): 表記の位置 = a | (b の下 10 ビット) << 16、表記の長さ = b の上 6 ビット
+struct PEnt { uint16_t a, b, lid, rid; int16_t cost; };
+static_assert(sizeof(PEnt) == 10, "PEnt");
 
 struct Edge { int s, e; ustr surf; int32_t lid, rid, cost; Kind kind; };
 
@@ -105,33 +108,89 @@ void to16(const ustr& s, std::vector<uint16_t>& o) {
 }
 
 // ---------------------------------------------------------------- 辞書 (mmap したファイルを読むだけ)
+// 辞書。版 1: 語は 16 バイト、読みはそのまま。版 2 (kkc/pack_lex.py): 語は 10 バイト、同じ表記は 1 つにまとめ、
+// 読みは RB 個ごとの区切りの先頭だけそのままで、他は「前の読みと同じ先頭の字数 + 残りの字」(読みは並んでいる)。
+// 中の語と答えは版 1 とまったく同じ (63MB -> 約 47MB)
 struct Lex {
     int32_t noun, num_arabic, num_kanji, max_word, oov, kata, kata_per, pass, nconn, conn16, nread, nent;
+    int32_t ver = 1;
     const int16_t* c16 = nullptr;
     const int32_t* c32 = nullptr;
     const uint32_t* r_off;
     const uint32_t* e_first;
-    const Ent* ents;
+    const Ent* ents = nullptr;     // 版 1
+    const PEnt* pents = nullptr;   // 版 2
     const uint16_t* r_blob;
     const uint16_t* s_blob;
+    static constexpr int RB = 16;      // 版 2 の読みの区切り
+    static constexpr int MAXR = 256;   // 読みの長さの上限 (pack_lex.py が確かめる)
 
     inline int conn(int a, int b) const { size_t i = size_t(a) * nconn + b; return c16 ? c16[i] : c32[i]; }
 
+    // j 番目の語
+    inline Ent ent(uint32_t j) const {
+        if (ents) return ents[j];
+        const PEnt& p = pents[j];
+        return {uint32_t(p.a) | (uint32_t(p.b & 0x3FF) << 16), uint16_t(p.b >> 10), p.lid, p.rid, 0, int32_t(p.cost)};
+    }
+
+    // 版 2: buf に k-1 番目の読みが入っているとき (k が区切りの先頭なら何でもよい)、k 番目にする。長さを返す
+    inline int next_reading(int k, uint16_t* buf) const {
+        const uint16_t* p = r_blob + r_off[k];
+        const int len = int(r_off[k + 1] - r_off[k]);
+        if (k % RB == 0) { memcpy(buf, p, size_t(len) * 2); return len; }
+        const int pre = p[0];
+        memcpy(buf + pre, p + 1, size_t(len - 1) * 2);
+        return pre + len - 1;
+    }
+
+    // i 番目の読み (長さを n に)。版 1 は辞書の中をそのまま指す。版 2 は buf (MAXR 字) に戻して返す
+    const uint16_t* reading(int i, int& n, uint16_t* buf) const {
+        if (ver == 1) { n = int(r_off[i + 1] - r_off[i]); return r_blob + r_off[i]; }
+        for (int k = i - i % RB; k <= i; k++) n = next_reading(k, buf);
+        return buf;
+    }
+
+    static int cmp(const uint16_t* r, int rn, const uint16_t* k, int n) {
+        const int m = std::min(rn, n);
+        for (int i = 0; i < m; i++) if (r[i] != k[i]) return int(r[i]) - int(k[i]);
+        return rn - n;
+    }
+
+    // 読みが k 以上の最初の読みの番号 (読みは並んでいる)
+    int lower_bound(const uint16_t* k, int n) const {
+        if (ver == 1) {
+            int lo = 0, hi = nread;
+            while (lo < hi) {
+                int mid = (lo + hi) >> 1;
+                if (cmp(r_blob + r_off[mid], int(r_off[mid + 1] - r_off[mid]), k, n) < 0) lo = mid + 1; else hi = mid;
+            }
+            return lo;
+        }
+        // 版 2: 区切りの先頭 (そのまま入っている) で二分探索して、k 以上の先頭の最初の区切りを探し、その前の区切りの中を順に見る
+        const int nb = (nread + RB - 1) / RB;
+        int lo = 0, hi = nb;
+        while (lo < hi) {
+            int mid = (lo + hi) >> 1, h = mid * RB;
+            if (cmp(r_blob + r_off[h], int(r_off[h + 1] - r_off[h]), k, n) < 0) lo = mid + 1; else hi = mid;
+        }
+        if (lo == 0) return 0;
+        uint16_t buf[MAXR];
+        const int end = std::min(nread, lo * RB);
+        int i = (lo - 1) * RB;
+        next_reading(i, buf);   // 先頭は k より前
+        for (i++; i < end; i++)
+            if (cmp(buf, next_reading(i, buf), k, n) >= 0) return i;
+        return end;
+    }
+
     // 読み (UTF-16 の並び) の語の範囲。無ければ false
     bool find(const uint16_t* k, int n, uint32_t& lo_e, uint32_t& hi_e) const {
-        int lo = 0, hi = nread;
-        while (lo < hi) {
-            int mid = (lo + hi) >> 1;
-            const uint16_t* r = r_blob + r_off[mid];
-            int rn = int(r_off[mid + 1] - r_off[mid]);
-            int m = std::min(rn, n), c = 0;
-            for (int i = 0; i < m && !c; i++) c = int(r[i]) - int(k[i]);
-            if (!c) c = rn - n;
-            if (c < 0) lo = mid + 1; else hi = mid;
-        }
+        const int lo = lower_bound(k, n);
         if (lo >= nread) return false;
-        const uint16_t* r = r_blob + r_off[lo];
-        int rn = int(r_off[lo + 1] - r_off[lo]);
+        uint16_t buf[MAXR];
+        int rn;
+        const uint16_t* r = reading(lo, rn, buf);
         if (rn != n || memcmp(r, k, size_t(n) * 2)) return false;
         lo_e = e_first[lo];
         hi_e = e_first[lo + 1];
@@ -331,7 +390,7 @@ std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>
             uint32_t a, b;
             if (L.find(key.data(), int(key.size()), a, b)) {
                 for (uint32_t j = a; j < b; j++) {
-                    const Ent& en = L.ents[j];
+                    const Ent en = L.ent(j);
                     out.push_back({s, e, from16(L.s_blob + en.soff, en.slen), en.lid, en.rid, en.cost, K_DICT});
                 }
             }
@@ -688,7 +747,8 @@ bool load_lex(Lex& L, const void* data, size_t size) {
     if (size < 4 || memcmp(data, "KKL2", 4)) return false;
     r.off = 4;
     int32_t ver = r.val<int32_t>();
-    if (ver != 1) return false;
+    if (ver != 1 && ver != 2) return false;
+    L.ver = ver;
     L.noun = r.val<int32_t>(); L.num_arabic = r.val<int32_t>(); L.num_kanji = r.val<int32_t>(); L.max_word = r.val<int32_t>();
     L.oov = r.val<int32_t>(); L.kata = r.val<int32_t>(); L.kata_per = r.val<int32_t>(); L.pass = r.val<int32_t>();
     L.nconn = r.val<int32_t>(); L.conn16 = r.val<int32_t>(); L.nread = r.val<int32_t>(); L.nent = r.val<int32_t>();
@@ -697,7 +757,7 @@ bool load_lex(Lex& L, const void* data, size_t size) {
     if (L.conn16) L.c16 = r.arr<int16_t>(nc); else L.c32 = r.arr<int32_t>(nc);
     L.r_off = r.arr<uint32_t>(L.nread + 1);
     L.e_first = r.arr<uint32_t>(L.nread + 1);
-    L.ents = r.arr<Ent>(L.nent);
+    if (ver == 1) L.ents = r.arr<Ent>(L.nent); else L.pents = r.arr<PEnt>(L.nent);
     L.r_blob = r.arr<uint16_t>(size_t(nr16));
     L.s_blob = r.arr<uint16_t>(size_t(ns16));
     return r.ok;
@@ -1153,13 +1213,14 @@ KKC_API int kkc_user_add_like(kkc_engine* e, const uint16_t* r, int nr, const ui
     uint32_t a, b;
     if (!e->lex.find(tr, ntr, a, b)) return 0;
     const ustr want = from16(ts, size_t(nts));
-    const Ent* best = nullptr;
+    Ent best{};
+    bool found = false;
     for (uint32_t j = a; j < b; j++) {
-        const Ent& en = e->lex.ents[j];
-        if (from16(e->lex.s_blob + en.soff, en.slen) == want && (!best || en.cost < best->cost)) best = &en;
+        const Ent en = e->lex.ent(j);
+        if (from16(e->lex.s_blob + en.soff, en.slen) == want && (!found || en.cost < best.cost)) { best = en; found = true; }
     }
-    if (!best) return 0;
-    e->user.push_back({from16(r, size_t(nr)), from16(s, size_t(ns)), best->lid, best->rid, best->cost - bonus});
+    if (!found) return 0;
+    e->user.push_back({from16(r, size_t(nr)), from16(s, size_t(ns)), best.lid, best.rid, best.cost - bonus});
     return 1;
 }
 
@@ -1171,16 +1232,7 @@ KKC_API int kkc_complete(kkc_engine* e, const uint16_t* prefix, int np, int max_
     if (!e || np <= 0) return 0;
     const Lex& L = e->lex;
     // 読みは辞書の中で並んでいるので、prefix で始まる読みの範囲の先頭を二分探索で探す
-    int lo = 0, hi = L.nread;
-    while (lo < hi) {
-        int mid = (lo + hi) >> 1;
-        const uint16_t* r = L.r_blob + L.r_off[mid];
-        int rn = int(L.r_off[mid + 1] - L.r_off[mid]);
-        int m = std::min(rn, np), c = 0;
-        for (int i = 0; i < m && !c; i++) c = int(r[i]) - int(prefix[i]);
-        if (!c) c = rn - np;
-        if (c < 0) lo = mid + 1; else hi = mid;
-    }
+    const int lo = L.lower_bound(prefix, np);
     // 終助詞「ね」の左 ID (読み ね・表記 ね の語のうちコストのいちばん低いもの)
     int ne_lid = 0;
     {
@@ -1188,20 +1240,24 @@ KKC_API int kkc_complete(kkc_engine* e, const uint16_t* prefix, int np, int max_
         uint32_t a, b;
         int32_t best = INT32_MAX;
         if (L.find(&ne, 1, a, b))
-            for (uint32_t j = a; j < b; j++)
-                if (L.ents[j].slen == 1 && L.s_blob[L.ents[j].soff] == ne && L.ents[j].cost < best) best = L.ents[j].cost, ne_lid = L.ents[j].lid;
+            for (uint32_t j = a; j < b; j++) {
+                const Ent en = L.ent(j);
+                if (en.slen == 1 && L.s_blob[en.soff] == ne && en.cost < best) best = en.cost, ne_lid = en.lid;
+            }
     }
     struct C { int32_t cost; uint32_t ent; };
     std::vector<C> found;
+    uint16_t rbuf[Lex::MAXR];
     for (int i = lo, scanned = 0; i < L.nread && scanned < 50000; i++, scanned++) {
-        const uint16_t* r = L.r_blob + L.r_off[i];
-        int rn = int(L.r_off[i + 1] - L.r_off[i]);
+        // 版 2 は前の読みから順に戻す (1 つ目だけ区切りの先頭から)
+        int rn;
+        const uint16_t* r = (L.ver == 1 || i == lo) ? L.reading(i, rn, rbuf) : (rn = L.next_reading(i, rbuf), rbuf);
         if (rn < np || memcmp(r, prefix, size_t(np) * 2)) break;          // prefix で始まる読みが尽きた
         if (rn == np || rn > np + max_extra) continue;                      // 打った読みそのもの・長すぎる読みは除く
         // 順位は語のコスト (よく使う語ほど低い)。ただし後ろに終助詞「ね」が付きにくい語 (よろしけれ・いただい など
         // 活用の途中の形) は、言い切れないので除く
         for (uint32_t j = L.e_first[i]; j < L.e_first[i + 1]; j++)
-            if (L.conn(L.ents[j].rid, ne_lid) <= KKC_FRAG) found.push_back({L.ents[j].cost, j});
+            if (L.conn(L.ent(j).rid, ne_lid) <= KKC_FRAG) found.push_back({L.ent(j).cost, j});
     }
     std::sort(found.begin(), found.end(), [](const C& a, const C& b) { return a.cost < b.cost; });
     std::vector<uint16_t> buf;
@@ -1209,7 +1265,7 @@ KKC_API int kkc_complete(kkc_engine* e, const uint16_t* prefix, int np, int max_
     int n = 0;
     for (const C& c : found) {
         if (n >= maxout) break;
-        const Ent& en = L.ents[c.ent];
+        const Ent en = L.ent(c.ent);
         ustr sf = from16(L.s_blob + en.soff, en.slen);
         // 言い切れない形を表記の終わりで除く (ありゃ・すみゃ・ありがたかっ・よろしけれ・よろしかろ)
         const char32_t last = sf.back();
