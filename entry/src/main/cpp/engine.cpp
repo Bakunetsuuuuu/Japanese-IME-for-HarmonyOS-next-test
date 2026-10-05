@@ -401,13 +401,31 @@ ustr best_path(const Lex& L, const std::vector<Edge>& E, int n) {
 // ---------------------------------------------------------------- 採点器
 struct LayerW { const float *ln1w, *ln1b, *inw, *inb, *outw, *outb, *ln2w, *ln2b, *l1w, *l1b, *l2w, *l2b; };
 
+// 文字ごとの表 (V 行 × d)。版 2・3 は fp32、版 4 は行ごとの倍率つきの int8 (モデルの 3/4 がこの表なので、ファイルが半分以下になる。
+// 1 行ずつ引くだけの表なので、計算の側は変えずに、引くときに戻す)
+struct Tab {
+    const float* f = nullptr;
+    const int8_t* q = nullptr;
+    const float* s = nullptr;
+    int d = 0;
+    // i 行目。int8 のときは buf (d 個) に戻して返す
+    const float* row(int i, float* buf) const {
+        if (f) return f + size_t(i) * d;
+        const int8_t* r = q + size_t(i) * d;
+        const float k = s[i];
+        for (int j = 0; j < d; j++) buf[j] = k * float(r[j]);
+        return buf;
+    }
+};
+
 struct Model {
     int V, d, layers, heads, ff, dk, max_len, n_seg, ctx, draft_max, draft;
     float beta, gamma;
     std::unordered_map<char32_t, int> vocab;
-    const float *emb, *seg, *pos;
+    Tab emb, Pa, Pb, Pc;
+    const float *seg, *pos;
     std::vector<LayerW> L;
-    const float *normw, *normb, *end, *q1w, *q1b, *q2w, *q2b, *Pa, *Pb, *Pc, *Kkind, *Klen, *k1b, *k2w, *k2b;
+    const float *normw, *normb, *end, *q1w, *q1b, *q2w, *q2b, *Kkind, *Klen, *k1b, *k2w, *k2b;
     const float *gw = nullptr, *gb = nullptr;   // ダイヤル (版 3 のときだけ)
     int vid(char32_t c) const { auto it = vocab.find(c); return it == vocab.end() ? UNK : it->second; }
 };
@@ -690,7 +708,7 @@ bool load_model(Model& M, const void* data, size_t size) {
     if (size < 4 || memcmp(data, "KKM1", 4)) return false;
     r.off = 4;
     const int32_t ver = r.val<int32_t>();
-    if (ver != 2 && ver != 3) return false;   // 版 2: 全結合の重みは (入力, 出力)。版 3: + ダイヤル
+    if (ver < 2 || ver > 4) return false;   // 版 2: 全結合の重みは (入力, 出力)。版 3: + ダイヤル。版 4: 版 3 の文字ごとの表を int8 に
     M.V = r.val<int32_t>(); M.d = r.val<int32_t>(); M.layers = r.val<int32_t>(); M.heads = r.val<int32_t>();
     M.ff = r.val<int32_t>(); M.dk = r.val<int32_t>(); M.max_len = r.val<int32_t>(); M.n_seg = r.val<int32_t>();
     M.ctx = r.val<int32_t>(); M.draft_max = r.val<int32_t>(); M.draft = r.val<int32_t>();
@@ -698,7 +716,13 @@ bool load_model(Model& M, const void* data, size_t size) {
     int nch = r.val<int32_t>();
     for (int i = 0; i < nch; i++) M.vocab[char32_t(r.val<uint32_t>())] = 4 + i;
     const int d = M.d, ff = M.ff, dk = M.dk, V = M.V;
-    M.emb = r.arr<float>(size_t(V) * d); M.seg = r.arr<float>(size_t(M.n_seg) * d); M.pos = r.arr<float>(size_t(M.max_len) * d);
+    // 文字ごとの表: 版 4 は倍率 (V 個の fp32) と int8 (V × d)
+    auto tab = [&](Tab& t) {
+        t.d = d;
+        if (ver == 4) { t.s = r.arr<float>(size_t(V)); t.q = r.arr<int8_t>(size_t(V) * d); }
+        else t.f = r.arr<float>(size_t(V) * d);
+    };
+    tab(M.emb); M.seg = r.arr<float>(size_t(M.n_seg) * d); M.pos = r.arr<float>(size_t(M.max_len) * d);
     for (int l = 0; l < M.layers; l++) {
         LayerW w;
         w.ln1w = r.arr<float>(d); w.ln1b = r.arr<float>(d);
@@ -711,10 +735,10 @@ bool load_model(Model& M, const void* data, size_t size) {
     }
     M.normw = r.arr<float>(d); M.normb = r.arr<float>(d); M.end = r.arr<float>(d);
     M.q1w = r.arr<float>(size_t(d) * 3 * d); M.q1b = r.arr<float>(d); M.q2w = r.arr<float>(size_t(dk) * d); M.q2b = r.arr<float>(dk);
-    M.Pa = r.arr<float>(size_t(V) * d); M.Pb = r.arr<float>(size_t(V) * d); M.Pc = r.arr<float>(size_t(V) * d);
+    tab(M.Pa); tab(M.Pb); tab(M.Pc);
     M.Kkind = r.arr<float>(size_t(5) * d); M.Klen = r.arr<float>(size_t(17) * d);
     M.k1b = r.arr<float>(d); M.k2w = r.arr<float>(size_t(dk) * d); M.k2b = r.arr<float>(dk);
-    if (ver == 3) { M.gw = r.arr<float>(size_t(dk) * dk); M.gb = r.arr<float>(dk); }
+    if (ver >= 3) { M.gw = r.arr<float>(size_t(dk) * dk); M.gb = r.arr<float>(dk); }
     return r.ok;
 }
 
@@ -725,8 +749,9 @@ void encode(kkc_engine* E, const std::vector<int>& tok, const std::vector<int>& 
     auto& x = E->x; auto& xn = E->xn; auto& qkv = E->qkv; auto& att = E->att; auto& tmp = E->tmp; auto& fb = E->ffb;
     x.assign(size_t(T) * d, 0); xn.resize(size_t(T) * d); qkv.resize(size_t(T) * 3 * d); att.resize(size_t(T) * d);
     tmp.resize(size_t(T) * d); fb.resize(size_t(T) * ff);
+    std::vector<float> ebuf(size_t(d), 0.0f);   // int8 の表 (版 4) の行を戻す場所
     for (int t = 0; t < T; t++) {
-        const float *a = M.emb + size_t(tok[t]) * d, *b = M.seg + size_t(seg[t]) * d, *c = M.pos + size_t(t) * d;
+        const float *a = M.emb.row(tok[t], ebuf.data()), *b = M.seg + size_t(seg[t]) * d, *c = M.pos + size_t(t) * d;
         for (int i = 0; i < d; i++) x[size_t(t) * d + i] = a[i] + b[i] + c[i];
     }
     std::vector<float> sc(size_t(T) + 8);   // AVX2 版は 8 本単位で使う
@@ -801,7 +826,7 @@ void scores(kkc_engine* E, int rstart, int n, const std::vector<Edge>& ed, std::
     // 区間ごとの q
     std::unordered_map<int, int> span_id;
     std::vector<float> Q;
-    std::vector<float> hid(d);
+    std::vector<float> hid(d), tbuf(size_t(2) * d);   // tbuf: int8 の表の行を戻す場所 (版 4)
     auto span_q = [&](int s, int e) {
         int key = s * 4096 + e;
         auto it = span_id.find(key);
@@ -828,12 +853,12 @@ void scores(kkc_engine* E, int rstart, int n, const std::vector<Edge>& ed, std::
         const int nc = int(e.surf.size());
         for (int j = 0; j < d; j++) hid[j] = 0;
         for (char32_t c : e.surf) {
-            const float* p = M.Pa + size_t(M.vid(c)) * d;
+            const float* p = M.Pa.row(M.vid(c), tbuf.data());
             for (int j = 0; j < d; j++) hid[j] += p[j];
         }
         const float inv = 1.0f / float(std::max(nc, 1));
-        const float* pb = M.Pb + size_t(M.vid(e.surf.front())) * d;
-        const float* pc = M.Pc + size_t(M.vid(e.surf.back())) * d;
+        const float* pb = M.Pb.row(M.vid(e.surf.front()), tbuf.data());
+        const float* pc = M.Pc.row(M.vid(e.surf.back()), tbuf.data() + d);
         const float* kk = M.Kkind + size_t(e.kind) * d;
         const float* kl = M.Klen + size_t(std::min(nc, 16)) * d;
         for (int j = 0; j < d; j++) hid[j] = hid[j] * inv + pb[j] + kk[j] + pc[j] + kl[j] + M.k1b[j];
