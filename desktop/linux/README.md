@@ -4,10 +4,10 @@ shuntelligence でかな漢字変換をする日本語入力です。Windows 版
 
 ## 入れ方 (Ubuntu・Debian など)
 
-[GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) から `fcitx5-shunti_0.2.0_amd64.deb` を入手して、端末 (ターミナル) で:
+[GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) から `fcitx5-shunti_0.3.0_amd64.deb` を入手して、端末 (ターミナル) で:
 
 ```bash
-sudo apt install ./fcitx5-shunti_0.2.0_amd64.deb
+sudo apt install ./fcitx5-shunti_0.3.0_amd64.deb
 ```
 
 Fcitx5 が入っていなければ一緒に入ります。Ubuntu 24.04 以降・Debian 13 以降 (64 ビットの Intel・AMD。Fcitx5 5.1 以上) で動きます。
@@ -35,7 +35,7 @@ im-config -n fcitx5
   - スペース・↓・↑ で候補を選ぶ、1〜9 でも選べる、Page Down / Page Up でページをめくる
   - ← → で文節を選ぶ、Shift + ← → で文節を伸び縮み
   - Enter で確定、Esc でかなに戻す
-- 長く打つと、前の方から自動で確定していきます (スマホ版と同じ)
+- 長く打つと、前の方から自動で確定していきます (設定で切れます)
 - F6〜F10: ひらがな・カタカナ・半角カタカナ・全角英字・半角英字
 - 無変換キー: 押すたびに カタカナ → 半角カタカナ → ひらがな
 - 大文字で打ち始めると英字のまま (Google 等)
@@ -47,6 +47,7 @@ im-config -n fcitx5
 
 - 打っている間も候補を出す
 - 変換を自動で確定する
+- 入力中の文字も変換して表示する (ライブ変換。最初はオフ)
 - 空白を全角にする (Shift を押すと逆)
 - 数字を全角にする
 - 句読点 (、。 / ，． / 、． / ，。)
