@@ -635,6 +635,8 @@ export class InputHandler {
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
         AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
         AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
+        AppStorage.setOrCreate('liveCommit', s.liveCommit);
+        AiConverter.liveCommit = s.liveCommit;
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
@@ -1003,6 +1005,15 @@ export class InputHandler {
     AppStorage.setOrCreate('flickHintsEnabled', enabled);
     if (this.imeContext) {
       SettingsStore.saveFlickHintsEnabled(this.imeContext, enabled);
+    }
+  }
+
+  // 長い入力の扱い: false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = どんどん確定 (Mac の IME のように前から確定)
+  setLiveCommit(enabled: boolean): void {
+    AppStorage.setOrCreate('liveCommit', enabled);
+    AiConverter.liveCommit = enabled;
+    if (this.imeContext) {
+      SettingsStore.saveLiveCommit(this.imeContext, enabled);
     }
   }
 
@@ -2541,6 +2552,23 @@ export class InputHandler {
     this.updateCandidates();
   }
 
+  // どんどん確定: AI 変換で固定された前の方 (読み fk -> 表記 fs) を確定し、残りのかなを入力中に残す。
+  // ローマ字の打ちかけ・文節の編集中・変換範囲を縮めているときはしない。
+  private autoCommitFrozen(target: string, fk: string, fs: string): void {
+    // 速く打つと、ここに来るまでに入力がもう進んでいる。固定した読みが頭に残っていれば確定してよい
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    if (fk.length === 0 || !composing.startsWith(fk) || !target.startsWith(fk) || this.isRangeShrunk(composing)) { return; }
+    if ((AppStorage.get<string>('pendingRomaji') ?? '') !== '') { return; }
+    if ((AppStorage.get<string>('inputState') ?? InputState.IDLE) !== InputState.COMPOSING) { return; }
+    this.insertText(fs);
+    KanaKanjiConverter.addContext(fs);
+    AiConverter.clearFrozen(fk, fs);
+    this.continueWithTail(composing.slice(fk.length));
+    // continueWithTail は変換範囲を残りの長さに張るが、続けて打った字も変換したいので全体に戻す
+    this.conversionEnd = 0;
+    AppStorage.setOrCreate('convEnd', 0);
+  }
+
   private resetComposition(): void {
     // 入力欄に残っているプレビューを必ず消す。insertText を経ない経路
     // (取消・欄の切り替えなど) でもここを通るので、消し忘れの受け皿になる。
@@ -3200,7 +3228,13 @@ export class InputHandler {
         if (this.conversionTarget() === target) { this.updateCandidates(); }
       });
     }
-    // 長い入力で前の方が固定されても、入力欄には確定しない (AiConverter が固定した部分に候補を持たせ、一覧から選び直せる)
+    // 長い入力で前の方が固定されたとき: 既定 (保留) では入力欄に確定しない (AiConverter が固定した部分に候補を持たせ、
+    // 一覧から選び直せる)。設定「どんどん確定」がオンなら、固定した所を入力欄に確定して、残りだけを入力中に残す
+    if (aiMode && AiConverter.liveCommit && AiConverter.frozenKana().length > 0 && !this.isRangeShrunk(composing)) {
+      const fk = AiConverter.frozenKana();
+      const fs = AiConverter.frozenSurf();
+      setTimeout(() => { this.autoCommitFrozen(target, fk, fs); }, 0);
+    }
     const segs = aiMode ? [target] : this.kanjiConverter.segment(target);
     let candidates: string[];
     // 入力ログ用: 各候補をどの段が列に入れたか (InputLog の o 欄)。段ごとに

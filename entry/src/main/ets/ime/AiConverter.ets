@@ -101,6 +101,8 @@ export class AiConverter {
   private static KEEP_WORDS: number = 4;     // 固定しても、最後のこの語数は必ず AI に残す
   private static BUDGET_MS: number = 80;     // 変換 1 回がこれより速いうちは固定しない (遅れを感じない限界)
   private static MAX_TAIL: number = 60;
+  private static LIVE_KEEP: number = 8;      // どんどん確定のときに、末尾に残す字数 (以前の決まり)
+  static liveCommit: boolean = false;        // 設定「どんどん確定」(既定はオフ = 保留)
   private static ALT: number = 4;
   private static chunks: FrozenChunk[] = [];   // 固定した部分 (前から順に)。表記は cands[0]
   private static fCtx: string = '';      // 固定を始めたときの文脈
@@ -144,6 +146,33 @@ export class AiConverter {
     return [AiConverter.fSurf + tail];
   }
 
+  // どんどん確定のとき: 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す)
+  static frozenKana(): string {
+    return AiConverter.fKana;
+  }
+
+  static frozenSurf(): string {
+    return AiConverter.fSurf;
+  }
+
+  // 固定した部分 (読み fk、表記 fs) を確定したあと。前回の候補も、確定した分だけ前を削って残す
+  // (消してしまうと、次の結果が届くまで残りがかなで出てちらつく)
+  static clearFrozen(fk: string = '', fs: string = ''): void {
+    AiConverter.fKana = '';
+    AiConverter.fSurf = '';
+    AiConverter.chunks = [];
+    AiConverter.prevSegs.clear();
+    if (fk.length > 0 && AiConverter.lastTarget.startsWith(fk)) {
+      AiConverter.lastTarget = AiConverter.lastTarget.slice(fk.length);
+      AiConverter.lastCands = AiConverter.lastCands.filter((c: string) => c.startsWith(fs)).map((c: string) => c.slice(fs.length));
+      AiConverter.lastTop = AiConverter.lastCands.length > 0 ? AiConverter.lastCands[0] : '';
+    } else {
+      AiConverter.lastTarget = '';
+      AiConverter.lastTop = '';
+      AiConverter.lastCands = [];
+    }
+  }
+
   // 候補の一覧: AI の上位 3 つ (前の方は固定したまま) → 前の方の 1 か所を持たせた候補に替えた文 (後ろは AI の 1 位)
   // → AI の残り。前の方を替えた文は、後ろの方の固定ほど先に (直したいのは、たいてい直前に固定された所)
   private static withFrozenAlternatives(full: string[], tailTop: string): string[] {
@@ -182,7 +211,10 @@ export class AiConverter {
       const wordsAfter = r.ends.length - 1 - i;   // この語より後ろに残る語の数
       // 速くても、読みが長すぎるとモデルの入力の長さの上限に届いて変換できなくなるので、MAX_TAIL 字を超えたら固定する
       const slow = AiConverter.lastRunMs > AiConverter.BUDGET_MS || tail.length > AiConverter.MAX_TAIL;
-      if (slow && wordsAfter >= AiConverter.KEEP_WORDS && (stable || punct)) {
+      // どんどん確定 (Mac の IME のような動き) では、遅さに関係なく、末尾から LIVE_KEEP 字より前で固まった所を固定する
+      // (固定した所は呼ぶ側が入力欄に確定する)
+      const ready = AiConverter.liveCommit ? end <= tail.length - AiConverter.LIVE_KEEP : slow && wordsAfter >= AiConverter.KEEP_WORDS;
+      if (ready && (stable || punct)) {
         freezeEnd = end;
         freezeLen = cum;
       }
@@ -198,6 +230,9 @@ export class AiConverter {
       AiConverter.fKana += kana;
       AiConverter.fSurf += surf;
       AiConverter.prevSegs.clear();
+      if (AiConverter.liveCommit) {
+        return;   // すぐ入力欄に確定されるので、選び直しの候補は要らない
+      }
       // 固定した部分だけを 1 回変換して、選び直せる候補を持たせる (以後この部分は AI にかけない)
       kkc.convertAsync(ctx, kana, 8).then((r2: KkcResult) => {
         const alts = r2.cands.filter((c: string) => c !== surf && !AiConverter.SLURS.test(c));

@@ -49,6 +49,7 @@ export struct SettingsBar {
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   @StorageLink('conversionEngine') conversionEngine: string = 'hybrid';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
+  @StorageLink('liveCommit') liveCommit: boolean = false;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
@@ -598,6 +599,36 @@ export struct SettingsBar {
           .selectedColor(kbTheme(this.isDark).accent)
           .onChange((isOn: boolean) => {
             InputHandler.getInstance().setNumericPadEnabled(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 12, bottom: 12 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      // 長い入力の扱い。オフ (既定) は保留: 前の方は候補を持たせて入力中のまま残し、一覧から直して確定できる。
+      // オンは Mac の IME のように、前の方が固まったら次々に確定していく
+      Row() {
+        Column({ space: 2 }) {
+          Text('どんどん確定')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text(this.liveCommit
+            ? '長く打つと、前の方から自動で確定していきます'
+            : '長く打っても、確定するまで前の方を直せます')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(10)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.liveCommit })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setLiveCommit(isOn);
           })
       }
       .width('100%')

@@ -49,6 +49,8 @@ export interface KeyboardSettings {
   numericPadEnabled: boolean;
   // キーを押したときに短く振動させるか。
   hapticEnabled: boolean;
+  // 長い入力の扱い。false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = どんどん確定 (Mac の IME のように前から確定)
+  liveCommit: boolean;
   // キーボードのライト／ダーク。'system' は端末のカラーモードに従う（既定）。
   // 'light' / 'dark' はキーボードだけ固定する（ホストアプリの色は変えない）。
   themeMode: string;
@@ -131,6 +133,7 @@ const DEFAULTS: KeyboardSettings = {
   conversionEngine: 'ai',
   numericPadEnabled: false,
   hapticEnabled: false,
+  liveCommit: false,
   themeMode: 'system',
   keyChromeEnabled: true,
   composingInPanel: true,
@@ -175,6 +178,7 @@ export class SettingsStore {
       const engine = await prefs.get('conversionEngine', DEFAULTS.conversionEngine);
       const numericPad = await prefs.get('numericPadEnabled', DEFAULTS.numericPadEnabled);
       const haptic = await prefs.get('hapticEnabled', DEFAULTS.hapticEnabled);
+      const liveCommit = await prefs.get('liveCommit', DEFAULTS.liveCommit);
       const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
       const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
@@ -220,6 +224,7 @@ export class SettingsStore {
         conversionEngine: String(engine),
         numericPadEnabled: numericPad === true,
         hapticEnabled: haptic === true,
+        liveCommit: liveCommit === true,
         themeMode: String(themeMode),
         keyChromeEnabled: keyChrome !== false,
         composingInPanel: inPanel !== false,
@@ -249,6 +254,7 @@ export class SettingsStore {
         conversionEngine: DEFAULTS.conversionEngine,
         numericPadEnabled: DEFAULTS.numericPadEnabled,
         hapticEnabled: DEFAULTS.hapticEnabled,
+        liveCommit: DEFAULTS.liveCommit,
         themeMode: DEFAULTS.themeMode,
         keyChromeEnabled: DEFAULTS.keyChromeEnabled,
         composingInPanel: DEFAULTS.composingInPanel,
@@ -322,6 +328,15 @@ export class SettingsStore {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('numericPadEnabled', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveLiveCommit(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('liveCommit', String(enabled));
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('liveCommit', enabled);
       await prefs.flush();
     } catch (_e) {}
   }
