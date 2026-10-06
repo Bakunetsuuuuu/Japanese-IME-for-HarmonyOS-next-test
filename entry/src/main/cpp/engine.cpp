@@ -326,8 +326,28 @@ std::vector<size_t> boundaries(const ustr& r, size_t s) {
     return out;
 }
 
+// 1 字の数 (ご・に・し・く)。parse は 2 字からなので、符号や式の後ろのときだけ使う
+bool parse_num(const ustr& r, int64_t& v) {
+    static const std::pair<char32_t, int> one[] = {{U'に', 2}, {U'し', 4}, {U'ご', 5}, {U'く', 9}};
+    if (r.size() == 1) {
+        for (auto& o : one) if (r[0] == o.first) { v = o.second; return true; }
+        return false;
+    }
+    bool sk;
+    return parse(r, v, sk) && !sk;
+}
+
 void number_edges(const Lex& L, const ustr& r, std::vector<Edge>& out) {
     const int base = 4000, per_char = -150;
+    // 符号 + 1 字の数 (まいなすご -> -5、まいなすごど -> -5度)。2 字以上の数は下の決まりで符号を付ける
+    for (const auto& sg : {std::pair<ustr, char32_t>{U"まいなす", U'-'}, std::pair<ustr, char32_t>{U"ぷらす", U'+'}}) {
+        for (size_t i = r.find(sg.first); i != ustr::npos; i = r.find(sg.first, i + 1)) {
+            const size_t s = i + sg.first.size();
+            int64_t v;
+            if (s < r.size() && parse_num(r.substr(s, 1), v))
+                out.push_back({int(i), int(s + 1), ustr(1, sg.second) + digits(v, false), L.num_arabic, L.num_arabic, 3500, K_NUM});
+        }
+    }
     for (size_t s = 0; s < r.size(); s++) {
         for (size_t e : boundaries(r, s)) {
             if (e - s < 2 || e - s > 24) continue;
@@ -499,6 +519,105 @@ ustr whole_abbr(const ustr& r) {
         if (p.first == int(r.size()) && (best.empty() || p.second.size() < best.size())) best = p.second;
     return best;
 }
+
+// ---------------------------------------------------------------- 数式 (えっくすのにじょうぷらすいち -> x²+1)
+// 読み全体が式として読めるときだけ、式の候補を 2 位までに置く (AI の 1 位は動かさない)。記号の対応は事実だけ (例文は使わない)
+namespace mathx {
+const std::pair<const char32_t*, const char32_t*> VARS[] = {
+    {U"えっくす", U"x"}, {U"わい", U"y"}, {U"ぜっと", U"z"}, {U"えー", U"a"}, {U"びー", U"b"}, {U"しー", U"c"}, {U"えぬ", U"n"},
+    {U"えむ", U"m"}, {U"けー", U"k"}, {U"てぃー", U"t"}, {U"ぴー", U"p"}, {U"きゅー", U"q"}, {U"あーる", U"r"}, {U"ぱい", U"π"},
+    {U"しーた", U"θ"}, {U"あるふぁ", U"α"}, {U"べーた", U"β"}};
+const std::pair<const char32_t*, const char32_t*> OPS[] = {
+    {U"ぷらす", U"+"}, {U"たす", U"+"}, {U"まいなす", U"-"}, {U"ひく", U"-"}, {U"かける", U"×"}, {U"わる", U"÷"}, {U"いこーる", U"="},
+    {U"のっといこーる", U"≠"}, {U"だいなりいこーる", U"≧"}, {U"しょうなりいこーる", U"≦"}, {U"だいなり", U">"}, {U"しょうなり", U"<"}};
+const char32_t* SUP = U"⁰¹²³⁴⁵⁶⁷⁸⁹";
+
+bool at(const ustr& r, size_t i, const char32_t* k) {
+    size_t n = std::char_traits<char32_t>::length(k);
+    return r.compare(i, n, k) == 0;
+}
+size_t len(const char32_t* k) { return std::char_traits<char32_t>::length(k); }
+
+// 数: いちばん長く読める所まで (式の中では 1 字の数も)
+void nums(const ustr& r, size_t i, std::vector<std::pair<size_t, ustr>>& out) {
+    for (size_t e = std::min(r.size(), i + 12); e > i; e--) {
+        int64_t v;
+        if (parse_num(r.substr(i, e - i), v)) { out.push_back({e, digits(v, false)}); return; }
+    }
+}
+
+// 項 = [係数の数] 変数 | 数 | るーと 項 | 数 ぶんの 数 (分数)、の後に [の] にじょう / さんじょう / N じょう
+void terms(const ustr& r, size_t i, std::vector<std::pair<size_t, ustr>>& out, int depth = 0) {
+    std::vector<std::pair<size_t, ustr>> base;
+    std::vector<std::pair<size_t, ustr>> n0;
+    nums(r, i, n0);
+    for (auto& a : n0) {
+        base.push_back(a);
+        for (auto& v : VARS) if (at(r, a.first, v.first)) base.push_back({a.first + len(v.first), a.second + v.second});   // 2x
+        if (at(r, a.first, U"ぶんの")) {   // にぶんのいち -> 1/2
+            std::vector<std::pair<size_t, ustr>> n1;
+            nums(r, a.first + 3, n1);
+            for (auto& b : n1) base.push_back({b.first, b.second + U"/" + a.second});
+        }
+    }
+    for (auto& v : VARS) if (at(r, i, v.first)) base.push_back({i + len(v.first), v.second});
+    // 変数を並べた掛け算 (ぱいあーる -> πr、えっくすわい -> xy、にえっくすわい -> 2xy)。3 つまで
+    for (size_t k = 0, n0b = base.size(); k < n0b; k++) {
+        std::vector<std::pair<size_t, ustr>> cur = {base[k]};
+        for (int rep = 0; rep < 2; rep++) {
+            std::vector<std::pair<size_t, ustr>> nxt;
+            for (auto& c : cur)
+                if (!c.second.empty() && (c.second.back() < U'0' || c.second.back() > U'9'))
+                    for (auto& v : VARS) if (at(r, c.first, v.first)) nxt.push_back({c.first + len(v.first), c.second + v.second});
+            for (auto& x : nxt) base.push_back(x);
+            cur.swap(nxt);
+        }
+    }
+    if (depth < 2 && at(r, i, U"るーと")) {
+        std::vector<std::pair<size_t, ustr>> t;
+        terms(r, i + 3, t, depth + 1);
+        for (auto& x : t) base.push_back({x.first, U"√" + x.second});
+    }
+    for (auto& b : base) {
+        out.push_back(b);
+        for (size_t j : {b.first, b.first + (at(r, b.first, U"の") ? 1 : 0)}) {
+            std::vector<std::pair<size_t, ustr>> ex;
+            nums(r, j, ex);
+            for (auto& e : ex) {
+                if (!at(r, e.first, U"じょう")) continue;
+                ustr sup;
+                for (char32_t c : e.second) sup.push_back(SUP[c - U'0']);
+                out.push_back({e.first + 3, b.second + sup});
+            }
+        }
+    }
+}
+
+// 読み全体が「項 (演算子 項)*」で、演算子・べき・分数・ルートのどれかを含むなら、その式 (いちばん短い書き方)。無ければ空
+ustr whole(const ustr& r) {
+    ustr best;
+    std::function<void(size_t, ustr, bool)> go = [&](size_t i, ustr acc, bool mathy) {
+        std::vector<std::pair<size_t, ustr>> t;
+        terms(r, i, t);
+        for (auto& x : t) {
+            const ustr a = acc + x.second;
+            const bool m = mathy || x.second.find_first_of(U"/√⁰¹²³⁴⁵⁶⁷⁸⁹") != ustr::npos;
+            if (x.first == r.size()) {
+                if (m && (best.empty() || a.size() < best.size())) best = a;
+                continue;
+            }
+            for (auto& o : OPS) if (at(r, x.first, o.first)) go(x.first + len(o.first), a + o.second, true);
+        }
+    };
+    go(0, ustr(), false);
+    // 数だけの式 (いちたすいち -> 1+1) は残す。数の読み (ご、にぶんのいち) だけで演算子の無いものは分数・べきのときだけ
+    return best;
+}
+
+// 読み 1 つの記号 (文字どおりの対応だけ)。AI の候補の上位 5 に無ければ 5 位に足す
+const std::pair<const char32_t*, const char32_t*> SYMBOLS[] = {
+    {U"かける", U"×"}, {U"わる", U"÷"}, {U"たす", U"+"}, {U"にじょう", U"²"}, {U"さんじょう", U"³"}};
+}  // namespace mathx
 
 ustr best_path(const Lex& L, const std::vector<Edge>& E, int n) {
     int M = int(E.size());
@@ -1261,6 +1380,20 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
             res.swap(merged);
         }
         e->times[4] = ms_since(t0);
+    }
+    // 読み全体が式なら (えっくすのにじょうぷらすいち)、その式 (x²+1) を 2 位までに。読み 1 つの記号 (かける -> ×) は 5 位までに
+    {
+        auto put = [&](const ustr& c, size_t rank) {
+            auto it = std::find(res.begin(), res.end(), c);
+            if (it != res.end() && size_t(it - res.begin()) <= rank) return;
+            if (it != res.end()) res.erase(it);
+            res.insert(res.begin() + std::min(rank, res.size()), c);
+            if (int(res.size()) > maxout) res.resize(size_t(maxout));
+        };
+        const ustr mx = mathx::whole(r);
+        if (!mx.empty()) put(mx, 1);
+        for (const auto& sy : mathx::SYMBOLS)
+            if (r == sy.first) put(sy.second, 4);
     }
     // 読み全体がアルファベットの読み 3 字以上 (あいえむいー) なら、その略語 (IME) を 2 位までに必ず置く
     // (「アイエムイー」と打つ人はいないので。1 位は辞書・モデルの答えのまま)
