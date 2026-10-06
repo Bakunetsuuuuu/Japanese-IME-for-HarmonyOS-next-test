@@ -90,7 +90,12 @@ export class KanaKanjiConverter {
     const boosted = cands.filter((c: string) => (counts[c] ?? 0) > 0)
       .sort((a: string, b: string) => (counts[b] ?? 0) - (counts[a] ?? 0));
     const rest = cands.filter((c: string) => (counts[c] ?? 0) === 0);
-    return [...boosted, ...rest];
+    const out = [...boosted, ...rest];
+    // 英カタカナ辞書の英単語 (全部小文字: いんじぇくしょん → injection) は、学習で上がっても 2 位まで (1 位はカタカナのまま)
+    if (out.length >= 2 && /^[a-z][a-z-]+$/.test(out[0]) && /[^\u0000-\u007f]/.test(kana)) {
+      return [out[1], out[0], ...out.slice(2)];
+    }
+    return out;
   }
 
   static recentContext(n: number = 40): string {

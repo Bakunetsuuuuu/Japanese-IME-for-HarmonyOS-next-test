@@ -410,6 +410,9 @@ bool has_latin_word(const ustr& s);
 // 辞書の英字の語 (略語でないもの: Zoom・Swift) のコストをこれだけ下げる。辞書のコストはカタカナが勝ちやすいため
 // (英字交じりベンチ第 2 版・段階式で L 語 57.0 -> 61.2、K の英字にしなかった 82.5 -> 79.8、dev・AJIMEE・日常・入力ログは同じ)
 constexpr int32_t LATIN_WORD_BONUS = 500;
+// 英カタカナ辞書の印 (kkc/latin/add_words.py の eng)。このコスト以上の語は変換の網に入れず、読み全体がこの語のときだけ候補に足す
+// (くらいあんと → client。網に入れると普通の外来語を乗っ取った)
+constexpr int32_t ENG_COST = 32000;
 
 std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>* user = nullptr) {
     std::vector<Edge> out;
@@ -425,6 +428,7 @@ std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>
             if (L.find(key.data(), int(key.size()), a, b)) {
                 for (uint32_t j = a; j < b; j++) {
                     const Ent en = L.ent(j);
+                    if (en.cost >= ENG_COST) continue;   // 英カタカナ辞書の語は網に入れない
                     ustr sf = from16(L.s_blob + en.soff, en.slen);
                     const int32_t c = has_latin_word(sf) ? en.cost - LATIN_WORD_BONUS : en.cost;
                     out.push_back({s, e, std::move(sf), en.lid, en.rid, c, K_DICT});
@@ -1400,6 +1404,15 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         };
         const ustr mx = mathx::whole(r);
         if (!mx.empty()) put(mx, 1);
+        // 英カタカナ辞書: 読み全体が一般の外来語なら、その英単語を 4 位に (いんじぇくしょん → injection)
+        {
+            uint32_t a, b;
+            if (e->lex.find(reinterpret_cast<const uint16_t*>(kana), nk, a, b))
+                for (uint32_t j = a, k = 0; j < b && k < 2; j++) {
+                    const Ent en = e->lex.ent(j);
+                    if (en.cost >= ENG_COST) { put(from16(e->lex.s_blob + en.soff, en.slen), 3); k++; }
+                }
+        }
         for (const auto& sy : mathx::SYMBOLS)
             if (r == sy.first) put(sy.second, 4);
     }
@@ -1505,7 +1518,7 @@ KKC_API int kkc_complete(kkc_engine* e, const uint16_t* prefix, int np, int max_
         // 順位は語のコスト (よく使う語ほど低い)。ただし後ろに終助詞「ね」が付きにくい語 (よろしけれ・いただい など
         // 活用の途中の形) は、言い切れないので除く
         for (uint32_t j = L.e_first[i]; j < L.e_first[i + 1]; j++)
-            if (L.conn(L.ent(j).rid, ne_lid) <= KKC_FRAG) found.push_back({L.ent(j).cost, j});
+            if (L.ent(j).cost < ENG_COST && L.conn(L.ent(j).rid, ne_lid) <= KKC_FRAG) found.push_back({L.ent(j).cost, j});
     }
     std::sort(found.begin(), found.end(), [](const C& a, const C& b) { return a.cost < b.cost; });
     std::vector<uint16_t> buf;

@@ -135,6 +135,15 @@ std::vector<u16> Learning::apply_order(const u16& reading, const std::vector<u16
     for (auto& c : cands) (count(c) > 0 ? boosted : rest).push_back(c);
     std::stable_sort(boosted.begin(), boosted.end(), [&](const u16& a, const u16& b) { return count(a) > count(b); });
     boosted.insert(boosted.end(), rest.begin(), rest.end());
+    // 英カタカナ辞書の英単語 (全部小文字: いんじぇくしょん → injection) は、学習で上がっても 2 位まで (1 位はカタカナのまま)
+    auto english = [](const u16& s) {
+        if (s.size() < 2) return false;
+        for (char16_t c : s) if (!((c >= u'a' && c <= u'z') || c == u'-')) return false;
+        return true;
+    };
+    bool kana = false;
+    for (char16_t c : reading) kana |= c >= 0x80;
+    if (kana && boosted.size() >= 2 && english(boosted[0])) std::swap(boosted[0], boosted[1]);
     return boosted;
 }
 

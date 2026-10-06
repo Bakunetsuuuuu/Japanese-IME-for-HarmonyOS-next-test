@@ -53,7 +53,13 @@ class Learning(private val file: File) {
         val counts = learned[kana]
         if (counts.isNullOrEmpty()) return cands
         val boosted = cands.filter { (counts[it] ?: 0) > 0 }.sortedByDescending { counts[it] ?: 0 }
-        return boosted + cands.filter { (counts[it] ?: 0) == 0 }
+        return capEnglish(kana, boosted + cands.filter { (counts[it] ?: 0) == 0 })
+    }
+
+    /** 英カタカナ辞書の英単語 (全部小文字: いんじぇくしょん → injection) は、学習で上がっても 2 位まで (1 位はカタカナのまま) */
+    private fun capEnglish(kana: String, list: List<String>): List<String> {
+        if (list.size < 2 || !ENGLISH.matches(list[0]) || kana.all { it.code < 0x80 }) return list
+        return listOf(list[1], list[0]) + list.drop(2)
     }
 
     /** 予測: 読みが prefix で始まる、より長い読みで選んだ表記 (選んだ回数の多い順) */
@@ -85,6 +91,7 @@ class Learning(private val file: File) {
     }
 
     companion object {
+        private val ENGLISH = Regex("[a-z][a-z-]+")
         private var instance: Learning? = null
 
         /** キーボードと設定画面で同じものを使う (設定画面で消した学習を、キーボードが古い中身で書き戻さないように) */
