@@ -22,6 +22,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <cmath>
 #include <cstdio>
@@ -312,6 +313,41 @@ ustr digits(int64_t v, bool full) {
     return o;
 }
 
+// 3 桁ごとにカンマ (3500 -> 3,500)
+ustr with_commas(const ustr& d) {
+    ustr o;
+    for (size_t i = 0; i < d.size(); i++) {
+        if (i && (d.size() - i) % 3 == 0) o.push_back(U',');
+        o.push_back(d[i]);
+    }
+    return o;
+}
+
+// 万・億・兆の単位まじり (2000000000000000 -> 2000兆、120000000 -> 1億2000万、25000 -> 2万5000)。comma なら単位の中を 3 桁ごとに
+ustr unit_mixed(int64_t v, bool comma) {
+    static const std::pair<int64_t, const char32_t*> U[] = {{1000000000000LL, U"兆"}, {100000000LL, U"億"}, {10000LL, U"万"}, {1, U""}};
+    ustr o;
+    for (const auto& u : U) {
+        const int64_t g = (v / u.first) % (u.first == 1000000000000LL ? 1000000 : 10000);
+        if (!g) continue;
+        const ustr d = digits(g, false);
+        o += (comma ? with_commas(d) : d) + u.second;
+    }
+    return o;
+}
+
+// r[s..e) の数のすぐ後ろに単位 (じゅう・ひゃく・せん・まん・おく・ちょう) が続いて、もっと大きい数として読めるか
+// (じゅうにおくさんぜん|まん の途中で切った数を候補にすると「十200003000万」のような断片ができた)
+bool number_continues(const ustr& r, size_t s, size_t e) {
+    for (auto& p : PIECES) {
+        if (p.kind == 'd' || !starts_with(r, e, p.k)) continue;
+        int64_t v;
+        bool sk;
+        if (parse(r.substr(s, e - s + p.k.size()), v, sk)) return true;
+    }
+    return false;
+}
+
 std::vector<size_t> boundaries(const ustr& r, size_t s) {
     std::vector<size_t> out;
     size_t i = s;
@@ -353,8 +389,19 @@ void number_edges(const Lex& L, const ustr& r, std::vector<Edge>& out) {
             if (e - s < 2 || e - s > 24) continue;
             int64_t v; bool sk;
             if (!parse(r.substr(s, e - s), v, sk)) continue;
+            if (number_continues(r, s, e)) continue;   // まだ続く数の途中では切らない
             int c = std::max(3000, base + per_char * int(e - s));
-            out.push_back({int(s), int(e), digits(v, false), L.num_arabic, L.num_arabic, c, K_NUM});
+            // 数の書き方を揃えて出す (にせんちょう -> 2000兆・2,000兆・2000000000000000・二千兆)。
+            // 1 万以上は単位まじり (2000兆・1億2000万) を先に、数字だけ・カンマつきは後ろに
+            const bool big = v >= 10000;
+            const ustr d = digits(v, false);
+            out.push_back({int(s), int(e), d, L.num_arabic, L.num_arabic, big ? c + 300 : c, K_NUM});
+            if (v >= 1000) out.push_back({int(s), int(e), with_commas(d), L.num_arabic, L.num_arabic, big ? c + 400 : c + 150, K_NUM});
+            if (big) {
+                const ustr m = unit_mixed(v, false), mc = unit_mixed(v, true);
+                out.push_back({int(s), int(e), m, L.num_arabic, L.num_arabic, c - 300, K_NUM});
+                if (mc != m) out.push_back({int(s), int(e), mc, L.num_arabic, L.num_arabic, c - 100, K_NUM});
+            }
             out.push_back({int(s), int(e), digits(v, true), L.num_arabic, L.num_arabic, c + 2000, K_NUM});
             out.push_back({int(s), int(e), kanji(v), L.num_kanji, L.num_kanji, c + 500, K_NUM});
             // 符号: まいなすごひゃく -> -500、ぷらすさん -> +3 (マイナス500 は「マイナス」+「500」の 2 語で出る)
@@ -430,6 +477,11 @@ std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>
                     const Ent en = L.ent(j);
                     if (en.cost >= ENG_COST) continue;   // 英カタカナ辞書の語は網に入れない
                     ustr sf = from16(L.s_blob + en.soff, en.slen);
+                    // 辞書の数字 (に -> 2) は、後ろに単位が続いて大きい数になる所 (に|せんちょう) では使わない。
+                    // そこは数の辺 (2000兆・二千兆) に任せる。使うと採点器が「2千兆」「2千長円」のつなぎを選んでいた
+                    if (std::all_of(sf.begin(), sf.end(), [](char32_t ch) { return ch >= U'0' && ch <= U'9'; }) &&
+                        number_continues(r, size_t(s), size_t(e)))
+                        continue;
                     const int32_t c = has_latin_word(sf) ? en.cost - LATIN_WORD_BONUS : en.cost;
                     out.push_back({s, e, std::move(sf), en.lid, en.rid, c, K_DICT});
                 }
@@ -1308,6 +1360,88 @@ constexpr int SHORT_KEEP_MODEL = 3;
 // これより長い読みは辞書だけで決まることがない (測った 1,590 例で 16 字以上は 0 例) ので、判定をせずにモデルへ
 constexpr int CASCADE_MAX_LEN = 16;
 
+// 1 位の漢数字をアラビア数字にした候補 (二千兆円 -> 2000兆円、六月二十日 -> 6月20日)。無ければ空。
+// モデルの教材では半角数字の読みが数字のまま (かなでない) だったので、モデルは かなの数 -> アラビア数字 を学んでおらず、
+// 数をいつも漢数字にしていた。語の区切り (segs) の頭で、読みが数として読めて、表記がその漢数字で始まる所だけ変える。
+// 変えるのは 100 以上で読み 3 字以上の数 (にせんにじゅうろく) か、2 以上の数のすぐ後ろに助数詞が続く所 (さんにん・ろくがつ)。
+// 1 (一度・一番・一日) と、ど・ばん・だい (二度と・二晩・二代)、助数詞の無い 2 桁 (十一) は変えない
+ustr arabicize(const ustr& r, const ustr& top, const std::vector<SegInfo>& segs) {
+    // 助数詞の読みと、その表記の頭の字 (読みだけで決めると 二次元 -> 2次元 になる)
+    static const std::pair<ustr, ustr> COUNTERS[] = {
+        {U"がつ", U"月"}, {U"にち", U"日"}, {U"じ", U"時"}, {U"ふん", U"分"}, {U"ぷん", U"分"}, {U"びょう", U"秒"},
+        {U"ねん", U"年"}, {U"えん", U"円"}, {U"にん", U"人"}, {U"かい", U"回階"}, {U"こ", U"個"}, {U"ほん", U"本"},
+        {U"ぼん", U"本"}, {U"ぽん", U"本"}, {U"まい", U"枚"}, {U"さい", U"歳才"}, {U"けん", U"件軒"}, {U"ばい", U"倍"},
+        {U"ぱーせんと", U"パ%"}, {U"ぺーじ", U"ペ頁"}, {U"めーとる", U"メm"}, {U"きろ", U"キk"}, {U"せんち", U"センc"},
+        {U"ぐらむ", U"グg"}, {U"どる", U"ド"}, {U"しゅうかん", U"週"}, {U"かげつ", U"かカ ヶヵ箇"}, {U"ひき", U"匹"},
+        {U"びき", U"匹"}, {U"ぴき", U"匹"}, {U"さつ", U"冊"}, {U"とう", U"頭"}, {U"わ", U"羽話"}, {U"てん", U"点"}};
+    static const ustr NUMK = U"〇一二三四五六七八九十百千万億兆";
+    // 日の特別な読み。月のすぐ後ろのときだけ (5月三日 と混ざらないように。月の無い 一日 (ついたち) はそのまま)
+    static const std::pair<ustr, int> DAYS[] = {
+        {U"ついたち", 1}, {U"ふつか", 2}, {U"みっか", 3}, {U"よっか", 4}, {U"いつか", 5}, {U"むいか", 6}, {U"なのか", 7},
+        {U"ようか", 8}, {U"ここのか", 9}, {U"とおか", 10}, {U"じゅうよっか", 14}, {U"はつか", 20}, {U"にじゅうよっか", 24}};
+    ustr out;
+    bool changed = false;
+    size_t rs = 0, ss = 0;   // 区切りの頭: 読みの位置、表記の位置 (char32)
+    auto u16len = [](char32_t c) { return c >= 0x10000 ? 2 : 1; };
+    std::vector<std::pair<size_t, size_t>> heads;   // (読み, 表記) の区切りの頭
+    for (const SegInfo& g : segs) {
+        heads.push_back({rs, ss});
+        int l = 0;
+        while (ss < top.size() && l < g.l16) l += u16len(top[ss++]);
+        rs = size_t(g.e);
+    }
+    size_t cur = 0;   // top の、ここまで out に写した位置
+    for (auto& h : heads) {
+        const size_t r0 = h.first, s0 = h.second;
+        if (s0 < cur || s0 >= top.size()) continue;
+        if (NUMK.find(top[s0]) == ustr::npos) continue;
+        if (s0 > 0 && top[s0 - 1] == U'月') {
+            bool hit = false;
+            for (const auto& d : DAYS) {
+                const ustr kd = kanji(d.second) + U"日";
+                if (starts_with(r, r0, d.first) && top.compare(s0, kd.size(), kd) == 0) {
+                    out += top.substr(cur, s0 - cur);
+                    out += digits(d.second, false) + U"日";
+                    cur = s0 + kd.size();
+                    changed = hit = true;
+                    break;
+                }
+            }
+            if (hit) continue;
+        }
+        // 読みの頭から数として読める所のうち、表記がその漢数字で始まる、いちばん長い所
+        // (にじゅうにち: 「にじゅうに」も数として読めるが、表記 二十日 と合うのは「にじゅう」)
+        int64_t v = 0;
+        size_t pe = 0;
+        ustr kj;
+        for (size_t b : boundaries(r, r0)) {
+            int64_t x;
+            bool sk;   // 促音で終わる数 (さんじゅっ|ぷん) も、後ろの助数詞の表記を確かめるのでよい
+            if (!parse_num(r.substr(r0, b - r0), x) && !(b - r0 >= 2 && parse(r.substr(r0, b - r0), x, sk))) continue;
+            const ustr k = kanji(x);
+            if (top.compare(s0, k.size(), k) != 0) continue;
+            if (s0 + k.size() < top.size() && NUMK.find(top[s0 + k.size()]) != ustr::npos) continue;
+            v = x; pe = b; kj = k;
+        }
+        if (!pe || v < 2) continue;
+        // 助数詞の無い 3 桁以上の数は、すぐ後ろが漢字でないときだけ (百貨店 -> 100貨店 にしない)
+        const char32_t nx = s0 + kj.size() < top.size() ? top[s0 + kj.size()] : 0;
+        bool ok = v >= 100 && pe - r0 >= 3 && !(nx >= 0x4E00 && nx <= 0x9FFF);
+        if (!ok)
+            for (const auto& c : COUNTERS)
+                if (starts_with(r, pe, c.first) && s0 + kj.size() < top.size() &&
+                    c.second.find(top[s0 + kj.size()]) != ustr::npos) { ok = true; break; }
+        if (!ok) continue;
+        out += top.substr(cur, s0 - cur);
+        out += v >= 10000 ? unit_mixed(v, false) : digits(v, false);
+        cur = s0 + kj.size();
+        changed = true;
+    }
+    if (!changed) return ustr();
+    out += top.substr(cur);
+    return out;
+}
+
 KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint16_t* kana, int nk,
                         int maxout, int use_model, uint16_t* out, int cap) {
     if (!e) return -2;
@@ -1370,6 +1504,15 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         e->times[3] = ms_since(t0);
         t0 = std::chrono::steady_clock::now();
         nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
+        if (!res.empty()) {
+            const ustr ar = arabicize(r, res[0], e->last_segs);
+            if (!ar.empty()) {
+                auto it = std::find(res.begin(), res.end(), ar);
+                if (it != res.end()) res.erase(it);
+                res.insert(res.begin(), ar);
+                if (int(res.size()) > maxout) res.resize(size_t(maxout));
+            }
+        }
         if (n <= SHORT_READING && !res.empty()) {
             // 短い読み (単漢字・2 字の語) は、文脈の手がかりが少なく、採点器の 2 位以下の並びが当てにならない
             // (かん: 上位 20 に「間」が無い)。1 位〜SHORT_KEEP_MODEL 位は文脈を読む採点器のまま (神/紙/髪の使い分け)、
@@ -1404,6 +1547,23 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         };
         const ustr mx = mathx::whole(r);
         if (!mx.empty()) put(mx, 1);
+        // 読み全体が 100 以上の数 + 短い語 (にせんちょうえん・さんぜんごひゃくえん) で、辞書の 1 位がアラビア数字 (2000兆円) なら、
+        // それを 1 位に。モデルは かなの数 -> アラビア数字 を教材で見ておらず、「2千長円」「さん前後100円」を上にしていた。
+        // 辞書の 1 位が数でないとき (ひゃくしょう -> 百姓) は何もしない
+        if (use_model && n >= 3) {
+            size_t ne = 0;
+            int64_t v = 0;
+            for (size_t b : boundaries(r, 0)) {
+                int64_t x;
+                bool sk;
+                if (b >= 2 && parse(r.substr(0, b), x, sk) && !sk) { ne = b; v = x; }
+            }
+            if (ne && v >= 100 && size_t(n) - ne <= 3) {
+                std::vector<ustr> dict;
+                nbest(e->lex, E, n, nullptr, 1.0, 1.0, 10, 1, dict);
+                if (!dict.empty() && !dict[0].empty() && dict[0][0] >= U'1' && dict[0][0] <= U'9') put(dict[0], 0);
+            }
+        }
         // 英カタカナ辞書: 読み全体が一般の外来語なら、その英単語を 4 位に (いんじぇくしょん → injection)
         {
             uint32_t a, b;
