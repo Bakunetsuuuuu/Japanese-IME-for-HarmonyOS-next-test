@@ -1360,6 +1360,25 @@ constexpr int SHORT_KEEP_MODEL = 3;
 // これより長い読みは辞書だけで決まることがない (測った 1,590 例で 16 字以上は 0 例) ので、判定をせずにモデルへ
 constexpr int CASCADE_MAX_LEN = 16;
 
+// 文の中の 4 桁以上の数字の並びを 3 桁ごとにカンマで区切ったもの (5000兆円 -> 5,000兆円)。変わらなければ空。
+// 年 (2026年) と、もとからカンマ・小数点の付いた並びはそのまま
+ustr with_commas_in(const ustr& t) {
+    ustr out;
+    bool changed = false;
+    for (size_t i = 0; i < t.size();) {
+        auto dig = [](char32_t c) { return c >= U'0' && c <= U'9'; };
+        if (!dig(t[i])) { out.push_back(t[i++]); continue; }
+        size_t j = i;
+        while (j < t.size() && dig(t[j])) j++;
+        const ustr run = t.substr(i, j - i);
+        const bool edge = (i > 0 && (t[i - 1] == U',' || t[i - 1] == U'.')) || (j < t.size() && (t[j] == U',' || t[j] == U'.' || t[j] == U'年'));
+        if (run.size() >= 4 && !edge) { out += with_commas(run); changed = true; }
+        else out += run;
+        i = j;
+    }
+    return changed ? out : ustr();
+}
+
 // 1 位の漢数字をアラビア数字にした候補 (二千兆円 -> 2000兆円、六月二十日 -> 6月20日)。無ければ空。
 // モデルの教材では半角数字の読みが数字のまま (かなでない) だったので、モデルは かなの数 -> アラビア数字 を学んでおらず、
 // 数をいつも漢数字にしていた。語の区切り (segs) の頭で、読みが数として読めて、表記がその漢数字で始まる所だけ変える。
@@ -1505,13 +1524,18 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         t0 = std::chrono::steady_clock::now();
         nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
         if (!res.empty()) {
+            // アラビア数字を 1 位、元の漢数字を 2 位、カンマつき (5,000兆円) を 3 位に
             const ustr ar = arabicize(r, res[0], e->last_segs);
-            if (!ar.empty()) {
-                auto it = std::find(res.begin(), res.end(), ar);
+            const ustr arc = with_commas_in(ar.empty() ? res[0] : ar);
+            auto place = [&](const ustr& c, size_t rank) {
+                auto it = std::find(res.begin(), res.end(), c);
                 if (it != res.end()) res.erase(it);
-                res.insert(res.begin(), ar);
-                if (int(res.size()) > maxout) res.resize(size_t(maxout));
-            }
+                res.insert(res.begin() + std::min(rank, res.size()), c);
+            };
+            if (!ar.empty()) place(ar, 0);
+            if (!arc.empty() && std::find(res.begin(), res.begin() + std::min<size_t>(3, res.size()), arc) == res.begin() + std::min<size_t>(3, res.size()))
+                place(arc, 2);
+            if (int(res.size()) > maxout) res.resize(size_t(maxout));
         }
         if (n <= SHORT_READING && !res.empty()) {
             // 短い読み (単漢字・2 字の語) は、文脈の手がかりが少なく、採点器の 2 位以下の並びが当てにならない
@@ -1561,7 +1585,11 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
             if (ne && v >= 100 && size_t(n) - ne <= 3) {
                 std::vector<ustr> dict;
                 nbest(e->lex, E, n, nullptr, 1.0, 1.0, 10, 1, dict);
-                if (!dict.empty() && !dict[0].empty() && dict[0][0] >= U'1' && dict[0][0] <= U'9') put(dict[0], 0);
+                if (!dict.empty() && !dict[0].empty() && dict[0][0] >= U'1' && dict[0][0] <= U'9') {
+                    put(dict[0], 0);
+                    const ustr dc = with_commas_in(dict[0]);   // カンマつき (4,000兆円) も 3 位までに
+                    if (!dc.empty()) put(dc, 2);
+                }
             }
         }
         // 英カタカナ辞書: 読み全体が一般の外来語なら、その英単語を 4 位に (いんじぇくしょん → injection)
