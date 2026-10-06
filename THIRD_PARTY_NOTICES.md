@@ -30,6 +30,13 @@ model **shuntelligence** (`kkc_model.bin`) is licensed under CC BY 4.0
 (attribution: "shuntelligence (shuntilettuce)"); the inference code in
 `entry/src/main/cpp/` is MIT.
 
+The English-word candidates in shuntorge (e.g. いんじぇくしょん → injection) were
+checked for coverage against **The CEFR-J Wordlist Version 1.5**, compiled by
+Yukio Tono, Tokyo University of Foreign Studies (copyright Tono Laboratory, TUFS;
+free for research and commercial use with citation; retrieved via
+https://github.com/openlanguageprofiles/olp-en-cefrj). The katakana readings
+are this project's own.
+
 Sources:
 - https://github.com/google/mozc (branch: master, `src/data/dictionary_oss/`)
 - https://www.edrdg.org/ (JMdict, via http://ftp.edrdg.org/pub/Nihongo/JMdict.gz)
