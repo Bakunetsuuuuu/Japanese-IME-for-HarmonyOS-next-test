@@ -122,6 +122,7 @@ struct Lex {
     const PEnt* pents = nullptr;   // 版 2
     const uint16_t* r_blob;
     const uint16_t* s_blob;
+    int32_t abbr_lid = -1, abbr_rid = -1;   // 略語 (読みのアルファベットから作る GDP・IME) の品詞 (kkc_open で辞書の GDP から写す)
     static constexpr int RB = 16;      // 版 2 の読みの区切り
     static constexpr int MAXR = 256;   // 読みの長さの上限 (pack_lex.py が確かめる)
 
@@ -336,6 +337,12 @@ void number_edges(const Lex& L, const ustr& r, std::vector<Edge>& out) {
             out.push_back({int(s), int(e), digits(v, false), L.num_arabic, L.num_arabic, c, K_NUM});
             out.push_back({int(s), int(e), digits(v, true), L.num_arabic, L.num_arabic, c + 2000, K_NUM});
             out.push_back({int(s), int(e), kanji(v), L.num_kanji, L.num_kanji, c + 500, K_NUM});
+            // 符号: まいなすごひゃく -> -500、ぷらすさん -> +3 (マイナス500 は「マイナス」+「500」の 2 語で出る)
+            for (const auto& sg : {std::pair<ustr, char32_t>{U"まいなす", U'-'}, std::pair<ustr, char32_t>{U"ぷらす", U'+'}}) {
+                const size_t k = sg.first.size();
+                if (s >= k && r.compare(s - k, k, sg.first) == 0)
+                    out.push_back({int(s - k), int(e), ustr(1, sg.second) + digits(v, false), L.num_arabic, L.num_arabic, c + 500, K_NUM});
+            }
         }
     }
 }
@@ -377,6 +384,13 @@ void special_edges(const Lex& L, const ustr& r, std::vector<Edge>& out) {
     }
 }
 
+void abbr_edges(const Lex& L, const ustr& r, std::vector<Edge>& out);
+bool has_latin_word(const ustr& s);
+
+// 辞書の英字の語 (略語でないもの: Zoom・Swift) のコストをこれだけ下げる。辞書のコストはカタカナが勝ちやすいため
+// (英字交じりベンチ第 2 版・段階式で L 語 57.0 -> 61.2、K の英字にしなかった 82.5 -> 79.8、dev・AJIMEE・日常・入力ログは同じ)
+constexpr int32_t LATIN_WORD_BONUS = 500;
+
 std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>* user = nullptr) {
     std::vector<Edge> out;
     int n = int(r.size());
@@ -391,7 +405,9 @@ std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>
             if (L.find(key.data(), int(key.size()), a, b)) {
                 for (uint32_t j = a; j < b; j++) {
                     const Ent en = L.ent(j);
-                    out.push_back({s, e, from16(L.s_blob + en.soff, en.slen), en.lid, en.rid, en.cost, K_DICT});
+                    ustr sf = from16(L.s_blob + en.soff, en.slen);
+                    const int32_t c = has_latin_word(sf) ? en.cost - LATIN_WORD_BONUS : en.cost;
+                    out.push_back({s, e, std::move(sf), en.lid, en.rid, c, K_DICT});
                 }
             }
             if (e - s == 1) {
@@ -413,12 +429,75 @@ std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>
     std::vector<Edge> num;
     number_edges(L, r, num);
     special_edges(L, r, num);
+    abbr_edges(L, r, num);
     for (auto& ed : num) {
         bool ok = true;
         for (int i = ed.s; i < ed.e; i++) if (!is_kana(r[i])) { ok = false; break; }
         if (ok) out.push_back(std::move(ed));
     }
     return out;
+}
+
+// 英字の語 (略語でないもの) を含むか。略語 = 英大文字・数字だけで 5 字までの並び (GDP・IPO)
+bool has_latin_word(const ustr& s) {
+    auto is_lat = [](char32_t c) { return (c >= U'A' && c <= U'Z') || (c >= U'a' && c <= U'z'); };
+    for (size_t i = 0; i < s.size();) {
+        if (!is_lat(s[i])) { i++; continue; }
+        size_t j = i;
+        bool lower = false;
+        while (j < s.size() && (is_lat(s[j]) || (s[j] >= U'0' && s[j] <= U'9'))) { lower |= s[j] >= U'a' && s[j] <= U'z'; j++; }
+        if (lower || j - i > 5) return true;
+        i = j;
+    }
+    return false;
+}
+
+// ---------------------------------------------------------------- 略語 (あいえむいー -> IME)
+// アルファベットの読み。辞書の 1 字の英字 (A〜Z) の読みから取り出した (kkc/latin/README の手順)
+const std::pair<const char16_t*, char32_t> LETTERS[] = {
+    {u"えー", U'A'}, {u"えい", U'A'}, {u"びー", U'B'}, {u"びい", U'B'}, {u"びぃ", U'B'}, {u"しー", U'C'}, {u"でぃー", U'D'}, {u"でー", U'D'},
+    {u"いー", U'E'}, {u"えふ", U'F'}, {u"じー", U'G'}, {u"えいち", U'H'}, {u"えっち", U'H'}, {u"あい", U'I'}, {u"じぇー", U'J'}, {u"じぇい", U'J'},
+    {u"けー", U'K'}, {u"けい", U'K'}, {u"える", U'L'}, {u"えむ", U'M'}, {u"えぬ", U'N'}, {u"おー", U'O'}, {u"ぴー", U'P'}, {u"きゅー", U'Q'},
+    {u"きゅう", U'Q'}, {u"あーる", U'R'}, {u"えす", U'S'}, {u"てぃー", U'T'}, {u"てぃ", U'T'}, {u"てー", U'T'}, {u"ゆー", U'U'}, {u"ぶい", U'V'},
+    {u"ゔぃ", U'V'}, {u"ぶぃ", U'V'}, {u"だぶりゅー", U'W'}, {u"だぶる", U'W'}, {u"だぶるー", U'W'}, {u"えっくす", U'X'}, {u"わい", U'Y'}, {u"ぜっと", U'Z'},
+};
+constexpr int ABBR_MIN = 3;      // この数以上続いたら略語の候補にする (2 字は「いい」「ええ」などと紛れる)
+constexpr int ABBR_MAX = 8;
+constexpr int32_t ABBR_COST = 7120;   // 辞書の 3〜5 字の略語のコストの上位 4 分の 1 (中央値 5786)。辞書にある略語より少し出にくく
+
+// r[s..] から続くアルファベットの読みを全部たどり、ABBR_MIN 字以上なら (終わり, 英字) を out に
+void abbr_spans(const ustr& r, int s, ustr& cur, std::vector<std::pair<int, ustr>>& out) {
+    if (int(cur.size()) >= ABBR_MIN) out.push_back({s, cur});
+    if (int(cur.size()) >= ABBR_MAX) return;
+    for (const auto& lt : LETTERS) {
+        int k = 0;
+        while (lt.first[k] && s + k < int(r.size()) && char32_t(lt.first[k]) == r[size_t(s + k)]) k++;
+        if (lt.first[k]) continue;
+        cur.push_back(lt.second);
+        abbr_spans(r, s + k, cur, out);
+        cur.pop_back();
+    }
+}
+
+void abbr_edges(const Lex& L, const ustr& r, std::vector<Edge>& out) {
+    if (L.abbr_lid < 0) return;
+    std::vector<std::pair<int, ustr>> sp;
+    ustr cur;
+    for (int s = 0; s < int(r.size()); s++) {
+        sp.clear();
+        abbr_spans(r, s, cur, sp);
+        for (auto& p : sp) out.push_back({s, p.first, p.second, L.abbr_lid, L.abbr_rid, ABBR_COST, K_DICT});
+    }
+}
+
+// 読み全体がアルファベットの読み ABBR_MIN 字以上だけでできていれば、その英字 (いちばん字の少ない読み方)。無ければ空
+ustr whole_abbr(const ustr& r) {
+    std::vector<std::pair<int, ustr>> sp;
+    ustr cur, best;
+    abbr_spans(r, 0, cur, sp);
+    for (auto& p : sp)
+        if (p.first == int(r.size()) && (best.empty() || p.second.size() < best.size())) best = p.second;
+    return best;
 }
 
 ustr best_path(const Lex& L, const std::vector<Edge>& E, int n) {
@@ -1038,6 +1117,15 @@ KKC_API kkc_engine* kkc_open(const void* lex, size_t lex_size, const void* model
     init_numbers();
     auto* e = new kkc_engine();
     if (!load_lex(e->lex, lex, lex_size) || !load_model(e->m, model, model_size)) { delete e; return nullptr; }
+    {   // 略語の品詞は、辞書の「じーでぃーぴー → GDP」から写す (無ければ略語の候補は作らない)
+        const std::u16string k = u"じーでぃーぴー";
+        uint32_t a, b;
+        if (e->lex.find(reinterpret_cast<const uint16_t*>(k.data()), int(k.size()), a, b))
+            for (uint32_t j = a; j < b; j++) {
+                const Ent en = e->lex.ent(j);
+                if (en.slen == 3 && e->lex.s_blob[en.soff] == u'G') { e->lex.abbr_lid = en.lid; e->lex.abbr_rid = en.rid; break; }
+            }
+    }
 #if KKC_X86
     // 整数版の重み (16 出力単位・入力の数が 2048 以下のときだけ。合計が 32 ビットに収まる範囲)
     const Model& M = e->m;
@@ -1110,8 +1198,14 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         t0 = std::chrono::steady_clock::now();
         // 段階式の判定は上位 3 で足りる (上位 10 は重い。迷っていればどのみちモデルで変換し直すので無駄になる)
         const int k0 = use_model == 2 && n > 0 ? CASCADE_K : 10;
-        nbest(e->lex, E, n, nullptr, 1.0, 1.0, k0, k0 == 10 ? maxout : 2, res, &e->last_segs, e->last_cost);
+        nbest(e->lex, E, n, nullptr, 1.0, 1.0, k0, k0 == 10 ? maxout : CASCADE_K, res, &e->last_segs, e->last_cost);
         done = use_model != 2 || n == 0 || (e->last_cost[1] - e->last_cost[0]) >= CASCADE_PER_CHAR * n;
+        // 辞書の上位に英字の語が混ざるとき (ずーむ: ズーム / Zoom) は、どちらかを文脈で決めるので辞書だけで決めない。
+        // 辞書のコストはカタカナが勝ちやすく、段階式で辞書に任せると英字交じりベンチの L 語が 60% -> 40% に落ちていた。
+        // 略語 (英大文字・数字だけで 5 字まで: GDP・IPO) は辞書のほうが当たるので、辞書に任せる
+        if (done && use_model == 2)
+            for (const ustr& c : res)
+                if (has_latin_word(c)) done = false;
         if (done && k0 != 10) nbest(e->lex, E, n, nullptr, 1.0, 1.0, 10, maxout, res, &e->last_segs, e->last_cost);
         e->times[4] = ms_since(t0);
     }
@@ -1167,6 +1261,19 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
             res.swap(merged);
         }
         e->times[4] = ms_since(t0);
+    }
+    // 読み全体がアルファベットの読み 3 字以上 (あいえむいー) なら、その略語 (IME) を 2 位までに必ず置く
+    // (「アイエムイー」と打つ人はいないので。1 位は辞書・モデルの答えのまま)
+    if (n >= 2 * ABBR_MIN && e->lex.abbr_lid >= 0) {
+        const ustr ab = whole_abbr(r);
+        if (!ab.empty()) {
+            auto it = std::find(res.begin(), res.end(), ab);
+            if (it == res.end() || it - res.begin() > 1) {
+                if (it != res.end()) res.erase(it);
+                res.insert(res.begin() + std::min<size_t>(1, res.size()), ab);
+                if (int(res.size()) > maxout) res.resize(size_t(maxout));
+            }
+        }
     }
     std::vector<uint16_t> buf;
     for (auto& s : res) { to16(s, buf); buf.push_back(0); }
