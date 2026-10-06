@@ -573,14 +573,21 @@ void terms(const ustr& r, size_t i, std::vector<std::pair<size_t, ustr>>& out, i
             cur.swap(nxt);
         }
     }
-    if (depth < 2 && at(r, i, U"るーと")) {
-        std::vector<std::pair<size_t, ustr>> t;
-        terms(r, i + 3, t, depth + 1);
-        for (auto& x : t) base.push_back({x.first, U"√" + x.second});
+    // ルート: るーと〜 / へいほうこん〜 (前に付く)、〜のへいほうこん (後ろに付く: にのへいほうこん -> √2)
+    for (const char32_t* rt : {U"るーと", U"へいほうこん"}) {
+        if (depth < 2 && at(r, i, rt)) {
+            std::vector<std::pair<size_t, ustr>> t;
+            terms(r, i + len(rt), t, depth + 1);
+            for (auto& x : t) base.push_back({x.first, U"√" + x.second});
+        }
     }
+    for (size_t k = 0, nb = base.size(); k < nb; k++)
+        if (at(r, base[k].first, U"のへいほうこん")) base.push_back({base[k].first + 7, U"√" + base[k].second});
     for (auto& b : base) {
         out.push_back(b);
         for (size_t j : {b.first, b.first + (at(r, b.first, U"の") ? 1 : 0)}) {
+            // べきの読みの揺れ: じじょう (自乗) = 2 乗 (りっぽう は 3 乗の意味では打たないので入れない)
+            if (at(r, j, U"じじょう")) out.push_back({j + 4, b.second + U"²"});
             std::vector<std::pair<size_t, ustr>> ex;
             nums(r, j, ex);
             for (auto& e : ex) {
@@ -616,7 +623,8 @@ ustr whole(const ustr& r) {
 
 // 読み 1 つの記号 (文字どおりの対応だけ)。AI の候補の上位 5 に無ければ 5 位に足す
 const std::pair<const char32_t*, const char32_t*> SYMBOLS[] = {
-    {U"かける", U"×"}, {U"わる", U"÷"}, {U"たす", U"+"}, {U"にじょう", U"²"}, {U"さんじょう", U"³"}};
+    {U"かける", U"×"}, {U"わる", U"÷"}, {U"たす", U"+"}, {U"にじょう", U"²"}, {U"さんじょう", U"³"}, {U"じじょう", U"²"},
+    {U"へいほうこん", U"√"}};
 }  // namespace mathx
 
 ustr best_path(const Lex& L, const std::vector<Edge>& E, int n) {
