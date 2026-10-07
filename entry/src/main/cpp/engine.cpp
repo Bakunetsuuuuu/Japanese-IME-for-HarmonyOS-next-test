@@ -27,6 +27,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -1461,6 +1462,88 @@ ustr arabicize(const ustr& r, const ustr& top, const std::vector<SegInfo>& segs)
     return out;
 }
 
+// 絵文字か (🐈・❤️・🇯🇵。顔文字 (^^) や記号 ♡ は入れない: かな・漢字・英数字を含まず、絵文字の範囲の字を含む)
+bool is_emoji(const ustr& s) {
+    bool hit = false;
+    for (char32_t c : s) {
+        if ((c >= 0x3040 && c <= 0x9FFF) || (c < 0x2000 && c != 0x200D && c != 0x20E3)) return false;
+        if ((c >= 0x1F000 && c <= 0x1FAFF) || (c >= 0x2600 && c <= 0x27BF) || (c >= 0x2B00 && c <= 0x2BFF)) hit = true;
+    }
+    return hit;
+}
+
+// 日付・時刻の候補 (きょう -> 2026/10/07・2026年10月7日・10月7日(水)・令和8年10月7日、いま -> 14:40・14時40分)。
+// 端末の時計 (localtime) を使う。テスト用に環境変数 KKC_NOW (UNIX 時刻) で今を決められる。読みが当たらなければ空
+std::vector<ustr> date_candidates(const ustr& r) {
+    static const std::pair<const char32_t*, int> DAYS[] = {
+        {U"きょう", 0}, {U"ほんじつ", 0}, {U"あした", 1}, {U"あす", 1}, {U"みょうにち", 1}, {U"あさって", 2},
+        {U"みょうごにち", 2}, {U"きのう", -1}, {U"さくじつ", -1}, {U"おととい", -2}, {U"おとつい", -2}, {U"いっさくじつ", -2}};
+    static const std::pair<const char32_t*, int> YEARS[] = {
+        {U"ことし", 0}, {U"ほんねん", 0}, {U"こんねん", 0}, {U"らいねん", 1}, {U"みょうねん", 1}, {U"きょねん", -1}, {U"さくねん", -1}};
+    static const std::pair<const char32_t*, int> MONTHS[] = {{U"こんげつ", 0}, {U"らいげつ", 1}, {U"せんげつ", -1}};
+    static const char32_t* WD = U"日月火水木金土";
+    std::vector<ustr> out;
+    time_t now = std::time(nullptr);
+    if (const char* s = std::getenv("KKC_NOW")) now = time_t(std::strtoll(s, nullptr, 10));
+    auto local = [](time_t t) {
+        std::tm tm{};
+#ifdef _WIN32
+        localtime_s(&tm, &t);
+#else
+        localtime_r(&t, &tm);
+#endif
+        return tm;
+    };
+    auto num = [](int v) { return digits(v, false); };
+    auto two = [](int v) { return ustr(1, char32_t(U'0' + v / 10)) + char32_t(U'0' + v % 10); };
+    // 令和は 2019 年 5 月 1 日から
+    auto era = [&](const std::tm& t) -> ustr {
+        const int y = t.tm_year + 1900;
+        if (y > 2019 || (y == 2019 && t.tm_mon >= 4)) return U"令和" + (y == 2019 ? ustr(U"元") : num(y - 2018)) + U"年";
+        return ustr();
+    };
+    for (const auto& d : DAYS) {
+        if (r != d.first) continue;
+        const std::tm t = local(now + time_t(d.second) * 86400);
+        const int y = t.tm_year + 1900, m = t.tm_mon + 1, dd = t.tm_mday;
+        out.push_back(num(y) + U"/" + two(m) + U"/" + two(dd));
+        out.push_back(num(y) + U"年" + num(m) + U"月" + num(dd) + U"日");
+        out.push_back(num(m) + U"月" + num(dd) + U"日(" + ustr(1, WD[t.tm_wday]) + U")");
+        const ustr e = era(t);
+        if (!e.empty()) out.push_back(e + num(m) + U"月" + num(dd) + U"日");
+        return out;
+    }
+    if (r == U"いま" || r == U"げんざい") {
+        const std::tm t = local(now);
+        out.push_back(two(t.tm_hour) + U":" + two(t.tm_min));
+        out.push_back(num(t.tm_hour) + U"時" + num(t.tm_min) + U"分");
+        const int h12 = t.tm_hour % 12;
+        out.push_back(ustr(t.tm_hour < 12 ? U"午前" : U"午後") + num(h12) + U"時" + num(t.tm_min) + U"分");
+        return out;
+    }
+    for (const auto& d : YEARS) {
+        if (r != d.first) continue;
+        std::tm t = local(now);
+        t.tm_year += d.second;
+        t.tm_mon = 11;   // 和暦はその年の年末で (2019 年は 令和元年)
+        out.push_back(num(t.tm_year + 1900) + U"年");
+        const ustr e = era(t);
+        if (!e.empty()) out.push_back(e);
+        return out;
+    }
+    for (const auto& d : MONTHS) {
+        if (r != d.first) continue;
+        const std::tm t = local(now);
+        int y = t.tm_year + 1900, m = t.tm_mon + 1 + d.second;
+        if (m == 0) { m = 12; y--; }
+        if (m == 13) { m = 1; y++; }
+        out.push_back(num(m) + U"月");
+        out.push_back(num(y) + U"年" + num(m) + U"月");
+        return out;
+    }
+    return out;
+}
+
 KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint16_t* kana, int nk,
                         int maxout, int use_model, uint16_t* out, int cap) {
     if (!e) return -2;
@@ -1603,6 +1686,35 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         }
         for (const auto& sy : mathx::SYMBOLS)
             if (r == sy.first) put(sy.second, 4);
+        // 絵文字: 読み全体に当たる絵文字のうちコストの安い 2 つ (代表: ねこ -> 🐈、続いて 🐱) を 4・5 位に。
+        // 辞書の絵文字はコストが高く、そのままでは「根子」「ね娘」のような候補より下 (11 位以下) に沈んでいた
+        {
+            uint32_t a, b;
+            std::vector<std::pair<int32_t, ustr>> em;
+            if (e->lex.find(reinterpret_cast<const uint16_t*>(kana), nk, a, b))
+                for (uint32_t j = a; j < b; j++) {
+                    const Ent en = e->lex.ent(j);
+                    // 絵文字の帯 (コスト 8000 台: 代表 8300・ほか 8500) だけ。7000 の記号 (☂・☠) は普通の並びのまま
+                    if (en.cost < 8000 || en.cost >= 9000) continue;
+                    ustr sf = from16(e->lex.s_blob + en.soff, en.slen);
+                    if (is_emoji(sf)) em.push_back({en.cost, std::move(sf)});
+                }
+            std::stable_sort(em.begin(), em.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+            // 異体字セレクタ (U+FE0F) の有る無しだけ違う同じ絵文字 (☔ / ☔️) は 1 つに。絵文字で表示される FE0F つきを使う
+            auto bare = [](ustr t) { t.erase(std::remove(t.begin(), t.end(), char32_t(0xFE0F)), t.end()); return t; };
+            std::vector<ustr> pick;
+            for (auto& x : em) {
+                const ustr k = bare(x.second);
+                bool dup = false;
+                for (auto& p2 : pick) dup = dup || bare(p2) == k;
+                if (dup) continue;
+                ustr best = x.second;
+                for (auto& y : em) if (bare(y.second) == k && y.second.size() > best.size()) best = y.second;
+                pick.push_back(best);
+                if (pick.size() == 2) break;
+            }
+            for (size_t i = pick.size(); i-- > 0;) put(pick[i], 3);
+        }
     }
     // 読み全体がアルファベットの読み 3 字以上 (あいえむいー) なら、その略語 (IME) を 2 位までに必ず置く
     // (「アイエムイー」と打つ人はいないので。1 位は辞書・モデルの答えのまま)
@@ -1616,6 +1728,55 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
                 if (int(res.size()) > maxout) res.resize(size_t(maxout));
             }
         }
+    }
+    // 郵便番号 (1000001・100-0001) なら、住所 (東京都千代田区千代田) を 2 位から、続けて 100-0001・〒100-0001。
+    // 住所は辞書に 読み = 数字 7 桁 で入っている (kkc/names/make_zip_list.py。数字の読みは網に入らない)。
+    // 無い番号 (ただの 7 桁の数: 1234567) には何も足さない。打ったまま (100-0001) が 1 位ならそのまま
+    {
+        ustr z;
+        for (char32_t c : r) {
+            if (c >= U'0' && c <= U'9') z.push_back(c);
+            else if (!(z.size() == 3 && (c == U'-' || c == U'ー' || c == U'−'))) { z.clear(); break; }
+        }
+        std::vector<std::pair<int32_t, ustr>> addr;
+        if (z.size() == 7 && (r.size() == 7 || r.size() == 8)) {
+            std::vector<uint16_t> k16(z.begin(), z.end());
+            uint32_t a, b;
+            if (e->lex.find(k16.data(), int(k16.size()), a, b))
+                for (uint32_t j = a; j < b; j++) {
+                    const Ent en = e->lex.ent(j);
+                    addr.push_back({en.cost, from16(e->lex.s_blob + en.soff, en.slen)});
+                }
+            std::stable_sort(addr.begin(), addr.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+        }
+        if (!addr.empty()) {
+            const ustr hy = z.substr(0, 3) + U"-" + z.substr(3);
+            std::vector<ustr> add;
+            for (auto& x : addr) add.push_back(x.second);
+            add.push_back(hy);
+            add.push_back(U"〒" + hy);
+            size_t at = std::min<size_t>(1, res.size());
+            for (const ustr& c : add) {
+                auto it = std::find(res.begin(), res.end(), c);
+                if (it != res.end() && size_t(it - res.begin()) < at) continue;
+                if (it != res.end()) res.erase(it);
+                res.insert(res.begin() + std::min(at, res.size()), c);
+                at++;
+            }
+            if (int(res.size()) > maxout) res.resize(size_t(maxout));
+        }
+    }
+    // 日付・時刻 (きょう -> 2026/10/07 …、いま -> 14:40 …) を 3 位から並べる。1・2 位 (今日・本日) はそのまま
+    {
+        const std::vector<ustr> dc = date_candidates(r);
+        size_t at = std::min<size_t>(2, res.size());
+        for (const ustr& c : dc) {
+            auto it = std::find(res.begin(), res.end(), c);
+            if (it != res.end()) res.erase(it);
+            res.insert(res.begin() + std::min(at, res.size()), c);
+            at++;
+        }
+        if (int(res.size()) > maxout) res.resize(size_t(maxout));
     }
     std::vector<uint16_t> buf;
     for (auto& s : res) { to16(s, buf); buf.push_back(0); }

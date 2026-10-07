@@ -37,6 +37,28 @@ free for research and commercial use with citation; retrieved via
 https://github.com/openlanguageprofiles/olp-en-cefrj). The katakana readings
 are this project's own.
 
+shuntorge also contains:
+
+- **Proper nouns from Japanese Wikipedia** (people, organizations, works,
+  surnames / given names, and the original English titles of katakana
+  article titles), extracted from the article leads ("題名（よみ）") of the
+  jawiki dump of 2026-10-01 (https://dumps.wikimedia.org/jawiki/). Wikipedia
+  text is licensed under **CC BY-SA 4.0**
+  (https://creativecommons.org/licenses/by-sa/4.0/); attribution:
+  "Wikipedia contributors, Japanese Wikipedia". Because of this, the
+  dictionary file `kkc_lex.bin` as a whole is distributed under CC BY-SA 4.0
+  as well (the same share-alike terms already apply through JMdict).
+- **Postal codes → addresses** from Japan Post's postal code data
+  (`utf_ken_all.csv`, https://www.post.japanpost.jp/zipcode/). Japan Post
+  states: "郵便番号データに限っては日本郵便株式会社は著作権を主張しません。
+  自由に配布していただいて結構です。"
+- **Emoji names** from the Unicode CLDR (cldr-json 48, Japanese
+  `annotations` / `annotationsDerived`) and the order in Unicode's
+  `emoji-test.txt` (18.0), under the **Unicode License v3**
+  (https://www.unicode.org/license.txt). Copyright © 1991-2026 Unicode, Inc.
+  Emoji were ranked by how often they appear in the FineWeb-2 Japanese test
+  split (ODC-By 1.0); no FineWeb text is distributed.
+
 Sources:
 - https://github.com/google/mozc (branch: master, `src/data/dictionary_oss/`)
 - https://www.edrdg.org/ (JMdict, via http://ftp.edrdg.org/pub/Nihongo/JMdict.gz)
