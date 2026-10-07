@@ -311,13 +311,10 @@ struct KeyboardPage {
   }
 
   // 今表示しているキーボード本体が ◄/► のカーソルキーを持っているか。
-  // 持っているのはフリック系と数字パッドだけで、QWERTY には無い
-  // (条件は KeyboardArea の分岐と同じ)。閉じ括弧の待機バッジの文言を、
-  // その利用者の手元に実在する操作だけで書くために使う。
+  // 閉じ括弧の待機バッジの文言を、その利用者の手元に実在する操作だけで書くために使う。
+  // フリック系・数字パッド・QWERTY (最下段、スペースの両脇) のどれも持っている
   private hasCaretKeys(): boolean {
-    if (this.keyboardSubMode === 'numeric') { return true; }
-    if (this.alphabetKeyboardLayout === 'FLICK' && this.inputMode === InputMode.ALPHANUMERIC) { return true; }
-    return this.kanaKeyboardLayout === 'FLICK' && this.inputMode !== InputMode.ALPHANUMERIC;
+    return true;
   }
 
   // 実際のキーボード本体を選ぶ部分。通常の入力画面と、レイアウト調整モード

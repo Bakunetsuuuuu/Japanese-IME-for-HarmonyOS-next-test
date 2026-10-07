@@ -59,10 +59,12 @@ class QwertyKeyboardView(
             letters(r[0]),
             letters(row1),
             listOf(Key(if (shift == 2) "⇪" else "⇧", "shift", 1.5f)) + letters(r[2]) + Key("⌫", "del", 1.5f),
+            // ◄/► はスペースの両脇 (長押しで続けて動く)。幅の合計は 10
             listOf(
-                Key(modeLabel, "mode", 1.4f), Key("記号", "symbol", 1.2f), Key(if (kana) "、" else ",", "punct:" + if (kana) "、" else ","),
-                Key(space, "space", 3.4f), Key(if (kana) "。" else ".", "punct:" + if (kana) "。" else "."),
-                Key(h.enterLabel(), "enter", 2f),
+                Key(modeLabel, "mode", 1.3f), Key("記号", "symbol", 1.1f), Key(if (kana) "、" else ",", "punct:" + if (kana) "、" else ",", 0.9f),
+                Key("◀", "left", 0.9f), Key(space, "space", 2.6f), Key("▶", "right", 0.9f),
+                Key(if (kana) "。" else ".", "punct:" + if (kana) "。" else ".", 0.9f),
+                Key(h.enterLabel(), "enter", 1.4f),
             ),
         )
     }
@@ -119,6 +121,8 @@ class QwertyKeyboardView(
                 longFired = false
                 when (pressed?.action) {
                     "del" -> startRepeat { h.handleBackspace() }
+                    "left" -> startRepeat { h.handleCursorLeft() }
+                    "right" -> startRepeat { h.handleCursorRight() }
                     "symbol" -> armLong("onehand-left")    // 長押しで片手 (左)。もう一度で元に戻る
                     "space" -> armLong("onehand-right")    // 長押しで片手 (右)
                 }
@@ -127,7 +131,7 @@ class QwertyKeyboardView(
             MotionEvent.ACTION_MOVE -> {
                 // 押したまま隣のキーへずらしたら、離した所のキーにする (打ち間違いを直せる)
                 val k = keyAt(e.x, e.y)
-                if (k != null && k !== pressed && pressed?.action != "del") {
+                if (k != null && k !== pressed && pressed?.action !in setOf("del", "left", "right")) {
                     cancelLong()
                     pressed = k
                     invalidate()

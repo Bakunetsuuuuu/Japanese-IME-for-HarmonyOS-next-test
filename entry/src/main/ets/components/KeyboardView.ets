@@ -50,6 +50,9 @@ export struct KeyboardView {
 
   private bsDelayTimer: number = -1;
   private bsRepeatTimer: number = -1;
+  private curDelayTimer: number = -1;
+  private curRepeatTimer: number = -1;
+  private curAccelTimer: number = -1;
   private ohHintTimer: number = -1;
 
   private startBsRepeat(): void {
@@ -66,6 +69,32 @@ export struct KeyboardView {
     clearInterval(this.bsRepeatTimer);
     this.bsDelayTimer = -1;
     this.bsRepeatTimer = -1;
+  }
+
+  // ◄/► の長押しで連続して動かす (フリック・数字パッドと同じ間隔。~1秒押し続けると速くなる)
+  private startCurRepeat(dir: string): void {
+    const move = (): void => {
+      if (dir === 'left') { this.getHandler().handleCursorLeft(); }
+      else { this.getHandler().handleCursorRight(); }
+    };
+    this.getHandler().hapticTick();
+    move();
+    this.curDelayTimer = setTimeout(() => {
+      this.curRepeatTimer = setInterval(move, 110);
+      this.curAccelTimer = setTimeout(() => {
+        clearInterval(this.curRepeatTimer);
+        this.curRepeatTimer = setInterval(move, 40);
+      }, 600);
+    }, 400);
+  }
+
+  private stopCurRepeat(): void {
+    clearTimeout(this.curDelayTimer);
+    clearInterval(this.curRepeatTimer);
+    clearTimeout(this.curAccelTimer);
+    this.curDelayTimer = -1;
+    this.curRepeatTimer = -1;
+    this.curAccelTimer = -1;
   }
 
   // Themed content for the one-handed hint popup so it reads as part of the
@@ -124,7 +153,9 @@ export struct KeyboardView {
             if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
             else { this.getHandler().handleDirectKana(ch); }
           })
+          this.CaretKey('left')
           this.SpaceKey()
+          this.CaretKey('right')
           this.BunsetsuKey()
           this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
             const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
@@ -251,6 +282,26 @@ export struct KeyboardView {
           this.stopBsRepeat();
         }
       })
+  }
+
+  // カーソルを左右に動かすキー (変換中は変換する範囲を縮める・伸ばす。文節を選んでいるときは文節を移る)
+  @Builder CaretKey(dir: string) {
+    Row() {
+      SymbolGlyph($r(dir === 'left' ? 'sys.symbol.chevron_left' : 'sys.symbol.chevron_right'))
+        .fontSize(16)
+        .fontColor([kbTheme(this.isDark).textPrimary])
+    }
+    .width(this.keyWidthVp)
+    .height('100%')
+    .justifyContent(FlexAlign.Center)
+    .alignItems(VerticalAlign.Center)
+    .backgroundColor(kbTheme(this.isDark).specialBg)
+    .borderRadius(KEY_RADIUS)
+    .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+    .onTouch((event: TouchEvent) => {
+      if (event.type === TouchType.Down) { this.startCurRepeat(dir); }
+      else if (event.type === TouchType.Up || event.type === TouchType.Cancel) { this.stopCurRepeat(); }
+    })
   }
 
   @Builder BunsetsuKey() {
