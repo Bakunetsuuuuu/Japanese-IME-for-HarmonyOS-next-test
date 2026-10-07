@@ -156,7 +156,10 @@ export struct KeyboardView {
           this.SpaceKey()
           this.CaretKey('left')
           this.CaretKey('right')
-          this.BunsetsuKey()
+          // 英字入力には変換が無いので 文節 キーは出さない (その分スペースを広く)
+          if (this.inputMode !== InputMode.ALPHANUMERIC) {
+            this.BunsetsuKey()
+          }
           this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {
             const ch = this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。';
             const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
@@ -327,7 +330,8 @@ export struct KeyboardView {
       .fontSize(16)
       .fontColor(kbTheme(this.isDark).textPrimary)
       .textAlign(TextAlign.Center)
-      .width(this.spaceKeyWidthVp)
+      .width(this.inputMode === InputMode.ALPHANUMERIC
+        ? this.spaceKeyWidthVp + this.specialKeyWidthVp + 4 : this.spaceKeyWidthVp)
       .height('100%')
       .backgroundColor(kbTheme(this.isDark).keyBg)
       .borderRadius(KEY_RADIUS)
