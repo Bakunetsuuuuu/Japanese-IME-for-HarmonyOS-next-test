@@ -384,7 +384,7 @@ export struct KeyboardView {
       .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
       .onClick(() => {
         this.getHandler().hapticTick();
-        this.getHandler().commitRaw();
+        // 入力中の文字は確定しない (英字・数字も続けて足して一緒に変換する: ぱちんこ + CR -> パチンコCR)
         this.getHandler().cycleInputMode();
       })
   }

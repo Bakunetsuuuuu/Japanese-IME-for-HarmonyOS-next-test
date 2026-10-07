@@ -126,13 +126,9 @@ export struct NumericPadView {
     this.curAccelTimer = -1;
   }
 
+  // 数字・記号も入力中の文字として組み立てる (2000 -> 2,000・二千 の候補が出る。Enter か候補で確定)
   private insert(ch: string): void {
-    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state === InputState.IDLE) {
-      this.h().insertText(ch);
-    } else {
-      this.h().handleDirectKana(ch);
-    }
+    this.h().appendRaw(ch);
   }
 
   private dirFrom(dx: number, dy: number): FlickDir {

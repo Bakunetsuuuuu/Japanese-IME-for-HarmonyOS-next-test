@@ -1923,6 +1923,11 @@ export class InputHandler {
 
     if (mode === InputMode.ALPHANUMERIC) {
       InputLog.recordKey(key, '', '', mode);
+      // 入力中の文字があれば英字も足して一緒に変換する (ぱちんこ + CR -> パチンコCR)。無ければそのまま入れる (英文)
+      if ((AppStorage.get<string>('composingText') ?? '').length > 0) {
+        this.appendRaw(key);
+        return;
+      }
       this.commitPending();
       this.insertText(key);
       return;
@@ -3281,12 +3286,34 @@ export class InputHandler {
     }
   }
 
+  // 数字パッドの数字・記号と、入力中の文字があるときの英字。英字モードの中でも入力中の文字に足して変換する
+  // (2000 -> 2,000・二千・２０００、日本語に戻って えん と続ければ 2000円、ぱちんこ + CR -> パチンコCR)。
+  // あA キーでは入力中の文字を確定しないので、モードをまたいで続けて打てる
+  appendRaw(ch: string): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    InputLog.recordKana(ch, 'raw');
+    if (state === InputState.SELECTING || state === InputState.BUNSETSU) {
+      this.commitTopCandidate();
+    }
+    const current = AppStorage.get<string>('composingText') ?? '';
+    AppStorage.setOrCreate('composingText', current + ch);
+    AppStorage.setOrCreate('pendingRomaji', '');
+    AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    this.conversionEnd = (current + ch).length;
+    AppStorage.setOrCreate('convEnd', this.conversionEnd);
+    this.updateCandidates();
+  }
+
   handleDirectKana(kana: string): void {
     const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     InputLog.recordKana(kana, mode);
 
     if (mode === InputMode.ALPHANUMERIC) {
+      if ((AppStorage.get<string>('composingText') ?? '').length > 0) {
+        this.appendRaw(kana);   // 入力中の文字に英字を足す (ぱちんこ + CR)
+        return;
+      }
       this.commitPending();
       // raw: true -- 英数モードは1打鍵ごとに insertText が飛ぶ (かなモード
       // のように単語単位でまとまらない)。素のまま扱わないと、括弧を開いた

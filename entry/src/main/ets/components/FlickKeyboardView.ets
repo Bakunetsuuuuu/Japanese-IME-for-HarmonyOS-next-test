@@ -489,7 +489,7 @@ export struct FlickKeyboardView {
       .padding({ left: FLICK_H_INSET, right: FLICK_H_INSET, top: FLICK_V_INSET, bottom: FLICK_V_INSET })
       .onClick(() => {
         this.h().hapticTick();
-        this.h().commitTopCandidate();
+        // 入力中の文字は確定しない (英字・数字も続けて足して一緒に変換する: ぱちんこ + CR -> パチンコCR)
         this.h().cycleInputMode();
       })
     }

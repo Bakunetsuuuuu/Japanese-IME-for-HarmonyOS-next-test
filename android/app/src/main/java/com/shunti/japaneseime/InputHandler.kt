@@ -64,9 +64,13 @@ class InputHandler(
     private val hostUndoStack = ArrayList<HostOp>()
 
     // ---------------------------------------------------------------- 入力欄の出入り
+    /** 数字の入力欄 (電話番号・数値) か。数字はそのまま入れる (変換の候補を出さない) */
+    private var numericField = false
+
     fun onInputStart(ei: EditorInfo?, restarting: Boolean) {
         if (restarting) return
         resetComposition()
+        numericField = false
         predictions = emptyList()
         hostUndoStack.clear()
         val cls = (ei?.inputType ?: 0) and EditorInfo.TYPE_MASK_CLASS
@@ -75,6 +79,7 @@ class InputHandler(
             cls == EditorInfo.TYPE_CLASS_NUMBER || cls == EditorInfo.TYPE_CLASS_PHONE || cls == EditorInfo.TYPE_CLASS_DATETIME -> {
                 inputMode = InputMode.ALPHANUMERIC
                 subMode = SubMode.NUMERIC
+                numericField = true
             }
             cls == EditorInfo.TYPE_CLASS_TEXT && variation in ALPHA_VARIATIONS -> {
                 inputMode = InputMode.ALPHANUMERIC
@@ -106,7 +111,10 @@ class InputHandler(
     // ---------------------------------------------------------------- キー
     /** かな・数字のキー (フリックのかなキー、数字パッド) */
     fun handleDirectKana(kana: String) {
-        if (inputMode == InputMode.ALPHANUMERIC && subMode != SubMode.NUMERIC) {
+        // 英字 (と数字の入力欄の数字) は、入力中の文字があれば足して一緒に変換する (ぱちんこ + CR -> パチンコCR)。
+        // 無ければそのまま入れる。数字パッドの数字は入力中の文字として組み立てる (2000 -> 2,000・二千)
+        val direct = (inputMode == InputMode.ALPHANUMERIC && subMode != SubMode.NUMERIC) || numericField
+        if (direct && composingText.isEmpty()) {
             commitPending()
             insertText(kana)
             return
@@ -133,8 +141,17 @@ class InputHandler(
      */
     fun handleKeyPress(key: String) {
         if (inputMode == InputMode.ALPHANUMERIC) {
-            commitPending()
-            insertText(key)
+            // 入力中の文字があれば英字も足して一緒に変換する (ぱちんこ + CR -> パチンコCR)。無ければそのまま入れる (英文)
+            if (composingText.isEmpty()) {
+                commitPending()
+                insertText(key)
+                return
+            }
+            if (inputState == InputState.SELECTING) commitTopCandidate()
+            composingText += key
+            inputState = InputState.COMPOSING
+            conversionEnd = 0
+            updateCandidates()
             return
         }
         if (inputState == InputState.SELECTING) commitTopCandidate()
@@ -360,7 +377,7 @@ class InputHandler(
 
     /** あA キー: 日本語 → 英字 (→ 数字パッド。設定でオンのとき) → 日本語 (HarmonyOS 版 cycleInputMode と同じ) */
     fun cycleInputMode() {
-        commitTopCandidate()
+        // 入力中の文字は確定しない (英字・数字も続けて足して一緒に変換する: ぱちんこ + CR、2000 + えん)
         when {
             subMode == SubMode.NUMERIC -> {
                 inputMode = InputMode.HIRAGANA

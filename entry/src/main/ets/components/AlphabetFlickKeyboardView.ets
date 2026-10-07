@@ -319,8 +319,7 @@ export struct AlphabetFlickKeyboardView {
         .borderRadius(CELL_RADIUS).shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
         .onClick(() => {
           this.h().hapticTick();
-          this.h().commitTopCandidate();
-          this.h().cycleInputMode();
+          this.h().cycleInputMode();   // 入力中の文字は確定しない (数字パッドで続けて打てるように)
           this.lastChar = '';
         })
     }

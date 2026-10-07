@@ -503,6 +503,30 @@ std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>
                 out.push_back({int(i), int(i + w.r.size()), w.s, w.lid, w.rid, w.cost, K_DICT});
         }
     }
+    // 数字のまま打った数 (数字パッドの 2000) にも、カンマ・漢数字・全角・単位まじりの辺 (2,000・二千・２０００・2万5000)。
+    // 打ったとおりの数字は 'pass' の辺で出る
+    for (int s = 0; s < n;) {
+        if (r[s] < U'0' || r[s] > U'9') { s++; continue; }
+        int e = s;
+        while (e < n && r[e] >= U'0' && r[e] <= U'9') e++;
+        if (e - s <= 16 && (r[s] != U'0' || e - s == 1)) {
+            int64_t v = 0;
+            for (int i = s; i < e; i++) v = v * 10 + int64_t(r[i] - U'0');
+            // 文の中では打ったままの数字を先に (2000えん -> 2000円)、カンマ・単位まじりを次に。
+            // 漢数字・全角は読み全体が数字のときだけ候補に足す (下の kkc_convert の差し込み)
+            const int c = 3000;
+            out.push_back({s, e, r.substr(size_t(s), size_t(e - s)), L.num_arabic, L.num_arabic, c, K_NUM});
+            // 年 (2026ねん) にはカンマを付けない
+            if (v >= 1000 && !(e - s == 4 && starts_with(r, size_t(e), U"ねん")))
+                out.push_back({s, e, with_commas(r.substr(size_t(s), size_t(e - s))), L.num_arabic, L.num_arabic, c + 600, K_NUM});
+            if (v >= 10000) {
+                const ustr m = unit_mixed(v, false), mc = unit_mixed(v, true);
+                out.push_back({s, e, m, L.num_arabic, L.num_arabic, c + 700, K_NUM});
+                if (mc != m) out.push_back({s, e, mc, L.num_arabic, L.num_arabic, c + 800, K_NUM});
+            }
+        }
+        s = e;
+    }
     std::vector<Edge> num;
     number_edges(L, r, num);
     special_edges(L, r, num);
@@ -1765,6 +1789,28 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
             }
             if (int(res.size()) > maxout) res.resize(size_t(maxout));
         }
+    }
+    // 読み全体が数字 (数字パッドで 2000 と打った) なら、打ったままを 1 位に、カンマ・単位まじり・漢数字・全角を 2 位から
+    if (n > 0 && n <= 16 && std::all_of(r.begin(), r.end(), [](char32_t c) { return c >= U'0' && c <= U'9'; }) && (r[0] != U'0' || n == 1)) {
+        int64_t v = 0;
+        for (char32_t c : r) v = v * 10 + int64_t(c - U'0');
+        std::vector<ustr> add = {r};
+        if (v >= 1000) add.push_back(with_commas(r));
+        if (v >= 10000) {
+            add.push_back(unit_mixed(v, false));
+            add.push_back(unit_mixed(v, true));
+        }
+        add.push_back(kanji(v));
+        add.push_back(digits(v, true));
+        size_t at = 0;
+        for (const ustr& c : add) {
+            auto it = std::find(res.begin(), res.end(), c);
+            if (it != res.end() && size_t(it - res.begin()) < at) continue;
+            if (it != res.end()) res.erase(it);
+            res.insert(res.begin() + std::min(at, res.size()), c);
+            at++;
+        }
+        if (int(res.size()) > maxout) res.resize(size_t(maxout));
     }
     // 日付・時刻 (きょう -> 2026/10/07 …、いま -> 14:40 …) を 3 位から並べる。1・2 位 (今日・本日) はそのまま
     {
