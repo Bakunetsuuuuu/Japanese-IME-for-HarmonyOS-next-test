@@ -54,13 +54,14 @@ class Engine private constructor(private var handle: Long, private val slurs: Re
         }
 
         /** slurs = 語をつないで差別語になった候補を弾く正規表現 (HarmonyOS 版 AiConverter.SLURS と同じ。Tables から) */
-        fun open(am: AssetManager, slurs: Regex?, threads: Int = 4): Engine? {
-            val h = nativeOpen(am, threads)
+        /** model = モデルの資産の名前 (無ければ kkc_model.bin) */
+        fun open(am: AssetManager, slurs: Regex?, threads: Int = 4, model: String = "kkc_model.bin"): Engine? {
+            val h = nativeOpen(am, threads, model)
             if (h == 0L) return null
             return Engine(h, slurs)
         }
 
-        @JvmStatic private external fun nativeOpen(am: AssetManager, threads: Int): Long
+        @JvmStatic private external fun nativeOpen(am: AssetManager, threads: Int, model: String): Long
         @JvmStatic private external fun nativeClose(h: Long)
         @JvmStatic private external fun nativeConvert(h: Long, ctx: String, kana: String, max: Int, model: Boolean, times: DoubleArray?): Array<String>
         @JvmStatic private external fun nativeSetThreads(h: Long, n: Int)

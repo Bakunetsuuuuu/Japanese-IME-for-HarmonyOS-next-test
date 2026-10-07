@@ -272,6 +272,7 @@ void TextService::apply_settings() {
     Core& c = core();
     c.settings.refresh();
     const Settings& s = c.settings.get();
+    c.use_model(s.model);   // 変換モデルを替えた (同じなら何もしない)
     if (composer_) {
         composer_->options.live = s.live;
         composer_->options.live_commit = s.live_commit;

@@ -48,6 +48,7 @@ bool Converter::open(const void* lex, size_t lex_size, const void* model, size_t
     if (e_) kkc_close(e_);
     e_ = kkc_open(lex, lex_size, model, model_size);
     if (e_ && threads > 0) kkc_set_threads(e_, threads);
+    if (e_ && !user_.empty()) set_user_words(std::vector<UserDict::Form>(user_), user_bonus_);   // モデルを替えて開き直したとき
     return e_ != nullptr;
 }
 
@@ -120,6 +121,8 @@ std::vector<u16> Converter::complete(const u16& prefix, int max, int max_extra) 
 }
 
 int Converter::set_user_words(const std::vector<UserDict::Form>& forms, int bonus) {
+    user_ = forms;
+    user_bonus_ = bonus;
     if (!e_) return 0;
     kkc_user_clear(e_);
     int n = 0;

@@ -39,3 +39,6 @@ entry/src/main/resources/rawfile/kkc_model.bin
 entry/.cxx/
 entry/oh_modules/
 oh_modules/
+
+# 軽量・高精度の変換モデル (PC・Android。tools/fetch_ai_assets.py で取得)
+models/

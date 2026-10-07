@@ -77,14 +77,27 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         recent = RecentSymbols(getSharedPreferences("shunti", MODE_PRIVATE), tables.DEFAULT_RECENT_SYMBOLS)
         input = InputHandler(this, tables, learning, settings, UserDict.get(this))
         clipboard = (getSystemService(CLIPBOARD_SERVICE) as? ClipboardManager)?.also { it.addPrimaryClipChangedListener(clipListener) }
-        // 辞書とモデルは裏で開く (開くまでは、かなとカタカナだけを出す)
+        openEngine()
+    }
+
+    private var engineModel = ""   // 開いているモデルの資産の名前
+
+    // 辞書とモデルは裏で開く (開くまでは、かなとカタカナだけを出す)。設定で変換モデルを替えたときも開き直す
+    private fun openEngine() {
+        val file = settings.modelFile
+        if (file == engineModel) return
+        engineModel = file
         worker.execute {
-            val e = Engine.open(assets, tables.SLURS)
+            val e = Engine.open(assets, tables.SLURS, model = file)
             main.post {
+                val old = engine
                 engine = e
-                if (e != null) ai = AiConverter(e, worker, main)
+                ai = if (e != null) AiConverter(e, worker, main) else null
+                userSynced = -1   // 新しいエンジンにユーザー辞書を入れ直す
                 syncUserWords()
                 if (input.composingText.isNotEmpty()) input.updateCandidates()
+                // 前のエンジンは、作業用のスレッドに残っている変換が済んでから閉じる (スレッドは 1 本なので順番どおり)
+                if (old != null) worker.execute { old.close() }
             }
         }
     }
@@ -360,6 +373,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         if (root != null && sig() != viewSig) setInputView(onCreateInputView())
         styleNavBar()   // 開くたびに当て直す (窓を作り直すと戻ることがある)
         readClip()
+        openEngine()   // 設定で変換モデルを替えた (同じなら何もしない)
         syncUserWords()
     }
 

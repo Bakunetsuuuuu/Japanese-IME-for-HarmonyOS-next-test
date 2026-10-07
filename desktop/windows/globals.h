@@ -45,6 +45,16 @@ struct Core {
     UserDict dict;
     SettingsFile settings;   // 設定画面が書く settings.json (入力を始めるたびに読み直す)
     Core();
+    // 変換モデルを設定の値 (light・standard・high) のものにする。今と同じなら何もしない。
+    // ファイルが無ければ standard (kkc_model.bin) を使う。前のモデルはメモリから外す
+    void use_model(const std::string& name);
+
+private:
+    std::filesystem::path dir_;
+    const void* lex_ = nullptr;
+    size_t lex_size_ = 0;
+    const void* model_ = nullptr;
+    std::string model_file_;
 };
 Core& core();
 

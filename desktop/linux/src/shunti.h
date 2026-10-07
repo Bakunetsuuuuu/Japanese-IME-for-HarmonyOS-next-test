@@ -13,6 +13,7 @@
 
 #include "../../core/composer.h"
 #include "../../core/converter.h"
+#include "../../core/settings.h"
 #include "../../core/store.h"
 
 namespace shunti {
@@ -27,7 +28,10 @@ FCITX_CONFIGURATION(
     fcitx::Option<bool> spaceFullwidth{this, "SpaceFullwidth", "空白を全角にする (Shift を押すと逆)", true};
     fcitx::Option<bool> digitsFullwidth{this, "DigitsFullwidth", "数字を全角にする", false};
     fcitx::Option<int, fcitx::IntConstrain> punct{this, "Punct", "句読点 (0 = 、。 1 = ，． 2 = 、． 3 = ，。)", 0,
-                                                  fcitx::IntConstrain(0, 3)};);
+                                                  fcitx::IntConstrain(0, 3)};
+    fcitx::Option<int, fcitx::IntConstrain> model{this, "Model",
+                                                  "変換モデル (0 = 軽量 XS3: メモリの少ない PC 向け、1 = 標準 S6、2 = 高精度 M4: 速い PC 向け)", 1,
+                                                  fcitx::IntConstrain(0, 2)};);
 
 // 変換エンジン・学習・ユーザー辞書 (Fcitx5 のプロセスに 1 つ)
 struct Core {
@@ -35,6 +39,17 @@ struct Core {
     Learning learning;
     UserDict dict;
     Core();
+    // 変換モデルを設定の値 (light・standard・high) のものにする。今と同じなら何もしない。
+    // ファイルが無ければ standard (kkc_model.bin)。前のモデルはメモリから外す
+    void use_model(const std::string& name);
+
+private:
+    std::filesystem::path dir_;
+    const void* lex_ = nullptr;
+    size_t lex_size_ = 0;
+    const void* model_ = nullptr;
+    size_t model_size_ = 0;
+    std::string model_file_;
 };
 
 class ShuntiEngine;
@@ -71,6 +86,7 @@ public:
     ShuntiState* state(fcitx::InputContext* ic) { return ic->propertyFor(&factory_); }
     Core& core();
     void applyConfig(Composer& c) const;
+    void useModel();   // 設定の変換モデルにする (同じなら何もしない)
 
 private:
     fcitx::Instance* instance_;

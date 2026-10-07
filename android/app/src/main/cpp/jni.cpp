@@ -16,11 +16,16 @@ struct Handle {
 };
 }  // namespace
 
-extern "C" JNIEXPORT jlong JNICALL Java_com_shunti_japaneseime_Engine_nativeOpen(JNIEnv* env, jclass, jobject am_obj, jint threads) {
+// model = モデルの資産の名前 (kkc_model.bin・軽量の kkc_model_light.bin)。無ければ kkc_model.bin
+extern "C" JNIEXPORT jlong JNICALL Java_com_shunti_japaneseime_Engine_nativeOpen(JNIEnv* env, jclass, jobject am_obj, jint threads,
+                                                                              jstring model) {
     AAssetManager* am = AAssetManager_fromJava(env, am_obj);
     auto* h = new Handle();
     h->lex = AAssetManager_open(am, "kkc_lex.bin", AASSET_MODE_BUFFER);
-    h->model = AAssetManager_open(am, "kkc_model.bin", AASSET_MODE_BUFFER);
+    const char* name = env->GetStringUTFChars(model, nullptr);
+    h->model = AAssetManager_open(am, name, AASSET_MODE_BUFFER);
+    env->ReleaseStringUTFChars(model, name);
+    if (!h->model) h->model = AAssetManager_open(am, "kkc_model.bin", AASSET_MODE_BUFFER);
     if (h->lex && h->model) {
         const void* a = AAsset_getBuffer(h->lex);
         const void* b = AAsset_getBuffer(h->model);

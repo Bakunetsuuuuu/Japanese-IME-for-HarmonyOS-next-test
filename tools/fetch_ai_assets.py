@@ -28,7 +28,9 @@ def main():
     dest = os.path.join(ROOT, m['dest'])
     ok = True
     for name, info in m['files'].items():
-        path = os.path.join(dest, name)
+        # 置き場所はファイルごとに替えられる (軽量・高精度のモデルは HarmonyOS の rawfile に入れず models/ へ)
+        path = os.path.join(ROOT, info['dest'], name) if 'dest' in info else os.path.join(dest, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         if os.path.exists(path) and sha256(path) == info['sha256']:
             print(f'{name}: 最新')
             continue

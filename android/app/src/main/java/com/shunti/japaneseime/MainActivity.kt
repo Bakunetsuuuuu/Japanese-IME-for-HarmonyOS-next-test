@@ -120,6 +120,13 @@ class MainActivity : Activity() {
         col.addView(switch("あA キーで数字パッドにも切り替える", settings.numericPad) { settings.numericPad = it }, lp(top = 8))
         col.addView(text("オンにすると、あA キーで 日本語 → 英字 → 数字 → 日本語 と回ります。", 12f, secondary = true))
 
+        section("変換")
+        col.addView(text("変換モデル", 14f, secondary = true))
+        col.addView(radios(listOf("標準 (S6)", "軽量 (XS3)"), if (settings.model == "light") 1 else 0) {
+            settings.model = if (it == 1) "light" else "standard"
+        })
+        col.addView(text("変換が遅いと感じる端末では軽量にしてください。次にキーボードを開いたときから変わります。", 12f, secondary = true))
+
         section("振動")
         val strength = radios(listOf("弱", "中", "強"), settings.hapticStrength) {
             settings.hapticStrength = it

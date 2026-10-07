@@ -43,6 +43,8 @@ private:
     bool convert_once(const u16& ctx, const u16& kana, int max, Conversion& out);
 
     kkc_engine* e_ = nullptr;
+    std::vector<UserDict::Form> user_;   // 最後に入れたユーザー辞書の語 (モデルを替えて開き直したときに入れ直す)
+    int user_bonus_ = 800;
 };
 
 // 語をつないで差別語になった候補か (HarmonyOS 版 AiConverter.SLURS と同じ)

@@ -98,6 +98,8 @@ val copyAiAssets by tasks.registering(Copy::class) {
         if (missing.isNotEmpty()) throw GradleException("辞書とモデルがありません ($missing)。リポジトリの直下で python tools/fetch_ai_assets.py を実行してください")
     }
     from(rawfile) { include(names) }
+    // 軽量の変換モデル (設定で選ぶ。リポジトリの models/、tools/fetch_ai_assets.py で取得。無ければ標準だけ)
+    from(File(repo, "models")) { include("kkc_model_light.bin") }
     into(layout.buildDirectory.dir("kkc/assets"))
 }
 

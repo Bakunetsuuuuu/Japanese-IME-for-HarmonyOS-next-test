@@ -13,6 +13,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 
@@ -137,12 +138,28 @@ private:
 }  // namespace
 
 Core::Core() : learning(user_dir() / "learned.json"), dict(user_dir() / "userdict.json") {
-    fs::path dir = data_dir();
-    if (dir.empty()) return;
-    size_t ls = 0, ms = 0;
-    const void* lex = map_file(dir / "kkc_lex.bin", ls);
-    const void* model = map_file(dir / "kkc_model.bin", ms);
-    if (lex && model) conv.open(lex, ls, model, ms, 2);
+    dir_ = data_dir();
+    if (dir_.empty()) return;
+    lex_ = map_file(dir_ / "kkc_lex.bin", lex_size_);
+}
+
+void Core::use_model(const std::string& name) {
+    if (!lex_) return;
+    std::string file = model_file_name(name);
+    std::error_code ec;
+    if (!fs::exists(dir_ / file, ec)) file = model_file_name("standard");
+    if (file == model_file_) return;
+    size_t ms = 0;
+    const void* model = map_file(dir_ / file, ms);
+    if (!model) return;
+    if (!conv.open(lex_, lex_size_, model, ms, 2)) {
+        munmap(const_cast<void*>(model), ms);
+        return;
+    }
+    if (model_) munmap(const_cast<void*>(model_), model_size_);   // 前のモデル (エンジンは開き直したので、もう使っていない)
+    model_ = model;
+    model_size_ = ms;
+    model_file_ = file;
 }
 
 // ---------------------------------------------------------------- 入力欄ごとの状態
@@ -166,7 +183,10 @@ void ShuntiState::keyEvent(fcitx::KeyEvent& event) {
     if (event.isRelease()) return;
     KeyEvent ev;
     if (!to_key(event.key(), ev)) return;
-    if (!composer_.composing()) engine_->applyConfig(composer_);   // 設定の画面で変えた分
+    if (!composer_.composing()) {   // 設定の画面で変えた分
+        engine_->applyConfig(composer_);
+        engine_->useModel();
+    }
     if (!composer_.will_handle(ev)) return;
     composer_.press(ev);
     apply();
@@ -239,8 +259,16 @@ ShuntiEngine::ShuntiEngine(fcitx::Instance* instance)
 }
 
 Core& ShuntiEngine::core() {
-    if (!core_) core_ = std::make_unique<Core>();   // 辞書とモデルは最初に使うときに開く
+    if (!core_) {
+        core_ = std::make_unique<Core>();   // 辞書とモデルは最初に使うときに開く
+        useModel();
+    }
     return *core_;
+}
+
+void ShuntiEngine::useModel() {
+    static const char* const NAMES[] = {"light", "standard", "high"};
+    if (core_) core_->use_model(NAMES[std::clamp(*config_.model, 0, 2)]);
 }
 
 void ShuntiEngine::applyConfig(Composer& c) const {

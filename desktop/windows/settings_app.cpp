@@ -6,6 +6,7 @@
 #include <shellapi.h>
 #include <shlobj.h>
 
+#include <algorithm>
 #include <string>
 #include <vector>
 
@@ -22,8 +23,11 @@ constexpr wchar_t VERSION[] = L"0.3.0";
 
 enum Id {
     ID_THEME = 100, ID_PUNCT, ID_SPACE, ID_DIGITS, ID_LIVE, ID_LIVEDISPLAY, ID_LIVECOMMIT, ID_CTRLSPACE,
-    ID_LIST, ID_READING, ID_WORD, ID_POS, ID_ADD, ID_REMOVE, ID_RESET, ID_LICENSE, ID_GITHUB, ID_ICON,
+    ID_LIST, ID_READING, ID_WORD, ID_POS, ID_ADD, ID_REMOVE, ID_RESET, ID_LICENSE, ID_GITHUB, ID_ICON, ID_MODEL,
 };
+
+// 変換モデル (settings.json の model の値と、画面の表示)。名前は配布の呼び名 (開発名は出さない)
+const char* const MODELS[] = {"light", "standard", "high"};
 
 struct PosItem { const wchar_t* label; const char* pos; const char* group; };
 const PosItem POS[] = {
@@ -84,6 +88,7 @@ void save() {
     g_s.live_display = checked(ID_LIVEDISPLAY);
     g_s.live_commit = checked(ID_LIVECOMMIT);
     g_s.ctrl_space = checked(ID_CTRLSPACE);
+    g_s.model = MODELS[std::clamp(selected(ID_MODEL), 0, 2)];
     if (!save_settings(g_dir / L"settings.json", g_s))
         MessageBoxW(g_wnd, L"設定を保存できませんでした。", L"shunti IME", MB_ICONWARNING);
 }
@@ -151,6 +156,13 @@ void build() {
     make(L"BUTTON", L"アイコンの色をタスクバーに合わせる", BS_PUSHBUTTON | WS_TABSTOP, 24, y + 52, 250, 25, ID_ICON);
     y += 94;
 
+    group(L"変換", y, 94);
+    make(L"STATIC", L"変換モデル:", 0, 24, y + 27, 170, 20, 0);
+    combo(200, y + 23, 250, ID_MODEL, {L"軽量 (XS3)", L"標準 (S6)", L"高精度 (M4)"});
+    make(L"STATIC", L"軽量はメモリの少ない PC 向け、高精度は速い PC 向けです。次に打ち始めたときから変わります",
+         0, 24, y + 52, 432, 34, 0);
+    y += 102;
+
     group(L"入力", y, 209);
     make(L"STATIC", L"句読点:", 0, 24, y + 27, 170, 20, 0);
     combo(200, y + 23, 120, ID_PUNCT, {L"、。", L"，．", L"、．", L"，。"});
@@ -203,6 +215,7 @@ void build() {
     g_loading = true;
     select(ID_THEME, g_s.theme == "light" ? 1 : g_s.theme == "dark" ? 2 : 0);
     select(ID_PUNCT, g_s.punct);
+    select(ID_MODEL, g_s.model == "light" ? 0 : g_s.model == "high" ? 2 : 1);
     select(ID_POS, 0);
     check(ID_SPACE, g_s.space_fullwidth);
     check(ID_DIGITS, g_s.digits_fullwidth);
@@ -218,7 +231,7 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     switch (m) {
         case WM_COMMAND: {
             int id = LOWORD(w), code = HIWORD(w);
-            if ((id == ID_THEME || id == ID_PUNCT) && code == CBN_SELCHANGE) save();
+            if ((id == ID_THEME || id == ID_PUNCT || id == ID_MODEL) && code == CBN_SELCHANGE) save();
             else if (id == IDCANCEL) DestroyWindow(h);   // 「閉じる」と Esc
             else if (id >= ID_SPACE && id <= ID_CTRLSPACE && code == BN_CLICKED) save();
             else if (id == ID_ADD) add_word();
@@ -285,7 +298,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     RegisterClassExW(&wc);
 
     g_dpi = GetDpiForSystem();
-    RECT rc = {0, 0, S(480), S(737)};
+    RECT rc = {0, 0, S(480), S(839)};
     AdjustWindowRectExForDpi(&rc, WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME), FALSE, 0, g_dpi);
     g_wnd = CreateWindowExW(0, wc.lpszClassName, L"shunti IME の設定", WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME),
                             CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, inst, nullptr);

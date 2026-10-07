@@ -42,6 +42,12 @@ foreach(f kkc_lex.bin kkc_model.bin)
     message(WARNING "${f} がありません (python tools/fetch_ai_assets.py で取得してください)。変換はできません")
   endif()
 endforeach()
+# 軽量・高精度の変換モデル (設定で選ぶ。無ければ標準だけ)
+foreach(f kkc_model_light.bin kkc_model_high.bin)
+  if(EXISTS ${ROOT}/models/${f})
+    install(FILES ${ROOT}/models/${f} DESTINATION "${CMAKE_INSTALL_DATADIR}/shunti-ime")
+  endif()
+endforeach()
 
 # .deb (Debian・Ubuntu 向け): cpack -G DEB
 set(CPACK_PACKAGE_NAME "fcitx5-shunti")

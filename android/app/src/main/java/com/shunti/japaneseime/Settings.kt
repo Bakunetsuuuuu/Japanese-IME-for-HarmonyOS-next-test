@@ -68,6 +68,14 @@ class Settings(context: Context) {
         get() = p.getBoolean("liveCommit", false)
         set(v) = p.edit().putBoolean("liveCommit", v).apply()
 
+    /** 変換モデル: "standard" (S6、既定) か "light" (XS3、性能の低い端末向け) */
+    var model: String
+        get() = p.getString("model", "standard") ?: "standard"
+        set(v) = p.edit().putString("model", v).apply()
+
+    /** 変換モデルの資産の名前 */
+    val modelFile: String get() = if (model == "light") "kkc_model_light.bin" else "kkc_model.bin"
+
     /** あA キーで 日本語 → 英字 → 数字パッド と回すか (HarmonyOS 版と同じく既定はオフ) */
     var numericPad: Boolean
         get() = p.getBoolean("numericPad", false)

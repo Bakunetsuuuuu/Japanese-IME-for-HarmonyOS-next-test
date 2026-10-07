@@ -15,7 +15,11 @@ struct Settings {
     bool live_commit = true;         // リアルタイム確定
     bool live_display = false;       // ライブ変換: 入力中の文字を、空白を押す前から変換して見せる
     bool ctrl_space = false;         // Ctrl+Space でも日本語入力のオン・オフ
+    std::string model = "standard";  // 変換モデル: light (XS・メモリの少ない PC 向け)・standard (S6)・high (M4・速い PC 向け)
 };
+
+// 変換モデルの設定の値 -> モデルのファイル名 (辞書と同じフォルダ)。知らない値は standard
+const char* model_file_name(const std::string& model);
 
 // 読む (無い・壊れていれば既定のまま)。書く (一時ファイルから置き換える)
 bool load_settings(const std::filesystem::path& p, Settings& s);

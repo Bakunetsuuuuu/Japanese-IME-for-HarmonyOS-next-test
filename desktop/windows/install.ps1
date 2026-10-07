@@ -10,6 +10,8 @@ $ErrorActionPreference = 'Stop'
 
 $Dest = Join-Path $env:ProgramFiles 'shunti IME'
 $Files = @('shunti_ime_x64.dll', 'shunti_ime_x86.dll', 'shunti_settings.exe', 'kkc_lex.bin', 'kkc_model.bin', 'LICENSE.txt')
+# 軽量・高精度の変換モデル (設定で選ぶ)。無ければ標準 (kkc_model.bin) だけで動く
+$Optional = @('kkc_model_light.bin', 'kkc_model_high.bin')
 # スタートメニューの「shunti IME の設定」(全員分)
 $Shortcut = Join-Path $env:ProgramData 'Microsoft\Windows\Start Menu\Programs\shunti IME の設定.lnk'
 $Is64 = [Environment]::Is64BitOperatingSystem
@@ -71,7 +73,7 @@ function Invoke-AdminPart {
     Get-ChildItem -LiteralPath $Dest -Filter '*.old-*' -File -ErrorAction SilentlyContinue | ForEach-Object {
         try { Remove-Item -LiteralPath $_.FullName -Force } catch {}
     }
-    foreach ($f in $Files) {
+    foreach ($f in $Files + ($Optional | Where-Object { Test-Path -LiteralPath (Join-Path $src $_) })) {
         $to = Join-Path $Dest $f
         Remove-OrRetire $to
         Copy-Item -LiteralPath (Join-Path $src $f) -Destination $to -Force

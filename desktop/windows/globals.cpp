@@ -50,17 +50,34 @@ const void* map_file(const std::filesystem::path& p, size_t& size) {
 
 Core::Core()
     : learning(user_dir() / L"learned.json"), dict(user_dir() / L"userdict.json"), settings(user_dir() / L"settings.json") {
-    std::filesystem::path dir = module_dir();
+    dir_ = module_dir();
     // 計測用: 別のフォルダの辞書とモデルを使う (同じ DLL のまま、モデルを替えて比べるため)
-    if (const wchar_t* d = _wgetenv(L"SHUNTI_DATA_DIR"); d && *d) dir = d;
-    size_t ls = 0, ms = 0;
-    const void* lex = map_file(dir / L"kkc_lex.bin", ls);
-    const void* model = map_file(dir / L"kkc_model.bin", ms);
-    if (lex && model) conv.open(lex, ls, model, ms, 2);
+    if (const wchar_t* d = _wgetenv(L"SHUNTI_DATA_DIR"); d && *d) dir_ = d;
+    lex_ = map_file(dir_ / L"kkc_lex.bin", lex_size_);
+    settings.refresh();
+    use_model(settings.get().model);
     // エンジンの作業用のスレッドを持つので、プロセスが終わるまで DLL を外さない
     HMODULE self;
     GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_PIN,
                        reinterpret_cast<LPCWSTR>(&core), &self);
+}
+
+void Core::use_model(const std::string& name) {
+    if (!lex_) return;
+    std::string file = model_file_name(name);
+    std::error_code ec;
+    if (!std::filesystem::exists(dir_ / file, ec)) file = model_file_name("standard");
+    if (file == model_file_) return;
+    size_t ms = 0;
+    const void* model = map_file(dir_ / file, ms);
+    if (!model) return;
+    if (!conv.open(lex_, lex_size_, model, ms, 2)) {
+        UnmapViewOfFile(model);
+        return;
+    }
+    if (model_) UnmapViewOfFile(model_);   // 前のモデル (エンジンは開き直したので、もう使っていない)
+    model_ = model;
+    model_file_ = file;
 }
 
 Core& core() {
