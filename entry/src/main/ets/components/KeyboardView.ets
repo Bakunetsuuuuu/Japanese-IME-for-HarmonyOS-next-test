@@ -153,8 +153,8 @@ export struct KeyboardView {
             if (state === InputState.IDLE) { this.getHandler().insertText(ch); }
             else { this.getHandler().handleDirectKana(ch); }
           })
-          this.CaretKey('left')
           this.SpaceKey()
+          this.CaretKey('left')
           this.CaretKey('right')
           this.BunsetsuKey()
           this.FuncKey(this.inputMode === InputMode.ALPHANUMERIC ? '.' : '。', () => {

@@ -146,10 +146,9 @@ export function applyKeyboardWidthsForVp(rawScreenVp: number, isTabletClass: boo
   const kwVp = Math.max(Math.floor((screenVp - 40) / 10), 24);
   const skwVp = Math.round(kwVp * 1.2);
   // Space bar = remaining after mode + 、 + ◄ + ► + 文節 + 。 + enter + 7 gaps × 4vp
-  // (文節 sits right after ►, at the same special-key width as
-  // mode/enter — the row would overflow if it were sized on top of them
-  // instead of space giving up the room). ◄/► flank the space bar at the
-  // letter-key width. Same space:4 as kwVp above.
+  // (◄ ► sit right after space at the letter-key width, then 文節 at the
+  // same special-key width as mode/enter — the row would overflow if it
+  // were sized on top of them instead of space giving up the room). Same space:4 as kwVp above.
   const spaceVp = Math.max(Math.floor(screenVp - 4 - 3 * skwVp - 4 * kwVp - 28), 60);
   // Flick keys: 5 columns (左特殊・中央3列・右特殊) + 4 gaps × 4vp
   // (FlickKeyboardView's Row({space:4})) + 0vp H-padding (its Column has no

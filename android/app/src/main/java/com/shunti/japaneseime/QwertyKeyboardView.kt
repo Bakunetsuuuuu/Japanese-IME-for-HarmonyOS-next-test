@@ -59,10 +59,10 @@ class QwertyKeyboardView(
             letters(r[0]),
             letters(row1),
             listOf(Key(if (shift == 2) "⇪" else "⇧", "shift", 1.5f)) + letters(r[2]) + Key("⌫", "del", 1.5f),
-            // ◄/► はスペースの両脇 (長押しで続けて動く)。幅の合計は 10
+            // ◄/► はスペースの右に並べる (長押しで続けて動く)。幅の合計は 10
             listOf(
                 Key(modeLabel, "mode", 1.3f), Key("記号", "symbol", 1.1f), Key(if (kana) "、" else ",", "punct:" + if (kana) "、" else ",", 0.9f),
-                Key("◀", "left", 0.9f), Key(space, "space", 2.6f), Key("▶", "right", 0.9f),
+                Key(space, "space", 2.6f), Key("◀", "left", 0.9f), Key("▶", "right", 0.9f),
                 Key(if (kana) "。" else ".", "punct:" + if (kana) "。" else ".", 0.9f),
                 Key(h.enterLabel(), "enter", 1.4f),
             ),
