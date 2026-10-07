@@ -3,15 +3,20 @@ shunti IME (Android 版)
 ■ アプリのコードと変換エンジン
 MIT License (全文は下に)。Copyright (c) 2026 shuntilettuce
 
-■ shuntelligence (AI 変換のモデル)
+■ shuntelligence (AI 変換のモデル: 標準 S6・軽量 XS3・高精度 M4)
 shuntelligence (shuntilettuce)、CC BY 4.0
 https://creativecommons.org/licenses/by/4.0/
 
 ■ shuntorge (AI 変換の辞書)
+Wikipedia 由来の語を含むため、辞書ファイル (kkc_lex.bin) 全体は CC BY-SA 4.0 です。
 独自の部分は MIT。以下を含みます。
 ・mozc (Google、BSD-3-Clause。IPAdic 由来の辞書データと沖縄辞書を含む)
 ・SudachiDict (Works Applications、Apache License 2.0。読みの一部)
-・日本郵便 郵便番号データ (地名の照合)
+・Wikipedia 日本語版 (2026-10-01 のダンプ、CC BY-SA 4.0。人名・組織・作品などの固有名詞と読み)
+  表示: "Wikipedia contributors, Japanese Wikipedia" https://creativecommons.org/licenses/by-sa/4.0/
+・日本郵便 郵便番号データ (郵便番号 → 住所、地名の照合。著作権を主張しない・自由に配布してよいとされています)
+・Unicode CLDR の絵文字の日本語名と emoji-test.txt (Unicode License v3、Copyright © 1991-2026 Unicode, Inc.)
+・The CEFR-J Wordlist Version 1.5 (投野由紀夫・東京外国語大学 投野研究室。英単語の選定に使用。読みは独自)
 
 ■ キー配置・記号・絵文字・顔文字の表
 HarmonyOS 版 shunti IME と同じもの (MIT)。

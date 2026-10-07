@@ -1,20 +1,34 @@
 {
   "note": "AI 変換 (shuntelligence) の辞書とモデル。GitHub Releases に置き、ビルド前に tools/fetch_ai_assets.py で取得する",
-  "release": "shuntelligence-v2",
-  "url": "https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases/download/shuntelligence-v2/",
+  "release": "shuntelligence-v3",
+  "url": "https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases/download/shuntelligence-v3/",
   "dest": "entry/src/main/resources/rawfile",
   "files": {
     "kkc_lex.bin": {
-      "src": "kkc_lex_v2.bin",
-      "size": 48490584,
-      "sha256": "e62ace562134a60b9b45f93b352a5706efb185986a8483dbec60d824564fcd7f",
-      "license": "shuntorge: MIT (独自部分) + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0"
+      "src": "kkc_lex_v3.bin",
+      "size": 65373538,
+      "sha256": "66b0dbb07faab6d371d6c81c8146cebc26c4552ff8726ee4ebaddd69a6c216ef",
+      "license": "shuntorge: 全体は CC BY-SA 4.0 (Wikipedia 由来の語を含む)。独自部分 MIT + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0 + 日本郵便 + Unicode License v3"
     },
     "kkc_model.bin": {
       "src": "kkc_model_q8.bin",
       "size": 24848032,
       "sha256": "090360da8195837e786e184b56dbd4cfccde6adb679b6923807377f8adaaff00",
-      "license": "shuntelligence: CC BY 4.0"
+      "license": "shuntelligence S6 (標準): CC BY 4.0"
+    },
+    "kkc_model_light.bin": {
+      "src": "kkc_model_light.bin",
+      "size": 8310176,
+      "sha256": "3acea4b2c98c25dfa02b4f4852e42edeedc2b007a1835ee98329ea6c5ccad5c5",
+      "license": "shuntelligence XS3 (軽量。PC・Android): CC BY 4.0",
+      "dest": "models"
+    },
+    "kkc_model_high.bin": {
+      "src": "kkc_model_high.bin",
+      "size": 61637024,
+      "sha256": "436e952e6be47f3c223becccd64956cb558709202e520f09dc0ea5317faf46cb",
+      "license": "shuntelligence M4 (高精度。PC): CC BY 4.0",
+      "dest": "models"
     }
   }
 }
