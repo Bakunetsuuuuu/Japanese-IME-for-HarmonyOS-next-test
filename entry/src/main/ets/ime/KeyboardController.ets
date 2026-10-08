@@ -1935,14 +1935,9 @@ export class InputHandler {
 
     if (mode === InputMode.ALPHANUMERIC) {
       InputLog.recordKey(key, '', '', mode);
-      // 入力中の文字があれば英字も足して一緒に変換する (ぱちんこ + CR -> パチンコCR)。無ければそのまま入れる (英文)。
-      // 数字は入力中の文字が無くても組み立てて変換する (2000 -> 2,000・二千・２０００、続けて えん で 2000円)
-      if ((AppStorage.get<string>('composingText') ?? '').length > 0 || /^[0-9]$/.test(key)) {
-        this.appendRaw(key);
-        return;
-      }
-      this.commitPending();
-      this.insertText(key);
+      // 英数字も入力中の文字として組み立てて変換する (2000 -> 2,000・二千、ぱちんこ + CR -> パチンコCR、iphone -> iPhone)。
+      // 英文は空白・Enter でそのまま確定して続けて打てる (handleSpaceKey)。2026-10-09 ユーザー: 英数字キーボードから変換を起こせるように
+      this.appendRaw(key);
       return;
     }
 
@@ -1981,6 +1976,13 @@ export class InputHandler {
       InputLog.recordSpace(state, composing, -1, 0);
     }
 
+    // 英数字で打った英文 (入力中の文字が英数字・記号だけ) は、空白でそのまま確定して空白を入れる (変換は候補から選んだときだけ)
+    if (state === InputState.COMPOSING && (AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA) === InputMode.ALPHANUMERIC
+        && /^[\x21-\x7e]+$/.test(composing) && (AppStorage.get<string>('pendingRomaji') ?? '') === '') {
+      this.commitRaw();
+      this.insertText(' ');
+      return;
+    }
     if (state === InputState.IDLE || composing.length === 0) {
       const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
       if (mode === InputMode.ALPHANUMERIC) {
@@ -3354,11 +3356,9 @@ export class InputHandler {
     InputLog.recordKana(kana, mode);
 
     if (mode === InputMode.ALPHANUMERIC) {
-      // 入力中の文字に英字を足す (ぱちんこ + CR)。数字は入力中の文字が無くても組み立てて変換する (2000 -> 2,000・二千)
-      if ((AppStorage.get<string>('composingText') ?? '').length > 0 || /^[0-9]$/.test(kana)) {
-        this.appendRaw(kana);
-        return;
-      }
+      // 英数字も入力中の文字として組み立てて変換する (handleKeyPress と同じ)
+      this.appendRaw(kana);
+      return;
       this.commitPending();
       // raw: true -- 英数モードは1打鍵ごとに insertText が飛ぶ (かなモード
       // のように単語単位でまとまらない)。素のまま扱わないと、括弧を開いた

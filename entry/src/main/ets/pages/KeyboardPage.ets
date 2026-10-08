@@ -695,7 +695,7 @@ struct KeyboardPage {
                     Text('提案')
                       .fontFamily(JP_FONT_FAMILY)
                       .fontSize(this.isLandscape ? 10 : 11)
-                      .fontColor(kbTheme(this.isDark).textSecondary)
+                      .fontColor(kbTheme(this.isDark).accent)
                       .margin({ left: 8 })
                       .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
                     Scroll() {

@@ -163,7 +163,7 @@ export struct AlphabetFlickKeyboardView {
       if (e.type === TouchType.Up) {
         if (this.lastChar && /^[a-z]$/.test(this.lastChar)) {
           this.h().handleBackspace();
-          this.h().insertText(this.lastChar.toUpperCase());
+          this.h().handleKeyPress(this.lastChar.toUpperCase());   // 入力中の文字の最後の英字を大文字に (入力欄ではなく入力中の文字へ)
           this.lastChar = this.lastChar.toUpperCase();
         }
       }
@@ -198,10 +198,8 @@ export struct AlphabetFlickKeyboardView {
     if (key.special === 'case') { return; }
     let ch = getChar(key, dir);
     if (/^[a-zA-Z]$/.test(ch)) { ch = ch.toLowerCase(); }
-    const st = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    // 数字は入力中の文字が無くても組み立てて変換する (2000 -> 2,000・二千。handleKeyPress が appendRaw へ)
-    if (st === InputState.IDLE && !/^[0-9]$/.test(ch)) { this.h().insertText(ch); }
-    else { this.h().handleKeyPress(ch); }
+    // 英数字も入力中の文字として組み立てて変換する (handleKeyPress が appendRaw へ。英文は空白でそのまま確定)
+    this.h().handleKeyPress(ch);
     this.lastChar = /^[a-z]$/.test(ch) ? ch : '';
   }
 
