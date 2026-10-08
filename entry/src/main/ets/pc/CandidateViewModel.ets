@@ -11,6 +11,8 @@ export interface CandidateViewModel {
   visible: boolean;
   // 読みの行 ('' = 出さない)。入力欄が下線付きの表示に対応していないときだけ
   header: string;
+  // 読みの行の中のカーソルの位置 (header の何文字目の前か)。-1 = カーソルを出さない
+  headerCaret: number;
   rows: string[];
   // rows[0] が candidates の何番目か
   firstIndex: number;
@@ -22,22 +24,29 @@ export interface CandidateViewModel {
   pageCount: number;
 }
 
+// reading は打ちかけのローマ字を含む読み、caret はその中のカーソルの位置 (-1 = 末尾)。
+// 読みの途中にカーソルがあるときは、入力欄に下線付きで出せていても読みの行を出す
+// (入力欄の表示は途中のカーソルの位置を指定できないので、ここで見せる)
 export function buildCandidateView(state: string, candidates: string[], selectedIndex: number,
-    previewInField: boolean, reading: string, bunsetsuDisplay: string): CandidateViewModel {
+    previewInField: boolean, reading: string, bunsetsuDisplay: string, caret: number): CandidateViewModel {
   const empty: CandidateViewModel = {
-    visible: false, header: '', rows: [], firstIndex: 0, selectedRow: -1, numbered: false,
+    visible: false, header: '', headerCaret: -1, rows: [], firstIndex: 0, selectedRow: -1, numbered: false,
     page: 0, pageCount: 0,
   };
   if (state === InputState.IDLE) { return empty; }
   let header = '';
-  if (!previewInField) {
+  let headerCaret = -1;
+  if (state === InputState.COMPOSING && caret >= 0) {
+    header = reading;
+    headerCaret = caret;
+  } else if (!previewInField) {
     header = (state === InputState.BUNSETSU && bunsetsuDisplay.length > 0) ? bunsetsuDisplay : reading;
   }
   if (state === InputState.COMPOSING) {
     const rows = candidates.slice(0, CAND_LIVE_MAX);
     return {
       visible: rows.length > 0 || header.length > 0,
-      header: header, rows: rows, firstIndex: 0, selectedRow: -1, numbered: false,
+      header: header, headerCaret: headerCaret, rows: rows, firstIndex: 0, selectedRow: -1, numbered: false,
       page: 0, pageCount: rows.length > 0 ? 1 : 0,
     };
   }
@@ -49,6 +58,7 @@ export function buildCandidateView(state: string, candidates: string[], selected
   return {
     visible: rows.length > 0 || header.length > 0,
     header: header,
+    headerCaret: -1,
     rows: rows,
     firstIndex: first,
     selectedRow: rows.length > 0 ? sel - first : -1,
@@ -83,11 +93,27 @@ export function candidateWindowSizeVp(vm: CandidateViewModel): SizeVp {
 
 // AppStorage の今の値から作る (PcModeController 用。画面側は @StorageLink の値を渡す)
 export function currentCandidateView(): CandidateViewModel {
+  const composing = AppStorage.get<string>('composingText') ?? '';
+  const pending = AppStorage.get<string>('pendingRomaji') ?? '';
+  const caret = AppStorage.get<number>('composingCaret') ?? -1;
   return buildCandidateView(
     AppStorage.get<string>('inputState') ?? InputState.IDLE,
     AppStorage.get<string[]>('candidates') ?? [],
     AppStorage.get<number>('selectedCandidateIndex') ?? 0,
     AppStorage.get<boolean>('previewInField') ?? false,
-    (AppStorage.get<string>('composingText') ?? '') + (AppStorage.get<string>('pendingRomaji') ?? ''),
-    AppStorage.get<string>('bunsetsuDisplay') ?? '');
+    readingWithCaret(composing, pending, caret),
+    AppStorage.get<string>('bunsetsuDisplay') ?? '',
+    caretInReading(composing, pending, caret));
+}
+
+// 読み + 打ちかけのローマ字 (カーソルの位置に)。InputHandler.readingWithPending と同じ並べ方
+export function readingWithCaret(composing: string, pending: string, caret: number): string {
+  const at = caret < 0 ? composing.length : Math.min(caret, composing.length);
+  return composing.slice(0, at) + pending + composing.slice(at);
+}
+
+// その中のカーソルの位置 (打ちかけのローマ字の後ろ)。-1 = 末尾 (出さない)
+export function caretInReading(composing: string, pending: string, caret: number): number {
+  if (caret < 0 || caret >= composing.length) { return -1; }
+  return caret + pending.length;
 }

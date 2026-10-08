@@ -57,6 +57,14 @@ interface InsertTextOptions {
   raw: boolean;
 }
 
+// PCモード (pc/PhysicalKeyRouter) から、変換候補に足す英字の候補をもらう口。
+// 打ったキーそのものを覚えているのは物理キーの側なので、こちらからは読みを渡して聞く
+export interface PcCompositionHooks {
+  // 読み reading を打ったキーの英字 (打ったとおり・全部小文字・全部大文字・それぞれの全角)。
+  // 英字を含まない打ち方なら []
+  alphaVariants(reading: string): string[];
+}
+
 interface HostEditOp {
   kind: 'insert' | 'delete';
   text: string;
@@ -1869,6 +1877,7 @@ export class InputHandler {
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('keyboardSubMode', 'kana');
+    this.resetCaretAndAlpha();
     this.insertedBuffer = [];
     this.composingUndoStack = [];
     // 新しい入力欄 = 別のドキュメント/別のアプリの可能性があるので、hostCursor
@@ -1894,6 +1903,7 @@ export class InputHandler {
     this.kbController = undefined;
     this.inputClient = undefined;
     this.converter.reset();
+    this.resetCaretAndAlpha();
     this.insertedBuffer = [];
     this.composingUndoStack = [];
     this.hostUndoStack = [];
@@ -1942,8 +1952,7 @@ export class InputHandler {
       const kana = mode === InputMode.KATAKANA
         ? toKatakana(result.committed)
         : result.committed;
-      const current = AppStorage.get<string>('composingText') ?? '';
-      AppStorage.setOrCreate('composingText', current + kana);
+      this.insertAtCaret(kana);
       this.resetConversionRangeForPc();
       this.updateCandidates();
     }
@@ -1960,6 +1969,7 @@ export class InputHandler {
   }
 
   handleSpaceKey(): void {
+    this.settleCaret();
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     let composing = AppStorage.get<string>('composingText') ?? '';
     if (state !== InputState.SELECTING) {
@@ -2098,10 +2108,12 @@ export class InputHandler {
         InputLog.recordDeleteChar(pending.slice(-1), 'COMPOSING_ROMAJI');
       } else {
         const composing = AppStorage.get<string>('composingText') ?? '';
-        if (composing.length > 0) {
-          const ch = composing.slice(-1);
+        const at = this.caretIndex(composing);
+        if (at > 0) {
+          const ch = composing.charAt(at - 1);
           this.composingUndoStack.push(ch);
-          AppStorage.setOrCreate('composingText', composing.slice(0, -1));
+          this.removeFromComposing(at - 1);
+          if (this.caret >= 0) { this.setCaret(at - 1); }
           InputLog.recordDeleteChar(ch, InputState.COMPOSING);
         }
       }
@@ -2125,6 +2137,8 @@ export class InputHandler {
   // 戻すのは、続けて打てば表のどれかになる綴り (sh・ch・t など) の最も長い末尾だけ
   private reclaimTrailingRomaji(): void {
     if (this.converter.getPending().length > 0) { return; }
+    // 読みの途中にカーソルがあるとき・英字入力の部分 (Shift で打った英字) は戻さない
+    if (this.caret >= 0 || this.alphaFrom >= 0) { return; }
     const composing = AppStorage.get<string>('composingText') ?? '';
     const m = /[a-z]{1,4}$/.exec(composing);
     if (m === null) { return; }
@@ -2200,6 +2214,7 @@ export class InputHandler {
   }
 
   commitRaw(): void {
+    this.settleCaret();
     const composing = AppStorage.get<string>('composingText') ?? '';
     const pending = this.flushPendingRomaji();
     const all = composing + pending;
@@ -2245,7 +2260,8 @@ export class InputHandler {
       // completion personalisation instead flows from full-word commits (typing
       // かいしゃ→会社 correctly teaches かいしゃ, which then completes かいし).
       // F6〜F10 で作った候補 (PCモード) も学習しない。
-      if (this.fixedConversion.length === 0 && !this.isNonLearningCandidate(reading, text)) {
+      if (this.fixedConversion.length === 0 && !this.isAlphaVariant(reading, text)
+          && !this.isNonLearningCandidate(reading, text)) {
         this.learnCommit(reading, text);
         this.saveLearning();
         this.observeUnknownWord(reading, text);
@@ -2340,7 +2356,8 @@ export class InputHandler {
       const tail = parts[1];
       InputLog.recordCommit(reading, chosen, idx, candidates.length, candidates, 'key',
         [] as string[]);
-      if (this.fixedConversion.length === 0 && !this.isNonLearningCandidate(reading, chosen)) {
+      if (this.fixedConversion.length === 0 && !this.isAlphaVariant(reading, chosen)
+          && !this.isNonLearningCandidate(reading, chosen)) {
         this.learnCommit(reading, chosen);
         this.saveLearning();
         this.observeUnknownWord(reading, chosen);
@@ -2361,6 +2378,7 @@ export class InputHandler {
   }
 
   private commitPending(): void {
+    this.settleCaret();
     const composing = AppStorage.get<string>('composingText') ?? '';
     const pending = this.flushPendingRomaji();
     const all = composing + pending;
@@ -2383,6 +2401,7 @@ export class InputHandler {
   // 長さに張り直してから候補を出し直す。
   private continueWithTail(tail: string): void {
     this.clearFixedConversion();
+    this.resetCaretAndAlpha();
     this.converter.reset();
     this.bSegs = [];
     this.bChosen = [];
@@ -2423,6 +2442,7 @@ export class InputHandler {
     // (取消・欄の切り替えなど) でもここを通るので、消し忘れの受け皿になる。
     this.cancelPreviewText();
     this.clearFixedConversion();
+    this.resetCaretAndAlpha();
     this.converter.reset();
     this.bSegs = [];
     this.bChosen = [];
@@ -3216,7 +3236,19 @@ export class InputHandler {
     // Candidates the user deleted by long-pressing them are dropped last, so
     // every source above (dictionaries, learning, the injected predictions) is
     // covered by the one filter -- see SuppressedCandidates.
-    const shown = SuppressedCandidates.filter(target, candidates);
+    let shown = SuppressedCandidates.filter(target, candidates);
+    // PCモード: 英字の候補 (打ったとおり・小文字・大文字・全角) を最後尾に。読みが丸ごと
+    // 英字入力 (頭を大文字で打った) なら、英字の候補だけにする
+    if (this.isPcMode() && this.pcHooks !== undefined) {
+      const alpha = this.pcHooks.alphaVariants(target);
+      if (this.alphaFrom === 0 && alpha.length > 0) {
+        shown = alpha;
+      } else {
+        for (const a of alpha) {
+          if (shown.indexOf(a) < 0) { shown.push(a); }
+        }
+      }
+    }
     // PCモードの変換中に一覧が出し直された (裏の変換が後から届いた・範囲を変えた) ときは、
     // 選んでいた候補を選んだままにする (1 位に戻ると、Space で選んだのに確定で別の候補が入る)
     let keepSel = 0;
@@ -3378,6 +3410,7 @@ export class InputHandler {
 
   // Enter bunsetsu mode: segment composing text and show first segment's candidates
   handleBunsetsu(): void {
+    this.settleCaret();
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state !== InputState.COMPOSING) { return; }
     let composing = AppStorage.get<string>('composingText') ?? '';
@@ -3682,6 +3715,156 @@ export class InputHandler {
   // 打ちかけのローマ字を読みに入れる。PCモードは Windows の IME と同じく、
   // 末尾に残った n を「ん」にする (hon + 変換 で「ほn」ではなく「ほん」)。
   // ソフトキーボードは今までどおり (n のまま)。
+  // ---- 読みの中のカーソル・英字入力 (PCモード) ----
+
+  // 読みの中のカーソルの位置 (composingText の何文字目の前か)。-1 = 末尾 (ふつう)。
+  // 打ちかけのローマ字 (pendingRomaji) はカーソルの位置に出る
+  private caret: number = -1;
+  // composingText のこの位置から後ろは英字入力 (Shift で大文字を打ったところから。
+  // ローマ字にせず打ったとおりに入れる)。-1 = 英字入力なし。0 なら読みが丸ごと英字
+  private alphaFrom: number = -1;
+  private pcHooks: PcCompositionHooks | undefined = undefined;
+
+  setPcCompositionHooks(hooks: PcCompositionHooks): void {
+    this.pcHooks = hooks;
+  }
+
+  // text は読み reading の英字の候補 (打ったキーそのもの) か。確定しても学習しない
+  // (読み → ローマ字 を覚えると、次から変換の 1 位にローマ字が出てしまう。F9・F10 と同じ)
+  private isAlphaVariant(reading: string, text: string): boolean {
+    if (!this.isPcMode() || this.pcHooks === undefined) { return false; }
+    return this.pcHooks.alphaVariants(reading).indexOf(text) >= 0;
+  }
+
+  private resetCaretAndAlpha(): void {
+    this.caret = -1;
+    this.alphaFrom = -1;
+    AppStorage.setOrCreate('composingCaret', -1);
+  }
+
+  private caretIndex(composing: string): number {
+    return this.caret < 0 ? composing.length : Math.min(this.caret, composing.length);
+  }
+
+  private setCaret(index: number): void {
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    this.caret = (index < 0 || index >= composing.length) ? -1 : index;
+    AppStorage.setOrCreate('composingCaret', this.caret);
+  }
+
+  // 読みのカーソルの位置に text を入れる (カーソルはその後ろへ)
+  private insertAtCaret(text: string): void {
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const at = this.caretIndex(composing);
+    AppStorage.setOrCreate('composingText', composing.slice(0, at) + text + composing.slice(at));
+    if (this.alphaFrom >= 0 && at < this.alphaFrom) { this.alphaFrom += text.length; }
+    if (this.caret >= 0) {
+      this.caret = at + text.length;
+      AppStorage.setOrCreate('composingCaret', this.caret);
+    }
+  }
+
+  // 読みの index 文字目を消す (英字入力の始まりも合わせてずらす)
+  private removeFromComposing(index: number): void {
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const next = composing.slice(0, index) + composing.slice(index + 1);
+    AppStorage.setOrCreate('composingText', next);
+    if (this.alphaFrom >= 0 && index < this.alphaFrom) { this.alphaFrom -= 1; }
+    if (this.alphaFrom >= next.length) { this.alphaFrom = -1; }
+  }
+
+  // 読み + 打ちかけのローマ字 (カーソルの位置に)。入力欄・候補ウィンドウに出す文字列
+  readingWithPending(): string {
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const pending = AppStorage.get<string>('pendingRomaji') ?? '';
+    const at = this.caretIndex(composing);
+    return composing.slice(0, at) + pending + composing.slice(at);
+  }
+
+  // 打ちかけのローマ字をカーソルの位置に読みとして入れる (カーソルを動かす前・変換の前)
+  private flushPendingAtCaret(): void {
+    const pending = this.flushPendingRomaji();
+    AppStorage.setOrCreate('pendingRomaji', '');
+    if (pending.length === 0) { return; }
+    const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
+    this.insertAtCaret(mode === InputMode.KATAKANA ? toKatakana(pending) : pending);
+  }
+
+  // カーソルを末尾に戻し、打ちかけのローマ字を読みに入れる。変換・確定など読み全体を扱う前に
+  // 呼ぶ (カーソルが途中にあるまま末尾に足す処理を通ると、ローマ字が違う位置に入る)
+  settleCaret(): void {
+    if (this.caret < 0) { return; }
+    this.flushPendingAtCaret();
+    this.setCaret(-1);
+  }
+
+  isCaretInside(): boolean {
+    return this.caret >= 0;
+  }
+
+  // ← → Home End: 読みの中でカーソルを動かす (Windows の IME と同じ)
+  moveCaret(delta: number): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.COMPOSING) { return; }
+    this.flushPendingAtCaret();
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const at = this.caretIndex(composing);
+    this.setCaret(Math.max(0, Math.min(composing.length, at + delta)));
+    this.updateCandidates();
+  }
+
+  moveCaretToEdge(toEnd: boolean): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.COMPOSING) { return; }
+    this.flushPendingAtCaret();
+    this.setCaret(toEnd ? -1 : 0);
+    this.updateCandidates();
+  }
+
+  // Delete: カーソルの後ろの 1 字を消す
+  deleteAfterCaret(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.COMPOSING || this.caret < 0) { return; }
+    this.flushPendingAtCaret();
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const at = this.caretIndex(composing);
+    if (at >= composing.length) { return; }
+    InputLog.recordDeleteChar(composing.charAt(at), 'DELETE');
+    this.removeFromComposing(at);
+    this.setCaret(at);
+    const next = AppStorage.get<string>('composingText') ?? '';
+    if (next.length === 0) {
+      AppStorage.setOrCreate('inputState', InputState.IDLE);
+    }
+    this.resetConversionRangeForPc();
+    this.updateCandidates();
+  }
+
+  // 今のカーソルの位置が英字入力の部分か (続けて打つ英字をローマ字にしないか)
+  isAlphaAtCaret(): boolean {
+    if (this.alphaFrom < 0) { return false; }
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    return this.caretIndex(composing) >= this.alphaFrom;
+  }
+
+  // 英字入力: ローマ字にせず、打ったとおりの字を読みに入れる。まだ英字入力でなければ、
+  // ここから後ろを英字入力にする (読みの頭なら読みが丸ごと英字)
+  insertRawChar(ch: string): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.SELECTING) {
+      this.commitTopCandidate();
+    }
+    this.flushPendingAtCaret();
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const at = this.caretIndex(composing);
+    InputLog.recordKey(ch, ch, '', 'ALPHA');
+    this.insertAtCaret(ch);
+    if (this.alphaFrom < 0 || at < this.alphaFrom) { this.alphaFrom = at; }
+    AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    this.resetConversionRangeForPc();
+    this.updateCandidates();
+  }
+
   // PCモードで読みを打ち足した・消したら、変換する範囲を読み全体に戻す。範囲を縮めたまま
   // (Shift+← や、前の方だけ確定した残り) 打ち足すと、打ち足した分が変換されないため
   // (Windows の IME も、打ち足せば読み全体を変換し直す)
@@ -3701,6 +3884,7 @@ export class InputHandler {
   // モードを切り替える前、絵文字・設定を開く前)。変換していない読みは
   // Windows の IME と同じく、かなのまま確定する。
   commitComposition(): void {
+    this.settleCaret();
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.BUNSETSU) {
       this.commitBunsetsu();
@@ -3781,6 +3965,7 @@ export class InputHandler {
   // F6〜F10: 読み (文節の編集中はその文節) を convert で書き換えた 1 つだけの
   // 候補を、選んだ状態で出す。Enter で確定、続けて打てばそれを確定して次へ。
   presentFixedConversion(convert: (reading: string) => string): void {
+    this.settleCaret();
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.IDLE) { return; }
     if (state === InputState.BUNSETSU) {
@@ -3837,8 +4022,7 @@ export class InputHandler {
   // 編集中は文節の表記をつないだものを出す (候補ウィンドウはカーソルの下に
   // 出るので、入力欄側に結果が見えていないと何を確定するのか分からない)。
   private previewTextForState(): string {
-    const reading = (AppStorage.get<string>('composingText') ?? '')
-      + (AppStorage.get<string>('pendingRomaji') ?? '');
+    const reading = this.readingWithPending();
     if (!(AppStorage.get<boolean>('pcModeActive') ?? false) || reading.length === 0) {
       return reading;
     }

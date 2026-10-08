@@ -14,7 +14,7 @@
 // 押しっぱなし・離しっぱなしのキーがアプリ側に残る)。
 import type { KeyEvent as InputKeyEvent } from '@ohos.multimodalInput.keyEvent';
 import { KeyCode } from '@kit.InputKit';
-import { InputHandler, InputState, InputMode } from '../ime/KeyboardController';
+import { InputHandler, InputState, InputMode, PcCompositionHooks } from '../ime/KeyboardController';
 import { JapaneseConverter, toKatakana } from '../ime/JapaneseConverter';
 import { KeyMap, toJapaneseInputChar, toFullWidth, toHalfWidthKatakana, toHiragana, kanaToRomaji } from './KeyMap';
 import { CANDIDATE_PAGE_SIZE } from './PcStyle';
@@ -67,13 +67,15 @@ interface Modifiers {
   shift: boolean;
 }
 
-export class PhysicalKeyRouter {
+export class PhysicalKeyRouter implements PcCompositionHooks {
   private handler: InputHandler;
   private host: PcKeyHost;
   // keyDown を消費したキー。対になる keyUp も消費する
   private consumed: Set<number> = new Set<number>();
   // 今の読みを打ったキーそのまま (F9・F10 用)。読みが空になったら捨てる
   private rawKeys: string = '';
+  // rawKeys のこの位置から後ろは英字入力 (Shift で大文字を打ったところから)。-1 = なし
+  private rawAlphaFrom: number = -1;
   // F9・F10 を続けて押した回数 (押すたびに 小文字 → 大文字 → 先頭だけ大文字)
   private lastFKey: number = -1;
   private fKeyRepeat: number = 0;
@@ -81,13 +83,19 @@ export class PhysicalKeyRouter {
   constructor(handler: InputHandler, host: PcKeyHost) {
     this.handler = handler;
     this.host = host;
+    handler.setPcCompositionHooks(this);
+  }
+
+  private resetRaw(): void {
+    this.rawKeys = '';
+    this.rawAlphaFrom = -1;
   }
 
   // 入力欄が変わった・PCモードが切れた: 押したままのキーの記録も捨てる
   // (keyUp を消費し損ねても、次の欄で無関係なキーを飲み込まないように)
   reset(): void {
     this.consumed.clear();
-    this.rawKeys = '';
+    this.resetRaw();
     this.lastFKey = -1;
     this.fKeyRepeat = 0;
   }
@@ -165,7 +173,7 @@ export class PhysicalKeyRouter {
     if (mods.ctrl || mods.alt || mods.meta) {
       if (busy) {
         this.handler.commitComposition();
-        this.rawKeys = '';
+        this.resetRaw();
         this.host.onImeStateChanged();
       }
       return false;
@@ -216,7 +224,7 @@ export class PhysicalKeyRouter {
       return true;
     }
     if (ch.length > 0) {
-      this.rawKeys = '';
+      this.resetRaw();
       this.typeChar(code, ch);
       return true;
     }
@@ -236,23 +244,41 @@ export class PhysicalKeyRouter {
       case KeyCode.KEYCODE_ENTER:
       case KeyCode.KEYCODE_NUMPAD_ENTER:
         this.handler.handleEnterKey();
-        this.rawKeys = '';
+        this.resetRaw();
         return true;
       case KeyCode.KEYCODE_DEL:
         this.handler.handleBackspace();
         return true;
       case KeyCode.KEYCODE_ESCAPE:
         this.handler.cancelComposition();
-        this.rawKeys = '';
+        this.resetRaw();
         return true;
       case KeyCode.KEYCODE_DPAD_LEFT:
-        // Shift+← で変換する範囲を縮める (Windows の IME と同じ)。読みの中のカーソル移動は
-        // 無いので、Shift 無しは飲み込むだけ (以前は Shift 無しでも範囲を縮めていて、
-        // カーソルを動かすつもりで押すと先頭の数文字しか変換されなくなっていた)
-        if (mods.shift) { this.handler.handleCursorLeft(); }
+        // ← →: 読みの中でカーソルを動かす。Shift+← →: 変換する範囲を縮める・伸ばす
+        // (どちらも Windows の IME と同じ)
+        if (mods.shift) {
+          this.handler.settleCaret();
+          this.handler.handleCursorLeft();
+        } else {
+          this.handler.moveCaret(-1);
+        }
         return true;
       case KeyCode.KEYCODE_DPAD_RIGHT:
-        if (mods.shift) { this.handler.handleCursorRight(); }
+        if (mods.shift) {
+          this.handler.settleCaret();
+          this.handler.handleCursorRight();
+        } else {
+          this.handler.moveCaret(1);
+        }
+        return true;
+      case KeyCode.KEYCODE_MOVE_HOME:
+        this.handler.moveCaretToEdge(false);
+        return true;
+      case KeyCode.KEYCODE_MOVE_END:
+        this.handler.moveCaretToEdge(true);
+        return true;
+      case KeyCode.KEYCODE_FORWARD_DEL:
+        this.handler.deleteAfterCaret();
         return true;
       case KeyCode.KEYCODE_DPAD_UP:
       case KeyCode.KEYCODE_PAGE_UP:
@@ -306,7 +332,7 @@ export class PhysicalKeyRouter {
       case KeyCode.KEYCODE_ENTER:
       case KeyCode.KEYCODE_NUMPAD_ENTER:
         this.handler.handleEnterKey();
-        this.rawKeys = '';
+        this.resetRaw();
         return true;
       case KeyCode.KEYCODE_ESCAPE:
       case KeyCode.KEYCODE_DEL:
@@ -342,7 +368,7 @@ export class PhysicalKeyRouter {
     if (SWALLOW_WHILE_BUSY.has(code)) { return true; }
     if (ch.length > 0) {
       // 選んでいる候補で確定して、次の読みを打ち始める (handleKeyPress が確定する)
-      this.rawKeys = '';
+      this.resetRaw();
       this.typeChar(code, ch);
       return true;
     }
@@ -382,7 +408,7 @@ export class PhysicalKeyRouter {
       case KeyCode.KEYCODE_ENTER:
       case KeyCode.KEYCODE_NUMPAD_ENTER:
         this.handler.handleEnterKey();
-        this.rawKeys = '';
+        this.resetRaw();
         return true;
       case KeyCode.KEYCODE_ESCAPE:
       case KeyCode.KEYCODE_DEL:
@@ -404,7 +430,7 @@ export class PhysicalKeyRouter {
     if (ch.length > 0) {
       // handleKeyPress は文節の編集中に確定しないので、先に全部確定する
       this.handler.commitComposition();
-      this.rawKeys = '';
+      this.resetRaw();
       this.typeChar(code, ch);
       return true;
     }
@@ -415,17 +441,47 @@ export class PhysicalKeyRouter {
 
   private typeChar(code: number, ch: string): void {
     this.host.closePopupForTyping();
-    // テンキーは Windows の既定 (常に半角) のまま。それ以外の記号・数字は和文の字に
+    // 大文字の英字 (Shift・CapsLock) を打ったら、そこから後ろは英字入力 (ローマ字にせず
+    // 打ったとおりに入れる)。読みの頭なら読みが丸ごと英字になり、候補も英字だけになる。
+    // 英字入力の部分では、小文字・数字・記号も打ったとおり (半角) に入れる
+    const upper = KeyMap.isLetter(code) && /[A-Z]/.test(ch);
+    // 英字入力を続けるのは読みを打っている最中だけ (変換中に打てば、前の読みを確定して
+    // 新しい読みを始めるので、前の読みの英字入力は引き継がない)
+    const composing = (AppStorage.get<string>('inputState') ?? InputState.IDLE) === InputState.COMPOSING;
+    if (upper || (composing && this.handler.isAlphaAtCaret())) {
+      if (this.rawAlphaFrom < 0) { this.rawAlphaFrom = this.rawKeys.length; }
+      this.rawKeys += ch;
+      this.handler.insertRawChar(ch);
+      return;
+    }
+    // テンキーは Windows の既定 (常に半角) のまま。それ以外の記号は和文の字に
     const out = KeyMap.isNumpad(code) ? ch : toJapaneseInputChar(ch);
     this.rawKeys += ch;
     this.handler.handleKeyPress(out);
+  }
+
+  // ---------- 英字の候補 (InputHandler から) ----------
+
+  // 読み reading の英字の候補: 打ったとおり・全部小文字・全部大文字、それぞれの全角。
+  // 英字を含まなければ []
+  alphaVariants(reading: string): string[] {
+    if (reading.length === 0) { return []; }
+    const raw = this.romajiFor(reading);
+    if (!/[a-zA-Z]/.test(raw)) { return []; }
+    const half = [raw, raw.toLowerCase(), raw.toUpperCase()];
+    const all = half.concat(half.map((t: string) => toFullWidth(t)));
+    const out: string[] = [];
+    for (const t of all) {
+      if (out.indexOf(t) < 0) { out.push(t); }
+    }
+    return out;
   }
 
   // IME が扱わないキー (F1〜F5・F11・F12・メニューキーなど) を、入力中のものを
   // 確定してからアプリへ渡す
   private commitAndPass(): boolean {
     this.handler.commitComposition();
-    this.rawKeys = '';
+    this.resetRaw();
     this.host.onImeStateChanged();
     return false;
   }
@@ -451,7 +507,7 @@ export class PhysicalKeyRouter {
     if (index < candidates.length) {
       this.handler.commitCandidate(index);
       const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-      if (state === InputState.IDLE) { this.rawKeys = ''; }
+      if (state === InputState.IDLE) { this.resetRaw(); }
     }
     return true;
   }
@@ -498,17 +554,30 @@ export class PhysicalKeyRouter {
 
   // 読みのローマ字。覚えている打鍵から今の読みがそのまま作れるならそれを使い、
   // 途中を消した・前の方だけ確定したなどで食い違えば、読みから作り直す。
+  // 覚えている打鍵を打ち直したときの読みが今の読みと合えば打鍵そのもの、合わなければ
+  // (途中を消した・カーソルを動かして打った・前の方だけ確定した) 読みから作り直す。
+  // 読みは打ちかけのローマ字を含まないこともある (打っている間の候補) ので、
+  // 打ちかけを足した・足さない両方で比べる
   private romajiFor(reading: string): string {
     if (this.rawKeys.length > 0) {
       const conv = new JapaneseConverter();
       let kana = '';
       for (let i = 0; i < this.rawKeys.length; i++) {
-        kana += conv.processKey(toJapaneseInputChar(this.rawKeys[i])).committed;
+        const c = this.rawKeys[i];
+        if (this.rawAlphaFrom >= 0 && i >= this.rawAlphaFrom) {
+          if (i === this.rawAlphaFrom) {
+            const p = conv.flushPending();
+            kana += p === 'n' ? 'ん' : p;
+          }
+          kana += c;
+        } else {
+          kana += conv.processKey(toJapaneseInputChar(c)).committed;
+        }
       }
-      kana += conv.flushPending();
-      if (toHiragana(kana) === toHiragana(reading)) {
-        return this.rawKeys;
-      }
+      const want = toHiragana(reading);
+      if (toHiragana(kana) === want) { return this.rawKeys; }
+      const p = conv.flushPending();
+      if (toHiragana(kana + (p === 'n' ? 'ん' : p)) === want) { return this.rawKeys; }
     }
     return kanaToRomaji(reading);
   }

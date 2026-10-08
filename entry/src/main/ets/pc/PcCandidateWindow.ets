@@ -13,7 +13,7 @@
 import { InputHandler, InputState } from '../ime/KeyboardController';
 import { JP_FONT_FAMILY } from '../components/JpFont';
 import { PcModeController } from './PcModeController';
-import { buildCandidateView, CandidateViewModel } from './CandidateViewModel';
+import { buildCandidateView, CandidateViewModel, readingWithCaret, caretInReading } from './CandidateViewModel';
 import {
   pcTheme, CANDIDATE_PAGE_SIZE, CAND_MARGIN_VP, CAND_PAD_VP, CAND_ROW_H_VP, CAND_HEADER_H_VP,
   CAND_FOOTER_H_VP, CAND_NUMBER_W_VP, CAND_FONT_FP
@@ -32,8 +32,9 @@ export struct PcCandidateWindow {
   @StorageLink('pendingRomaji') @Watch('refresh') pendingRomaji: string = '';
   @StorageLink('previewInField') @Watch('refresh') previewInField: boolean = false;
   @StorageLink('bunsetsuDisplay') @Watch('refresh') bunsetsuDisplay: string = '';
+  @StorageLink('composingCaret') @Watch('refresh') composingCaret: number = -1;
   @State vm: CandidateViewModel = {
-    visible: false, header: '', rows: [], firstIndex: 0, selectedRow: -1, numbered: false,
+    visible: false, header: '', headerCaret: -1, rows: [], firstIndex: 0, selectedRow: -1, numbered: false,
     page: 0, pageCount: 0,
   };
   @State hoverRow: number = -1;
@@ -49,7 +50,8 @@ export struct PcCandidateWindow {
 
   private rebuild(): void {
     this.vm = buildCandidateView(this.inputState, this.candidates, this.selectedIndex,
-      this.previewInField, this.composingText + this.pendingRomaji, this.bunsetsuDisplay);
+      this.previewInField, readingWithCaret(this.composingText, this.pendingRomaji, this.composingCaret),
+      this.bunsetsuDisplay, caretInReading(this.composingText, this.pendingRomaji, this.composingCaret));
     this.hoverRow = -1;
   }
 
@@ -72,6 +74,15 @@ export struct PcCandidateWindow {
     return row === this.hoverRow ? pcTheme(this.isDark).hoverBg : Color.Transparent;
   }
 
+  @Builder HeaderText(text: string) {
+    Text(text)
+      .fontFamily(JP_FONT_FAMILY)
+      .fontSize(CAND_FONT_FP - 1)
+      .fontColor(pcTheme(this.isDark).textPrimary)
+      .decoration({ type: TextDecorationType.Underline, color: pcTheme(this.isDark).composingUnderline })
+      .maxLines(1)
+  }
+
   build() {
     Column() {
       // 出すものが無いときは何も描かない (窓が何かの拍子に出ても空白の板にならないように)
@@ -79,13 +90,17 @@ export struct PcCandidateWindow {
         Column() {
           if (this.vm.header.length > 0) {
             Row() {
-              Text(this.vm.header)
-                .fontFamily(JP_FONT_FAMILY)
-                .fontSize(CAND_FONT_FP - 1)
-                .fontColor(pcTheme(this.isDark).textPrimary)
-                .decoration({ type: TextDecorationType.Underline, color: pcTheme(this.isDark).composingUnderline })
-                .maxLines(1)
-                .textOverflow({ overflow: TextOverflow.Ellipsis })
+              if (this.vm.headerCaret >= 0) {
+                // 読みの途中のカーソル: 前 | 後ろ
+                this.HeaderText(this.vm.header.slice(0, this.vm.headerCaret))
+                Row()
+                  .width(1.5)
+                  .height(CAND_FONT_FP + 2)
+                  .backgroundColor(pcTheme(this.isDark).accent)
+                this.HeaderText(this.vm.header.slice(this.vm.headerCaret))
+              } else {
+                this.HeaderText(this.vm.header)
+              }
             }
             .width('100%')
             .height(CAND_HEADER_H_VP)
