@@ -3,6 +3,8 @@ import { kbTheme } from './Theme';
 import { promptAction } from '@kit.ArkUI';
 import { JP_FONT_FAMILY } from './JpFont';
 import { DEBUG_INPUT_LOG } from '../ime/InputLog';
+import { PcModeController } from '../pc/PcModeController';
+import { PC_MODE_AUTO, PC_MODE_ON, PC_MODE_OFF } from '../pc/PcSettings';
 
 // Segmented-control / card metrics (design tokens: settings cards 16px,
 // segmented-control track 20px / inner pill 20px).
@@ -55,6 +57,8 @@ export struct SettingsBar {
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
   @StorageLink('flickHintsEnabled') flickHintsEnabled: boolean = true;
   @StorageLink('bracketCloseMode') bracketCloseMode: string = 'manual';
+  // PCモード (物理キーボード) を使うか。'auto' | 'on' | 'off' (pc/PcSettings 参照)
+  @StorageLink('pcModePreference') pcModePreference: string = 'auto';
   // タブレット/フォルダブルの展開画面かどうか (KeyboardController が画面の
   // 短辺から判定)。幅の上限調整は普通のスマホでは効かないので、この端末
   // 区分のときだけ出す。
@@ -636,6 +640,66 @@ export struct SettingsBar {
       Text(this.bracketCloseMode === 'auto'
         ? '次に確定した内容の直後で自動的に閉じます（従来の動作）'
         : '► キー（フリック・数字パッド）か、候補バーの待機バッジのタップで閉じます。括弧の中で何度確定しても勝手には閉じません')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(10)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .width('100%')
+        .padding({ bottom: 12 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      // PCモード: 物理キーボードで打つとき、ソフトキーボードの代わりに言語バーと
+      // カーソルの下の候補ウィンドウを出す (pc/PcModeController 参照)。
+      Row() {
+        Text('PCモード')
+          .fontFamily(JP_FONT_FAMILY)
+          .fontSize(14)
+          .fontColor(kbTheme(this.isDark).textPrimary)
+          .layoutWeight(1)
+
+        Row({ space: 2 }) {
+          Text('自動')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.pcModePreference === PC_MODE_AUTO ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.pcModePreference === PC_MODE_AUTO ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .onClick(() => { PcModeController.getInstance().setPreference(PC_MODE_AUTO); })
+
+          Text('オン')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.pcModePreference === PC_MODE_ON ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.pcModePreference === PC_MODE_ON ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .onClick(() => { PcModeController.getInstance().setPreference(PC_MODE_ON); })
+
+          Text('オフ')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.pcModePreference === PC_MODE_OFF ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.pcModePreference === PC_MODE_OFF ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .onClick(() => { PcModeController.getInstance().setPreference(PC_MODE_OFF); })
+        }
+        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .borderRadius(TRACK_RADIUS)
+        .padding(2)
+      }
+      .width('100%')
+      .padding({ top: 12, bottom: 4 })
+
+      Text(this.pcModePreference === PC_MODE_ON
+        ? '常に言語バーと候補ウィンドウで入力します'
+        : this.pcModePreference === PC_MODE_OFF
+          ? '物理キーボードをつないでもソフトキーボードのままです'
+          : '物理キーボードをつないでいる間は、言語バーとカーソルの下の候補ウィンドウで入力します（Windows の IME と同じ操作）')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(10)
         .fontColor(kbTheme(this.isDark).textSecondary)

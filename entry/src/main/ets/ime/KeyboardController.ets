@@ -7,6 +7,7 @@ import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
 import vibrator from '@ohos.vibrator';
 import bundleManager from '@ohos.bundle.bundleManager';
+import type { KeyEvent as InputKeyEvent } from '@ohos.multimodalInput.keyEvent';
 
 import { JapaneseConverter, toKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
@@ -28,6 +29,7 @@ import { bracketVariants } from './Brackets';
 import { EmojiSuggest } from './EmojiSuggest';
 import { AppMaintenance } from './AppMaintenance';
 import { AiConverter } from './AiConverter';
+import { PcModeController } from '../pc/PcModeController';
 
 interface InputMethodSubtype {
   id: string;
@@ -2074,6 +2076,7 @@ export class InputHandler {
 
     if (state === InputState.SELECTING) {
       InputLog.recordDeleteChar('', InputState.SELECTING);
+      this.clearFixedConversion();
       AppStorage.setOrCreate('candidates', [] as string[]);
       AppStorage.setOrCreate('inputState', InputState.COMPOSING);
       return;
@@ -2208,7 +2211,8 @@ export class InputHandler {
       // recordChoice(かいし→会社) would teach a wrong reading. Skip the learn;
       // completion personalisation instead flows from full-word commits (typing
       // かいしゃ→会社 correctly teaches かいしゃ, which then completes かいし).
-      if (!this.isNonLearningCandidate(reading, text)) {
+      // F6〜F10 で作った候補 (PCモード) も学習しない。
+      if (this.fixedConversion.length === 0 && !this.isNonLearningCandidate(reading, text)) {
         this.learnCommit(reading, text);
         this.saveLearning();
         this.observeUnknownWord(reading, text);
@@ -2303,7 +2307,7 @@ export class InputHandler {
       const tail = parts[1];
       InputLog.recordCommit(reading, chosen, idx, candidates.length, candidates, 'key',
         [] as string[]);
-      if (!this.isNonLearningCandidate(reading, chosen)) {
+      if (this.fixedConversion.length === 0 && !this.isNonLearningCandidate(reading, chosen)) {
         this.learnCommit(reading, chosen);
         this.saveLearning();
         this.observeUnknownWord(reading, chosen);
@@ -2345,6 +2349,7 @@ export class InputHandler {
   // resetComposition と違って composingText を空にせず、変換範囲も残りの
   // 長さに張り直してから候補を出し直す。
   private continueWithTail(tail: string): void {
+    this.clearFixedConversion();
     this.converter.reset();
     this.bSegs = [];
     this.bChosen = [];
@@ -2384,6 +2389,7 @@ export class InputHandler {
     // 入力欄に残っているプレビューを必ず消す。insertText を経ない経路
     // (取消・欄の切り替えなど) でもここを通るので、消し忘れの受け皿になる。
     this.cancelPreviewText();
+    this.clearFixedConversion();
     this.converter.reset();
     this.bSegs = [];
     this.bChosen = [];
@@ -2919,8 +2925,7 @@ export class InputHandler {
   // composing を変える経路すべてがここを通る。
   private syncPreviewText(): void {
     if (!this.previewSupported || !this.composingInField) { return; }
-    const text = (AppStorage.get<string>('composingText') ?? '')
-      + (AppStorage.get<string>('pendingRomaji') ?? '');
+    const text = this.previewTextForState();
     if (text.length === 0) {
       this.cancelPreviewText();
       return;
@@ -2969,6 +2974,12 @@ export class InputHandler {
   // 変換1回の所要時間を debug ビルドだけ集計する (InputLog の perf 行)。
   // リリースでは DEBUG_INPUT_LOG が false なので、そのまま中身を呼ぶだけ。
   private updateCandidates(): void {
+    // F6〜F10 の候補を出している間は、裏から届いた変換で置き換えない
+    // (presentFixedConversion 参照)。
+    if (this.fixedConversion.length > 0
+        && (AppStorage.get<string>('inputState') ?? InputState.IDLE) === InputState.SELECTING) {
+      return;
+    }
     if (!DEBUG_INPUT_LOG) {
       this.updateCandidatesInner();
       return;
@@ -3448,13 +3459,7 @@ export class InputHandler {
   }
 
   private updateBunsetsuStorage(): void {
-    const segTexts: string[] = this.bChosen.map((ch: string, i: number) =>
-      i === this.bCur ? `[${ch}]` : ch
-    );
-    AppStorage.setOrCreate('bunsetsuTexts', this.bChosen as string[]);
-    AppStorage.setOrCreate('bunsetsuRaw', this.bSegs as string[]);
-    AppStorage.setOrCreate('bunsetsuCurrent', this.bCur);
-    AppStorage.setOrCreate('bunsetsuDisplay', segTexts.join(''));
+    this.publishBunsetsuTexts();
     const seg = this.bSegs[this.bCur];
     const cands = SuppressedCandidates.filter(seg, this.bunsetsuCandidates(this.bCur));
     AppStorage.setOrCreate('candidates', cands);
@@ -3598,6 +3603,180 @@ export class InputHandler {
   hideKeyboard(): void {
     this.kbController?.hide();
   }
+
+  // ---------- PCモード (物理キーボード) の入口 ----------
+  // pc/PhysicalKeyRouter が物理キーをここへ振り分ける。どれも既存の状態
+  // (inputState・candidates…) をそのまま動かすだけで、変換の仕組みは
+  // ソフトキーボードと共通。
+
+  // F6〜F10 で作った候補を出している間の印 (その文字列)。空なら無し。
+  // 裏の AI 変換が後から届いて候補を置き換えないようにする (updateCandidates)
+  // のと、確定しても学習しない (読み → ローマ字 を覚えると次の変換を壊す) ため。
+  private fixedConversion: string = '';
+
+  private clearFixedConversion(): void {
+    this.fixedConversion = '';
+  }
+
+  // 入力中・変換中のものを確定する (Ctrl・Alt のショートカットを素通しする前、
+  // モードを切り替える前、絵文字・設定を開く前)。変換していない読みは
+  // Windows の IME と同じく、かなのまま確定する。
+  commitComposition(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.BUNSETSU) {
+      this.commitBunsetsu();
+    } else if (state === InputState.SELECTING) {
+      this.commitTopCandidate();
+    } else if (state === InputState.COMPOSING) {
+      this.commitRaw();
+    }
+  }
+
+  // Esc: 読みごと捨てる。読みを空にしてから updateCandidates を通すのは、
+  // 打ちかけて諦めた読みの記録 (UnknownWordLearner) と入力欄の表示の後始末を
+  // backspace で全部消したときと同じ道に乗せるため。
+  cancelComposition(): void {
+    InputLog.recordDeleteChar('', 'ESC');
+    this.clearFixedConversion();
+    this.converter.reset();
+    AppStorage.setOrCreate('composingText', '');
+    AppStorage.setOrCreate('pendingRomaji', '');
+    this.updateCandidates();
+    this.resetComposition();
+  }
+
+  // 変換中 (SELECTING) の Esc: 読みに戻って続けて打てるようにする。
+  returnToComposing(): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.SELECTING) { return; }
+    this.clearFixedConversion();
+    AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    AppStorage.setOrCreate('selectedCandidateIndex', 0);
+    this.updateCandidates();
+  }
+
+  // 候補の選択を index へ (はみ出したら端で止める)。文節の編集中は、選んだ候補を
+  // その文節の表記にもする (Enter や ←→ でそのまま確定・移動できるように)。
+  setCandidateSelection(index: number): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state !== InputState.SELECTING && state !== InputState.BUNSETSU) { return; }
+    const candidates = AppStorage.get<string[]>('candidates') ?? [];
+    if (candidates.length === 0) { return; }
+    const idx = Math.max(0, Math.min(candidates.length - 1, index));
+    AppStorage.setOrCreate('selectedCandidateIndex', idx);
+    if (state === InputState.BUNSETSU && this.bCur < this.bChosen.length) {
+      this.bChosen[this.bCur] = candidates[idx];
+      this.publishBunsetsuTexts();
+    } else {
+      InputLog.recordSpace(state, AppStorage.get<string>('composingText') ?? '', idx, candidates.length);
+    }
+    this.syncPreviewText();
+  }
+
+  // 候補の選択を delta だけ動かす (端まで行ったら反対の端へ回る)。
+  moveCandidateSelection(delta: number): void {
+    const candidates = AppStorage.get<string[]>('candidates') ?? [];
+    if (candidates.length === 0) { return; }
+    const cur = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
+    let idx = (cur + delta) % candidates.length;
+    if (idx < 0) { idx += candidates.length; }
+    this.setCandidateSelection(idx);
+  }
+
+  // 変換中に ←/→: 文節ごとに選び直すモードへ。左から入ったら最後の文節に合わせる。
+  beginBunsetsuEdit(fromEnd: boolean): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.SELECTING) {
+      this.clearFixedConversion();
+      AppStorage.setOrCreate('inputState', InputState.COMPOSING);
+    } else if (state !== InputState.COMPOSING) {
+      return;
+    }
+    this.handleBunsetsu();
+    if (fromEnd && this.bSegs.length > 1) {
+      this.selectBunsetsuSegment(this.bSegs.length - 1);
+    }
+    this.syncPreviewText();
+  }
+
+  // F6〜F10: 読み (文節の編集中はその文節) を convert で書き換えた 1 つだけの
+  // 候補を、選んだ状態で出す。Enter で確定、続けて打てばそれを確定して次へ。
+  presentFixedConversion(convert: (reading: string) => string): void {
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.IDLE) { return; }
+    if (state === InputState.BUNSETSU) {
+      if (this.bCur >= this.bSegs.length) { return; }
+      const text = convert(this.bSegs[this.bCur]);
+      this.bChosen[this.bCur] = text;
+      const rest = (AppStorage.get<string[]>('candidates') ?? []).filter((c: string) => c !== text);
+      AppStorage.setOrCreate('candidates', [text].concat(rest));
+      AppStorage.setOrCreate('selectedCandidateIndex', 0);
+      this.publishBunsetsuTexts();
+      this.syncPreviewText();
+      return;
+    }
+    let composing = AppStorage.get<string>('composingText') ?? '';
+    const pending = this.converter.flushPending();
+    if (pending.length > 0) {
+      const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
+      composing += mode === InputMode.KATAKANA ? toKatakana(pending) : pending;
+      AppStorage.setOrCreate('composingText', composing);
+      AppStorage.setOrCreate('pendingRomaji', '');
+    }
+    if (composing.length === 0) { return; }
+    // 変換範囲を縮めていても、F キーは読み全体に掛ける (Windows と同じ)
+    this.conversionEnd = 0;
+    AppStorage.setOrCreate('convEnd', 0);
+    const text = convert(composing);
+    this.fixedConversion = text;
+    InputLog.recordVariant('fkey', composing, text);
+    AppStorage.setOrCreate('candidates', [text]);
+    AppStorage.setOrCreate('selectedCandidateIndex', 0);
+    AppStorage.setOrCreate('inputState', InputState.SELECTING);
+    this.syncPreviewText();
+  }
+
+  // 今の状態に合わせて入力欄の表示を出し直す (選択を動かしただけのときなど、
+  // updateCandidates を通らない変更の後に PhysicalKeyRouter が呼ぶ)。
+  refreshPreview(): void {
+    this.syncPreviewText();
+  }
+
+  // 文節の表記と、今どの文節を選んでいるかを配る (候補の一覧には触らない)。
+  private publishBunsetsuTexts(): void {
+    const segTexts: string[] = this.bChosen.map((ch: string, i: number) =>
+      i === this.bCur ? `[${ch}]` : ch
+    );
+    AppStorage.setOrCreate('bunsetsuTexts', this.bChosen.slice());
+    AppStorage.setOrCreate('bunsetsuRaw', this.bSegs.slice());
+    AppStorage.setOrCreate('bunsetsuCurrent', this.bCur);
+    AppStorage.setOrCreate('bunsetsuDisplay', segTexts.join(''));
+  }
+
+  // 入力欄に出す文字列。ソフトキーボードは今までどおり読み (かな) を出す。
+  // PCモードは Windows の IME と同じく、変換中は選んでいる候補を、文節の
+  // 編集中は文節の表記をつないだものを出す (候補ウィンドウはカーソルの下に
+  // 出るので、入力欄側に結果が見えていないと何を確定するのか分からない)。
+  private previewTextForState(): string {
+    const reading = (AppStorage.get<string>('composingText') ?? '')
+      + (AppStorage.get<string>('pendingRomaji') ?? '');
+    if (!(AppStorage.get<boolean>('pcModeActive') ?? false) || reading.length === 0) {
+      return reading;
+    }
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.BUNSETSU && this.bChosen.length > 0) {
+      return this.bChosen.join('');
+    }
+    if (state === InputState.SELECTING) {
+      const candidates = AppStorage.get<string[]>('candidates') ?? [];
+      const idx = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
+      if (idx >= 0 && idx < candidates.length) {
+        const composing = AppStorage.get<string>('composingText') ?? '';
+        return candidates[idx] + this.splitAtConversionEnd(composing)[1];
+      }
+    }
+    return reading;
+  }
 }
 
 // ---------- KeyboardController ----------
@@ -3635,6 +3814,8 @@ export class KeyboardController {
     this.inputHandle.setKeyboardControllerRef(this);
     this.applyColorMode();
     this.initPanel();
+    // PCモード (物理キーボード)。つながっていなければ何もしない
+    PcModeController.getInstance().attach(this, this.inputHandle, this.context);
     this.registerListeners();
   }
 
@@ -3663,6 +3844,7 @@ export class KeyboardController {
     this.inputHandle.flushPendingSaves();
     InputLog.flush();
     this.unregisterListeners();
+    PcModeController.getInstance().detach();
     if (this.panel) {
       IMEAbility.destroyPanel(this.panel);
       this.panel = undefined;
@@ -3856,6 +4038,7 @@ export class KeyboardController {
           panel.resize(dis.width, keyHeight)
             .then(() => panel.moveTo(0, dis.height - keyHeight))
             .then(() => panel.setUiContent('pages/KeyboardPage'))
+            .then(() => { PcModeController.getInstance().onSoftPanelReady(); })
             .catch((err: Error) => console.error('shuntiIME panel init error', err));
         })
         .catch((err: Error) => console.error('shuntiIME createPanel error', err));
@@ -3910,6 +4093,12 @@ export class KeyboardController {
   }
 
   private doResizePanelNow(): void {
+    // PCモードが候補ウィンドウ・展開に使っている間は、キーボードの大きさに
+    // 戻さない (置き場所は PcModeController が決め直す)
+    if (PcModeController.getInstance().ownsSoftPanel()) {
+      PcModeController.getInstance().relayout();
+      return;
+    }
     const floating = AppStorage.get<boolean>('floatingMode') ?? false;
     // 「反復横跳び」の原因はジッタではなく display 値のフィードバック
     // ループだったので (displayForFloating のキャッシュで解決済み)、間引き
@@ -4005,6 +4194,12 @@ export class KeyboardController {
   // うっかり呼び出してキーボードを勝手に出現させないため。
   setFloatingMode(enabled: boolean): void {
     if (!this.panel) { return; }
+    // PCモードが候補ウィンドウに使っている間は flag を変えない。設定だけ覚えて
+    // おき、仮想キーを出す / PCモードを抜けるとき (restoreSoftKeyboardForPc) に効かせる
+    if (PcModeController.getInstance().ownsSoftPanel()) {
+      AppStorage.setOrCreate('floatingMode', enabled);
+      return;
+    }
     const wasVisible = this.panelVisible;
     AppStorage.setOrCreate('floatingMode', enabled);
     // モード切替の直後は必ず1回 resize()/moveTo() を通す (直前の記憶値は
@@ -4069,6 +4264,75 @@ export class KeyboardController {
       proceed();
     }
     setTimeout(proceed, 150);
+  }
+
+  // ---------- PCモード (pc/PcModeController) から使う ----------
+
+  getSoftPanel(): inputMethodEngine.Panel | undefined {
+    return this.panel;
+  }
+
+  // PcModeController が自分で show/hide したときの、表示状態の記録合わせ
+  // (setFloatingMode が「表示中だったか」を panelVisible で判断するため)。
+  noteSoftPanelVisible(visible: boolean): void {
+    this.panelVisible = visible;
+  }
+
+  // ソフトキーボードのパネルの flag を替える (候補ウィンドウ用の FLAG_CANDIDATE へ、
+  // など)。手順と待ち時間の理由は setFloatingMode と同じ: 表示中は flag を
+  // 変えられないので隠してから替え、changeFlag の完了を知る手段が無いので
+  // 少し待ってから place() で置き直し、show なら出す。
+  changeSoftPanelFlagForPc(flag: inputMethodEngine.PanelFlag, show: boolean, place: () => void): void {
+    if (!this.panel) { return; }
+    const wasVisible = this.panelVisible;
+    this.lastFloatingXPx = Number.NaN;
+    this.lastFloatingYPx = Number.NaN;
+    this.lastFloatingWPx = Number.NaN;
+    this.lastFloatingHPx = Number.NaN;
+    let proceeded = false;
+    const proceed = (): void => {
+      if (proceeded) { return; }
+      proceeded = true;
+      try {
+        this.panel?.changeFlag(flag);
+      } catch (err) {
+        console.error('shuntiIME changeSoftPanelFlagForPc changeFlag error', err);
+      }
+      setTimeout(() => {
+        place();
+        if (show) {
+          try {
+            this.panel?.show();
+            this.panelVisible = true;
+          } catch (err) {
+            console.error('shuntiIME changeSoftPanelFlagForPc show error', err);
+          }
+        }
+      }, 100);
+    };
+    // 表示中のキーボードを隠すと inputStop が誘発されることがある (setFloatingMode 参照)
+    if (wasVisible) {
+      this.suppressNextInputStop = true;
+      setTimeout(() => { this.suppressNextInputStop = false; }, 500);
+    }
+    this.panelVisible = false;
+    try {
+      this.panel.hide().then(proceed).catch(proceed);
+    } catch (err) {
+      console.error('shuntiIME changeSoftPanelFlagForPc hide error', err);
+      proceed();
+    }
+    setTimeout(proceed, 150);
+  }
+
+  // PCモードの仮想キー・PCモードを抜けたとき: 今までのソフトキーボード
+  // (設定どおり固定かフローティング) に戻す。show なら出す。
+  restoreSoftKeyboardForPc(show: boolean): void {
+    const floating = AppStorage.get<boolean>('floatingMode') ?? false;
+    this.changeSoftPanelFlagForPc(
+      floating ? inputMethodEngine.PanelFlag.FLG_FLOATING : inputMethodEngine.PanelFlag.FLG_FIXED,
+      show,
+      () => { this.doResizePanelNow(); });
   }
 
   // フローティング中のドラッグ/リサイズハンドルからライブに呼ばれる。
@@ -4234,7 +4498,11 @@ export class KeyboardController {
 
   private registerListeners(): void {
     try {
-      display.on('change', () => { this.resizePanel(); this.applyColorMode(); });
+      display.on('change', () => {
+        this.resizePanel();
+        this.applyColorMode();
+        PcModeController.getInstance().onDisplayChanged();
+      });
     } catch (err) {
       console.error('shuntiIME display.on error', err);
     }
@@ -4252,6 +4520,9 @@ export class KeyboardController {
         // resourceManager, which actually is live.
         this.applyColorMode();
         this.inputHandle.onInputStart(kbCtrl, client);
+        // PCモードではソフトキーボードを出さない (言語バーと候補ウィンドウを
+        // PcModeController が出す)。仮想キーを出しているときは false が返る
+        if (PcModeController.getInstance().onInputStart()) { return; }
         this.panel?.show();
         this.panelVisible = true;
       });
@@ -4280,6 +4551,7 @@ export class KeyboardController {
         this.inputHandle.onInputStop();
         this.panel?.hide();
         this.panelVisible = false;
+        PcModeController.getInstance().onInputStop();
       });
 
       IMEAbility.on('setSubtype', (subtype: InputMethodSubtype) => {
@@ -4303,6 +4575,15 @@ export class KeyboardController {
       this.kbDelegate.on('keyDown', (_keyEvent: inputMethodEngine.KeyEvent) => {
         return false;
       });
+      // 物理キーボード (PCモード)。消費するか素通しするかは PhysicalKeyRouter が決める。
+      // PCモードでないときは常に false (今までどおり全部アプリへ)
+      this.kbDelegate.on('keyEvent', (keyEvent: InputKeyEvent) => {
+        return PcModeController.getInstance().onKeyEvent(keyEvent);
+      });
+      // 候補ウィンドウをカーソルの下に出すための位置
+      this.kbDelegate.on('cursorContextChange', (x: number, y: number, height: number) => {
+        PcModeController.getInstance().onCursorContextChange(x, y, height);
+      });
     } catch (err) {
       console.error('shuntiIME getKeyboardDelegate error', err);
     }
@@ -4311,5 +4592,7 @@ export class KeyboardController {
   private unregisterListeners(): void {
     display.off('change');
     this.kbDelegate?.off('keyDown');
+    this.kbDelegate?.off('keyEvent');
+    this.kbDelegate?.off('cursorContextChange');
   }
 }

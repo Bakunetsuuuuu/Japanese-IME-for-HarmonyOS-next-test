@@ -19,6 +19,9 @@ import { SettingsStore, KeyboardSettings } from '../ime/SettingsStore';
 import { InputLog, DEBUG_INPUT_LOG } from '../ime/InputLog';
 import { kbTheme } from '../components/Theme';
 import { JP_FONT_FAMILY, registerJpFont } from '../components/JpFont';
+import { PcCandidateWindow } from '../pc/PcCandidateWindow';
+import { PcPopupView } from '../pc/PcPopupView';
+import { PC_SOFT_CANDIDATE, PC_SOFT_POPUP } from '../pc/PcModeController';
 
 let _inputStartRegistered = false;
 
@@ -106,6 +109,9 @@ struct KeyboardPage {
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
   // 記号・絵文字・設定などのパネル切替を入力ログに残す (デバッグビルドのみ)。
   @StorageLink('keyboardSubMode') @Watch('onSubModeChanged') keyboardSubMode: string = 'kana';
+  // PCモード (物理キーボード) でこのパネルを何に使っているか (PcModeController 参照)。
+  // 'keyboard' = 今までのソフトキーボード、'candidate' = 候補ウィンドウ、'popup' = 絵文字・設定
+  @StorageLink('pcSoftContent') pcSoftContent: string = 'keyboard';
 
   private onSubModeChanged(): void {
     InputHandler.getInstance().noteSubMode(this.keyboardSubMode);
@@ -556,6 +562,21 @@ struct KeyboardPage {
   }
 
   build() {
+    Stack() {
+      if (this.pcSoftContent === PC_SOFT_CANDIDATE) {
+        PcCandidateWindow()
+      } else if (this.pcSoftContent === PC_SOFT_POPUP) {
+        PcPopupView()
+      } else {
+        this.KeyboardContent()
+      }
+    }
+    .width('100%')
+    .height('100%')
+  }
+
+  // ソフトキーボード本体 (PCモードでないとき・PCモードの仮想キー)。
+  @Builder KeyboardContent() {
     Stack() {
       // 「キーボード内表示」をOFFにしても、今の入力欄が入力欄側表示に
       // 非対応だと保険で戻ってくることの説明。切り替わった瞬間だけ出して

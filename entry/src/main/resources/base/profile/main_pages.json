@@ -1,6 +1,7 @@
 {
   "src": [
     "pages/KeyboardPage",
+    "pages/LangBarPage",
     "pages/Index",
     "pages/PrivacyPolicy",
     "pages/License",
