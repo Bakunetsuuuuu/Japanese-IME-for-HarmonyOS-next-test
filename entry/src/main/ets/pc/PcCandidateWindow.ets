@@ -13,7 +13,6 @@
 import { InputHandler, InputState } from '../ime/KeyboardController';
 import { JP_FONT_FAMILY } from '../components/JpFont';
 import { PcModeController } from './PcModeController';
-import { ContainerInputBridge } from './ContainerInputBridge';
 import { buildCandidateView, CandidateViewModel, readingWithCaret, caretInReading } from './CandidateViewModel';
 import {
   pcTheme, CANDIDATE_PAGE_SIZE, CAND_MARGIN_VP, CAND_PAD_VP, CAND_ROW_H_VP, CAND_HEADER_H_VP,
@@ -57,11 +56,6 @@ export struct PcCandidateWindow {
   }
 
   private pick(row: number): void {
-    // Android コンテナの欄: 候補は ContainerInputBridge が欄に入れている
-    if (ContainerInputBridge.getInstance().isConverting()) {
-      ContainerInputBridge.getInstance().pick(this.vm.firstIndex + row);
-      return;
-    }
     InputHandler.getInstance().commitCandidate(this.vm.firstIndex + row);
     InputHandler.getInstance().refreshPreview();
     PcModeController.getInstance().onImeStateChanged();
@@ -71,10 +65,6 @@ export struct PcCandidateWindow {
     if (!this.vm.numbered || this.vm.pageCount <= 1) { return; }
     const page = Math.max(0, Math.min(this.vm.pageCount - 1, this.vm.page + delta));
     if (page === this.vm.page) { return; }
-    if (ContainerInputBridge.getInstance().isConverting()) {
-      ContainerInputBridge.getInstance().select(page * CANDIDATE_PAGE_SIZE);
-      return;
-    }
     InputHandler.getInstance().setCandidateSelection(page * CANDIDATE_PAGE_SIZE);
     PcModeController.getInstance().onImeStateChanged();
   }

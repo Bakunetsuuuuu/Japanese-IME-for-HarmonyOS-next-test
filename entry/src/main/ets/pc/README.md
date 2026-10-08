@@ -18,7 +18,6 @@
 | `CandidateViewModel.ets` | 候補ウィンドウに何を出すか、窓の大きさ（コントローラと画面の両方が使う） |
 | `PcCandidateWindow.ets` | 候補ウィンドウの画面（Windows 11 風） |
 | `PcPopupView.ets` | 言語バーから開く絵文字・設定（既存の EmojiView / SymbolView / SettingsBar をそのまま表示） |
-| `ContainerInputBridge.ets` | Android コンテナの欄で、打たれた英字を後から かな・漢字に書き換える |
 | `PcStyle.ets` | 色と寸法 |
 | `../pages/LangBarPage.ets` | 言語バーの画面 |
 
@@ -132,25 +131,6 @@ Android コンテナのアプリの入力欄にも IME はつながる（`inputS
 - `shuntiIME pc text changed but no key event reached the IME (keys go straight to the app)`: キーが 1 つも届かないのに欄の文字が変わったとき
 
 Android コンテナの入力欄から離れても `inputStop` が来ないことがある（OS は言語バーを隠す）。言語バーを出し直して「入力欄がつながっていない」(12800003) で断られたら、入力欄を離れたものとして扱う。
-
-### 書き換えで入力する (ContainerInputBridge)
-
-実機のログで、Android コンテナの欄 (`bundle=` が空で来る) では keyEvent も textChange も IME に来ないと分かった。そこでこの欄では、カーソルの前の文字を 40ms ごとに読み (`getForwardSync`)、アプリが入れた英字を後から書き換える。
-
-| 打つ | 欄 |
-|---|---|
-| `k` | `k`（アプリが入れたまま） |
-| `ka` | `k` と `a` を消して `か` |
-| `kaki` + 空白 | `かき` と空白を消して 1 位の候補 `柿`。候補ウィンドウを出す |
-| 空白をもう一度 | 次の候補（`柿` と空白を消して `牡蠣`） |
-| BackSpace（変換中） | 読みに戻す（`かき`） |
-| 他の字 | 今の候補で確定し、その字から次の読み |
-
-- 大文字から後ろは空白・記号まで英字のまま。`,` `.` などは `、` `。` に書き換える。
-- 英字モード（A）・仮想キーを出している間は何もしない。最初のキーが IME に届いたら（HarmonyOS のアプリの欄）すぐやめる。
-- カーソルを動かした・アプリが中身を書き換えたなど、打ち足し・BackSpace のどちらにも見えない変わり方をしたら、打っていたものは確定扱いにする。
-- 候補はクリックでも選べる。Enter・Esc・矢印はアプリに行くので IME からは見えない（Enter はそのまま確定になる）。
-- ログ: `shuntiIME pc container bridge started` / `can read the field (len=…)` / `cannot read the field` / `edit failed`。読めない・書けない端末ではこの方法は使えない。
 
 ## まだ無いもの
 - 文節の区切りを Shift+← → で動かす

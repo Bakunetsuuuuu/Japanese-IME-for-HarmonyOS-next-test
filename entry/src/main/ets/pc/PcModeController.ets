@@ -21,7 +21,6 @@ import { InputState, InputMode } from '../ime/KeyboardController';
 import { InputLog } from '../ime/InputLog';
 import { KeyboardDeviceMonitor } from './KeyboardDeviceMonitor';
 import { PhysicalKeyRouter, PcKeyHost } from './PhysicalKeyRouter';
-import { ContainerInputBridge, ContainerBridgeHost } from './ContainerInputBridge';
 import { PcSettingsStore, PcSettings, PC_MODE_AUTO, PC_MODE_ON, PC_MODE_OFF } from './PcSettings';
 import { currentCandidateView, candidateWindowSizeVp, CandidateViewModel, SizeVp } from './CandidateViewModel';
 import {
@@ -66,7 +65,7 @@ interface ScreenInfo {
   avail: RectPx;   // Dock・ステータスバーを除いた範囲
 }
 
-export class PcModeController implements PcKeyHost, ContainerBridgeHost {
+export class PcModeController implements PcKeyHost {
   private static instance: PcModeController | undefined = undefined;
 
   static getInstance(): PcModeController {
@@ -124,8 +123,6 @@ export class PcModeController implements PcKeyHost, ContainerBridgeHost {
   private screen: ScreenInfo | undefined = undefined;
   // この入力欄で届いたキーの数と、「キーが届いていない」を記録したか (onTextChange 参照)
   private sessionKeyEvents: number = 0;
-  // 今の入力欄 (欄を移った後に前の欄の getEditorAttribute の答えが届いても取り違えないように)
-  private client: inputMethodEngine.InputClient | undefined = undefined;
   private bypassLogged: boolean = false;
   // 使える範囲 (Dock を除いた範囲) を getAvailableArea で知っているか。知らないうちは
   // 画面全体で計算することになり、言語バーを Dock の裏に置いてしまう
@@ -140,7 +137,6 @@ export class PcModeController implements PcKeyHost, ContainerBridgeHost {
     this.handler = handler;
     this.context = context;
     this.router = new PhysicalKeyRouter(handler, this);
-    ContainerInputBridge.getInstance().setHost(this);
     AppStorage.setOrCreate('pcModeActive', false);
     AppStorage.setOrCreate('pcSoftContent', PC_SOFT_KEYBOARD);
     AppStorage.setOrCreate('pcModePreference', PC_MODE_AUTO);
@@ -156,8 +152,6 @@ export class PcModeController implements PcKeyHost, ContainerBridgeHost {
   }
 
   detach(): void {
-    ContainerInputBridge.getInstance().stop();
-    ContainerInputBridge.getInstance().setHost(undefined);
     this.monitor?.stop();
     clearTimeout(this.syncTimer);
     clearTimeout(this.hideLangBarTimer);
@@ -223,7 +217,6 @@ export class PcModeController implements PcKeyHost, ContainerBridgeHost {
       this.statusPanelFailures = 0;
       if (this.sessionActive) { this.showLangBar(); }
     } else {
-      ContainerInputBridge.getInstance().stop();
       this.hideLangBar();
       this.candidateFlagPending = false;
       const wasOwned = this.softState !== PC_SOFT_KEYBOARD;
@@ -315,20 +308,11 @@ export class PcModeController implements PcKeyHost, ContainerBridgeHost {
     this.sessionActive = true;
     this.sessionKeyEvents = 0;
     this.bypassLogged = false;
-    this.client = client;
-    ContainerInputBridge.getInstance().stop();
     // どのアプリの入力欄か (Android コンテナなどで物理キーが IME に届かないときの切り分け用)。
     // 入力欄の中身は出さない
     client.getEditorAttribute()
       .then((attr: inputMethodEngine.EditorAttribute) => {
         console.info(`shuntiIME pc field bundle=${attr.bundleName ?? '?'} consumeKeyEvents=${attr.consumeKeyEvents ?? '?'} preview=${attr.isTextPreviewSupported}`);
-        // Android コンテナのアプリの欄は bundleName が空で来て、物理キーが IME に届かない。
-        // 欄の文字を見張って後から書き換える (ContainerInputBridge)
-        const bundle = attr.bundleName ?? '';
-        if (this.client === client && this.sessionActive && this.active && bundle.length === 0
-          && this.sessionKeyEvents === 0) {
-          ContainerInputBridge.getInstance().start(client);
-        }
       })
       .catch((_e: Error) => {});
     clearTimeout(this.hideLangBarTimer);
@@ -353,8 +337,6 @@ export class PcModeController implements PcKeyHost, ContainerBridgeHost {
   onInputStop(): void {
     console.info(`shuntiIME pc inputStop active=${this.active} soft=${this.softState}`);
     this.sessionActive = false;
-    this.client = undefined;
-    ContainerInputBridge.getInstance().stop();
     this.router?.reset();
     this.cursor = undefined;
     this.anchor = undefined;
@@ -391,8 +373,6 @@ export class PcModeController implements PcKeyHost, ContainerBridgeHost {
     if (this.router === undefined) { return false; }
     if (this.sessionKeyEvents === 0) {
       console.info('shuntiIME pc key events are reaching the IME in this field');
-      // キーが届く欄なら、いつもどおりキーで入力する
-      ContainerInputBridge.getInstance().stop();
     }
     this.sessionKeyEvents++;
     // 何も入力していないときに来た打鍵の時点のカーソル = これから打つ読みの頭
@@ -424,15 +404,6 @@ export class PcModeController implements PcKeyHost, ContainerBridgeHost {
 
   onImeStateChanged(): void {
     this.scheduleSync();
-  }
-
-  // ContainerInputBridge から: 候補を出した・引っ込めた
-  onBridgeStateChanged(): void {
-    this.scheduleSync();
-  }
-
-  bridgeEnabled(): boolean {
-    return this.active && this.sessionActive && this.softState !== PC_SOFT_KEYBOARD;
   }
 
   // 同じ打鍵の中で何度呼ばれても、パネルを動かすのは 1 回にまとめる
