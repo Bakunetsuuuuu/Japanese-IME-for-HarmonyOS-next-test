@@ -37,11 +37,19 @@ export const PC_SOFT_POPUP: string = 'popup';
 // 言語バーから開ける中身 (keyboardSubMode の値。EmojiView から記号一覧へも行ける)
 const POPUP_SUB_MODES: string[] = ['emoji', 'symbol', 'settings'];
 
+// cursorContextChange で届くカーソルの位置。SDK の説明では y は「カーソルの下端」だが、
+// 実機 (HarmonyOS PC) では上端が届く (下端として置くと候補ウィンドウが 1 行ぶん上にずれ、
+// 画面上の方の入力欄に重なっていた)。上端として扱う
 interface CursorInfo {
-  x: number;       // カーソルの上端の x (px)
-  y: number;       // カーソルの下端の y (px)
-  height: number;  // カーソルの高さ (px)
+  x: number;       // カーソルの左端の x (px)
+  y: number;       // カーソルの上端の y (px)
+  height: number;  // カーソルの高さ (px)。0 で届く欄もある (そのときは FALLBACK_LINE_H_VP)
 }
+
+// カーソルの高さが届かない (0) ときに仮に使う 1 行の高さ (vp)
+const FALLBACK_LINE_H_VP: number = 20;
+// カーソルと候補ウィンドウの本体の間 (vp)
+const CAND_CURSOR_GAP_VP: number = 4;
 
 interface RectPx {
   x: number;
@@ -375,11 +383,13 @@ export class PcModeController implements PcKeyHost {
     let y: number;
     if (cur !== undefined) {
       // 本体の左上をカーソルの真下に (窓の余白のぶん左上へずらす)
+      const lineH = cur.height > 0 ? cur.height : Math.round(FALLBACK_LINE_H_VP * sc.density);
+      const gap = Math.round(CAND_CURSOR_GAP_VP * sc.density);
       x = cur.x - margin;
-      y = cur.y + 2 - margin;
+      y = cur.y + lineH + gap - margin;
       if (y + h > sc.avail.y + sc.avail.h) {
-        // 下に入らない: カーソルの上に
-        y = cur.y - cur.height - h - 2 + margin;
+        // 下に入らない: カーソルの上に (本体の下端がカーソルの上端より gap だけ上)
+        y = cur.y - gap - (h - margin);
       }
     } else {
       // カーソルの位置が分からない欄: 言語バーの上 (右端を揃える)
