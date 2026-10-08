@@ -49,6 +49,7 @@ export struct SettingsBar {
   @StorageLink('conversionEngine') conversionEngine: string = 'ai';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @StorageLink('liveCommit') liveCommit: boolean = false;
+  @StorageLink('separateSuggest') separateSuggest: boolean = true;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
@@ -558,6 +559,35 @@ export struct SettingsBar {
           .selectedColor(kbTheme(this.isDark).accent)
           .onChange((isOn: boolean) => {
             InputHandler.getInstance().setNumericPadEnabled(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 12, bottom: 12 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      // 提案 (打ち間違いの直し・日付・住所) を候補の帯に混ぜず、ひらがなの帯に分けて出すか (好みが分かれるので切り替え)
+      Row() {
+        Column({ space: 2 }) {
+          Text('提案を分けて表示する')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text(this.separateSuggest
+            ? '打ち間違いの直し・日付・住所を、入力中の文字の横に分けて出します'
+            : '打ち間違いの直し・日付・住所も、変換候補に混ぜて出します')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(10)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.separateSuggest })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setSeparateSuggest(isOn);
           })
       }
       .width('100%')

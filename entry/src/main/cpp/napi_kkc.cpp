@@ -37,6 +37,7 @@ const char* MODEL = "kkc_model.bin";
 // (正解率はほぼそのままで、普段の入力ではモデルの計算が半分以下になる)
 const int KKC_MODE = 2;
 kkc_engine* g_engine = nullptr;
+bool g_suggest = true;   // 提案を分けて出す (設定「提案を分けて表示する」。読み込む前に決まっていることがある)
 std::mutex g_mu;   // エンジンは同時に 2 つの変換をできないので、呼び出しを 1 つずつにする
 Mapped g_lex, g_model;
 
@@ -131,7 +132,7 @@ napi_value LoadAsync(napi_env env, napi_callback_info info) {
             unlink((j->dir + "/" + MODEL).c_str());
             g_engine = kkc_open(g_lex.p, g_lex.n, g_model.p, g_model.n);
             if (g_engine) kkc_set_threads(g_engine, j->threads);
-            if (g_engine) kkc_set_suggest(g_engine, 1);   // 打ち間違いの直し・日付・住所は候補に混ぜず提案 (sugg) に
+            if (g_engine) kkc_set_suggest(g_engine, g_suggest ? 1 : 0);   // 打ち間違いの直し・日付・住所は候補に混ぜず提案 (sugg) に
             j->ok = g_engine != nullptr;
         },
         [](napi_env env, napi_status, void* data) {
@@ -308,6 +309,21 @@ napi_value ConvertAsync(napi_env env, napi_callback_info info) {
     return promise;
 }
 
+// 提案を分けて出すか (オフなら日付・住所・打ち間違いの直しは今までどおり候補に混ぜる)
+napi_value SetSuggest(napi_env env, napi_callback_info info) {
+    size_t argc = 1;
+    napi_value argv[1];
+    napi_get_cb_info(env, info, &argc, argv, nullptr, nullptr);
+    bool on = true;
+    if (argc >= 1) napi_get_value_bool(env, argv[0], &on);
+    std::lock_guard<std::mutex> lk(g_mu);
+    g_suggest = on;
+    if (g_engine) kkc_set_suggest(g_engine, on ? 1 : 0);
+    napi_value r;
+    napi_get_boolean(env, on, &r);
+    return r;
+}
+
 // 予測: 読みが prefix で始まり、あと maxExtra 字までの辞書の語を、よく使う順に最大 maxOut 個 (辞書を読むだけなので、変換中でも待たない)
 napi_value Complete(napi_env env, napi_callback_info info) {
     size_t argc = 3;
@@ -396,6 +412,7 @@ napi_value Init(napi_env env, napi_value exports) {
         {"complete", nullptr, Complete, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"setUserWords", nullptr, SetUserWords, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"times", nullptr, Times, nullptr, nullptr, nullptr, napi_default, nullptr},
+        {"setSuggest", nullptr, SetSuggest, nullptr, nullptr, nullptr, napi_default, nullptr},
         {"close", nullptr, Close, nullptr, nullptr, nullptr, napi_default, nullptr},
     };
     napi_define_properties(env, exports, sizeof(desc) / sizeof(desc[0]), desc);

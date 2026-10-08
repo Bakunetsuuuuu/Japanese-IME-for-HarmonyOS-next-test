@@ -368,6 +368,12 @@ export class AiConverter {
     }
   }
 
+  // 設定「提案を分けて表示する」。前の結果は提案の有無が違うので捨てる
+  static setSuggestMode(on: boolean): void {
+    kkc.setSuggest(on);
+    AiConverter.cache.clear();
+  }
+
   // 提案 (ひらがなの帯に左寄せで出す。KeyboardPage の suggestText): 固定した表記 + 提案。無ければ消す
   private static setSuggestion(r: KkcResult, top: string): void {
     const s = r.sugg ?? [];

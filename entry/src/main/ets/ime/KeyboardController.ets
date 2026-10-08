@@ -631,6 +631,8 @@ export class InputHandler {
         AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
         AppStorage.setOrCreate('liveCommit', s.liveCommit);
         AiConverter.liveCommit = s.liveCommit;
+        AppStorage.setOrCreate('separateSuggest', s.separateSuggest);
+        AiConverter.setSuggestMode(s.separateSuggest);
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
         AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
@@ -903,6 +905,16 @@ export class InputHandler {
   }
 
   // 長い入力の扱い: false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = オート確定 (Mac の IME のように前から確定)
+  // 提案 (打ち間違いの直し・日付・住所) を分けて出すか。オフなら今までどおり候補の帯に混ぜる
+  setSeparateSuggest(enabled: boolean): void {
+    AppStorage.setOrCreate('separateSuggest', enabled);
+    AiConverter.setSuggestMode(enabled);
+    AppStorage.setOrCreate('suggestList', [] as string[]);
+    if (this.imeContext) {
+      SettingsStore.saveSeparateSuggest(this.imeContext, enabled);
+    }
+  }
+
   setLiveCommit(enabled: boolean): void {
     AppStorage.setOrCreate('liveCommit', enabled);
     AiConverter.liveCommit = enabled;
@@ -3192,7 +3204,16 @@ export class InputHandler {
     // Candidates the user deleted by long-pressing them are dropped last, so
     // every source above (dictionaries, learning, the injected predictions) is
     // covered by the one filter -- see SuppressedCandidates.
-    const shown = SuppressedCandidates.filter(target, candidates);
+    let shown = SuppressedCandidates.filter(target, candidates);
+    // 提案の帯に出ているもの (打ち間違いの直し・日付・住所) は候補の帯から外す。日付の提案があるときは、
+    // こちらの日付の予測 (DateTimePredictor、形が少し違う) もまとめて外す
+    const sugg = AppStorage.get<string[]>('suggestList') ?? [];
+    if (sugg.length > 0) {
+      const kinds = AppStorage.get<number[]>('suggestKinds') ?? [];
+      const dates = kinds.indexOf(2) >= 0 ? DateTimePredictor.predict(target, new Date()) : [] as string[];
+      const rest = shown.filter((c: string) => sugg.indexOf(c) < 0 && dates.indexOf(c) < 0);
+      if (rest.length > 0) { shown = rest; }
+    }
     AppStorage.setOrCreate('candidates', shown);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     if (DEBUG_INPUT_LOG) {

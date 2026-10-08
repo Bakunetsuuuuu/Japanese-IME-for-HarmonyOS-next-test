@@ -51,6 +51,8 @@ export interface KeyboardSettings {
   hapticEnabled: boolean;
   // 長い入力の扱い。false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = オート確定 (Mac の IME のように前から確定)
   liveCommit: boolean;
+  // 提案 (打ち間違いの直し・日付・住所) を候補の帯に混ぜず、ひらがなの帯に分けて出す (既定オン)
+  separateSuggest: boolean;
   // キーボードのライト／ダーク。'system' は端末のカラーモードに従う（既定）。
   // 'light' / 'dark' はキーボードだけ固定する（ホストアプリの色は変えない）。
   themeMode: string;
@@ -127,6 +129,7 @@ const DEFAULTS: KeyboardSettings = {
   numericPadEnabled: false,
   hapticEnabled: false,
   liveCommit: false,
+  separateSuggest: true,
   themeMode: 'system',
   keyChromeEnabled: true,
   composingInPanel: true,
@@ -170,6 +173,7 @@ export class SettingsStore {
       const numericPad = await prefs.get('numericPadEnabled', DEFAULTS.numericPadEnabled);
       const haptic = await prefs.get('hapticEnabled', DEFAULTS.hapticEnabled);
       const liveCommit = await prefs.get('liveCommit', DEFAULTS.liveCommit);
+      const separateSuggest = await prefs.get('separateSuggest', DEFAULTS.separateSuggest);
       const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
       const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
@@ -203,6 +207,7 @@ export class SettingsStore {
         numericPadEnabled: numericPad === true,
         hapticEnabled: haptic === true,
         liveCommit: liveCommit === true,
+        separateSuggest: separateSuggest !== false,
         themeMode: String(themeMode),
         keyChromeEnabled: keyChrome !== false,
         composingInPanel: inPanel !== false,
@@ -232,6 +237,7 @@ export class SettingsStore {
         numericPadEnabled: DEFAULTS.numericPadEnabled,
         hapticEnabled: DEFAULTS.hapticEnabled,
         liveCommit: DEFAULTS.liveCommit,
+        separateSuggest: DEFAULTS.separateSuggest,
         themeMode: DEFAULTS.themeMode,
         keyChromeEnabled: DEFAULTS.keyChromeEnabled,
         composingInPanel: DEFAULTS.composingInPanel,
@@ -313,6 +319,15 @@ export class SettingsStore {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('liveCommit', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveSeparateSuggest(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('separateSuggest', String(enabled));
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('separateSuggest', enabled);
       await prefs.flush();
     } catch (_e) {}
   }

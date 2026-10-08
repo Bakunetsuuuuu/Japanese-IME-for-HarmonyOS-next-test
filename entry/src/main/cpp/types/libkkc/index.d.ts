@@ -28,4 +28,6 @@ export const complete: (prefix: string, maxExtra: number, maxOut: number) => str
 export const setUserWords: (forms: string[], bonus: number) => number;
 /** 直前の変換の時間の内訳 (ms): [網, 下書き, エンコーダ, 区間と語, 上位k] */
 export const times: () => number[];
+/** 提案を分けて出すか (オフなら日付・住所・打ち間違いの直しを候補に混ぜる) */
+export const setSuggest: (on: boolean) => boolean;
 export const close: () => boolean;
