@@ -131,6 +131,7 @@ napi_value LoadAsync(napi_env env, napi_callback_info info) {
             unlink((j->dir + "/" + MODEL).c_str());
             g_engine = kkc_open(g_lex.p, g_lex.n, g_model.p, g_model.n);
             if (g_engine) kkc_set_threads(g_engine, j->threads);
+            if (g_engine) kkc_set_suggest(g_engine, 1);   // 打ち間違いの直し・日付・住所は候補に混ぜず提案 (sugg) に
             j->ok = g_engine != nullptr;
         },
         [](napi_env env, napi_status, void* data) {
@@ -199,6 +200,8 @@ struct Job {
     int32_t maxout = 10;
     std::vector<std::u16string> res;
     std::vector<int32_t> ends, lens;   // 1 位の候補の語の区切り
+    std::vector<std::u16string> sugg;  // 提案 (kkc_last_suggest)
+    std::vector<int32_t> sugg_kinds;
     std::chrono::steady_clock::time_point queued, started, done;   // 待ち時間の切り分け用
 };
 
@@ -237,6 +240,17 @@ napi_value ConvertAsync(napi_env env, napi_callback_info info) {
             int m = kkc_last_segments(g_engine, j->ends.data(), j->lens.data(), 512);
             j->ends.resize(m > 0 ? m : 0);
             j->lens.resize(m > 0 ? m : 0);
+            std::vector<uint16_t> sb(4096);
+            int32_t kinds[16];
+            int ns = kkc_last_suggest(g_engine, sb.data(), int(sb.size()), kinds, 16);
+            size_t ss = 0;
+            for (int i = 0; i < ns; i++) {
+                size_t e = ss;
+                while (sb[e]) e++;
+                j->sugg.emplace_back(reinterpret_cast<const char16_t*>(sb.data() + ss), e - ss);
+                j->sugg_kinds.push_back(kinds[i]);
+                ss = e + 1;
+            }
             j->done = std::chrono::steady_clock::now();
         },
         [](napi_env env, napi_status, void* data) {
@@ -261,6 +275,18 @@ napi_value ConvertAsync(napi_env env, napi_callback_info info) {
             napi_set_named_property(env, obj, "cands", arr);
             napi_set_named_property(env, obj, "ends", ends);
             napi_set_named_property(env, obj, "lens", lens);
+            napi_value sg, sk;
+            napi_create_array(env, &sg);
+            napi_create_array(env, &sk);
+            for (uint32_t i = 0; i < j->sugg.size(); i++) {
+                napi_value s, k;
+                napi_create_string_utf16(env, j->sugg[i].data(), j->sugg[i].size(), &s);
+                napi_create_int32(env, j->sugg_kinds[i], &k);
+                napi_set_element(env, sg, i, s);
+                napi_set_element(env, sk, i, k);
+            }
+            napi_set_named_property(env, obj, "sugg", sg);
+            napi_set_named_property(env, obj, "suggKinds", sk);
             // 待ち時間の内訳 (ms): 裏のスレッドの順番待ち / 変換 / 変換が終わってから JS に届くまで
             auto ms = [](std::chrono::steady_clock::time_point a, std::chrono::steady_clock::time_point b) {
                 return std::chrono::duration<double, std::milli>(b - a).count();

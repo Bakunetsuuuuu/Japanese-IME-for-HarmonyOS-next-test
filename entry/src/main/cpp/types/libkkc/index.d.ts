@@ -13,6 +13,10 @@ export interface KkcResult {
   waitMs: number;
   runMs: number;
   deliverMs: number;
+  /** 提案 (変換の域を超えるもの: 打ち間違いの直し・日付・郵便番号の住所)。convertAsync のときだけ。候補には入らない */
+  sugg?: string[];
+  /** 提案の種類: 1 = 打ち間違いの直し、2 = 日付・時刻、3 = 住所 */
+  suggKinds?: number[];
 }
 /** 変換 (呼んだスレッドで。時間の内訳は 0)。文節を選ぶとき・語を作れるかを確かめるときに */
 export const convert: (ctx: string, kana: string, max: number) => KkcResult;

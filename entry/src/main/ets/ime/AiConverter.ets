@@ -237,6 +237,7 @@ export class AiConverter {
       AiConverter.lastTarget = target;
       AiConverter.lastTop = out[0];
       AiConverter.lastCands = out;
+      AiConverter.setSuggestion(hit, out.length > 0 ? out[0] : '');
       AiConverter.maybeFreeze(tail, hit);
       return out;
     }
@@ -367,6 +368,16 @@ export class AiConverter {
     }
   }
 
+  // 提案 (ひらがなの帯に左寄せで出す。KeyboardPage の suggestText): 固定した表記 + 提案。無ければ消す
+  private static setSuggestion(r: KkcResult, top: string): void {
+    const s = r.sugg ?? [];
+    const k = r.suggKinds ?? [];
+    const text = s.length > 0 ? AiConverter.fSurf + s[0] : '';
+    AppStorage.setOrCreate('suggestText', text === top ? '' : text);
+    AppStorage.setOrCreate('suggestKind', k.length > 0 ? k[0] : 0);
+    AppStorage.setOrCreate('suggestFrom', top);
+  }
+
   private static run(): void {
     AiConverter.inflight = true;
     const key = AiConverter.wantKey;
@@ -387,7 +398,8 @@ export class AiConverter {
       const cands = r.cands.filter((c: string) => !AiConverter.SLURS.test(c));
       // 差別語で 1 位が落ちたら区切りは使えない (1 位の区切りなので)
       const ok = cands.length > 0 && cands[0] === r.cands[0];
-      AiConverter.cache.set(key, { cands: cands, ends: ok ? r.ends : [], lens: ok ? r.lens : [] } as KkcResult);
+      AiConverter.cache.set(key, { cands: cands, ends: ok ? r.ends : [], lens: ok ? r.lens : [],
+        sugg: r.sugg ?? [], suggKinds: r.suggKinds ?? [] } as KkcResult);
       AiConverter.inflight = false;
       if (AiConverter.wantKey !== key) {
         AiConverter.run();      // 変換中に読みが変わった: 最新の読みを変換する

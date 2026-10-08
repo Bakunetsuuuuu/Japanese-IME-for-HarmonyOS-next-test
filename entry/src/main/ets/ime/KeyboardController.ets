@@ -2193,6 +2193,24 @@ export class InputHandler {
     return [composing.slice(0, end), composing.slice(end)];
   }
 
+  // 提案 (ひらがなの帯の「提案: …」) をタップした: 変換する所をその表記で確定する。学習はしない (打ったとおりの変換ではないので)
+  commitSuggestion(): void {
+    const text = AppStorage.get<string>('suggestText') ?? '';
+    if (text.length === 0) { return; }
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const parts = this.splitAtConversionEnd(composing);
+    const candidates = AppStorage.get<string[]>('candidates') ?? [];
+    InputLog.recordCommit(parts[0], text, -1, candidates.length, candidates, 'suggest', [] as string[]);
+    this.insertText(text);
+    KanaKanjiConverter.addContext(text);
+    AppStorage.setOrCreate('suggestText', '');
+    if (parts[1].length > 0) {
+      this.continueWithTail(parts[1]);
+      return;
+    }
+    this.resetComposition();
+  }
+
   commitCandidate(index: number): void {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state === InputState.BUNSETSU) {
@@ -2409,6 +2427,7 @@ export class InputHandler {
     this.composingUndoStack = [];
     this.conversionEnd = 0;
     this.composingWatermark = '';
+    AppStorage.setOrCreate('suggestText', '');
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);

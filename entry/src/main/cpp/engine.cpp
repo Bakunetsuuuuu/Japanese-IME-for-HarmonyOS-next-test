@@ -1542,6 +1542,10 @@ struct kkc_engine {
     Pool pool;
     double times[5] = {0, 0, 0, 0, 0};
     float typo_bias = 0;   // 打ち間違いの辺の点数から引く値 (kkc_set_typo。大きいほど直しが控えめ)
+    // 提案 (kkc_set_suggest でオン): 変換の域を超えるもの (打ち間違いの直し・日付・郵便番号の住所) を候補に混ぜず、
+    // 別の出口 (kkc_last_suggest) に種類つきで出す。候補は打ったとおりの変換だけになる
+    bool suggest_mode = false;
+    std::vector<std::pair<int, ustr>> suggest;   // (種類 KKC_SUGGEST_*, 表記)
     // 語の k は文脈に依らないので、打鍵をまたいで取っておく (表記+種別 -> K の行)。多くなったら捨てる
     std::unordered_map<ustr, int> kcache;
     std::vector<float> K;
@@ -1909,6 +1913,8 @@ KKC_API void kkc_close(kkc_engine* e) { delete e; }
 KKC_API void kkc_set_threads(kkc_engine* e, int n) { if (e) e->pool.resize(n); }
 // 打ち間違いの直し (S7 から。モデルが辺の種類 typo を知っているときだけ効く): on = 0 で作らない、
 // bias = 打ち間違いの辺の点数から引く値 (0 で学習どおり。大きいほど余計な直しが減り、直せる誤字も減る)
+KKC_API void kkc_set_suggest(kkc_engine* e, int on) { if (e) e->suggest_mode = on != 0; }
+
 KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias) {
     if (!e) return;
     e->lex.typo = on != 0 && e->m.n_kind > K_TYPO;
@@ -2120,6 +2126,7 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
     std::vector<Edge> E = edges(e->lex, r, &e->user);
     e->times[0] = ms_since(t0);
     std::vector<ustr> res;
+    e->suggest.clear();
     e->last_u.clear();
     e->last_segs.clear();
     bool done = false;
@@ -2131,7 +2138,11 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         t0 = std::chrono::steady_clock::now();
         // 段階式の判定は上位 3 で足りる (上位 10 は重い。迷っていればどのみちモデルで変換し直すので無駄になる)
         const int k0 = use_model == 2 && n > 0 ? CASCADE_K : 10;
-        nbest(e->lex, E, n, nullptr, 1.0, 1.0, k0, k0 == 10 ? maxout : CASCADE_K, res, &e->last_segs, e->last_cost);
+        // 辞書だけの変換では打ち間違いの辺を使わない (文脈を読まずに直すと、正しい語を辞書のコストだけで別の語にしてしまう)
+        std::vector<Edge> Ed;
+        for (const Edge& ed : E) if (ed.kind != K_TYPO) Ed.push_back(ed);
+        const bool strip = Ed.size() != E.size();
+        nbest(e->lex, strip ? Ed : E, n, nullptr, 1.0, 1.0, k0, k0 == 10 ? maxout : CASCADE_K, res, &e->last_segs, e->last_cost);
         done = use_model != 2 || n == 0 || (e->last_cost[1] - e->last_cost[0]) >= CASCADE_PER_CHAR * n;
         // 辞書の上位に英字の語が混ざるとき (ずーむ: ズーム / Zoom) は、どちらかを文脈で決めるので辞書だけで決めない。
         // 辞書のコストはカタカナが勝ちやすく、段階式で辞書に任せると英字交じりベンチの L 語が 60% -> 40% に落ちていた。
@@ -2139,7 +2150,7 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         if (done && use_model == 2)
             for (const ustr& c : res)
                 if (has_latin_word(c)) done = false;
-        if (done && k0 != 10) nbest(e->lex, E, n, nullptr, 1.0, 1.0, 10, maxout, res, &e->last_segs, e->last_cost);
+        if (done && k0 != 10) nbest(e->lex, strip ? Ed : E, n, nullptr, 1.0, 1.0, 10, maxout, res, &e->last_segs, e->last_cost);
         e->times[4] = ms_since(t0);
     }
     if (!done) {
@@ -2174,7 +2185,20 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
                 if (E[i].kind == K_TYPO) e->last_u[i] -= e->typo_bias;
         e->times[3] = ms_since(t0);
         t0 = std::chrono::steady_clock::now();
-        nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
+        bool has_typo = false;
+        for (const Edge& ed : E) has_typo = has_typo || ed.kind == K_TYPO;
+        if (e->suggest_mode && has_typo) {
+            // 提案: 打ち間違いの辺を使ったいちばんよい変換を別に出し、候補は辺を使わない (打ったとおりの) 変換だけにする
+            std::vector<ustr> ty;
+            nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 1, 1, ty);
+            std::vector<float> lit = e->last_u;
+            for (size_t i = 0; i < E.size(); i++)
+                if (E[i].kind == K_TYPO) lit[i] = -1e4f;
+            nbest(e->lex, E, n, lit.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
+            if (!ty.empty() && !res.empty() && ty[0] != res[0]) e->suggest.push_back({KKC_SUGGEST_TYPO, ty[0]});
+        } else {
+            nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
+        }
         if (!res.empty()) {
             // アラビア数字を 1 位、元の漢数字を 2 位、カンマつき (5,000兆円) を 3 位に
             const ustr ar = arabicize(r, res[0], e->last_segs);
@@ -2341,6 +2365,10 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
                 }
             std::stable_sort(addr.begin(), addr.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
         }
+        if (!addr.empty() && e->suggest_mode) {   // 提案: 住所を別の出口に (候補には入れない)
+            for (size_t i = 0; i < addr.size() && i < 3; i++) e->suggest.push_back({KKC_SUGGEST_ADDRESS, addr[i].second});
+            addr.clear();
+        }
         if (!addr.empty()) {
             const ustr hy = z.substr(0, 3) + U"-" + z.substr(3);
             std::vector<ustr> add;
@@ -2382,7 +2410,11 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
     }
     // 日付・時刻 (きょう -> 2026/10/07 …、いま -> 14:40 …) を 3 位から並べる。1・2 位 (今日・本日) はそのまま
     {
-        const std::vector<ustr> dc = date_candidates(r);
+        std::vector<ustr> dc = date_candidates(r);
+        if (e->suggest_mode) {   // 提案: 日付・時刻を別の出口に
+            for (const ustr& c : dc) e->suggest.push_back({KKC_SUGGEST_DATE, c});
+            dc.clear();
+        }
         size_t at = std::min<size_t>(2, res.size());
         for (const ustr& c : dc) {
             auto it = std::find(res.begin(), res.end(), c);
@@ -2400,6 +2432,24 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
 }
 
 KKC_API double kkc_last_margin(kkc_engine* e) { return e ? e->last_cost[1] - e->last_cost[0] : 0; }
+
+// 直前の kkc_convert の提案 (kkc_set_suggest がオンのとき)。表記を 0 区切りで out に、種類を kinds に。返り値は数 (out が足りなければ -1)
+KKC_API int kkc_last_suggest(kkc_engine* e, uint16_t* out, int cap, int32_t* kinds, int kcap) {
+    if (!e) return 0;
+    std::vector<uint16_t> buf;
+    int n = 0;
+    for (auto& x : e->suggest) {
+        if (n >= kcap) break;
+        std::vector<uint16_t> b;
+        to16(x.second, b);
+        buf.insert(buf.end(), b.begin(), b.end());
+        buf.push_back(0);
+        kinds[n++] = x.first;
+    }
+    if (int(buf.size()) > cap) return -1;
+    std::copy(buf.begin(), buf.end(), out);
+    return n;
+}
 
 KKC_API void kkc_last_times(kkc_engine* e, double* t5) { for (int i = 0; i < 5; i++) t5[i] = e ? e->times[i] : 0; }
 

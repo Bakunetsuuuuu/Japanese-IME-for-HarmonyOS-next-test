@@ -59,6 +59,9 @@ struct KeyboardPage {
   @StorageLink('inputState') inputState: string = InputState.IDLE;
   @StorageLink('inputMode') inputMode: string = InputMode.HIRAGANA;
   @StorageLink('composingText') composingText: string = '';
+  @StorageLink('suggestText') suggestText: string = '';     // 提案 (AiConverter.setSuggestion)
+  @StorageLink('suggestKind') suggestKind: number = 0;
+  @StorageLink('suggestFrom') suggestFrom: string = '';
   @StorageLink('pendingRomaji') pendingRomaji: string = '';
   // 入力中のかなをホストアプリの入力欄側に出せているか。出せているときは
   // パネル内の composing 表示を畳んでキーボードを低くする。
@@ -646,7 +649,7 @@ struct KeyboardPage {
               // 無くなるので、候補バーの右端へ移す (下の previewInField 分岐)。
               // ただし変換範囲を ◀▶ で変えている最中だけは、どこまでを変換
               // するかが入力欄側では分からないのでこの行を出す。
-              if (this.showComposingPanel
+              if (this.showComposingPanel || this.suggestText.length > 0
                   || (this.convEnd > 0 && this.convEnd < this.composingText.length)) {
               Row() {
                 Row() {
@@ -682,6 +685,22 @@ struct KeyboardPage {
                         .layoutWeight(this.composingFit(this.composingText + this.pendingRomaji)[1] < 1 ? 0 : 1)
                         .scale({ x: this.composingFit(this.composingText + this.pendingRomaji)[1], y: 1, centerX: 0, centerY: '50%' })
                     }
+                  }
+                  // 提案 (変換の域を超えるもの: 打ち間違いの直し・日付・住所)。入力中の文字の右に左寄せで、ポップアップ風に。
+                  // 候補の帯は打ったとおりの変換だけにする (2026-10-09 ユーザー: 左端に置くと候補が潰れる)
+                  if (this.suggestText.length > 0) {
+                    Text(this.suggestKind === 1 ? `提案: ${this.suggestFrom}→${this.suggestText}` : `提案: ${this.suggestText}`)
+                      .fontFamily(JP_FONT_FAMILY)
+                      .fontSize(this.isLandscape ? 11 : 13)
+                      .fontColor(kbTheme(this.isDark).accent)
+                      .maxLines(1)
+                      .textOverflow({ overflow: TextOverflow.Ellipsis })
+                      .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                      .margin({ left: 6 })
+                      .borderRadius(10)
+                      .border({ width: 1, color: kbTheme(this.isDark).accent })
+                      .flexShrink(1)
+                      .onClick(() => { InputHandler.getInstance().commitSuggestion(); })
                   }
                   Blank()
                 }
