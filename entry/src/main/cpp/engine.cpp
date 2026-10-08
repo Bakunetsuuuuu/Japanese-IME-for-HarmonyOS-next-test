@@ -2087,7 +2087,8 @@ bool is_emoji(const ustr& s) {
 std::vector<ustr> date_candidates(const ustr& r) {
     static const std::pair<const char32_t*, int> DAYS[] = {
         {U"きょう", 0}, {U"ほんじつ", 0}, {U"あした", 1}, {U"あす", 1}, {U"みょうにち", 1}, {U"あさって", 2},
-        {U"みょうごにち", 2}, {U"きのう", -1}, {U"さくじつ", -1}, {U"おととい", -2}, {U"おとつい", -2}, {U"いっさくじつ", -2}};
+        {U"みょうごにち", 2}, {U"しあさって", 3}, {U"やのあさって", 3}, {U"きのう", -1}, {U"さくじつ", -1}, {U"おととい", -2},
+        {U"おとつい", -2}, {U"いっさくじつ", -2}, {U"さきおととい", -3}};
     static const std::pair<const char32_t*, int> YEARS[] = {
         {U"ことし", 0}, {U"ほんねん", 0}, {U"こんねん", 0}, {U"らいねん", 1}, {U"みょうねん", 1}, {U"きょねん", -1}, {U"さくねん", -1}};
     static const std::pair<const char32_t*, int> MONTHS[] = {{U"こんげつ", 0}, {U"らいげつ", 1}, {U"せんげつ", -1}};
@@ -2177,24 +2178,82 @@ std::vector<ustr> date_candidates(const ustr& r) {
         out.push_back(num(y) + U"/" + num(m) + U"/" + num(dd));
         out.push_back(num(y) + U"年" + num(m) + U"月" + num(dd) + U"日");
     };
-    // 曜日: (さらいしゅう・らいしゅう・こんしゅう・せんしゅう)(の)?(げつ…にち)ようび
+    // 曜日 (言い回しを広く。2026-10-09 ユーザー): 週で言う (さらいしゅう・らいしゅう・こんしゅう・せんしゅう・せんせんしゅう)、
+    // 次・前で言う (つぎの・こんどの・こんどの・このつぎの / まえの・このまえの・さきの)、曜日だけ (きんようび = 今日か次の金曜)。
+    // 曜日は げつようび・げつよう・げつ (前に週・次の言葉があるときだけ 1 字の げつ も)
     {
-        static const std::pair<const char32_t*, int> WEEKS[] = {{U"さらいしゅう", 14}, {U"らいしゅう", 7}, {U"こんしゅう", 0}, {U"せんしゅう", -7}};
+        static const std::pair<const char32_t*, int> WEEKS[] = {{U"さらいしゅう", 14}, {U"らいしゅう", 7}, {U"こんしゅう", 0},
+                                                                  {U"せんせんしゅう", -14}, {U"せんしゅう", -7}};
+        static const std::pair<const char32_t*, int> NEXT[] = {{U"このつぎの", 1}, {U"つぎの", 1}, {U"こんどの", 1}, {U"きたる", 1},
+                                                                 {U"このまえの", -1}, {U"まえの", -1}, {U"さきの", -1}, {U"さる", -1}};
         static const char32_t* WDR[] = {U"にち", U"げつ", U"か", U"すい", U"もく", U"きん", U"ど"};
+        auto weekday = [&](const ustr& rest, bool short_ok) -> int {
+            for (int w = 0; w < 7; w++) {
+                const ustr k = WDR[w];
+                if (rest == k + U"ようび" || rest == k + U"よう" || (short_ok && rest == k && k.size() >= 2)) return w;
+            }
+            return -1;
+        };
+        const std::tm t0 = local(now);
         for (auto& wk : WEEKS) {
             if (!starts_with(r, 0, wk.first)) continue;
             ustr rest = r.substr(std::char_traits<char32_t>::length(wk.first));
             if (starts_with(rest, 0, U"の")) rest = rest.substr(1);
-            for (int w = 0; w < 7; w++) {
-                if (rest != ustr(WDR[w]) + U"ようび") continue;
-                const std::tm t0 = local(now);
-                // 週は月曜から (こんしゅうのにちようび = この週の日曜 = 次の日曜)
-                const int mon_off = (t0.tm_wday + 6) % 7;   // 今日から見た今週の月曜までの日数
-                const int target = (w + 6) % 7;              // 月曜を 0 とした曜日
-                const int delta = -mon_off + target + wk.second;
-                put_date(now + time_t(delta) * 86400);
+            const int w = weekday(rest, true);
+            if (w < 0) continue;
+            // 週は月曜から (こんしゅうのにちようび = この週の日曜 = 次の日曜)
+            const int mon_off = (t0.tm_wday + 6) % 7;   // 今日から見た今週の月曜までの日数
+            const int target = (w + 6) % 7;              // 月曜を 0 とした曜日
+            put_date(now + time_t(-mon_off + target + wk.second) * 86400);
+            return out;
+        }
+        for (auto& nx : NEXT) {
+            if (!starts_with(r, 0, nx.first)) continue;
+            const int w = weekday(r.substr(std::char_traits<char32_t>::length(nx.first)), true);
+            if (w < 0) continue;
+            int d = (w - t0.tm_wday + 7) % 7;            // 次の (今日なら 7 日後)
+            if (nx.second > 0) d = d == 0 ? 7 : d;
+            else d = -((t0.tm_wday - w + 7) % 7 == 0 ? 7 : (t0.tm_wday - w + 7) % 7);
+            put_date(now + time_t(d) * 86400);
+            return out;
+        }
+        {
+            const int w = weekday(r, false);   // 曜日だけ: 今日か次のその曜日
+            if (w >= 0 && r.size() >= 4) {
+                put_date(now + time_t((w - t0.tm_wday + 7) % 7) * 86400);
                 return out;
             }
+        }
+        // 週末 (こんしゅうまつ・らいしゅうまつ・しゅうまつ): 土曜と日曜
+        static const std::pair<const char32_t*, int> WE[] = {{U"らいしゅうまつ", 7}, {U"こんしゅうまつ", 0}, {U"しゅうまつ", 0}, {U"せんしゅうまつ", -7}};
+        for (auto& we : WE) {
+            if (r != we.first) continue;
+            const int mon_off = (t0.tm_wday + 6) % 7;
+            const time_t sat = now + time_t(-mon_off + 5 + we.second) * 86400;
+            put_date(sat);
+            const std::tm ts = local(sat), tsu = local(sat + 86400);
+            out.insert(out.begin() + 1, num(ts.tm_mon + 1) + U"/" + num(ts.tm_mday) + U"〜" + num(tsu.tm_mon + 1) + U"/" + num(tsu.tm_mday));
+            return out;
+        }
+        // 月末・年末 (げつまつ・こんげつまつ・らいげつまつ・せんげつまつ・ねんまつ)
+        static const std::pair<const char32_t*, int> ME[] = {{U"らいげつまつ", 1}, {U"こんげつまつ", 0}, {U"げつまつ", 0}, {U"せんげつまつ", -1}};
+        for (auto& me : ME) {
+            if (r != me.first) continue;
+            std::tm t = t0;
+            t.tm_mon += me.second + 1;
+            t.tm_mday = 0;   // 前の月の末日
+            t.tm_hour = 12;
+            put_date(std::mktime(&t));
+            return out;
+        }
+        if (r == U"ねんまつ" || r == U"らいねんまつ") {
+            std::tm t = t0;
+            t.tm_year += r == U"ねんまつ" ? 0 : 1;
+            t.tm_mon = 11;
+            t.tm_mday = 31;
+            t.tm_hour = 12;
+            put_date(std::mktime(&t));
+            return out;
         }
     }
     // N 日後・N 日前 (みっかご・とおかまえ・じゅうごにちご)、N 週間後
@@ -2208,6 +2267,37 @@ std::vector<ustr> date_candidates(const ustr& r) {
             bool sk;
             const ustr wn = body.substr(0, body.size() - 5);
             if ((parse_num(wn, v) || parse(wn, v, sk)) && v >= 1 && v <= 52) { put_date(now + time_t(v * 7 * suf.second) * 86400); return out; }
+        }
+    }
+    // N か月後・N 年後 (さんかげつご・いちねんご)、N 時間後・N 分後 (さんじかんご・じゅっぷんご -> 時刻)
+    for (const auto& suf : {std::pair<const char32_t*, int>{U"ご", 1}, std::pair<const char32_t*, int>{U"あと", 1}, std::pair<const char32_t*, int>{U"まえ", -1}}) {
+        if (!ends_with(r, suf.first)) continue;
+        const ustr body = r.substr(0, r.size() - std::char_traits<char32_t>::length(suf.first));
+        auto numof = [&](const ustr& x, int64_t& v) { bool sk; return parse_num(x, v) || parse(x, v, sk) || (x == U"いっ" && (v = 1, true)); };
+        int64_t v;
+        if ((ends_with(body, U"かげつ") || ends_with(body, U"かげつかん")) && numof(body.substr(0, body.find(U"かげつ")), v) && v >= 1 && v <= 36) {
+            std::tm t = local(now);
+            t.tm_mon += int(v) * suf.second;
+            t.tm_hour = 12;
+            put_date(std::mktime(&t));
+            return out;
+        }
+        if (ends_with(body, U"ねん") && numof(body.substr(0, body.size() - 2), v) && v >= 1 && v <= 30) {
+            std::tm t = local(now);
+            t.tm_year += int(v) * suf.second;
+            t.tm_hour = 12;
+            put_date(std::mktime(&t));
+            return out;
+        }
+        int64_t mins = -1;
+        if (ends_with(body, U"じかん") && numof(body.substr(0, body.size() - 3), v) && v >= 1 && v <= 48) mins = v * 60;
+        else if ((ends_with(body, U"ふん") || ends_with(body, U"ぷん")) && numof(body.substr(0, body.size() - 2), v) && v >= 1 && v <= 600) mins = v;
+        if (mins > 0) {
+            const std::tm t = local(now + time_t(mins * 60 * suf.second));
+            const ustr mm = ustr(1, char32_t(U'0' + t.tm_min / 10)) + char32_t(U'0' + t.tm_min % 10);
+            out.push_back(num(t.tm_hour) + U":" + mm);
+            out.push_back(num(t.tm_hour) + U"時" + num(t.tm_min) + U"分");
+            return out;
         }
     }
     // らいげつ・こんげつ・せんげつ + 日 (らいげつついたち -> 11/1(日))
