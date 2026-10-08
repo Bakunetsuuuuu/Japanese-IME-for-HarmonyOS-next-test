@@ -113,6 +113,10 @@ export class PcModeController implements PcKeyHost {
   private anchor: CursorInfo | undefined = undefined;
 
   private screen: ScreenInfo | undefined = undefined;
+  // 使える範囲 (Dock を除いた範囲) を getAvailableArea で知っているか。知らないうちは
+  // 画面全体で計算することになり、言語バーを Dock の裏に置いてしまう
+  private availKnown: boolean = false;
+  private availPromise: Promise<void> | undefined = undefined;
   private syncTimer: number = -1;
 
   // ---------- 起動・終了 (KeyboardController から) ----------
@@ -294,14 +298,15 @@ export class PcModeController implements PcKeyHost {
 
   onDisplayChanged(): void {
     if (!this.active) { return; }
-    this.refreshScreen();
+    // 大きさが変わっていなければ何もしない (使える範囲が変わっていれば refreshScreen が直す)
+    if (!this.refreshScreen()) { return; }
     if (this.langBarShown) { this.placeLangBar(); }
     this.scheduleSync();
   }
 
-  // KeyboardController.resizePanel から (PCモードがパネルを持っている間)
+  // KeyboardController.resizePanel から (PCモードがパネルを持っている間)。
+  // 置き場所が変わっていなければ placeSoftPanel が何もしないので、そのまま合わせ直すだけ
   relayout(): void {
-    this.softRect = { x: -1, y: -1, w: -1, h: -1 };
     this.scheduleSync();
   }
 
@@ -475,27 +480,46 @@ export class PcModeController implements PcKeyHost {
   private showLangBar(): void {
     clearTimeout(this.hideLangBarTimer);
     this.ensureStatusPanel().then((panel: inputMethodEngine.Panel | undefined) => {
-      // 作っている間に入力欄を離れた・PCモードが切れたなら出さない (確かめるのは今の状態)
-      if (panel === undefined || !this.langBarWanted()) { return; }
-      this.placeLangBar(true);
-      // 出ているつもりでも毎回 show() する (OS 側が隠していても印は変わらないので、
-      // 印を見て省くと出ないままになる)。もう出ていれば何も起きない
-      this.langBarShown = true;
-      panel.show().catch((err: Error) => {
-        console.error('shuntiIME langbar show error', JSON.stringify(err));
-      });
-      // 作った直後や欄を移った直後は、窓の準備・OS 側の後始末と行き違って show() が
-      // 効かないことがあるので、少し後に実際に出ているかを確かめてもう一度
-      clearTimeout(this.langBarRecheckTimer);
-      this.langBarRecheckTimer = setTimeout(() => {
-        this.langBarRecheckTimer = -1;
-        if (this.langBarWanted() && this.langBarShown && !this.langBarVisible
-            && this.statusPanel !== undefined) {
-          this.placeLangBar(true);
-          this.statusPanel.show().catch((_e: Error) => {});
-        }
-      }, 300);
+      if (panel === undefined) { return; }
+      // 使える範囲が分かるまで待つ (分からないまま出すと Dock の裏に置いてしまう)。
+      // 実機では Promise が解決しないことがある (KeyboardController の resizePanel 参照) ので、
+      // 待つのは 300ms まで
+      if (!this.availKnown && this.availPromise !== undefined) {
+        let done = false;
+        const go = (): void => {
+          if (done) { return; }
+          done = true;
+          this.showLangBarNow(panel);
+        };
+        this.availPromise.then(go);
+        setTimeout(go, 300);
+      } else {
+        this.showLangBarNow(panel);
+      }
     });
+  }
+
+  private showLangBarNow(panel: inputMethodEngine.Panel): void {
+    // 作っている間に入力欄を離れた・PCモードが切れたなら出さない (確かめるのは今の状態)
+    if (!this.langBarWanted()) { return; }
+    this.placeLangBar(true);
+    // 出ているつもりでも毎回 show() する (OS 側が隠していても印は変わらないので、
+    // 印を見て省くと出ないままになる)。もう出ていれば何も起きない
+    this.langBarShown = true;
+    panel.show().catch((err: Error) => {
+      console.error('shuntiIME langbar show error', JSON.stringify(err));
+    });
+    // 作った直後や欄を移った直後は、窓の準備・OS 側の後始末と行き違って show() が
+    // 効かないことがあるので、少し後に実際に出ているかを確かめてもう一度
+    clearTimeout(this.langBarRecheckTimer);
+    this.langBarRecheckTimer = setTimeout(() => {
+      this.langBarRecheckTimer = -1;
+      if (this.langBarWanted() && this.langBarShown && !this.langBarVisible
+          && this.statusPanel !== undefined) {
+        this.placeLangBar(true);
+        this.statusPanel.show().catch((_e: Error) => {});
+      }
+    }, 300);
   }
 
   private hideLangBar(): void {
@@ -533,6 +557,7 @@ export class PcModeController implements PcKeyHost {
     if (panel === undefined) { return; }
     const r = this.langBarRectPx();
     const resize = force || r.w !== this.langBarRect.w || r.h !== this.langBarRect.h;
+    const move = force || r.x !== this.langBarRect.x || r.y !== this.langBarRect.y;
     this.langBarRect = r;
     // resize と moveTo の Promise が実機で確実に解決しない件 (KeyboardController の
     // resizePanel 参照) があるので、つなげずに投げっぱなしにする
@@ -541,9 +566,11 @@ export class PcModeController implements PcKeyHost {
         console.error('shuntiIME langbar resize error', JSON.stringify(err));
       });
     }
-    panel.moveTo(r.x, r.y).catch((err: Error) => {
-      console.error('shuntiIME langbar moveTo error', JSON.stringify(err));
-    });
+    if (move) {
+      panel.moveTo(r.x, r.y).catch((err: Error) => {
+        console.error('shuntiIME langbar moveTo error', JSON.stringify(err));
+      });
+    }
   }
 
   // 言語バーの左端のつまみのドラッグ (LangBarPage から、vp のずれで)
@@ -726,23 +753,47 @@ export class PcModeController implements PcKeyHost {
 
   // ---------- 画面の大きさ ----------
 
-  private refreshScreen(): void {
+  // 画面の大きさを読み直す。大きさ・密度が変わったら true。
+  // 使える範囲は前回の値を使い続け、getAvailableArea の結果が違っていたときだけ置き直す。
+  // 以前は読み直すたびに使える範囲を「画面全体」に戻していたので、そのたびに言語バーを
+  // いったん画面全体の右下 (Dock の裏) へ動かしてから正しい位置へ戻していた。この 2 回の
+  // moveTo は別のスレッドで処理されるので、順番が入れ替わると Dock の裏で止まり、
+  // 言語バーが見えなくなっていた (display の change は PC では数秒おきに届く)
+  private refreshScreen(): boolean {
+    let changed = false;
     try {
       const dis = display.getDefaultDisplaySync();
       const density = dis.densityDPI > 0 ? dis.densityDPI / 160 : 2.0;
+      const prev = this.screen;
+      changed = prev === undefined || prev.w !== dis.width || prev.h !== dis.height || prev.density !== density;
       const full: RectPx = { x: 0, y: 0, w: dis.width, h: dis.height };
-      this.screen = { w: dis.width, h: dis.height, density: density, avail: full };
-      dis.getAvailableArea()
+      const avail: RectPx = (!changed && prev !== undefined) ? prev.avail : full;
+      if (changed) { this.availKnown = false; }
+      this.screen = { w: dis.width, h: dis.height, density: density, avail: avail };
+      this.availPromise = dis.getAvailableArea()
         .then((a: display.Rect) => {
-          if (this.screen !== undefined && a.width > 0 && a.height > 0) {
-            this.screen.avail = { x: a.left, y: a.top, w: a.width, h: a.height };
-            if (this.langBarShown) { this.placeLangBar(); }
+          if (this.screen === undefined || a.width <= 0 || a.height <= 0) {
+            this.availKnown = true;
+            return;
           }
+          const next: RectPx = { x: a.left, y: a.top, w: a.width, h: a.height };
+          const cur = this.screen.avail;
+          const same = this.availKnown && cur.x === next.x && cur.y === next.y
+            && cur.w === next.w && cur.h === next.h;
+          this.screen.avail = next;
+          this.availKnown = true;
+          if (same) { return; }
+          if (this.langBarShown) { this.placeLangBar(); }
+          this.scheduleSync();
         })
-        .catch((_e: Error) => {});
+        .catch((_e: Error) => {
+          // 取れない端末は画面全体のまま
+          this.availKnown = true;
+        });
     } catch (err) {
       console.error('shuntiIME pc refreshScreen error', JSON.stringify(err));
     }
+    return changed;
   }
 
   private screenInfo(): ScreenInfo {
