@@ -372,9 +372,19 @@ export class AiConverter {
   private static setSuggestion(r: KkcResult, top: string): void {
     const s = r.sugg ?? [];
     const k = r.suggKinds ?? [];
-    const text = s.length > 0 ? AiConverter.fSurf + s[0] : '';
-    AppStorage.setOrCreate('suggestText', text === top ? '' : text);
-    AppStorage.setOrCreate('suggestKind', k.length > 0 ? k[0] : 0);
+    const list: string[] = [];
+    const kinds: number[] = [];
+    for (let i = 0; i < s.length; i++) {
+      const t = AiConverter.fSurf + s[i];
+      if (t !== top && list.indexOf(t) < 0) {
+        list.push(t);
+        kinds.push(i < k.length ? k[i] : 0);
+      }
+    }
+    AppStorage.setOrCreate('suggestList', list);
+    AppStorage.setOrCreate('suggestKinds', kinds);
+    AppStorage.setOrCreate('suggestText', list.length > 0 ? list[0] : '');
+    AppStorage.setOrCreate('suggestKind', kinds.length > 0 ? kinds[0] : 0);
     AppStorage.setOrCreate('suggestFrom', top);
   }
 

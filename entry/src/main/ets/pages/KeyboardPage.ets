@@ -62,6 +62,8 @@ struct KeyboardPage {
   @StorageLink('suggestText') suggestText: string = '';     // 提案 (AiConverter.setSuggestion)
   @StorageLink('suggestKind') suggestKind: number = 0;
   @StorageLink('suggestFrom') suggestFrom: string = '';
+  @StorageLink('suggestList') suggestList: string[] = [];
+  @StorageLink('suggestKinds') suggestKinds: number[] = [];
   @StorageLink('pendingRomaji') pendingRomaji: string = '';
   // 入力中のかなをホストアプリの入力欄側に出せているか。出せているときは
   // パネル内の composing 表示を畳んでキーボードを低くする。
@@ -649,7 +651,7 @@ struct KeyboardPage {
               // 無くなるので、候補バーの右端へ移す (下の previewInField 分岐)。
               // ただし変換範囲を ◀▶ で変えている最中だけは、どこまでを変換
               // するかが入力欄側では分からないのでこの行を出す。
-              if (this.showComposingPanel || this.suggestText.length > 0
+              if (this.showComposingPanel || this.suggestList.length > 0
                   || (this.convEnd > 0 && this.convEnd < this.composingText.length)) {
               Row() {
                 Row() {
@@ -688,19 +690,33 @@ struct KeyboardPage {
                   }
                   // 提案 (変換の域を超えるもの: 打ち間違いの直し・日付・住所)。入力中の文字の右に左寄せで、ポップアップ風に。
                   // 候補の帯は打ったとおりの変換だけにする (2026-10-09 ユーザー: 左端に置くと候補が潰れる)
-                  if (this.suggestText.length > 0) {
-                    Text(this.suggestKind === 1 ? `提案: ${this.suggestFrom}→${this.suggestText}` : `提案: ${this.suggestText}`)
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 11 : 13)
-                      .fontColor(kbTheme(this.isDark).accent)
-                      .maxLines(1)
-                      .textOverflow({ overflow: TextOverflow.Ellipsis })
-                      .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-                      .margin({ left: 6 })
-                      .borderRadius(10)
-                      .border({ width: 1, color: kbTheme(this.isDark).accent })
-                      .flexShrink(1)
-                      .onClick(() => { InputHandler.getInstance().commitSuggestion(); })
+                  // 複数の提案 (2026/10/9・2026年10月9日・10/9 …) は横に並べて、はみ出す分は横にめくる。右から引き出すように出る
+                  if (this.suggestList.length > 0) {
+                    Scroll() {
+                      Row({ space: 6 }) {
+                        ForEach(this.suggestList, (t: string, i: number) => {
+                          Text(i === 0 ? (this.suggestKinds.length > 0 && this.suggestKinds[0] === 1
+                            ? `提案: ${this.suggestFrom}→${t}` : `提案: ${t}`) : t)
+                            .fontFamily(JP_FONT_FAMILY)
+                            .fontSize(this.isLandscape ? 11 : 13)
+                            .fontColor(kbTheme(this.isDark).accent)
+                            .maxLines(1)
+                            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
+                            .borderRadius(10)
+                            .border({ width: 1, color: kbTheme(this.isDark).accent })
+                            .onClick(() => { InputHandler.getInstance().commitSuggestion(i); })
+                        }, (t: string, i: number) => `${i}:${t}`)
+                      }
+                      .padding({ right: 8 })
+                    }
+                    .scrollable(ScrollDirection.Horizontal)
+                    .scrollBar(BarState.Off)
+                    .edgeEffect(EdgeEffect.Spring)
+                    .align(Alignment.Start)
+                    .layoutWeight(1)
+                    .margin({ left: 6 })
+                    .transition(TransitionEffect.translate({ x: 240 }).combine(TransitionEffect.OPACITY)
+                      .animation({ duration: 220, curve: Curve.EaseOut }))
                   }
                   Blank()
                 }

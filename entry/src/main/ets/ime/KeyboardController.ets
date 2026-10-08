@@ -2194,8 +2194,9 @@ export class InputHandler {
   }
 
   // 提案 (ひらがなの帯の「提案: …」) をタップした: 変換する所をその表記で確定する。学習はしない (打ったとおりの変換ではないので)
-  commitSuggestion(): void {
-    const text = AppStorage.get<string>('suggestText') ?? '';
+  commitSuggestion(index: number = 0): void {
+    const list = AppStorage.get<string[]>('suggestList') ?? [];
+    const text = index < list.length ? list[index] : '';
     if (text.length === 0) { return; }
     const composing = AppStorage.get<string>('composingText') ?? '';
     const parts = this.splitAtConversionEnd(composing);
@@ -2204,6 +2205,7 @@ export class InputHandler {
     this.insertText(text);
     KanaKanjiConverter.addContext(text);
     AppStorage.setOrCreate('suggestText', '');
+    AppStorage.setOrCreate('suggestList', [] as string[]);
     if (parts[1].length > 0) {
       this.continueWithTail(parts[1]);
       return;
@@ -2428,6 +2430,7 @@ export class InputHandler {
     this.conversionEnd = 0;
     this.composingWatermark = '';
     AppStorage.setOrCreate('suggestText', '');
+    AppStorage.setOrCreate('suggestList', [] as string[]);
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);

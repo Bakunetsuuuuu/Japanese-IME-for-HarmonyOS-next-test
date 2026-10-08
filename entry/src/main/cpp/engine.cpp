@@ -2078,11 +2078,16 @@ std::vector<ustr> date_candidates(const ustr& r) {
         if (r != d.first) continue;
         const std::tm t = local(now + time_t(d.second) * 86400);
         const int y = t.tm_year + 1900, m = t.tm_mon + 1, dd = t.tm_mday;
-        out.push_back(num(y) + U"/" + two(m) + U"/" + two(dd));
+        // 提案の帯に並べる順 (2026-10-09 ユーザー: 2026/10/9 2026年10月9日 10/9 10月9日 十月九日)
+        out.push_back(num(y) + U"/" + num(m) + U"/" + num(dd));
         out.push_back(num(y) + U"年" + num(m) + U"月" + num(dd) + U"日");
+        out.push_back(num(m) + U"/" + num(dd));
+        out.push_back(num(m) + U"月" + num(dd) + U"日");
         out.push_back(num(m) + U"月" + num(dd) + U"日(" + ustr(1, WD[t.tm_wday]) + U")");
+        out.push_back(kanji(m) + U"月" + kanji(dd) + U"日");
         const ustr e = era(t);
         if (!e.empty()) out.push_back(e + num(m) + U"月" + num(dd) + U"日");
+        out.push_back(num(y) + U"/" + two(m) + U"/" + two(dd));
         return out;
     }
     if (r == U"いま" || r == U"げんざい") {
