@@ -74,100 +74,103 @@ export struct PcCandidateWindow {
 
   build() {
     Column() {
-      Column() {
-        if (this.vm.header.length > 0) {
-          Row() {
-            Text(this.vm.header)
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(CAND_FONT_FP - 1)
-              .fontColor(pcTheme(this.isDark).textPrimary)
-              .decoration({ type: TextDecorationType.Underline, color: pcTheme(this.isDark).composingUnderline })
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-          }
-          .width('100%')
-          .height(CAND_HEADER_H_VP)
-          .padding({ left: 12, right: 12 })
-          .alignItems(VerticalAlign.Center)
-        }
-
-        ForEach(this.vm.rows, (cand: string, row: number) => {
-          Row() {
-            // 選んでいる行の左端の縦線
-            Row()
-              .width(3)
-              .height(16)
-              .borderRadius(1.5)
-              .backgroundColor(row === this.vm.selectedRow ? pcTheme(this.isDark).accent : Color.Transparent)
-            Text(this.vm.numbered ? `${row + 1}` : '')
-              .fontSize(12)
-              .fontColor(pcTheme(this.isDark).textSecondary)
-              .width(CAND_NUMBER_W_VP - 3)
-              .textAlign(TextAlign.Center)
-            Text(cand)
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(CAND_FONT_FP)
-              .fontColor(pcTheme(this.isDark).textPrimary)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .layoutWeight(1)
-          }
-          .width('100%')
-          .height(CAND_ROW_H_VP)
-          .padding({ right: 10 })
-          .alignItems(VerticalAlign.Center)
-          .borderRadius(4)
-          .backgroundColor(this.rowBg(row))
-          .onHover((isHover: boolean) => {
-            if (isHover) {
-              this.hoverRow = row;
-            } else if (this.hoverRow === row) {
-              this.hoverRow = -1;
+      // 出すものが無いときは何も描かない (窓が何かの拍子に出ても空白の板にならないように)
+      if (this.vm.visible) {
+        Column() {
+          if (this.vm.header.length > 0) {
+            Row() {
+              Text(this.vm.header)
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(CAND_FONT_FP - 1)
+                .fontColor(pcTheme(this.isDark).textPrimary)
+                .decoration({ type: TextDecorationType.Underline, color: pcTheme(this.isDark).composingUnderline })
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
             }
-          })
-          .onClick(() => { this.pick(row); })
-        }, (cand: string, row: number) => `${this.vm.firstIndex + row}:${cand}`)
-
-        if (this.vm.pageCount > 1) {
-          Row({ space: 10 }) {
-            Text(`${this.vm.page + 1}/${this.vm.pageCount}`)
-              .fontSize(11)
-              .fontColor(pcTheme(this.isDark).textSecondary)
-            Text('◀')
-              .fontSize(10)
-              .fontColor(this.vm.page > 0 ? pcTheme(this.isDark).textPrimary : pcTheme(this.isDark).textSecondary)
-              .onClick(() => { this.turnPage(-1); })
-            Text('▶')
-              .fontSize(10)
-              .fontColor(this.vm.page + 1 < this.vm.pageCount
-                ? pcTheme(this.isDark).textPrimary : pcTheme(this.isDark).textSecondary)
-              .onClick(() => { this.turnPage(1); })
+            .width('100%')
+            .height(CAND_HEADER_H_VP)
+            .padding({ left: 12, right: 12 })
+            .alignItems(VerticalAlign.Center)
           }
-          .width('100%')
-          .height(CAND_FOOTER_H_VP)
-          .padding({ right: 10 })
-          .justifyContent(FlexAlign.End)
-          .alignItems(VerticalAlign.Center)
+
+          ForEach(this.vm.rows, (cand: string, row: number) => {
+            Row() {
+              // 選んでいる行の左端の縦線
+              Row()
+                .width(3)
+                .height(16)
+                .borderRadius(1.5)
+                .backgroundColor(row === this.vm.selectedRow ? pcTheme(this.isDark).accent : Color.Transparent)
+              Text(this.vm.numbered ? `${row + 1}` : '')
+                .fontSize(12)
+                .fontColor(pcTheme(this.isDark).textSecondary)
+                .width(CAND_NUMBER_W_VP - 3)
+                .textAlign(TextAlign.Center)
+              Text(cand)
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(CAND_FONT_FP)
+                .fontColor(pcTheme(this.isDark).textPrimary)
+                .maxLines(1)
+                .textOverflow({ overflow: TextOverflow.Ellipsis })
+                .layoutWeight(1)
+            }
+            .width('100%')
+            .height(CAND_ROW_H_VP)
+            .padding({ right: 10 })
+            .alignItems(VerticalAlign.Center)
+            .borderRadius(4)
+            .backgroundColor(this.rowBg(row))
+            .onHover((isHover: boolean) => {
+              if (isHover) {
+                this.hoverRow = row;
+              } else if (this.hoverRow === row) {
+                this.hoverRow = -1;
+              }
+            })
+            .onClick(() => { this.pick(row); })
+          }, (cand: string, row: number) => `${this.vm.firstIndex + row}:${cand}`)
+
+          if (this.vm.pageCount > 1) {
+            Row({ space: 10 }) {
+              Text(`${this.vm.page + 1}/${this.vm.pageCount}`)
+                .fontSize(11)
+                .fontColor(pcTheme(this.isDark).textSecondary)
+              Text('◀')
+                .fontSize(10)
+                .fontColor(this.vm.page > 0 ? pcTheme(this.isDark).textPrimary : pcTheme(this.isDark).textSecondary)
+                .onClick(() => { this.turnPage(-1); })
+              Text('▶')
+                .fontSize(10)
+                .fontColor(this.vm.page + 1 < this.vm.pageCount
+                  ? pcTheme(this.isDark).textPrimary : pcTheme(this.isDark).textSecondary)
+                .onClick(() => { this.turnPage(1); })
+            }
+            .width('100%')
+            .height(CAND_FOOTER_H_VP)
+            .padding({ right: 10 })
+            .justifyContent(FlexAlign.End)
+            .alignItems(VerticalAlign.Center)
+          }
         }
+        .width('100%')
+        .height('100%')
+        .padding(CAND_PAD_VP)
+        .backgroundColor(pcTheme(this.isDark).windowBg)
+        .borderRadius(8)
+        .border({ width: 1, color: pcTheme(this.isDark).border })
+        .shadow({ radius: CAND_MARGIN_VP, color: pcTheme(this.isDark).shadow, offsetX: 0, offsetY: 2 })
+        .clip(false)
+        .gesture(
+          PanGesture({ direction: PanDirection.Vertical, distance: 4 })
+            .onActionEnd((e: GestureEvent) => {
+              if (e.offsetY <= -WHEEL_PAGE_VP) {
+                this.turnPage(1);
+              } else if (e.offsetY >= WHEEL_PAGE_VP) {
+                this.turnPage(-1);
+              }
+            })
+        )
       }
-      .width('100%')
-      .height('100%')
-      .padding(CAND_PAD_VP)
-      .backgroundColor(pcTheme(this.isDark).windowBg)
-      .borderRadius(8)
-      .border({ width: 1, color: pcTheme(this.isDark).border })
-      .shadow({ radius: CAND_MARGIN_VP, color: pcTheme(this.isDark).shadow, offsetX: 0, offsetY: 2 })
-      .clip(false)
-      .gesture(
-        PanGesture({ direction: PanDirection.Vertical, distance: 4 })
-          .onActionEnd((e: GestureEvent) => {
-            if (e.offsetY <= -WHEEL_PAGE_VP) {
-              this.turnPage(1);
-            } else if (e.offsetY >= WHEEL_PAGE_VP) {
-              this.turnPage(-1);
-            }
-          })
-      )
     }
     .width('100%')
     .height('100%')

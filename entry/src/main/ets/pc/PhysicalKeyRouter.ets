@@ -185,7 +185,7 @@ export class PhysicalKeyRouter {
       return this.onIdle(code, ch, mods);
     }
     if (state === InputState.COMPOSING) {
-      return this.onComposing(code, ch);
+      return this.onComposing(code, ch, mods);
     }
     if (state === InputState.SELECTING) {
       return this.onSelecting(code, ch, mods, e.numLock !== false);
@@ -225,7 +225,7 @@ export class PhysicalKeyRouter {
 
   // ---------- 読みを打っているとき (COMPOSING) ----------
 
-  private onComposing(code: number, ch: string): boolean {
+  private onComposing(code: number, ch: string, mods: Modifiers): boolean {
     switch (code) {
       case KeyCode.KEYCODE_SPACE:
       case KeyCode.KEYCODE_HENKAN:
@@ -246,12 +246,13 @@ export class PhysicalKeyRouter {
         this.rawKeys = '';
         return true;
       case KeyCode.KEYCODE_DPAD_LEFT:
-        // 読みの中のカーソル移動は無いので、ソフトキーボードの ◄ と同じく
-        // 変換する範囲を縮める (Shift の有無を問わない)
-        this.handler.handleCursorLeft();
+        // Shift+← で変換する範囲を縮める (Windows の IME と同じ)。読みの中のカーソル移動は
+        // 無いので、Shift 無しは飲み込むだけ (以前は Shift 無しでも範囲を縮めていて、
+        // カーソルを動かすつもりで押すと先頭の数文字しか変換されなくなっていた)
+        if (mods.shift) { this.handler.handleCursorLeft(); }
         return true;
       case KeyCode.KEYCODE_DPAD_RIGHT:
-        this.handler.handleCursorRight();
+        if (mods.shift) { this.handler.handleCursorRight(); }
         return true;
       case KeyCode.KEYCODE_DPAD_UP:
       case KeyCode.KEYCODE_PAGE_UP:

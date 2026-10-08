@@ -24,7 +24,7 @@ import { PhysicalKeyRouter, PcKeyHost } from './PhysicalKeyRouter';
 import { PcSettingsStore, PcSettings, PC_MODE_AUTO, PC_MODE_ON, PC_MODE_OFF } from './PcSettings';
 import { currentCandidateView, candidateWindowSizeVp, CandidateViewModel, SizeVp } from './CandidateViewModel';
 import {
-  CAND_MARGIN_VP, LANGBAR_W_VP, LANGBAR_H_VP, LANGBAR_EDGE_GAP_VP, POPUP_W_VP, POPUP_H_VP, POPUP_GAP_VP
+  CAND_MARGIN_VP, CAND_MIN_W_VP, CAND_ROW_H_VP, LANGBAR_W_VP, LANGBAR_H_VP, LANGBAR_EDGE_GAP_VP, POPUP_W_VP, POPUP_H_VP, POPUP_GAP_VP
 } from './PcStyle';
 
 const IMEAbility = inputMethodEngine.getInputMethodAbility();
@@ -246,18 +246,55 @@ export class PcModeController implements PcKeyHost {
     }
     this.candidateFlagPending = false;
     this.host?.changeSoftPanelFlagForPc(inputMethodEngine.PanelFlag.FLAG_CANDIDATE, false, () => {
-      this.scheduleSync();
+      this.afterCandidateFlag();
     });
+  }
+
+  // 候補ウィンドウ用の flag にした直後。パネルはまだキーボードの大きさ (画面幅 × キーボードの
+  // 高さ) のままで、この状態で出ると中身の無い大きな板が画面に出てしまう。出す前に小さくしておく
+  // (本当の大きさ・置き場所は候補を出すときに syncSoftPanel が決める)
+  private afterCandidateFlag(): void {
+    const panel = this.host?.getSoftPanel();
+    if (panel !== undefined && !this.softShown) {
+      const sc = this.screenInfo();
+      const w = Math.round(CAND_MIN_W_VP * sc.density);
+      const h = Math.round(CAND_ROW_H_VP * sc.density);
+      this.softRect = { x: -1, y: -1, w: w, h: h };
+      panel.resize(w, h).catch((_e: Error) => {});
+      // 隠しておく (flag を変える前の hide と行き違って出たままになることがある)
+      panel.hide().catch((_e: Error) => {});
+      this.host?.noteSoftPanelVisible(false);
+    }
+    this.scheduleSync();
   }
 
   // KeyboardController.initPanel でソフトキーボードのパネルができた
   onSoftPanelReady(): void {
+    const panel = this.host?.getSoftPanel();
+    if (panel !== undefined) { this.watchSoftPanel(panel); }
     if (!this.candidateFlagPending) { return; }
     this.candidateFlagPending = false;
     if (!this.active || this.softState === PC_SOFT_KEYBOARD) { return; }
     this.host?.changeSoftPanelFlagForPc(inputMethodEngine.PanelFlag.FLAG_CANDIDATE, false, () => {
-      this.scheduleSync();
+      this.afterCandidateFlag();
     });
+  }
+
+  // PCモードが候補ウィンドウ・展開に使っている間に、こちらが出していないのにパネルが
+  // 出た (アプリがキーボードを求めたときに OS が出すなど) ら、すぐ隠す。
+  // 起動直後に画面の上端へ大きな空白の板が出ていたのはこれ
+  private watchSoftPanel(panel: inputMethodEngine.Panel): void {
+    try {
+      panel.on('show', () => {
+        if (this.ownsSoftPanel() && !this.softShown) {
+          console.info('shuntiIME pc soft panel shown unexpectedly, hiding');
+          panel.hide().catch((_e: Error) => {});
+          this.host?.noteSoftPanelVisible(false);
+        }
+      });
+    } catch (err) {
+      console.error('shuntiIME soft panel on(show) error', JSON.stringify(err));
+    }
   }
 
   // ---------- 入力欄の出入り (KeyboardController から) ----------

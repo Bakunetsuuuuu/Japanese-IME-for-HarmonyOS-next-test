@@ -1944,6 +1944,7 @@ export class InputHandler {
         : result.committed;
       const current = AppStorage.get<string>('composingText') ?? '';
       AppStorage.setOrCreate('composingText', current + kana);
+      this.resetConversionRangeForPc();
       this.updateCandidates();
     }
 
@@ -2105,6 +2106,7 @@ export class InputHandler {
         }
       }
       this.reclaimTrailingRomaji();
+      this.resetConversionRangeForPc();
 
       const composing = AppStorage.get<string>('composingText') ?? '';
       const newPending = AppStorage.get<string>('pendingRomaji') ?? '';
@@ -3680,6 +3682,15 @@ export class InputHandler {
   // 打ちかけのローマ字を読みに入れる。PCモードは Windows の IME と同じく、
   // 末尾に残った n を「ん」にする (hon + 変換 で「ほn」ではなく「ほん」)。
   // ソフトキーボードは今までどおり (n のまま)。
+  // PCモードで読みを打ち足した・消したら、変換する範囲を読み全体に戻す。範囲を縮めたまま
+  // (Shift+← や、前の方だけ確定した残り) 打ち足すと、打ち足した分が変換されないため
+  // (Windows の IME も、打ち足せば読み全体を変換し直す)
+  private resetConversionRangeForPc(): void {
+    if (!this.isPcMode() || this.conversionEnd === 0) { return; }
+    this.conversionEnd = 0;
+    AppStorage.setOrCreate('convEnd', 0);
+  }
+
   private flushPendingRomaji(): string {
     const pending = this.converter.flushPending();
     if (pending === 'n' && this.isPcMode()) { return 'ん'; }
