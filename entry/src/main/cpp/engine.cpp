@@ -283,9 +283,20 @@ bool parse(const ustr& r, int64_t& value, bool& sokuon) {
     ustr body = sok ? r.substr(0, r.size() - sok->k.size()) : r;
     std::vector<std::pair<char, int64_t>> toks;
     size_t i = 0;
+    ustr prev;
     while (i < body.size()) {
         bool hit = false;
-        for (auto& p : PIECES) if (starts_with(body, i, p.k)) { toks.push_back({p.kind, p.v}); i += p.k.size(); hit = true; break; }
+        for (auto& p : PIECES)
+            if (starts_with(body, i, p.k)) {
+                // 連濁は決まった数のあとだけ: さんぜん・さんびゃく・ろっぴゃく・はっぴゃく (ごぜん は 午前 であって 5000 ではない)
+                if ((p.k == U"ぜん" || p.k == U"びゃく") && prev != U"さん" && prev != U"なん") return false;
+                if (p.k == U"ぴゃく" && prev != U"ろっ" && prev != U"はっ") return false;
+                toks.push_back({p.kind, p.v});
+                prev = p.k;
+                i += p.k.size();
+                hit = true;
+                break;
+            }
         if (!hit) return false;
     }
     if (sok) {
@@ -1940,6 +1951,8 @@ KKC_API void kkc_close(kkc_engine* e) { delete e; }
 KKC_API void kkc_set_threads(kkc_engine* e, int n) { if (e) e->pool.resize(n); }
 // 打ち間違いの直し (S7 から。モデルが辺の種類 typo を知っているときだけ効く): on = 0 で作らない、
 // bias = 打ち間違いの辺の点数から引く値 (0 で学習どおり。大きいほど余計な直しが減り、直せる誤字も減る)
+// 迷っているとみなす 1 位と 2 位の差 (経路のコスト。kkc_last_margin と同じ単位。calib: 2026-10-09 dev で決めた)
+static double ALT_MARGIN = 300;
 KKC_API void kkc_set_suggest(kkc_engine* e, int on) { if (e) e->suggest_mode = on != 0; }
 
 KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias) {
@@ -2145,6 +2158,150 @@ std::vector<ustr> date_candidates(const ustr& r) {
         out.push_back(num(y) + U"年" + num(m) + U"月");
         return out;
     }
+    // ---- 相対的な日付・曜日・和暦・時刻 (提案の帯に出す。2026-10-09)
+    // 日数の読み: ついたち・ふつか … とおか・はつか、それ以外は かなの数 + にち (じゅうごにち)
+    auto day_num = [&](const ustr& w, int& d) -> bool {
+        static const std::pair<const char32_t*, int> SP[] = {
+            {U"ついたち", 1}, {U"ふつか", 2}, {U"みっか", 3}, {U"よっか", 4}, {U"いつか", 5}, {U"むいか", 6}, {U"なのか", 7},
+            {U"ようか", 8}, {U"ここのか", 9}, {U"とおか", 10}, {U"じゅうよっか", 14}, {U"はつか", 20}, {U"にじゅうよっか", 24}};
+        for (auto& x : SP) if (w == x.first) { d = x.second; return true; }
+        if (ends_with(w, U"にち")) {
+            int64_t v;
+            if (parse_num(w.substr(0, w.size() - 2), v) && v >= 1 && v <= 31) { d = int(v); return true; }
+        }
+        return false;
+    };
+    auto put_date = [&](time_t t) {
+        const std::tm tm = local(t);
+        const int y = tm.tm_year + 1900, m = tm.tm_mon + 1, dd = tm.tm_mday;
+        out.push_back(num(m) + U"/" + num(dd) + U"(" + ustr(1, WD[tm.tm_wday]) + U")");
+        out.push_back(num(m) + U"月" + num(dd) + U"日(" + ustr(1, WD[tm.tm_wday]) + U")");
+        out.push_back(num(y) + U"/" + num(m) + U"/" + num(dd));
+        out.push_back(num(y) + U"年" + num(m) + U"月" + num(dd) + U"日");
+    };
+    // 曜日: (さらいしゅう・らいしゅう・こんしゅう・せんしゅう)(の)?(げつ…にち)ようび
+    {
+        static const std::pair<const char32_t*, int> WEEKS[] = {{U"さらいしゅう", 14}, {U"らいしゅう", 7}, {U"こんしゅう", 0}, {U"せんしゅう", -7}};
+        static const char32_t* WDR[] = {U"にち", U"げつ", U"か", U"すい", U"もく", U"きん", U"ど"};
+        for (auto& wk : WEEKS) {
+            if (!starts_with(r, 0, wk.first)) continue;
+            ustr rest = r.substr(std::char_traits<char32_t>::length(wk.first));
+            if (starts_with(rest, 0, U"の")) rest = rest.substr(1);
+            for (int w = 0; w < 7; w++) {
+                if (rest != ustr(WDR[w]) + U"ようび") continue;
+                const std::tm t0 = local(now);
+                // 週は月曜から (こんしゅうのにちようび = この週の日曜 = 次の日曜)
+                const int mon_off = (t0.tm_wday + 6) % 7;   // 今日から見た今週の月曜までの日数
+                const int target = (w + 6) % 7;              // 月曜を 0 とした曜日
+                const int delta = -mon_off + target + wk.second;
+                put_date(now + time_t(delta) * 86400);
+                return out;
+            }
+        }
+    }
+    // N 日後・N 日前 (みっかご・とおかまえ・じゅうごにちご)、N 週間後
+    for (const auto& suf : {std::pair<const char32_t*, int>{U"ご", 1}, std::pair<const char32_t*, int>{U"あと", 1}, std::pair<const char32_t*, int>{U"まえ", -1}}) {
+        if (!ends_with(r, suf.first)) continue;
+        const ustr body = r.substr(0, r.size() - std::char_traits<char32_t>::length(suf.first));
+        int d;
+        if (day_num(body, d) && body.size() >= 3) { put_date(now + time_t(d * suf.second) * 86400); return out; }
+        if (ends_with(body, U"しゅうかん")) {
+            int64_t v;
+            bool sk;
+            const ustr wn = body.substr(0, body.size() - 5);
+            if ((parse_num(wn, v) || parse(wn, v, sk)) && v >= 1 && v <= 52) { put_date(now + time_t(v * 7 * suf.second) * 86400); return out; }
+        }
+    }
+    // らいげつ・こんげつ・せんげつ + 日 (らいげつついたち -> 11/1(日))
+    {
+        static const std::pair<const char32_t*, int> MS[] = {{U"さらいげつ", 2}, {U"らいげつ", 1}, {U"こんげつ", 0}, {U"せんげつ", -1}};
+        for (auto& mo : MS) {
+            if (!starts_with(r, 0, mo.first)) continue;
+            ustr rest = r.substr(std::char_traits<char32_t>::length(mo.first));
+            if (starts_with(rest, 0, U"の")) rest = rest.substr(1);
+            int d;
+            if (rest.empty() || !day_num(rest, d)) continue;
+            std::tm t = local(now);
+            t.tm_mon += mo.second;
+            t.tm_mday = d;
+            t.tm_hour = 12;
+            put_date(std::mktime(&t));
+            return out;
+        }
+    }
+    // 和暦 -> 西暦 (れいわはちねん -> 2026年)、西暦 -> 和暦 (にせんにじゅうろくねん -> 令和8年)
+    {
+        static const std::pair<const char32_t*, int> ERAS[] = {{U"れいわ", 2018}, {U"へいせい", 1988}, {U"しょうわ", 1925}, {U"たいしょう", 1911}, {U"めいじ", 1867}};
+        static const char32_t* ERAK[] = {U"令和", U"平成", U"昭和", U"大正", U"明治"};
+        if (ends_with(r, U"ねん")) {
+            for (int i = 0; i < 5; i++) {
+                if (!starts_with(r, 0, ERAS[i].first)) continue;
+                const ustr body = r.substr(std::char_traits<char32_t>::length(ERAS[i].first), r.size() - 2 - std::char_traits<char32_t>::length(ERAS[i].first));
+                int64_t v = 0;
+                if (body == U"がん") v = 1;
+                else if (!parse_num(body, v)) continue;
+                if (v < 1 || v > 64) continue;
+                out.push_back(num(int(ERAS[i].second + v)) + U"年");
+                out.push_back(ustr(ERAK[i]) + (v == 1 ? ustr(U"元") : num(int(v))) + U"年(" + num(int(ERAS[i].second + v)) + U"年)");
+                return out;
+            }
+            int64_t y;
+            if (parse_num(r.substr(0, r.size() - 2), y) && y >= 1868 && y <= 2100) {
+                const int Y = int(y);
+                ustr era;
+                if (Y >= 2019) era = U"令和" + (Y == 2019 ? ustr(U"元") : num(Y - 2018));
+                else if (Y >= 1989) era = U"平成" + (Y == 1989 ? ustr(U"元") : num(Y - 1988));
+                else if (Y >= 1926) era = U"昭和" + (Y == 1926 ? ustr(U"元") : num(Y - 1925));
+                else if (Y >= 1912) era = U"大正" + (Y == 1912 ? ustr(U"元") : num(Y - 1911));
+                else era = U"明治" + (Y == 1868 ? ustr(U"元") : num(Y - 1867));
+                out.push_back(era + U"年");
+                out.push_back(num(Y) + U"年(" + era + U"年)");
+                return out;
+            }
+        }
+    }
+    // 時刻: (ごぜん|ごご)? N じ (M ふん|ぷん|はん)? -> 15:00・15時・午後3時
+    {
+        ustr t = r;
+        int ampm = 0;
+        if (starts_with(t, 0, U"ごぜん")) { ampm = 1; t = t.substr(3); }
+        else if (starts_with(t, 0, U"ごご")) { ampm = 2; t = t.substr(2); }
+        // 時の じ (じゅう の じ と区別: 前が数として読める じ を後ろから探す)
+        // 時の数: よじ・くじ (よ・く の 1 字)、じゅうよじ (よ = よん)
+        auto hour = [&](const ustr& x, int64_t& v) -> bool {
+            if (x == U"よ") { v = 4; return true; }
+            if (x == U"く") { v = 9; return true; }
+            if (parse_num(x, v)) return true;
+            return ends_with(x, U"よ") && parse_num(x + U"ん", v);
+        };
+        size_t j = ustr::npos;
+        for (size_t q = t.size(); q-- > 1;) {
+            int64_t tmp;
+            if (t[q] == U'じ' && hour(t.substr(0, q), tmp)) { j = q; break; }
+        }
+        if (j != ustr::npos && j > 0) {
+            int64_t h, mi = 0;
+            const ustr hs = t.substr(0, j), rest = t.substr(j + 1);
+            bool ok = hour(hs, h);
+            if (ok && !rest.empty()) {
+                bool sk;
+                if (rest == U"はん") mi = 30;
+                else if (ends_with(rest, U"ふん") || ends_with(rest, U"ぷん")) {
+                    const ustr ms = rest.substr(0, rest.size() - 2);
+                    ok = (parse_num(ms, mi) || parse(ms, mi, sk) || (ms == U"いっ" && (mi = 1, true))) && mi < 60;
+                } else ok = false;
+            }
+            if (ok && h >= 0 && h <= 24 && (ampm || !rest.empty() || hs.size() >= 2)) {
+                int H = int(h);
+                if (ampm == 2 && H < 12) H += 12;
+                const ustr mm = ustr(1, char32_t(U'0' + mi / 10)) + char32_t(U'0' + mi % 10);
+                out.push_back(num(H) + U":" + mm);
+                out.push_back(num(H) + U"時" + (mi ? num(int(mi)) + U"分" : ustr()));
+                if (ampm) out.push_back(ustr(ampm == 1 ? U"午前" : U"午後") + num(int(h)) + U"時" + (mi ? num(int(mi)) + U"分" : ustr()));
+                return out;
+            }
+        }
+    }
     return out;
 }
 
@@ -2306,7 +2463,11 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
             if (e->lex.find(reinterpret_cast<const uint16_t*>(kana), nk, a, b))
                 for (uint32_t j = a, k = 0; j < b && k < 2; j++) {
                     const Ent en = e->lex.ent(j);
-                    if (en.cost >= ENG_COST) { put(from16(e->lex.s_blob + en.soff, en.slen), 3); k++; }
+                    if (en.cost < ENG_COST) continue;
+                    // 提案モードでは英単語は提案の帯へ (候補の帯をすっきりさせる)
+                    if (e->suggest_mode) e->suggest.push_back({KKC_SUGGEST_ENGLISH, from16(e->lex.s_blob + en.soff, en.slen)});
+                    else put(from16(e->lex.s_blob + en.soff, en.slen), 3);
+                    k++;
                 }
         }
         for (const auto& sy : mathx::SYMBOLS)
@@ -2502,6 +2663,9 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         }
         if (int(res.size()) > maxout) res.resize(size_t(maxout));
     }
+    // 同音語などで AI が迷っているとき (1 位と 2 位の経路のコストの差が小さい): 2 位を提案に「これかも?」として出す
+    if (e->suggest_mode && use_model && res.size() > 1 && e->last_cost[1] - e->last_cost[0] < ALT_MARGIN && !e->last_u.empty())
+        e->suggest.push_back({KKC_SUGGEST_ALT, res[1]});
     std::vector<uint16_t> buf;
     for (auto& s : res) { to16(s, buf); buf.push_back(0); }
     if (int(buf.size()) > cap) return -1;
