@@ -1951,8 +1951,6 @@ KKC_API void kkc_close(kkc_engine* e) { delete e; }
 KKC_API void kkc_set_threads(kkc_engine* e, int n) { if (e) e->pool.resize(n); }
 // 打ち間違いの直し (S7 から。モデルが辺の種類 typo を知っているときだけ効く): on = 0 で作らない、
 // bias = 打ち間違いの辺の点数から引く値 (0 で学習どおり。大きいほど余計な直しが減り、直せる誤字も減る)
-// 迷っているとみなす 1 位と 2 位の差 (経路のコスト。kkc_last_margin と同じ単位。calib: 2026-10-09 dev で決めた)
-static double ALT_MARGIN = 300;
 KKC_API void kkc_set_suggest(kkc_engine* e, int on) { if (e) e->suggest_mode = on != 0; }
 
 KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias) {
@@ -2663,9 +2661,6 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         }
         if (int(res.size()) > maxout) res.resize(size_t(maxout));
     }
-    // 同音語などで AI が迷っているとき (1 位と 2 位の経路のコストの差が小さい): 2 位を提案に「これかも?」として出す
-    if (e->suggest_mode && use_model && res.size() > 1 && e->last_cost[1] - e->last_cost[0] < ALT_MARGIN && !e->last_u.empty())
-        e->suggest.push_back({KKC_SUGGEST_ALT, res[1]});
     std::vector<uint16_t> buf;
     for (auto& s : res) { to16(s, buf); buf.push_back(0); }
     if (int(buf.size()) > cap) return -1;

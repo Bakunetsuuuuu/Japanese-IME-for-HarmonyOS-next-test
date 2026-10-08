@@ -691,15 +691,14 @@ struct KeyboardPage {
                   // 提案 (変換の域を超えるもの: 打ち間違いの直し・日付・住所)。入力中の文字の右に左寄せで、ポップアップ風に。
                   // 候補の帯は打ったとおりの変換だけにする (2026-10-09 ユーザー: 左端に置くと候補が潰れる)
                   // 複数の提案 (2026/10/9・2026年10月9日・10/9 …) は横に並べて、はみ出す分は横にめくる。右から引き出すように出る
-                  if (this.suggestList.length > 0) {
-                    Text('提案')
-                      .fontFamily(JP_FONT_FAMILY)
-                      .fontSize(this.isLandscape ? 10 : 11)
-                      .fontColor(kbTheme(this.isDark).accent)
-                      .margin({ left: 8 })
-                      .transition(TransitionEffect.OPACITY.animation({ duration: 220 }))
+                  // 打ち間違いの直しは入力中の文字のすぐ右 (左寄せ)、日付・住所・英単語などは右寄せ
+                  if (this.suggestList.length > 0 && (this.composingText.length > 0 || this.pendingRomaji.length > 0)) {
                     Scroll() {
                       Row({ space: 6 }) {
+                        Text('提案')
+                          .fontFamily(JP_FONT_FAMILY)
+                          .fontSize(this.isLandscape ? 10 : 11)
+                          .fontColor(kbTheme(this.isDark).accent)
                         ForEach(this.suggestList, (t: string, i: number) => {
                           Text(i < this.suggestKinds.length && this.suggestKinds[i] === 1 ? `${this.suggestFrom}→${t}` : t)
                             .fontFamily(JP_FONT_FAMILY)
@@ -717,7 +716,7 @@ struct KeyboardPage {
                     .scrollable(ScrollDirection.Horizontal)
                     .scrollBar(BarState.Off)
                     .edgeEffect(EdgeEffect.Spring)
-                    .align(Alignment.Start)
+                    .align(this.suggestKinds.length > 0 && this.suggestKinds[0] === 1 ? Alignment.Start : Alignment.End)
                     .layoutWeight(1)
                     .margin({ left: 6 })
                     .transition(TransitionEffect.translate({ x: 240 }).combine(TransitionEffect.OPACITY)

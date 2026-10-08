@@ -3011,6 +3011,10 @@ export class InputHandler {
   // 変換1回の所要時間を debug ビルドだけ集計する (InputLog の perf 行)。
   // リリースでは DEBUG_INPUT_LOG が false なので、そのまま中身を呼ぶだけ。
   private updateCandidates(): void {
+    // 入力中の文字が無くなったら提案も消す (み を消したあとに提案だけ残っていた)
+    if ((AppStorage.get<string>('composingText') ?? '').length === 0) {
+      AppStorage.setOrCreate('suggestList', [] as string[]);
+    }
     if (!DEBUG_INPUT_LOG) {
       this.updateCandidatesInner();
       return;
