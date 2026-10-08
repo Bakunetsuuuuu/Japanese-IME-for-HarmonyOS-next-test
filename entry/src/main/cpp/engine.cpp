@@ -993,6 +993,33 @@ std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>
             }
         }
     }
+    // 英字のまま打った語 (英数字キーボードで iphone・github): 英数字の続きを小文字にして辞書を引き、正しい書き方 (iPhone・GitHub) の辺に。
+    // 辞書には make_case_list.py が読み = 小文字の形で入れてある
+    for (int s = 0; s < n;) {
+        auto al = [](char32_t c) { return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z') || (c >= U'0' && c <= U'9'); };
+        if (!al(r[s])) { s++; continue; }
+        int e = s;
+        bool letter = false;
+        while (e < n && (al(r[e]) || ((r[e] == U'.' || r[e] == U'-' || r[e] == U'&' || r[e] == U'+') && e + 1 < n && al(r[e + 1])))) {
+            letter = letter || (r[e] >= U'A' && (r[e] <= U'Z' || r[e] >= U'a'));
+            e++;
+        }
+        if (letter && e - s >= 2 && e - s <= 30) {
+            key.clear();
+            for (int i = s; i < e; i++) {
+                const char32_t c = r[i];
+                if (c != U' ') key.push_back(uint16_t(c >= U'A' && c <= U'Z' ? c + 32 : c));
+            }
+            uint32_t a, b;
+            if (L.find(key.data(), int(key.size()), a, b))
+                for (uint32_t j = a; j < b; j++) {
+                    const Ent en = L.ent(j);
+                    if (en.cost >= ENG_COST) continue;
+                    out.push_back({s, e, from16(L.s_blob + en.soff, en.slen), en.lid, en.rid, en.cost, K_DICT});
+                }
+        }
+        s = e;
+    }
     // ユーザー辞書: 読みが現れる所すべてに辞書の語として置く
     if (user) {
         for (const UserWord& w : *user) {
@@ -2390,6 +2417,52 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
             }
             if (int(res.size()) > maxout) res.resize(size_t(maxout));
         }
+    }
+    // 小文字のまま打った英字の語 (iphone・github) は、辞書の書き方 (iPhone・GitHub) にした 1 位を先頭に (打ったままは 2 位に)。
+    // モデルは英字の続きを 1 字ずつの辺で見て打ったままを選びがちなので (make_case_list.py の語。頭だけ大文字の一般語は入っていない)
+    if (!res.empty()) {
+        ustr top = res[0];
+        for (int i0 = 0; i0 < n;) {
+            auto low = [](char32_t c) { return (c >= U'a' && c <= U'z') || (c >= U'0' && c <= U'9'); };
+            if (!low(r[i0])) { i0++; continue; }
+            int i1 = i0;
+            bool letter = false;
+            while (i1 < n && low(r[i1])) { letter = letter || r[i1] >= U'a'; i1++; }
+            if (letter && i1 - i0 >= 2 && (i1 == n || !((r[i1] >= U'A' && r[i1] <= U'Z')))) {
+                std::vector<uint16_t> k16(r.begin() + i0, r.begin() + i1);
+                uint32_t a, b;
+                int32_t bc = 5001;
+                ustr best;
+                if (e->lex.find(k16.data(), int(k16.size()), a, b))
+                    for (uint32_t j = a; j < b; j++) {
+                        const Ent en = e->lex.ent(j);
+                        if (en.cost < bc) { bc = en.cost; best = from16(e->lex.s_blob + en.soff, en.slen); }
+                    }
+                const ustr typed = r.substr(size_t(i0), size_t(i1 - i0));
+                const size_t at = top.find(typed);
+                if (!best.empty() && at != ustr::npos) top = top.substr(0, at) + best + top.substr(at + typed.size());
+            }
+            i0 = i1;
+        }
+        if (top != res[0]) {
+            auto it = std::find(res.begin(), res.end(), top);
+            if (it != res.end()) res.erase(it);
+            res.insert(res.begin(), top);
+            if (int(res.size()) > maxout) res.resize(size_t(maxout));
+        }
+    }
+    // 読み全体が英字 (英数字キーボードで data・hello) なら、打ったまま・頭だけ大文字・全部大文字・全角も候補に (後ろに足す)
+    if (n >= 1 && std::all_of(r.begin(), r.end(), [](char32_t c) { return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z') || (c >= U'0' && c <= U'9'); }) &&
+        std::any_of(r.begin(), r.end(), [](char32_t c) { return (c >= U'a' && c <= U'z') || (c >= U'A' && c <= U'Z'); })) {
+        ustr lo = r, cap, up = r, fw;
+        for (auto& c : lo) if (c >= U'A' && c <= U'Z') c += 32;
+        for (auto& c : up) if (c >= U'a' && c <= U'z') c -= 32;
+        cap = lo;
+        if (cap[0] >= U'a' && cap[0] <= U'z') cap[0] -= 32;
+        for (char32_t c : r) fw.push_back(c + 0xFEE0);
+        for (const ustr& c : {r, lo, cap, up, fw})
+            if (std::find(res.begin(), res.end(), c) == res.end()) res.push_back(c);
+        if (int(res.size()) > maxout) res.resize(size_t(maxout));
     }
     // 読み全体が数字 (数字パッドで 2000 と打った) なら、打ったままを 1 位に、カンマ・単位まじり・漢数字・全角を 2 位から
     if (n > 0 && n <= 16 && std::all_of(r.begin(), r.end(), [](char32_t c) { return c >= U'0' && c <= U'9'; }) && (r[0] != U'0' || n == 1)) {
