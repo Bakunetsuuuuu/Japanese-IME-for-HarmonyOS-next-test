@@ -199,7 +199,8 @@ export struct AlphabetFlickKeyboardView {
     let ch = getChar(key, dir);
     if (/^[a-zA-Z]$/.test(ch)) { ch = ch.toLowerCase(); }
     const st = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (st === InputState.IDLE) { this.h().insertText(ch); }
+    // 数字は入力中の文字が無くても組み立てて変換する (2000 -> 2,000・二千。handleKeyPress が appendRaw へ)
+    if (st === InputState.IDLE && !/^[0-9]$/.test(ch)) { this.h().insertText(ch); }
     else { this.h().handleKeyPress(ch); }
     this.lastChar = /^[a-z]$/.test(ch) ? ch : '';
   }

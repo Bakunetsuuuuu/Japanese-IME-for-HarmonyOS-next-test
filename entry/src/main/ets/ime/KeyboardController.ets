@@ -1935,8 +1935,9 @@ export class InputHandler {
 
     if (mode === InputMode.ALPHANUMERIC) {
       InputLog.recordKey(key, '', '', mode);
-      // 入力中の文字があれば英字も足して一緒に変換する (ぱちんこ + CR -> パチンコCR)。無ければそのまま入れる (英文)
-      if ((AppStorage.get<string>('composingText') ?? '').length > 0) {
+      // 入力中の文字があれば英字も足して一緒に変換する (ぱちんこ + CR -> パチンコCR)。無ければそのまま入れる (英文)。
+      // 数字は入力中の文字が無くても組み立てて変換する (2000 -> 2,000・二千・２０００、続けて えん で 2000円)
+      if ((AppStorage.get<string>('composingText') ?? '').length > 0 || /^[0-9]$/.test(key)) {
         this.appendRaw(key);
         return;
       }
@@ -3353,8 +3354,9 @@ export class InputHandler {
     InputLog.recordKana(kana, mode);
 
     if (mode === InputMode.ALPHANUMERIC) {
-      if ((AppStorage.get<string>('composingText') ?? '').length > 0) {
-        this.appendRaw(kana);   // 入力中の文字に英字を足す (ぱちんこ + CR)
+      // 入力中の文字に英字を足す (ぱちんこ + CR)。数字は入力中の文字が無くても組み立てて変換する (2000 -> 2,000・二千)
+      if ((AppStorage.get<string>('composingText') ?? '').length > 0 || /^[0-9]$/.test(kana)) {
+        this.appendRaw(kana);
         return;
       }
       this.commitPending();
