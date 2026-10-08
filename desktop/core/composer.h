@@ -67,7 +67,7 @@ struct LogEvent {
 
 struct ComposerOptions {
     bool live = true;          // 打っている間も AI 変換して候補の窓に出す
-    bool live_commit = true;   // リアルタイム確定
+    bool live_commit = true;   // 長い入力の前の方を固定する (保留: 入力欄には確定せず、変換した形で見せて文節で直せる)
     bool live_display = false; // ライブ変換: 入力中の文字を、空白を押す前から AI の 1 位で見せる (Enter でそのまま確定)
     bool always_cands = true;  // 変換中は候補の窓をいつも出す
     bool space_fullwidth = true;   // 何も打っていないときの空白を全角に (Shift で逆)
@@ -78,7 +78,8 @@ struct ComposerOptions {
 class Composer {
 public:
     static constexpr int PAGE = 9;      // 候補の窓の 1 ページの数 (1〜9 で選ぶ)
-    static constexpr size_t KEEP = 8;   // リアルタイム確定で残す末尾の字数 (スマホ版と同じ)
+    static constexpr size_t KEEP = 8;        // 前の方を固定するとき、固定せずに残す末尾の字数の最小 (スマホ版と同じ)
+    static constexpr size_t KEEP_MAX = 32;   // 速い PC で残す字数の上限 (モデルが学んだ読みの長さ)
 
     Composer(Converter* conv, Learning* learning, UserDict* dict);
 
@@ -97,6 +98,9 @@ public:
     bool press(const KeyEvent& ev);
     u16 take_commit() { u16 c; c.swap(commit_); return c; }
     const View& view() const { return view_; }
+    // 固定せずに AI 変換に渡す末尾の字数 (calibrate で決めた値。テスト・記録用)
+    size_t keep() const { return keep_; }
+    void set_keep(size_t n) { keep_ = n; calibrated_ = true; }
     bool composing() const { return state_ != State::Idle; }
 
     // 候補の窓の index 番目をマウスで選んだ
@@ -139,6 +143,11 @@ private:
     void log(LogEvent e);
     void update_live();
     bool live_commit(const Conversion& c);
+    u16 frozen_reading() const;
+    u16 frozen_surface() const;
+    u16 conv_ctx() const;
+    bool unfreeze_last();
+    void calibrate();
     bool live_shown() const;
     void rebuild_view();
 
@@ -166,6 +175,12 @@ private:
     std::vector<u16> live_cands_;
     u16 live_top_;                       // 打っている間の変換そのものの 1 位 (予測・決まり文句を足す前)。ライブ変換で見せる
     std::map<size_t, u16> prev_segs_;    // 前回の 1 位の (語の区切りの読みの位置 -> そこまでの表記)
+    // 固定した前の方 (保留)。入力欄には確定せず、変換した形で入力中の頭に見せる。変換 (空白) すると頭の文節になり、選び直せる。
+    // 変換するのは残りの kana_ だけ (文脈は ctx_ + 固定した表記)。長い文でも変換が重くならず、モデルの読みの長さにも収まる
+    std::vector<Seg> frozen_;
+    // 固定せずに AI 変換に渡す末尾の字数。最初に打ったときに変換の速さを測って決める (calibrate): 速い PC ほど長く渡す
+    size_t keep_ = KEEP;
+    bool calibrated_ = false;
 
     // 変換
     std::vector<Seg> segs_;

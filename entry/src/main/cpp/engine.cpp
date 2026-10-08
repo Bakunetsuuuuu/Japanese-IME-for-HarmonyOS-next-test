@@ -29,6 +29,7 @@
 #include <cstring>
 #include <ctime>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <unordered_map>
 #include <unordered_set>
@@ -64,7 +65,7 @@ extern "C" void kkc_avx2_lin_q(const short* Xq, const float* xs, int T, int inp,
 namespace {
 
 typedef std::u32string ustr;
-enum Kind { K_DICT = 0, K_KANA = 1, K_KATA = 2, K_PASS = 3, K_NUM = 4 };
+enum Kind { K_DICT = 0, K_KANA = 1, K_KATA = 2, K_PASS = 3, K_NUM = 4, K_TYPO = 5 };   // K_TYPO: 打ち間違いを直した語 (S7 から)
 const int UNK = 1, SEP = 2;
 
 struct Ent { uint32_t soff; uint16_t slen, lid, rid, pad; int32_t cost; };
@@ -124,6 +125,7 @@ struct Lex {
     const PEnt* pents = nullptr;   // 版 2
     const uint16_t* r_blob;
     const uint16_t* s_blob;
+    bool typo = false;   // 打ち間違いの辺を作るか (モデルが辺の種類 K_TYPO を知っているとき。kkc_open が決める)
     int32_t abbr_lid = -1, abbr_rid = -1;   // 略語 (読みのアルファベットから作る GDP・IME) の品詞 (kkc_open で辞書の GDP から写す)
     static constexpr int RB = 16;      // 版 2 の読みの区切り
     static constexpr int MAXR = 256;   // 読みの長さの上限 (pack_lex.py が確かめる)
@@ -188,7 +190,35 @@ struct Lex {
     }
 
     // 読み (UTF-16 の並び) の語の範囲。無ければ false
+    // 読みの集合のブルームフィルタ (打ち間違いの辺を作るときだけ作る。辞書に無い区間の二分探索をほぼ省ける)
+    std::vector<uint64_t> bloom;
+    static uint64_t hash16(const uint16_t* k, int n) {
+        uint64_t h = 1469598103934665603ULL;
+        for (int i = 0; i < n; i++) { h ^= k[i]; h *= 1099511628211ULL; }
+        return h ^ (h >> 29);
+    }
+    void build_bloom() {
+        if (!bloom.empty() || nread <= 0) return;
+        const size_t bits = size_t(nread) * 12;
+        bloom.assign((bits + 63) / 64, 0);
+        uint16_t buf[MAXR];
+        for (int i = 0; i < nread; i++) {
+            int rn;
+            const uint16_t* r = reading(i, rn, buf);
+            const uint64_t h = hash16(r, rn), h2 = (h >> 32) | 1;
+            for (int j = 0; j < 4; j++) { const size_t b = size_t((h + j * h2) % bits); bloom[b >> 6] |= 1ULL << (b & 63); }
+        }
+    }
+    bool maybe(const uint16_t* k, int n) const {
+        if (bloom.empty()) return true;
+        const size_t bits = bloom.size() * 64 > size_t(nread) * 12 ? size_t(nread) * 12 : bloom.size() * 64;
+        const uint64_t h = hash16(k, n), h2 = (h >> 32) | 1;
+        for (int j = 0; j < 4; j++) { const size_t b = size_t((h + j * h2) % bits); if (!(bloom[b >> 6] >> (b & 63) & 1)) return false; }
+        return true;
+    }
+
     bool find(const uint16_t* k, int n, uint32_t& lo_e, uint32_t& hi_e) const {
+        if (!maybe(k, n)) return false;
         const int lo = lower_bound(k, n);
         if (lo >= nread) return false;
         uint16_t buf[MAXR];
@@ -462,6 +492,474 @@ constexpr int32_t LATIN_WORD_BONUS = 500;
 // (くらいあんと → client。網に入れると普通の外来語を乗っ取った)
 constexpr int32_t ENG_COST = 32000;
 
+// ---------------------------------------------------------------- 打ち間違いの辺 (S7、モデルが辺の種類 K_TYPO を知っているときだけ)
+// 打った読みをローマ字に直し、打ち間違い 1 打ぶんを戻した読み (余分な 1 打を消す・隣のキーを正しいキーに・抜けた 1 打を足す・
+// 隣り合う 2 打の入れ替え) を作る。直した読みの、変わった所を覆う辞書の語を、元の読みの区間に K_TYPO の辺として足す
+// (コストに TYPO_COST を足す)。どれを選ぶかは文脈を読むモデルが決める。読み 1 つにつき安い順に TYPO_MAX 辺まで
+namespace typo {
+const int TYPO_COST = 3000, TYPO_MAX = 32, MAX_WORD_KANA = 8;
+// 打ったとおりの網の一番よい道より、直した辺を通る一番よい道がこれ以上悪ければ捨てる (TYPO_COST 込み)
+const int TYPO_KEEP = 2000;
+
+// 打ったとおりの網の、辺ごとの「頭からその辺まで」「その辺から終わりまで」の一番よいコスト (辞書のコスト + つながり)
+struct Ctx {
+    int n = 0;
+    std::vector<std::vector<int>> by_end, by_start;
+    std::vector<double> F, B;
+    std::vector<double> lmin, rmin;   // 位置ごとの「頭からここまで」「ここから終わりまで」の一番よいコスト (つながりを除いた下限)
+    double best = 1e18;
+};
+
+void build_ctx(const Lex& L, const std::vector<Edge>& E, int n, Ctx& c) {
+    c.n = n;
+    c.by_end.assign(size_t(n + 1), {});
+    c.by_start.assign(size_t(n + 1), {});
+    for (int i = 0; i < int(E.size()); i++) { c.by_end[size_t(E[i].e)].push_back(i); c.by_start[size_t(E[i].s)].push_back(i); }
+    c.F.assign(E.size(), 1e18);
+    c.B.assign(E.size(), 1e18);
+    for (int pos = 0; pos <= n; pos++)
+        for (int i : c.by_start[size_t(pos)]) {
+            double best = pos == 0 ? double(L.conn(0, E[i].lid)) : 1e18;
+            for (int j : c.by_end[size_t(pos)]) best = std::min(best, c.F[size_t(j)] + L.conn(E[j].rid, E[i].lid));
+            if (best < 1e17) c.F[size_t(i)] = best + E[i].cost;
+        }
+    for (int pos = n; pos >= 0; pos--)
+        for (int i : c.by_end[size_t(pos)]) {
+            double best = pos == n ? double(L.conn(E[i].rid, 0)) : 1e18;
+            for (int k : c.by_start[size_t(pos)]) best = std::min(best, c.B[size_t(k)] + L.conn(E[i].rid, E[k].lid));
+            if (best < 1e17) c.B[size_t(i)] = best + E[i].cost;
+        }
+    for (int j : c.by_end[size_t(n)]) c.best = std::min(c.best, c.F[size_t(j)] + L.conn(E[j].rid, 0));
+    c.lmin.assign(size_t(n + 1), 1e18);
+    c.rmin.assign(size_t(n + 1), 1e18);
+    c.lmin[0] = 0;
+    c.rmin[size_t(n)] = 0;
+    for (int pos = 1; pos <= n; pos++) for (int j : c.by_end[size_t(pos)]) c.lmin[size_t(pos)] = std::min(c.lmin[size_t(pos)], c.F[size_t(j)]);
+    for (int pos = 0; pos < n; pos++) for (int k : c.by_start[size_t(pos)]) c.rmin[size_t(pos)] = std::min(c.rmin[size_t(pos)], c.B[size_t(k)]);
+}
+
+// 区間 [s, e) に (lid, rid, cost) の辺を置いたときの、それを通る一番よい道のコスト
+double through(const Lex& L, const std::vector<Edge>& E, const Ctx& c, int s, int e, int lid, int rid, int cost) {
+    double left = s == 0 ? double(L.conn(0, lid)) : 1e18;
+    for (int j : c.by_end[size_t(s)]) left = std::min(left, c.F[size_t(j)] + L.conn(E[j].rid, lid));
+    double right = e == c.n ? double(L.conn(rid, 0)) : 1e18;
+    for (int k : c.by_start[size_t(e)]) right = std::min(right, L.conn(rid, E[k].lid) + c.B[size_t(k)]);
+    if (left >= 1e17 || right >= 1e17) return 1e18;
+    return left + cost + right;
+}
+std::unordered_map<std::string, ustr> R2K;    // ローマ字 -> かな (IME の表の主なもの)
+std::unordered_map<char32_t, std::string> K2R;          // かな 1 字 -> ローマ字
+std::unordered_map<ustr, std::string> K2R2;             // かな 2 字 (きゃ) -> ローマ字
+const char* ROWS[3] = {"qwertyuiop", "asdfghjkl", "zxcvbnm"};
+
+void init() {
+    if (!R2K.empty()) return;
+    const char* V = "aiueo";
+    const std::pair<const char32_t*, const char*> rows[] = {
+        {U"あいうえお", ""}, {U"かきくけこ", "k"}, {U"さしすせそ", "s"}, {U"たちつてと", "t"}, {U"なにぬねの", "n"},
+        {U"はひふへほ", "h"}, {U"まみむめも", "m"}, {U"らりるれろ", "r"}, {U"がぎぐげご", "g"}, {U"ざじずぜぞ", "z"},
+        {U"だぢづでど", "d"}, {U"ばびぶべぼ", "b"}, {U"ぱぴぷぺぽ", "p"}, {U"ぁぃぅぇぉ", "x"}};
+    for (auto& rw : rows)
+        for (int i = 0; i < 5; i++) {
+            std::string k = std::string(rw.second) + V[i];
+            R2K[k] = ustr(1, rw.first[i]);
+            K2R[rw.first[i]] = k;
+        }
+    const std::pair<const char32_t*, const char*> extra[] = {
+        {U"や", "ya"}, {U"ゆ", "yu"}, {U"よ", "yo"}, {U"わ", "wa"}, {U"を", "wo"}, {U"ゃ", "xya"}, {U"ゅ", "xyu"}, {U"ょ", "xyo"},
+        {U"っ", "xtu"}, {U"ゎ", "xwa"}, {U"ー", "-"}, {U"し", "shi"}, {U"ち", "chi"}, {U"つ", "tsu"}, {U"ふ", "fu"}, {U"じ", "ji"},
+        {U"ゔ", "vu"}};
+    for (auto& x : extra) R2K[x.second] = x.first;
+    const std::pair<char32_t, const char*> single[] = {
+        {U'や', "ya"}, {U'ゆ', "yu"}, {U'よ', "yo"}, {U'わ', "wa"}, {U'を', "wo"}, {U'ゃ', "xya"}, {U'ゅ', "xyu"}, {U'ょ', "xyo"},
+        {U'ゎ', "xwa"}, {U'ー', "-"}, {U'ゔ', "vu"}};
+    for (auto& x : single) K2R[x.first] = x.second;
+    // 拗音 (きゃ -> kya)
+    const std::pair<char32_t, const char*> yoon[] = {
+        {U'き', "ky"}, {U'し', "sy"}, {U'ち', "ty"}, {U'に', "ny"}, {U'ひ', "hy"}, {U'み', "my"}, {U'り', "ry"}, {U'ぎ', "gy"},
+        {U'じ', "zy"}, {U'び', "by"}, {U'ぴ', "py"}, {U'ぢ', "dy"}};
+    const char32_t small[3] = {U'ゃ', U'ゅ', U'ょ'};
+    const char* yv = "auo";
+    for (auto& y : yoon)
+        for (int i = 0; i < 3; i++) {
+            ustr k2 = ustr(1, y.first) + small[i];
+            std::string r = std::string(y.second) + yv[i];
+            R2K[r] = k2;
+            K2R2[k2] = r;
+        }
+    const std::pair<const char*, const char32_t*> more[] = {
+        {"sha", U"しゃ"}, {"shu", U"しゅ"}, {"sho", U"しょ"}, {"cha", U"ちゃ"}, {"chu", U"ちゅ"}, {"cho", U"ちょ"},
+        {"ja", U"じゃ"}, {"ju", U"じゅ"}, {"jo", U"じょ"}, {"she", U"しぇ"}, {"che", U"ちぇ"}, {"je", U"じぇ"},
+        {"fa", U"ふぁ"}, {"fi", U"ふぃ"}, {"fe", U"ふぇ"}, {"fo", U"ふぉ"}, {"thi", U"てぃ"}, {"dhi", U"でぃ"},
+        {"wi", U"うぃ"}, {"we", U"うぇ"}, {"tsa", U"つぁ"}, {"tso", U"つぉ"}, {"va", U"ゔぁ"}, {"vi", U"ゔぃ"},
+        {"ve", U"ゔぇ"}, {"vo", U"ゔぉ"}};
+    for (auto& x : more) {
+        R2K[x.first] = x.second;
+        if (ustr(x.second).size() == 2 && !K2R2.count(x.second)) K2R2[x.second] = x.first;   // つぉ -> tso (tsuxo でなく)
+    }
+}
+
+bool is_vowel(char c) { return c == 'a' || c == 'i' || c == 'u' || c == 'e' || c == 'o'; }
+
+// かな 1 字の置き換えの候補: 同じ行の母音違い (か -> き・く・け・こ)、清濁・半濁 (か <-> が、は <-> ば・ぱ)、大小 (や <-> ゃ)
+std::vector<char32_t> kana_alts(char32_t c) {
+    static const char32_t* ROWS[] = {U"あいうえお", U"かきくけこ", U"さしすせそ", U"たちつてと", U"なにぬねの", U"はひふへほ",
+                                     U"まみむめも", U"やゆよ", U"らりるれろ", U"わをん", U"がぎぐげご", U"ざじずぜぞ", U"だぢづでど",
+                                     U"ばびぶべぼ", U"ぱぴぷぺぽ"};
+    static const char32_t* DAKU[] = {U"かが", U"きぎ", U"くぐ", U"けげ", U"こご", U"さざ", U"しじ", U"すず", U"せぜ", U"そぞ", U"ただ",
+                                     U"ちぢ", U"つづ", U"てで", U"とど", U"はばぱ", U"ひびぴ", U"ふぶぷ", U"へべぺ", U"ほぼぽ", U"うゔ"};
+    static const char32_t* SMALL[] = {U"あぁ", U"いぃ", U"うぅ", U"えぇ", U"おぉ", U"つっ", U"やゃ", U"ゆゅ", U"よょ", U"わゎ"};
+    std::vector<char32_t> out;
+    for (const char32_t* row : ROWS)
+        if (std::u32string_view(row).find(c) != std::u32string_view::npos)
+            for (const char32_t* x = row; *x; x++) if (*x != c) out.push_back(*x);
+    for (const char32_t** g : {DAKU, SMALL}) {
+        const size_t n = g == DAKU ? sizeof(DAKU) / sizeof(*DAKU) : sizeof(SMALL) / sizeof(*SMALL);
+        for (size_t k = 0; k < n; k++)
+            if (std::u32string_view(g[k]).find(c) != std::u32string_view::npos)
+                for (const char32_t* x = g[k]; *x; x++) if (*x != c) out.push_back(*x);
+    }
+    return out;
+}
+
+// 助詞だけ (空も含む) か
+bool particles_only(const ustr& s) {
+    for (char32_t c : s)
+        if (std::u32string_view(U"のにをがとはでへもや").find(c) == std::u32string_view::npos) return false;
+    return true;
+}
+
+// かな -> ローマ字。かな以外があれば false
+bool to_romaji(const ustr& k, std::string& rom) {
+    rom.clear();
+    for (size_t i = 0; i < k.size();) {
+        if (i + 1 < k.size()) {
+            auto it = K2R2.find(k.substr(i, 2));
+            if (it != K2R2.end()) { rom += it->second; i += 2; continue; }
+        }
+        if (k[i] == U'ん') { rom += "nn"; i++; continue; }
+        if (k[i] == U'っ') {
+            // 次の字の子音を重ねる (次が母音・無しなら xtu)
+            std::string nx;
+            if (i + 1 < k.size()) {
+                auto it2 = K2R2.find(i + 2 <= k.size() ? k.substr(i + 1, 2) : ustr());
+                if (it2 != K2R2.end()) nx = it2->second;
+                else { auto it = K2R.find(k[i + 1]); if (it != K2R.end()) nx = it->second; }
+            }
+            if (!nx.empty() && !is_vowel(nx[0]) && nx[0] != 'n' && nx[0] != '-') rom += nx[0];
+            else rom += "xtu";
+            i++;
+            continue;
+        }
+        auto it = K2R.find(k[i]);
+        if (it == K2R.end()) return false;
+        rom += it->second;
+        i++;
+    }
+    return true;
+}
+
+// ローマ字 -> かな (IME と同じ決まりの主なもの)。かなにならない所が残れば false
+bool to_kana(const std::string& r, ustr& out) {
+    out.clear();
+    for (size_t i = 0; i < r.size();) {
+        const char c = r[i];
+        if (c == 'n') {   // IME と同じ: n + 母音・y は な行、nn + 母音は ん + な行 (konnichiha)、nn は ん、n + 子音は ん
+            if (i + 1 < r.size() && r[i + 1] == 'n') {
+                const bool nv = i + 2 < r.size() && (is_vowel(r[i + 2]) || r[i + 2] == 'y');
+                out += U'ん';
+                i += nv ? 1 : 2;
+                continue;
+            }
+            if (i + 1 == r.size() || (!is_vowel(r[i + 1]) && r[i + 1] != 'y')) { out += U'ん'; i += 1; continue; }
+        }
+        if (i + 1 < r.size() && c == r[i + 1] && !is_vowel(c) && c != 'n' && c != '-') { out += U'っ'; i += 1; continue; }
+        bool hit = false;
+        for (int L = 3; L >= 1; L--) {
+            if (i + size_t(L) > r.size()) continue;
+            auto it = R2K.find(r.substr(i, size_t(L)));
+            if (it != R2K.end()) { out += it->second; i += size_t(L); hit = true; break; }
+        }
+        if (!hit) return false;
+    }
+    return true;
+}
+
+// QWERTY で隣のキー (同じ段の左右と、半キーずれた上下の段の 2 つずつ)
+std::string neighbors(char c) {
+    std::string out;
+    for (int rr = 0; rr < 3; rr++) {
+        const char* row = ROWS[rr];
+        for (int j = 0; row[j]; j++) {
+            if (row[j] != c) continue;
+            if (j > 0) out += row[j - 1];
+            if (row[j + 1]) out += row[j + 1];
+            if (rr > 0) {   // 上の段: 同じ位置と右
+                const char* o = ROWS[rr - 1];
+                int n = int(strlen(o));
+                if (j < n) out += o[j];
+                if (j + 1 < n) out += o[j + 1];
+            }
+            if (rr < 2) {   // 下の段: 左と同じ位置
+                const char* o = ROWS[rr + 1];
+                int n = int(strlen(o));
+                if (j - 1 >= 0 && j - 1 < n) out += o[j - 1];
+                if (j < n) out += o[j];
+            }
+        }
+    }
+    return out;
+}
+
+// かなだけの区間 r (読み全体の off 文字目から) に、打ち間違いを直した語の辺を足す
+double T_[6] = {0, 0, 0, 0, 0, 0};   // 計測用: 候補づくり・かなへ直す・1 語・2 語・道のコスト・残り (ミリ秒の合計)
+inline double now_ms() { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
+
+void add_edges(const Lex& L, const ustr& r, int off, const std::vector<Edge>& base, const Ctx& ctx, std::vector<Edge>& out) {
+    init();
+    double t0 = now_ms();
+    std::string rom;
+    if (r.size() < 2 || !to_romaji(r, rom)) return;
+    std::vector<std::string> vars;
+    const int R = int(rom.size());
+    for (int i = 0; i < R; i++) {
+        vars.push_back(rom.substr(0, size_t(i)) + rom.substr(size_t(i + 1)));                         // 余分な 1 打
+        for (char c : neighbors(rom[size_t(i)])) {                                                      // 隣のキー
+            std::string v = rom;
+            v[size_t(i)] = c;
+            vars.push_back(v);
+        }
+        if (i + 1 < R && rom[size_t(i)] != rom[size_t(i + 1)]) {                                        // 入れ替え
+            std::string v = rom;
+            std::swap(v[size_t(i)], v[size_t(i + 1)]);
+            vars.push_back(v);
+        }
+    }
+    // 抜けた 1 打: JWTD でローマ字 1 打の抜けに多い字 (i x a u t s r k n o y h e …) と、隣の字の重ね
+    for (int i = 0; i <= R; i++) {
+        std::string ins = "aiueonxtsrkhy";
+        if (i > 0) ins += rom[size_t(i - 1)];
+        for (char c : ins) vars.push_back(rom.substr(0, size_t(i)) + c + rom.substr(size_t(i)));
+    }
+    // かなの単位 (docs/S7_TYPO.md の分析から): 入れ替え・同じ行の母音違い・清濁・大小 (フリック・かな入力の誤り)、
+    // かな 1 字の余分を消す、よく抜けるかな (助詞を除く) を足す
+    std::vector<ustr> kvars;
+    for (size_t i = 0; i < r.size(); i++) {
+        const char32_t c = r[i];
+        if (i + 1 < r.size() && c != r[i + 1]) { ustr v = r; std::swap(v[i], v[i + 1]); kvars.push_back(v); }
+        for (char32_t a : kana_alts(c)) { ustr v = r; v[i] = a; kvars.push_back(v); }
+        if (r.size() > 2) { ustr v = r; v.erase(i, 1); kvars.push_back(v); }
+    }
+    for (size_t i = 0; i <= r.size(); i++)
+        // かな 1 字の抜けは ー・っ・ん だけ (JWTD のかなの抜けの上位は助詞 = 推敲。ほかのかなを丸ごと抜かすのは
+        // ローマ字では 2 打の抜けでまれ。っ・ん・ー は打ち飛ばしやすい: がこう -> がっこう)
+        for (const char32_t* m = U"ーっん"; *m; m++) {
+            ustr v = r;
+            v.insert(i, 1, *m);
+            kvars.push_back(v);
+        }
+    double t1 = now_ms(); T_[0] += t1 - t0;
+    std::unordered_set<std::string> tried;
+    std::unordered_set<ustr> base_keys;   // 打ったとおりの読みの網にある (区間, 表記)
+    for (const Edge& ed : base) {
+        ustr k = ed.surf;
+        k += char32_t(0x110000 + ed.s);
+        k += char32_t(0x110000 + ed.e);
+        base_keys.insert(k);
+    }
+    struct Cand { int s, e; ustr surf; int32_t lid, rid, cost; double total; };
+    std::unordered_map<ustr, Cand> cand;
+    ustr k2;
+    std::vector<uint16_t> key;
+    const int n1 = int(r.size());
+    // 辞書の引きの使い回し (打ち直しの候補どうしで同じ区間を何度も引く)。値は (最初の語, 終わり)、無ければ (0, 0)
+    // 鍵は読みの 64 ビットのハッシュ (文字列を作らずに引く。かなの読みどうしの衝突は実際上起きない)
+    std::unordered_map<uint64_t, std::pair<uint32_t, uint32_t>> memo;
+    auto look = [&](const ustr& s, int a0, int a1, uint32_t& a, uint32_t& b) -> bool {
+        uint64_t h = 1469598103934665603ULL ^ uint64_t(a1 - a0);
+        for (int i = a0; i < a1; i++) h = (h ^ uint64_t(s[size_t(i)])) * 1099511628211ULL;
+        auto it = memo.find(h);
+        if (it == memo.end()) {
+            std::u16string k16(s.begin() + a0, s.begin() + a1);
+            uint32_t x = 0, y = 0;
+            if (!L.find(reinterpret_cast<const uint16_t*>(k16.data()), int(k16.size()), x, y)) x = y = 0;
+            it = memo.emplace(h, std::make_pair(x, y)).first;
+        }
+        a = it->second.first;
+        b = it->second.second;
+        return a != b;
+    };
+    // 区間の語のうちコストの安い 6 個 (2 語の辺の組み合わせを全部は作らない。品詞違いのコスト 0 の項目を拾える数)
+    auto cheapest = [&](uint32_t a, uint32_t b, std::vector<Ent>& out3) {
+        out3.clear();
+        for (uint32_t j = a; j < b; j++) {
+            const Ent x = L.ent(j);
+            if (x.cost < ENG_COST) out3.push_back(x);
+        }
+        if (out3.size() > 6) {
+            std::partial_sort(out3.begin(), out3.begin() + 6, out3.end(), [](const Ent& u, const Ent& v) { return u.cost < v.cost; });
+            out3.resize(6);
+        }
+    };
+    std::map<std::pair<uint32_t, uint32_t>, std::vector<Ent>> cheap_memo;   // 同じ語の範囲の「安い 6 個」を使い回す
+    auto cheapest_m = [&](uint32_t a, uint32_t b) -> const std::vector<Ent>& {
+        auto it = cheap_memo.find({a, b});
+        if (it == cheap_memo.end()) {
+            std::vector<Ent> v;
+            cheapest(a, b, v);
+            std::stable_sort(v.begin(), v.end(), [](const Ent& u, const Ent& w) { return u.cost < w.cost; });   // [0] が一番安い
+            it = cheap_memo.emplace(std::make_pair(a, b), std::move(v)).first;
+        }
+        return it->second;
+    };
+    // 道のコスト = 左 (位置・左の品詞で決まる) + 語のコスト + 右 (位置・右の品詞で決まる)。左右を覚えて使い回す
+    std::unordered_map<int64_t, double> lmemo, rmemo;
+    auto leftc = [&](int s, int lid) -> double {
+        const int64_t k = int64_t(s) * 65536 + lid;
+        auto it = lmemo.find(k);
+        if (it != lmemo.end()) return it->second;
+        double v = s == 0 ? double(L.conn(0, lid)) : 1e18;
+        for (int j : ctx.by_end[size_t(s)]) v = std::min(v, ctx.F[size_t(j)] + L.conn(base[j].rid, lid));
+        lmemo[k] = v;
+        return v;
+    };
+    auto rightc = [&](int e, int rid) -> double {
+        const int64_t k = int64_t(e) * 65536 + rid;
+        auto it = rmemo.find(k);
+        if (it != rmemo.end()) return it->second;
+        double v = e == ctx.n ? double(L.conn(rid, 0)) : 1e18;
+        for (int kk : ctx.by_start[size_t(e)]) v = std::min(v, L.conn(rid, base[kk].lid) + ctx.B[size_t(kk)]);
+        rmemo[k] = v;
+        return v;
+    };
+    auto thru = [&](int s, int e, int lid, int rid, int c) -> double {
+        const double l = leftc(s, lid), r2 = rightc(e, rid);
+        return (l >= 1e17 || r2 >= 1e17) ? 1e18 : l + c + r2;
+    };
+    std::unordered_set<ustr> seen_k;
+    std::vector<ustr> all;
+    for (const std::string& v : vars)
+        if (tried.insert(v).second && to_kana(v, k2) && k2 != r && seen_k.insert(k2).second) all.push_back(k2);
+    for (auto& v : kvars)
+        if (seen_k.insert(v).second) all.push_back(v);
+    double t2 = now_ms(); T_[1] += t2 - t1;
+    double t_one = 0, t_two = 0;
+    auto add = [&](int s, int e, const ustr& sf, int32_t lid, int32_t rid, int32_t c) -> bool {   // 基準を通れば true
+        ustr bk = sf;
+        bk += char32_t(0x110000 + s + off);
+        bk += char32_t(0x110000 + e + off);
+        if (base_keys.count(bk)) return false;   // 打ったとおりの読みでも同じ語がある
+        ustr ck = sf;
+        ck += char32_t(0x110000 + s);
+        ck += char32_t(0x110000 + e);
+        auto it = cand.find(ck);
+        if (it != cand.end() && c >= it->second.cost) return true;
+        // 下限 (つながりのコストを 0 とみなす) で先に捨てる
+        if (ctx.lmin[size_t(s + off)] + c + ctx.rmin[size_t(e + off)] - 2000 > ctx.best + TYPO_KEEP) return false;
+        const double t = thru(s + off, e + off, lid, rid, c);
+        if (t > ctx.best + TYPO_KEEP) return false;   // 打ったとおりより十分によくならない直しは足さない
+        cand[ck] = {s, e, sf, lid, rid, c, t};
+        return true;
+    };
+    for (const ustr& kv : all) {
+        k2 = kv;
+        const int n2 = int(k2.size());
+        int p = 0;
+        while (p < n1 && p < n2 && r[size_t(p)] == k2[size_t(p)]) p++;
+        int q = 0;
+        while (q < n1 - p && q < n2 - p && r[size_t(n1 - 1 - q)] == k2[size_t(n2 - 1 - q)]) q++;
+        // 助詞だけを変える直し (の -> に、が -> を、の を足す・消す) は作らない (推敲であって打ち間違いではない)
+        if (particles_only(r.substr(size_t(p), size_t(n1 - q - p))) && particles_only(k2.substr(size_t(p), size_t(n2 - q - p)))) continue;
+        bool single_hit = false;
+        double ta = now_ms();
+        // 直した読みで、変わった所 [p, n2 - q) を覆う語 (2 字以上)
+        for (int s2 = std::max(0, p - MAX_WORD_KANA + 1); s2 <= std::min(p, n2 - 1); s2++) {
+            for (int e2 = std::max(n2 - q, s2 + 2); e2 <= std::min(n2, s2 + MAX_WORD_KANA); e2++) {
+                const int s = s2, e = e2 - n2 + n1;   // 元の読みの区間 (変わった所より前は同じ、後ろは長さの差だけずれる)
+                if (e <= s || e > n1 || e < n1 - q) continue;
+                // 区間の下限 (語のコスト 0・つながり 0) で引く前に捨てる
+                if (ctx.lmin[size_t(s + off)] + TYPO_COST + ctx.rmin[size_t(e + off)] - 2000 > ctx.best + TYPO_KEEP) continue;
+                uint32_t a, b;
+                if (!look(k2, s2, e2, a, b)) continue;
+                for (uint32_t j = a; j < b; j++) {
+                    const Ent en = L.ent(j);
+                    if (en.cost >= ENG_COST) continue;
+                    // 表記の文字列を作る前に、add と同じ基準 (下限・道のコスト) で捨てる (結果は変わらない)
+                    const int32_t c0 = en.cost + TYPO_COST;
+                    if (ctx.lmin[size_t(s + off)] + c0 + ctx.rmin[size_t(e + off)] - 2000 > ctx.best + TYPO_KEEP) continue;
+                    if (thru(s + off, e + off, int32_t(en.lid), int32_t(en.rid), c0) > ctx.best + TYPO_KEEP) continue;
+                    if (add(s, e, from16(L.s_blob + en.soff, en.slen), int32_t(en.lid), int32_t(en.rid), en.cost + TYPO_COST))
+                        single_hit = true;
+                }
+            }
+        }
+        // 変わった所が 2 語にまたがるとき (つぉあ -> と|される): 前の語 [s2, m) と後ろの語 [m, e2) をつないだ辺。
+        // 境目 m は変わった所の中か端。前の語は 1 字でもよい (と・を などの付属語)
+        double tb = now_ms(); t_one += tb - ta;
+        (void)single_hit;   // 1 語の直しがあっても 2 語の直しも作る (つぉあれる: 土佐 より と|される が正しい)
+        const int lo = p, hi = n2 - q;
+        for (int m = std::max(lo, 1); m <= std::min(hi, n2 - 1); m++) {
+            for (int s2 = std::max(0, m - MAX_WORD_KANA); s2 <= std::min(lo, m - 1); s2++) {
+                uint32_t a1, b1;
+                if (!look(k2, s2, m, a1, b1)) continue;
+                const std::vector<Ent>& c1 = cheapest_m(a1, b1);
+                if (c1.empty()) continue;
+                for (int e2 = std::max(hi, m + 1); e2 <= std::min(n2, m + MAX_WORD_KANA); e2++) {
+                    if (m == lo && e2 == hi && lo == hi) continue;
+                    uint32_t a2, b2;
+                    const int s = s2, e = e2 - n2 + n1;
+                    if (e <= s || e > n1 || e < n1 - q) continue;
+                    // 区間の下限 (前の語の一番安いコスト・つながり 0) で引く前に捨てる
+                    if (ctx.lmin[size_t(s + off)] + c1[0].cost + TYPO_COST + ctx.rmin[size_t(e + off)] - 2000 > ctx.best + TYPO_KEEP) continue;
+                    if (!look(k2, m, e2, a2, b2)) continue;
+                    const std::vector<Ent>& c2 = cheapest_m(a2, b2);
+                    if (c2.empty()) continue;
+                    // 前後それぞれ安い 3 語の組のうち、安い 3 組を辺に (1 組だけだと 賭+さ が と+さ(れる) を押しのけた。
+                    // どれがよいかは文脈を読むモデルが決める)
+                    // 組は「その辺を通る一番よい道」のコスト (前後のつながり込み) で選ぶ。同じ表記の組は一番よいものだけ。
+                    // 2 語の間だけのコストで選ぶと、と・さ のように品詞違いのコスト 0 の項目が多い語で、
+                    // 後ろの れる につながらない品詞の組を選んでいた
+                    struct Pair { double t; int32_t c; const Ent* x; const Ent* y; ustr sf; };
+                    std::vector<Pair> ps;
+                    const double lr = ctx.lmin[size_t(s + off)] + ctx.rmin[size_t(e + off)] - 2000 + TYPO_COST;
+                    for (const Ent& x : c1) {
+                        if (lr + x.cost + c2[0].cost > ctx.best + TYPO_KEEP) break;   // 安い順なので、以降も届かない
+                        for (const Ent& y : c2) {
+                            if (lr + x.cost + y.cost > ctx.best + TYPO_KEEP) break;
+                            const int32_t c = x.cost + y.cost + L.conn(x.rid, y.lid) + TYPO_COST;
+                            const double t = thru(s + off, e + off, x.lid, y.rid, c);
+                            if (t > ctx.best + TYPO_KEEP) continue;
+                            ustr sf = from16(L.s_blob + x.soff, x.slen) + from16(L.s_blob + y.soff, y.slen);
+                            bool dup = false;
+                            for (auto& p2 : ps)
+                                if (p2.sf == sf) { dup = true; if (t < p2.t) p2 = {t, c, &x, &y, sf}; break; }
+                            if (!dup) ps.push_back({t, c, &x, &y, std::move(sf)});
+                        }
+                    }
+                    std::sort(ps.begin(), ps.end(), [](const Pair& u, const Pair& v) { return u.t < v.t; });
+                    for (size_t k = 0; k < std::min<size_t>(ps.size(), 3); k++)
+                        add(s, e, ps[k].sf, int32_t(ps[k].x->lid), int32_t(ps[k].y->rid), ps[k].c);
+                }
+            }
+        }
+        t_two += now_ms() - tb;
+    }
+    T_[2] += t_one; T_[3] += t_two;
+    double t3 = now_ms();
+    std::vector<Cand> cs;
+    for (auto& kv : cand) cs.push_back(kv.second);
+    std::sort(cs.begin(), cs.end(), [](const Cand& x, const Cand& y) {
+        if (x.total != y.total) return x.total < y.total;
+        if (x.s != y.s) return x.s < y.s;
+        if (x.e != y.e) return x.e < y.e;
+        return x.surf < y.surf;
+    });
+    if (int(cs.size()) > TYPO_MAX) cs.resize(TYPO_MAX);
+    for (auto& c : cs) out.push_back({c.s + off, c.e + off, c.surf, c.lid, c.rid, c.cost, K_TYPO});
+    T_[5] += now_ms() - t3;
+}
+}  // namespace typo
+
 std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>* user = nullptr) {
     std::vector<Edge> out;
     int n = int(r.size());
@@ -535,6 +1033,35 @@ std::vector<Edge> edges(const Lex& L, const ustr& r, const std::vector<UserWord>
         bool ok = true;
         for (int i = ed.s; i < ed.e; i++) if (!is_kana(r[i])) { ok = false; break; }
         if (ok) out.push_back(std::move(ed));
+    }
+    if (L.typo) {   // かなだけの区間ごとに、打ち間違いを直した語の辺
+        typo::Ctx ctx;
+        typo::build_ctx(L, out, n, ctx);
+        std::vector<Edge> ty;
+        for (int s = 0; s < n;) {
+            if (!is_kana(r[s])) { s++; continue; }
+            int e = s;
+            while (e < n && is_kana(r[e])) e++;
+            // 長い区間は 12 字の窓 (6 字ずつ重ねる) に分ける (打ち直しの候補は字数の 2 乗で増えるので)
+            const int W = 12, STEP = 6;
+            if (e - s <= W) typo::add_edges(L, r.substr(size_t(s), size_t(e - s)), s, out, ctx, ty);
+            else
+                for (int w = s; w < e; w += STEP) {
+                    const int we = std::min(e, w + W);
+                    typo::add_edges(L, r.substr(size_t(w), size_t(we - w)), w, out, ctx, ty);
+                    if (we == e) break;
+                }
+            s = e;
+        }
+        // 窓の重なりで同じ辺ができたら 1 つに
+        std::sort(ty.begin(), ty.end(), [](const Edge& x, const Edge& y) {
+            if (x.s != y.s) return x.s < y.s;
+            if (x.e != y.e) return x.e < y.e;
+            if (x.surf != y.surf) return x.surf < y.surf;
+            return x.cost < y.cost;
+        });
+        ty.erase(std::unique(ty.begin(), ty.end(), [](const Edge& x, const Edge& y) { return x.s == y.s && x.e == y.e && x.surf == y.surf; }), ty.end());
+        for (auto& ed : ty) out.push_back(std::move(ed));
     }
     return out;
 }
@@ -765,6 +1292,7 @@ struct Tab {
 };
 
 struct Model {
+    int n_kind = 5;   // 辺の種類の数 (5、打ち間違いの辺つきは 6)
     int V, d, layers, heads, ff, dk, max_len, n_seg, ctx, draft_max, draft;
     float beta, gamma;
     std::unordered_map<char32_t, int> vocab;
@@ -1013,6 +1541,7 @@ struct kkc_engine {
     std::vector<uint8_t> own_lex, own_model;   // kkc_open_files のときだけ中身を持つ
     Pool pool;
     double times[5] = {0, 0, 0, 0, 0};
+    float typo_bias = 0;   // 打ち間違いの辺の点数から引く値 (kkc_set_typo。大きいほど直しが控えめ)
     // 語の k は文脈に依らないので、打鍵をまたいで取っておく (表記+種別 -> K の行)。多くなったら捨てる
     std::unordered_map<ustr, int> kcache;
     std::vector<float> K;
@@ -1059,6 +1588,9 @@ bool load_model(Model& M, const void* data, size_t size) {
     M.V = r.val<int32_t>(); M.d = r.val<int32_t>(); M.layers = r.val<int32_t>(); M.heads = r.val<int32_t>();
     M.ff = r.val<int32_t>(); M.dk = r.val<int32_t>(); M.max_len = r.val<int32_t>(); M.n_seg = r.val<int32_t>();
     M.ctx = r.val<int32_t>(); M.draft_max = r.val<int32_t>(); M.draft = r.val<int32_t>();
+    // 下書きの欄の上の桁 = 辺の種類の数 (0 なら 5。S7 から 6 = 打ち間違いの辺つき)
+    M.n_kind = (M.draft >> 8) ? (M.draft >> 8) : 5;
+    M.draft &= 0xFF;
     M.beta = r.val<float>(); M.gamma = r.val<float>();
     int nch = r.val<int32_t>();
     for (int i = 0; i < nch; i++) M.vocab[char32_t(r.val<uint32_t>())] = 4 + i;
@@ -1083,7 +1615,7 @@ bool load_model(Model& M, const void* data, size_t size) {
     M.normw = r.arr<float>(d); M.normb = r.arr<float>(d); M.end = r.arr<float>(d);
     M.q1w = r.arr<float>(size_t(d) * 3 * d); M.q1b = r.arr<float>(d); M.q2w = r.arr<float>(size_t(dk) * d); M.q2b = r.arr<float>(dk);
     tab(M.Pa); tab(M.Pb); tab(M.Pc);
-    M.Kkind = r.arr<float>(size_t(5) * d); M.Klen = r.arr<float>(size_t(17) * d);
+    M.Kkind = r.arr<float>(size_t(M.n_kind) * d); M.Klen = r.arr<float>(size_t(17) * d);
     M.k1b = r.arr<float>(d); M.k2w = r.arr<float>(size_t(dk) * d); M.k2b = r.arr<float>(dk);
     if (ver >= 3) { M.gw = r.arr<float>(size_t(dk) * dk); M.gb = r.arr<float>(dk); }
     return r.ok;
@@ -1325,6 +1857,8 @@ KKC_API kkc_engine* kkc_open(const void* lex, size_t lex_size, const void* model
     init_numbers();
     auto* e = new kkc_engine();
     if (!load_lex(e->lex, lex, lex_size) || !load_model(e->m, model, model_size)) { delete e; return nullptr; }
+    e->lex.typo = e->m.n_kind > K_TYPO;   // モデルが打ち間違いの辺を知っていれば作る
+    if (e->lex.typo) e->lex.build_bloom();
     {   // 略語の品詞は、辞書の「じーでぃーぴー → GDP」から写す (無ければ略語の候補は作らない)
         const std::u16string k = u"じーでぃーぴー";
         uint32_t a, b;
@@ -1373,6 +1907,14 @@ KKC_API kkc_engine* kkc_open_files(const char* lex_path, const char* model_path)
 
 KKC_API void kkc_close(kkc_engine* e) { delete e; }
 KKC_API void kkc_set_threads(kkc_engine* e, int n) { if (e) e->pool.resize(n); }
+// 打ち間違いの直し (S7 から。モデルが辺の種類 typo を知っているときだけ効く): on = 0 で作らない、
+// bias = 打ち間違いの辺の点数から引く値 (0 で学習どおり。大きいほど余計な直しが減り、直せる誤字も減る)
+KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias) {
+    if (!e) return;
+    e->lex.typo = on != 0 && e->m.n_kind > K_TYPO;
+    if (e->lex.typo) e->lex.build_bloom();
+    e->typo_bias = bias;
+}
 
 // 段階式のしきい値 (読み 1 字あたりのコストの差)。dev・AJIMEE・日常・入力ログで測った (kkc/engine/cascade.cpp)。
 // S6 で 300 のとき、正解率は毎回モデルを通すのとほぼ同じ (dev 86.1→85.6、ほかは同じ) で、
@@ -1627,6 +2169,9 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         e->times[2] = ms_since(t0);
         t0 = std::chrono::steady_clock::now();
         scores(e, rstart, n, E, e->last_u);
+        if (e->typo_bias != 0)
+            for (size_t i = 0; i < E.size(); i++)
+                if (E[i].kind == K_TYPO) e->last_u[i] -= e->typo_bias;
         e->times[3] = ms_since(t0);
         t0 = std::chrono::steady_clock::now();
         nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
@@ -1738,6 +2283,29 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
                 if (pick.size() == 2) break;
             }
             for (size_t i = pick.size(); i-- > 0;) put(pick[i], 3);
+        }
+        // 顔文字 (Mozc の emoticon.tsv、コスト 9300〜9399 の帯。かな・漢字を含まない): 読み全体に当たる一番よく使う 1 つを 6 位に。
+        // 読み「かおもじ」なら表の先頭から 6 つを 2 位から
+        {
+            uint32_t a, b;
+            std::vector<std::pair<int32_t, ustr>> km;
+            if (e->lex.find(reinterpret_cast<const uint16_t*>(kana), nk, a, b))
+                for (uint32_t j = a; j < b; j++) {
+                    const Ent en = e->lex.ent(j);
+                    if (en.cost < 9300 || en.cost > 9399) continue;
+                    ustr sf = from16(e->lex.s_blob + en.soff, en.slen);
+                    bool ok = true;
+                    for (char32_t c : sf) ok = ok && !((c >= 0x3041 && c <= 0x3096) || (c >= 0x4E00 && c <= 0x9FFF));
+                    if (ok) km.push_back({en.cost, std::move(sf)});
+                }
+            std::stable_sort(km.begin(), km.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+            static const ustr KAO = U"かおもじ";
+            if (r == KAO) {
+                const size_t m = std::min<size_t>(km.size(), 6);
+                for (size_t i = m; i-- > 0;) put(km[i].second, 1);
+            } else if (!km.empty()) {
+                put(km[0].second, 5);
+            }
         }
     }
     // 読み全体がアルファベットの読み 3 字以上 (あいえむいー) なら、その略語 (IME) を 2 位までに必ず置く

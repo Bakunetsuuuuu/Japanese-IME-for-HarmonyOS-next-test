@@ -216,14 +216,28 @@ int main(int argc, char** argv) {
     if (!c.view().cand_open) { printf("FAIL cands not open after convert\n"); failures++; }
     keys(c, "{esc}{esc}");
 
-    // ---- リアルタイム確定: 長く打つと前の方が確定されていく
+    // ---- 長い入力の前の方の固定 (保留): 入力欄には確定せず、変換した形で入力中の頭に見せる。空白で頭の文節になる
     c.options.live_commit = true;
+    c.set_keep(8);   // 速さを測らずに、スマホ版と同じ 8 字で
     keys(c, "kyouhaiitenkidesunesanponiikitaikedoamegafurisoudesu");
-    u16 auto_commit = c.take_commit();
-    printf("     live commit: [%s] + composing [%s]\n", u8(auto_commit).c_str(), u8(c.view().text).c_str());
-    if (auto_commit.empty()) { printf("FAIL no live commit\n"); failures++; }
-    keys(c, "{sp}{enter}");
-    printf("     rest: %s\n", u8(c.take_commit()).c_str());
+    u16 held = c.take_commit();
+    printf("     hold: committed [%s] composing [%s]\n", u8(held).c_str(), u8(c.view().text).c_str());
+    if (!held.empty()) { printf("FAIL hold committed to the field\n"); failures++; }
+    bool conv_head = !c.view().spans.empty() && c.view().spans[0].kind == SpanKind::Converted;
+    if (!conv_head) { printf("FAIL hold head not shown converted\n"); failures++; }
+    keys(c, "{sp}");
+    printf("     hold -> segments: [%s] (%d spans)\n", u8(c.view().text).c_str(), int(c.view().spans.size()));
+    if (c.view().spans.size() < 3) { printf("FAIL hold segments too few\n"); failures++; }
+    keys(c, "{enter}");
+    u16 all = c.take_commit();
+    printf("     hold commit: %s\n", u8(all).c_str());
+    if (all.size() < 15) { printf("FAIL hold commit lost the head\n"); failures++; }
+    // 固定した所を Backspace で消すと読みに戻る
+    keys(c, "kyouhaiitenkidesunesanponiikitaikedoamegafurisoudesu{home}{end}");
+    u16 v1 = c.view().text;
+    keys(c, "{esc}");
+    if (!c.take_commit().empty()) { printf("FAIL esc after hold committed\n"); failures++; }
+    printf("     hold home/end: [%s]\n", u8(v1).c_str());
 
     // ---- ライブ変換: 入力中の文字を、空白を押す前から変換して見せ、Enter でそのまま確定する
     c.options.live_commit = false;

@@ -19,6 +19,7 @@ KKC_API kkc_engine* kkc_open(const void* lex, size_t lex_size, const void* model
 KKC_API kkc_engine* kkc_open_files(const char* lex_path, const char* model_path);
 KKC_API void kkc_close(kkc_engine* e);
 KKC_API void kkc_set_threads(kkc_engine* e, int n);
+KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias);   // 打ち間違いの直し (S7〜): on/off と控えめにする値
 
 // 変換。ctx = 左の文脈 (確定済みの文)、kana = 読み (UTF-16)。上位 maxout 個の表記を 0 区切りの UTF-16 で out に書く。
 // 返り値は候補の数 (out が足りなければ -1)。use_model = 0 なら辞書のコストだけ (採点器を通さない)。

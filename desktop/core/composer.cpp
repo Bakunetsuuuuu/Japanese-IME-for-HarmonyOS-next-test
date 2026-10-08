@@ -1,6 +1,7 @@
 #include "composer.h"
 
 #include <algorithm>
+#include <chrono>
 
 #include "tables.h"
 
@@ -258,19 +259,20 @@ bool Composer::press_input(const KeyEvent& ev) {
                 update_live();
                 u16 t = live_top_;
                 log({"commit", kana_, t, ctx_, live_cands_, 0, {}, "live"});
-                commit_text(t);
+                commit_text(frozen_surface() + t);
                 to_idle();
                 return true;
             }
             log({"raw", kana_, kana_, ctx_});
-            commit_text(kana_);
+            commit_text(frozen_surface() + kana_);   // 固定した所は変換した形のまま
             to_idle();
             return true;
         case Key::Escape:
-            log({"clear", kana_ + romaji_.pending(), u16(), ctx_});
+            log({"clear", frozen_reading() + kana_ + romaji_.pending(), u16(), ctx_});
             to_idle();
             return true;
         case Key::Backspace:
+            if (romaji_.pending().empty() && caret_ == 0) unfreeze_last();   // 固定した所を消す: 最後の文節を読みに戻す
             if (!romaji_.pending().empty()) {
                 romaji_.backspace();
                 if (raw_valid_ && !raw_.empty()) raw_.pop_back();
@@ -279,15 +281,16 @@ bool Composer::press_input(const KeyEvent& ev) {
                 caret_--;
                 raw_valid_ = false;
             }
-            if (kana_.empty() && romaji_.pending().empty()) to_idle();
+            if (kana_.empty() && romaji_.pending().empty() && frozen_.empty()) to_idle();
             return true;
         case Key::Delete:
             flush_romaji();
             if (caret_ < kana_.size()) { kana_.erase(caret_, 1); raw_valid_ = false; }
-            if (kana_.empty()) to_idle();
+            if (kana_.empty() && frozen_.empty()) to_idle();
             return true;
         case Key::Left:
             flush_romaji();
+            if (caret_ == 0) unfreeze_last();
             if (caret_ > 0) caret_--;
             return true;
         case Key::Right:
@@ -296,6 +299,7 @@ bool Composer::press_input(const KeyEvent& ev) {
             return true;
         case Key::Home:
             flush_romaji();
+            while (unfreeze_last()) {}
             caret_ = 0;
             return true;
         case Key::End:
@@ -304,7 +308,8 @@ bool Composer::press_input(const KeyEvent& ev) {
             return true;
         case Key::F6: case Key::F7: case Key::F8: case Key::F9: case Key::F10: case Key::Muhenkan:
             flush_romaji();
-            if (kana_.empty()) { to_idle(); return true; }
+            if (kana_.empty() && frozen_.empty()) { to_idle(); return true; }
+            if (kana_.empty()) unfreeze_last();
             enter_single(kana_, {}, 0);
             first_via_ = "fkey";
             transform(ev.key);
@@ -404,7 +409,7 @@ void Composer::select_candidate(int index) {
             log(e);
         }
         if (learning_) learning_->record(kana_, c);
-        commit_text(c);
+        commit_text(frozen_surface() + c);
         to_idle();
         rebuild_view();
         return;
@@ -428,12 +433,13 @@ void Composer::update_live() {
         live_key_.clear();
         return;
     }
-    u16 key = ctx_ + u'\x01' + kana_;
+    u16 key = conv_ctx() + u'\x01' + kana_;
     if (key == live_key_) return;
     sync_user_dict();
-    Conversion c = conv_->convert(ctx_, kana_, kCandidates);
+    if (!calibrated_) calibrate();
+    Conversion c = conv_->convert(conv_ctx(), kana_, kCandidates);
     if (options.live_commit && caret_ == kana_.size() && !alpha_run_ && live_commit(c)) {
-        update_live();   // 前の方を確定した: 残りを変換し直す
+        update_live();   // 前の方を固定した: 残りを変換し直す
         return;
     }
     live_key_ = key;
@@ -477,7 +483,8 @@ void Composer::update_live() {
     live_cands_ = std::move(cands);
 }
 
-// リアルタイム確定 (スマホ版 AiConverter.maybeFreeze と同じ決まり)。確定したら true
+// 長い入力の前の方を固定する (スマホ版 AiConverter.maybeFreeze と同じ決まり、既定の保留と同じ見せ方)。固定したら true。
+// 以前は入力欄に確定していた (次々確定) が、文節で直せなくなるのでやめた (2026-10-09 ユーザー)
 bool Composer::live_commit(const Conversion& c) {
     if (c.cands.empty() || c.words.size() < 2) {
         prev_segs_.clear();
@@ -494,28 +501,93 @@ bool Composer::live_commit(const Conversion& c) {
         bool punct = u16(u"、。！？!?").find(kana_[cum_r - 1]) != u16::npos;
         auto it = prev_segs_.find(cum_r);
         bool stable = it != prev_segs_.end() && it->second == surf;
-        if (cum_r + KEEP <= kana_.size() && (stable || punct)) {
+        if (cum_r + keep_ <= kana_.size() && (stable || punct)) {
             freeze_end = cum_r;
             freeze_len = cum_s;
         }
     }
     prev_segs_ = std::move(segs);
     if (!freeze_end) return false;
-    // 確定する前の方にも挨拶のかな書きを当てる (候補の並べ替えだけでは、ここで「今日は」が確定されてしまう)
-    u16 fs = greeting_fix(kana_.substr(0, freeze_end), top.substr(0, std::min(freeze_len, top.size())));
+    // 固定する語を文節にまとめて頭の文節にする (挨拶のかな書きも当てる: ここで「今日は」が固まらないように)
+    std::vector<Word> fw;
+    size_t rr = 0;
+    for (auto& w : c.words) {
+        if (rr >= freeze_end) break;
+        fw.push_back(w);
+        rr += w.reading.size();
+    }
+    u16 fs;
+    for (auto& p : group_phrases(fw)) {
+        Seg s{p.reading, greeting_fix(p.reading, p.surface)};
+        if (p.head_r < p.reading.size() && p.head_s < p.surface.size()) {
+            s.tail_r = p.reading.substr(p.head_r);
+            s.tail_s = p.surface.substr(p.head_s);
+        }
+        fs += s.surface;
+        frozen_.push_back(std::move(s));
+    }
     {
         std::vector<u16> cs(c.cands.begin(), c.cands.begin() + long(std::min<size_t>(c.cands.size(), 5)));
         LogEvent e{"auto", kana_.substr(0, freeze_end), fs, ctx_, cs, -1};
-        e.extra = to_utf8(kana_.substr(freeze_end));   // まだ確定していない残りの読み
+        e.extra = "hold," + to_utf8(kana_.substr(freeze_end));   // 固定 (入力欄には確定しない)、まだ固定していない残りの読み
         log(e);
     }
-    commit_text(fs);
-    ctx_ = tail(ctx_ + fs, CTX_MAX);
     kana_.erase(0, freeze_end);
     caret_ -= std::min(caret_, freeze_end);
     raw_valid_ = false;
     prev_segs_.clear();
     live_key_.clear();
+    return true;
+}
+
+// 変換の速さを測って、固定せずに AI 変換に渡す字数を決める (最初に打ったときに 1 回。決まった読みを 3 回変換して速い方の時間)。
+// 1 回の変換を BUDGET_MS に収める長さ (時間は読みの長さにほぼ比例) を KEEP〜KEEP_MAX で。遅い PC はスマホ版と同じ 8 字、
+// 速い PC は 32 字まで渡して、長い文脈で変換させる
+void Composer::calibrate() {
+    calibrated_ = true;
+    if (!conv_) return;
+    static const char16_t* R = u"きょうはとてもいいてんきなのでこうえんまでさんぽにいってみようとおもいます";   // 36 字
+    constexpr double BUDGET_MS = 40;
+    const u16 r(R);
+    double best = 1e9;
+    for (int i = 0; i < 3; i++) {
+        auto t0 = std::chrono::steady_clock::now();
+        conv_->convert(u16(), r, kCandidates);
+        double ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+        if (i > 0) best = std::min(best, ms);   // 1 回目は読み込み・温まりを含むので数えない
+    }
+    size_t n = best > 0 ? size_t(double(r.size()) * BUDGET_MS / best) : KEEP_MAX;
+    keep_ = std::clamp(n, KEEP, KEEP_MAX);
+    LogEvent e{"diag", u16(), u16(), u16()};
+    e.extra = "keep=" + std::to_string(keep_) + ",ms36=" + std::to_string(int(best * 10) / 10.0);
+    log(e);
+}
+
+u16 Composer::frozen_reading() const {
+    u16 r;
+    for (auto& s : frozen_) r += s.reading;
+    return r;
+}
+
+u16 Composer::frozen_surface() const {
+    u16 r;
+    for (auto& s : frozen_) r += s.surface;
+    return r;
+}
+
+// 残りの読みを変換するときの文脈 (入力欄の左 + 固定した表記)
+u16 Composer::conv_ctx() const { return tail(ctx_ + frozen_surface(), CTX_MAX); }
+
+// 固定した最後の文節を読みに戻して、入力中の頭につなぐ (固定した所を Backspace・← で直すとき)。戻したら true
+bool Composer::unfreeze_last() {
+    if (frozen_.empty()) return false;
+    u16 r = frozen_.back().reading;
+    frozen_.pop_back();
+    kana_.insert(0, r);
+    caret_ += r.size();
+    raw_valid_ = false;
+    live_key_.clear();
+    prev_segs_.clear();
     return true;
 }
 
@@ -560,8 +632,16 @@ void Composer::convert_all() {
     flush_romaji();
     if (kana_.empty()) { to_idle(); return; }
     sync_user_dict();
-    segs_ = convert_phrases(ctx_, kana_, &whole_);
+    segs_ = frozen_;
+    std::vector<Seg> rest = convert_phrases(conv_ctx(), kana_, &whole_);
+    segs_.insert(segs_.end(), rest.begin(), rest.end());
+    frozen_.clear();
     first_cands_ = whole_;
+    if (!segs_.empty() && segs_.size() > rest.size()) {   // 記録用の文全体の候補にも固定した表記をつなぐ
+        u16 fs;
+        for (size_t i = 0; i + rest.size() < segs_.size(); i++) fs += segs_[i].surface;
+        for (auto& x : first_cands_) x = fs + x;
+    }
     first_via_ = "space";
     if (segs_.size() != 1) whole_.clear();
     focus_ = 0;
@@ -581,9 +661,13 @@ void Composer::enter_single(const u16& surface, std::vector<u16> cands, int sel)
     } else {
         cand_open_ = false;
     }
-    segs_.assign(1, std::move(s));
-    whole_.clear();
-    focus_ = 0;
+    bool had_frozen = !frozen_.empty();
+    segs_ = frozen_;
+    frozen_.clear();
+    segs_.push_back(std::move(s));
+    if (had_frozen) whole_.clear();
+    else whole_.clear();
+    focus_ = segs_.size() - 1;
     state_ = State::Convert;
 }
 
@@ -747,12 +831,13 @@ void Composer::to_idle() {
     live_key_.clear();
     live_cands_.clear();
     prev_segs_.clear();
+    frozen_.clear();
 }
 
 void Composer::finish() {
     if (state_ == State::Input) {
         flush_romaji();
-        commit_text(kana_);
+        commit_text(frozen_surface() + kana_);
         to_idle();
     } else if (state_ == State::Convert) {
         commit_all();
@@ -771,22 +856,26 @@ void Composer::cancel() {
 // (読みの途中にカーソルを動かして直しているときは、かなで見せる)
 bool Composer::live_shown() const {
     return options.live_display && options.live && state_ == State::Input && !kana_.empty() && caret_ == kana_.size() &&
-           !alpha_run_ && !live_top_.empty() && live_key_ == ctx_ + u'\x01' + kana_;
+           !alpha_run_ && !live_top_.empty() && live_key_ == conv_ctx() + u'\x01' + kana_;
 }
 
 void Composer::rebuild_view() {
     View v;
     if (state_ == State::Input) {
         const u16& p = romaji_.pending();
+        const u16 fz = frozen_surface();   // 固定した前の方 (変換した形で見せる)
+        const int f = int(fz.size());
+        if (f) v.spans.push_back({0, f, SpanKind::Converted});
         if (live_shown()) {   // ライブ変換: 変換した文 + 打ちかけのローマ字
-            v.text = live_top_ + p;
+            v.text = fz + live_top_ + p;
             v.caret = int(v.text.size());
-            if (!live_top_.empty()) v.spans.push_back({0, int(live_top_.size()), SpanKind::Converted});
-            if (!p.empty()) v.spans.push_back({int(live_top_.size()), int(p.size()), SpanKind::Input});
+            if (!live_top_.empty()) v.spans.push_back({f, int(live_top_.size()), SpanKind::Converted});
+            if (!p.empty()) v.spans.push_back({f + int(live_top_.size()), int(p.size()), SpanKind::Input});
         } else {
-            v.text = kana_.substr(0, caret_) + p + kana_.substr(caret_);
-            v.caret = int(caret_ + p.size());
-            if (!v.text.empty()) v.spans.push_back({0, int(v.text.size()), SpanKind::Input});
+            u16 in = kana_.substr(0, caret_) + p + kana_.substr(caret_);
+            v.text = fz + in;
+            v.caret = f + int(caret_ + p.size());
+            if (!in.empty()) v.spans.push_back({f, int(in.size()), SpanKind::Input});
         }
         if (!live_cands_.empty()) {
             v.cand_open = true;

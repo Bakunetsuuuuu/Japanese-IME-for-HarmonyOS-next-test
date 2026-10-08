@@ -170,7 +170,7 @@ void build() {
     make(L"BUTTON", L"数字を全角で入力する", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 79, 430, 22, ID_DIGITS);
     make(L"BUTTON", L"入力中も変換候補を表示する", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 104, 430, 22, ID_LIVE);
     make(L"BUTTON", L"入力中の文字も変換して表示する (ライブ変換)", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 129, 430, 22, ID_LIVEDISPLAY);
-    make(L"BUTTON", L"変換を自動で確定する", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 154, 430, 22, ID_LIVECOMMIT);
+    make(L"BUTTON", L"長い入力の前の方を固定して変換を軽く保つ (確定はしない)", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 154, 430, 22, ID_LIVECOMMIT);
     make(L"BUTTON", L"Ctrl + Space でも日本語入力をオン/オフする", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 179, 430, 22, ID_CTRLSPACE);
     y += 217;
 

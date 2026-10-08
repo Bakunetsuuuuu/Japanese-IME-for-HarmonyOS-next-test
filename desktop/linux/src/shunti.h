@@ -24,7 +24,7 @@ FCITX_CONFIGURATION(
     ShuntiConfig,
     fcitx::Option<bool> live{this, "Live", "打っている間も候補を出す", true};
     fcitx::Option<bool> liveDisplay{this, "LiveDisplay", "入力中の文字も変換して表示する (ライブ変換)", false};
-    fcitx::Option<bool> liveCommit{this, "LiveCommit", "変換を自動で確定する", true};
+    fcitx::Option<bool> liveCommit{this, "LiveCommit", "長い入力の前の方を固定して変換を軽く保つ (確定はしない)", true};
     fcitx::Option<bool> spaceFullwidth{this, "SpaceFullwidth", "空白を全角にする (Shift を押すと逆)", true};
     fcitx::Option<bool> digitsFullwidth{this, "DigitsFullwidth", "数字を全角にする", false};
     fcitx::Option<int, fcitx::IntConstrain> punct{this, "Punct", "句読点 (0 = 、。 1 = ，． 2 = 、． 3 = ，。)", 0,
