@@ -2661,6 +2661,36 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         }
         if (int(res.size()) > maxout) res.resize(size_t(maxout));
     }
+    // 文の気分の絵文字・顔文字 (提案): 読みの終わりの語 (語の区切りから始まる 2 字以上、読み全体は除く: そこは候補に出ている) に
+    // 当たる絵文字 (コスト 8000 台) と顔文字 (9300〜9399) を。きょうはつかれた -> つかれた の 😫・(´・ω・｀)
+    if (e->suggest_mode && !e->last_segs.empty() && n >= 3) {
+        std::vector<int> starts = {0};
+        for (const SegInfo& sg : e->last_segs) starts.push_back(sg.e);
+        for (int st : starts) {
+            if (st <= 0 || n - st < 2 || n - st > 8) continue;
+            std::vector<uint16_t> k16(r.begin() + st, r.end());
+            uint32_t a, b;
+            if (!e->lex.find(k16.data(), int(k16.size()), a, b)) continue;
+            std::vector<std::pair<int32_t, ustr>> em, km;
+            for (uint32_t j = a; j < b; j++) {
+                const Ent en = e->lex.ent(j);
+                ustr sf = from16(e->lex.s_blob + en.soff, en.slen);
+                if (en.cost >= 8000 && en.cost < 9000 && is_emoji(sf)) em.push_back({en.cost, sf});
+                else if (en.cost >= 9300 && en.cost <= 9399) {
+                    bool ok = true;
+                    for (char32_t c : sf) ok = ok && !((c >= 0x3041 && c <= 0x3096) || (c >= 0x4E00 && c <= 0x9FFF));
+                    if (ok) km.push_back({en.cost, sf});
+                }
+            }
+            if (em.empty() && km.empty()) continue;
+            std::stable_sort(em.begin(), em.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+            std::stable_sort(km.begin(), km.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+            const ustr top = res.empty() ? ustr() : res[0];
+            for (size_t i = 0; i < em.size() && i < 2; i++) e->suggest.push_back({KKC_SUGGEST_MOOD, top + em[i].second});
+            for (size_t i = 0; i < km.size() && i < 2; i++) e->suggest.push_back({KKC_SUGGEST_MOOD, top + km[i].second});
+            break;
+        }
+    }
     std::vector<uint16_t> buf;
     for (auto& s : res) { to16(s, buf); buf.push_back(0); }
     if (int(buf.size()) > cap) return -1;

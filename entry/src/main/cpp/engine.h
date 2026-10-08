@@ -21,7 +21,7 @@ KKC_API void kkc_close(kkc_engine* e);
 KKC_API void kkc_set_threads(kkc_engine* e, int n);
 KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias);
 // 提案の種類 (kkc_last_suggest)
-enum { KKC_SUGGEST_TYPO = 1, KKC_SUGGEST_DATE = 2, KKC_SUGGEST_ADDRESS = 3, KKC_SUGGEST_ENGLISH = 4, KKC_SUGGEST_ALT = 5 };
+enum { KKC_SUGGEST_TYPO = 1, KKC_SUGGEST_DATE = 2, KKC_SUGGEST_ADDRESS = 3, KKC_SUGGEST_ENGLISH = 4, KKC_SUGGEST_ALT = 5, KKC_SUGGEST_MOOD = 6 };
 // 提案: オンにすると、変換の域を超えるもの (打ち間違いの直し・日付・郵便番号の住所) を候補に混ぜず kkc_last_suggest に出す
 KKC_API void kkc_set_suggest(kkc_engine* e, int on);
 KKC_API int kkc_last_suggest(kkc_engine* e, uint16_t* out, int cap, int32_t* kinds, int kcap);   // 打ち間違いの直し (S7〜): on/off と控えめにする値

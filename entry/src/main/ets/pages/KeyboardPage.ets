@@ -700,7 +700,10 @@ struct KeyboardPage {
                           .fontSize(this.isLandscape ? 10 : 11)
                           .fontColor(kbTheme(this.isDark).accent)
                         ForEach(this.suggestList, (t: string, i: number) => {
-                          Text(i < this.suggestKinds.length && this.suggestKinds[i] === 1 ? `${this.suggestFrom}→${t}` : t)
+                          // 打ち間違いの直しは 元→直した形、気分の絵文字・顔文字 (6) は足す分だけ (確定するのは文ごと)
+                          Text(i < this.suggestKinds.length && this.suggestKinds[i] === 1 ? `${this.suggestFrom}→${t}`
+                            : (i < this.suggestKinds.length && this.suggestKinds[i] === 6 && t.startsWith(this.suggestFrom)
+                              ? t.slice(this.suggestFrom.length) : t))
                             .fontFamily(JP_FONT_FAMILY)
                             .fontSize(this.isLandscape ? 11 : 13)
                             .fontColor(kbTheme(this.isDark).accent)
