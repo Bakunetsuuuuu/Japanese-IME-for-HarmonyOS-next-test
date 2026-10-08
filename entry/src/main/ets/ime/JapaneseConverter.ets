@@ -127,6 +127,17 @@ export class JapaneseConverter {
     return pending;
   }
 
+  // 読みの末尾に英字のまま出ていたローマ字を、打ちかけのローマ字に戻す
+  // (InputHandler.reclaimTrailingRomaji 参照)。
+  setPending(romaji: string): void {
+    this.buffer = romaji;
+  }
+
+  // romaji がローマ字の打ちかけになりうるか (続けて打てば表のどれかになる)。
+  static isRomajiPrefix(romaji: string): boolean {
+    return PREFIX_SET.has(romaji);
+  }
+
   processKey(key: string): ConversionResult {
     const k = key.toLowerCase();
     this.buffer += k;

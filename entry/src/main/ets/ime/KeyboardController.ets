@@ -2104,6 +2104,7 @@ export class InputHandler {
           InputLog.recordDeleteChar(ch, InputState.COMPOSING);
         }
       }
+      this.reclaimTrailingRomaji();
 
       const composing = AppStorage.get<string>('composingText') ?? '';
       const newPending = AppStorage.get<string>('pendingRomaji') ?? '';
@@ -2111,6 +2112,29 @@ export class InputHandler {
         AppStorage.setOrCreate('inputState', InputState.IDLE);
       }
       this.updateCandidates();
+    }
+  }
+
+  // BackSpace で、読みの末尾に英字のまま出ていたローマ字まで戻ったら、それを打ちかけの
+  // ローマ字に戻す。ローマ字の表に当てはまらない組み合わせ (tk) を打つと、前の t は
+  // 英字のまま読みへ押し出され、k だけが打ちかけとして残る。k を消しても t は読みの
+  // 普通の字なので、続けて a を打つと「たあ」ではなく「tあ」になっていた。
+  // Windows の IME と同じく、打ちかけに戻して続きのかなとくっつける (tk → ⌫ → a で「た」)。
+  // 戻すのは、続けて打てば表のどれかになる綴り (sh・ch・t など) の最も長い末尾だけ
+  private reclaimTrailingRomaji(): void {
+    if (this.converter.getPending().length > 0) { return; }
+    const composing = AppStorage.get<string>('composingText') ?? '';
+    const m = /[a-z]{1,4}$/.exec(composing);
+    if (m === null) { return; }
+    const run = m[0];
+    for (let len = run.length; len >= 1; len--) {
+      const tail = run.slice(-len);
+      if (JapaneseConverter.isRomajiPrefix(tail)) {
+        this.converter.setPending(tail);
+        AppStorage.setOrCreate('composingText', composing.slice(0, -len));
+        AppStorage.setOrCreate('pendingRomaji', tail);
+        return;
+      }
     }
   }
 
