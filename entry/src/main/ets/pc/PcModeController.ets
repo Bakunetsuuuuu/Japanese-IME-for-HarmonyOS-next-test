@@ -79,9 +79,20 @@ export class PcModeController implements PcKeyHost {
 
   // 言語バー (STATUS_BAR パネル)
   private statusPanel: inputMethodEngine.Panel | undefined = undefined;
-  private statusPanelCreating: boolean = false;
-  private statusPanelFailed: boolean = false;
+  // 作っている途中のパネル。作っている間に来た「出して」も、これの完了を待って出す
+  private statusPanelPromise: Promise<inputMethodEngine.Panel | undefined> | undefined = undefined;
+  // 作るのに失敗した回数。STATUS_BAR を作れない端末で、欄に入るたびに作り直し続けないための上限
+  private statusPanelFailures: number = 0;
+  private static readonly MAX_STATUS_PANEL_FAILURES: number = 3;
+  // こちらが出したつもりか (langBarShown) と、OS から知らされた実際の状態 (langBarVisible)。
+  // 欄を素早く移ったときなどに OS 側が言語バーを隠すことがあり、自分の印だけで
+  // 「出ている」と思い込むと show() を呼ばなくなって、言語バーが出ないままになっていた
   private langBarShown: boolean = false;
+  private langBarVisible: boolean = false;
+  // 出しているつもりなのに OS に隠されたとき、出し直した回数 (入力欄ごと)。隠し合いを続けない上限
+  private langBarReshows: number = 0;
+  private static readonly MAX_LANGBAR_RESHOWS: number = 3;
+  private langBarRecheckTimer: number = -1;
   private langBarRect: RectPx = { x: 0, y: 0, w: 0, h: 0 };
   private langBarXFrac: number = -1;
   private langBarYFrac: number = -1;
@@ -129,7 +140,10 @@ export class PcModeController implements PcKeyHost {
     this.monitor?.stop();
     clearTimeout(this.syncTimer);
     clearTimeout(this.hideLangBarTimer);
+    clearTimeout(this.langBarRecheckTimer);
     if (this.statusPanel !== undefined) {
+      this.statusPanel.off('show');
+      this.statusPanel.off('hide');
       IMEAbility.destroyPanel(this.statusPanel).catch((_e: Error) => {});
       this.statusPanel = undefined;
     }
@@ -172,6 +186,7 @@ export class PcModeController implements PcKeyHost {
   }
 
   private setActive(v: boolean): void {
+    console.info(`shuntiIME pc mode ${v ? 'on' : 'off'} (preference=${this.preference})`);
     this.active = v;
     AppStorage.setOrCreate('pcModeActive', v);
     InputLog.recordMode(`pcMode=${v}`);
@@ -184,6 +199,7 @@ export class PcModeController implements PcKeyHost {
       AppStorage.setOrCreate('keyboardSubMode', 'kana');
       AppStorage.setOrCreate('pcVirtualKeyboard', false);
       this.enterCandidateMode();
+      this.statusPanelFailures = 0;
       if (this.sessionActive) { this.showLangBar(); }
     } else {
       this.hideLangBar();
@@ -242,6 +258,8 @@ export class PcModeController implements PcKeyHost {
     this.cursor = undefined;
     this.anchor = undefined;
     this.router?.reset();
+    this.langBarReshows = 0;
+    console.info(`shuntiIME pc inputStart active=${this.active} soft=${this.softState} langbar=${this.langBarShown}/${this.langBarVisible}`);
     if (!this.active) { return false; }
     this.refreshScreen();
     this.showLangBar();
@@ -256,6 +274,7 @@ export class PcModeController implements PcKeyHost {
   }
 
   onInputStop(): void {
+    console.info(`shuntiIME pc inputStop active=${this.active} soft=${this.softState}`);
     this.sessionActive = false;
     this.router?.reset();
     this.cursor = undefined;
@@ -384,54 +403,106 @@ export class PcModeController implements PcKeyHost {
 
   // ---------- 言語バー ----------
 
+  private langBarWanted(): boolean {
+    return this.active && this.sessionActive;
+  }
+
   private ensureStatusPanel(): Promise<inputMethodEngine.Panel | undefined> {
     if (this.statusPanel !== undefined) { return Promise.resolve(this.statusPanel); }
-    if (this.context === undefined || this.statusPanelCreating || this.statusPanelFailed) {
+    if (this.statusPanelPromise !== undefined) { return this.statusPanelPromise; }
+    if (this.context === undefined
+        || this.statusPanelFailures >= PcModeController.MAX_STATUS_PANEL_FAILURES) {
       return Promise.resolve(undefined);
     }
-    this.statusPanelCreating = true;
     // moveTo は FLG_FIXED (PanelInfo の flag の既定) のパネルには効かないので、
     // 動かせるよう FLG_FLOATING で作る (changeFlag は SOFT_KEYBOARD にしか効かない)
     const info: inputMethodEngine.PanelInfo = {
       type: inputMethodEngine.PanelType.STATUS_BAR,
       flag: inputMethodEngine.PanelFlag.FLG_FLOATING,
     };
-    return IMEAbility.createPanel(this.context, info)
+    let created: inputMethodEngine.Panel | undefined = undefined;
+    this.statusPanelPromise = IMEAbility.createPanel(this.context, info)
       .then((panel: inputMethodEngine.Panel) => {
-        this.statusPanel = panel;
+        created = panel;
         return panel.setUiContent('pages/LangBarPage');
       })
-      .then(() => {
-        this.statusPanelCreating = false;
+      .then((): inputMethodEngine.Panel | undefined => {
+        this.statusPanelPromise = undefined;
+        if (created !== undefined) {
+          this.statusPanel = created;
+          this.watchStatusPanel(created);
+        }
         return this.statusPanel;
       })
-      .catch((err: Error) => {
-        // 作れない端末 (STATUS_BAR 非対応など)。言語バー無しで続ける
-        // (モードの切り替えは キー でできる)
+      .catch((err: Error): inputMethodEngine.Panel | undefined => {
+        // 作れない端末 (STATUS_BAR 非対応など) では言語バー無しで続ける (モードはキーで
+        // 切り替えられる)。中身を載せるところで失敗したパネルは捨てて、次の欄で作り直す
         console.error('shuntiIME create STATUS_BAR panel error', JSON.stringify(err));
-        this.statusPanelCreating = false;
-        this.statusPanelFailed = true;
+        this.statusPanelPromise = undefined;
+        this.statusPanelFailures++;
+        if (created !== undefined) {
+          IMEAbility.destroyPanel(created).catch((_e: Error) => {});
+        }
         return undefined;
       });
+    return this.statusPanelPromise;
+  }
+
+  // OS が言語バーを出した・隠したことを知る。こちらは出しているつもりなのに隠された
+  // (入力欄を移ったときに OS が隠すことがある) ら、少し待って出し直す
+  private watchStatusPanel(panel: inputMethodEngine.Panel): void {
+    try {
+      panel.on('show', () => {
+        this.langBarVisible = true;
+      });
+      panel.on('hide', () => {
+        this.langBarVisible = false;
+        if (!this.langBarShown || !this.langBarWanted()
+            || this.langBarReshows >= PcModeController.MAX_LANGBAR_RESHOWS) {
+          return;
+        }
+        this.langBarReshows++;
+        console.info(`shuntiIME langbar hidden by system, showing again (${this.langBarReshows})`);
+        setTimeout(() => {
+          if (this.langBarWanted()) { this.showLangBar(); }
+        }, 150);
+      });
+    } catch (err) {
+      console.error('shuntiIME langbar on(show/hide) error', JSON.stringify(err));
+    }
   }
 
   private showLangBar(): void {
     clearTimeout(this.hideLangBarTimer);
     this.ensureStatusPanel().then((panel: inputMethodEngine.Panel | undefined) => {
-      if (panel === undefined || !this.active || !this.sessionActive) { return; }
-      this.placeLangBar();
-      if (!this.langBarShown) {
-        this.langBarShown = true;
-        panel.show().catch((err: Error) => {
-          console.error('shuntiIME langbar show error', JSON.stringify(err));
-        });
-      }
+      // 作っている間に入力欄を離れた・PCモードが切れたなら出さない (確かめるのは今の状態)
+      if (panel === undefined || !this.langBarWanted()) { return; }
+      this.placeLangBar(true);
+      // 出ているつもりでも毎回 show() する (OS 側が隠していても印は変わらないので、
+      // 印を見て省くと出ないままになる)。もう出ていれば何も起きない
+      this.langBarShown = true;
+      panel.show().catch((err: Error) => {
+        console.error('shuntiIME langbar show error', JSON.stringify(err));
+      });
+      // 作った直後や欄を移った直後は、窓の準備・OS 側の後始末と行き違って show() が
+      // 効かないことがあるので、少し後に実際に出ているかを確かめてもう一度
+      clearTimeout(this.langBarRecheckTimer);
+      this.langBarRecheckTimer = setTimeout(() => {
+        this.langBarRecheckTimer = -1;
+        if (this.langBarWanted() && this.langBarShown && !this.langBarVisible
+            && this.statusPanel !== undefined) {
+          this.placeLangBar(true);
+          this.statusPanel.show().catch((_e: Error) => {});
+        }
+      }, 300);
     });
   }
 
   private hideLangBar(): void {
-    if (!this.langBarShown || this.statusPanel === undefined) { return; }
+    clearTimeout(this.langBarRecheckTimer);
+    // 先に印を下ろす (下ろす前に hide の知らせが来ると「隠された」と思って出し直してしまう)
     this.langBarShown = false;
+    if (this.statusPanel === undefined) { return; }
     this.statusPanel.hide().catch((_e: Error) => {});
   }
 
@@ -455,11 +526,13 @@ export class PcModeController implements PcKeyHost {
     return { x: Math.round(x), y: Math.round(y), w: w, h: h };
   }
 
-  private placeLangBar(): void {
+  // force: 大きさが変わっていなくても resize する (出す前。作った直後の resize が
+  // 窓の準備前で効いていないと、大きさ 0 のまま見えないことがある)
+  private placeLangBar(force: boolean = false): void {
     const panel = this.statusPanel;
     if (panel === undefined) { return; }
     const r = this.langBarRectPx();
-    const resize = r.w !== this.langBarRect.w || r.h !== this.langBarRect.h;
+    const resize = force || r.w !== this.langBarRect.w || r.h !== this.langBarRect.h;
     this.langBarRect = r;
     // resize と moveTo の Promise が実機で確実に解決しない件 (KeyboardController の
     // resizePanel 参照) があるので、つなげずに投げっぱなしにする

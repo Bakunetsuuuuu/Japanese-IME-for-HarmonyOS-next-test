@@ -1979,7 +1979,7 @@ export class InputHandler {
 
     if (state === InputState.COMPOSING) {
       // Flush any pending romaji first
-      const pending = this.converter.flushPending();
+      const pending = this.flushPendingRomaji();
       const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
       if (pending.length > 0) {
         const kana = mode === InputMode.KATAKANA ? toKatakana(pending) : pending;
@@ -1988,7 +1988,14 @@ export class InputHandler {
         AppStorage.setOrCreate('pendingRomaji', '');
       }
       // 候補は打っている間と同じ一覧 (AI 変換)。以前はここだけ旧エンジンで引き直していた
-      this.updateCandidates();
+      // PCモードは、裏の変換を待たずにこの場で変換し、後回しにしていた候補も足す
+      // (fullConversionNow 参照)。
+      this.fullConversionNow = this.isPcMode();
+      try {
+        this.updateCandidates();
+      } finally {
+        this.fullConversionNow = false;
+      }
       AppStorage.setOrCreate('selectedCandidateIndex', 0);
       AppStorage.setOrCreate('inputState', InputState.SELECTING);
       return;
@@ -2168,7 +2175,7 @@ export class InputHandler {
 
   commitRaw(): void {
     const composing = AppStorage.get<string>('composingText') ?? '';
-    const pending = this.converter.flushPending();
+    const pending = this.flushPendingRomaji();
     const all = composing + pending;
     InputLog.recordRaw(composing, all);
     if (all.length > 0) { this.insertText(all); }
@@ -2329,7 +2336,7 @@ export class InputHandler {
 
   private commitPending(): void {
     const composing = AppStorage.get<string>('composingText') ?? '';
-    const pending = this.converter.flushPending();
+    const pending = this.flushPendingRomaji();
     const all = composing + pending;
     if (all.length > 0) { this.insertText(all); }
     this.resetComposition();
@@ -3024,7 +3031,11 @@ export class InputHandler {
     const now = Date.now();
     const typingFast = now - this.lastKeystrokeAt < ENRICH_DELAY_MS;
     if (!this.enrichRun) { this.lastKeystrokeAt = now; }
-    const skipExtras = typingFast && !this.enrichRun && target.length >= EXTRAS_MIN_KANA;
+    // PCモードで変換中 (または変換キーを押したところ) は、選ぶための一覧なので
+    // 仮の候補・おまけ抜きの候補を出さない (fullConversionNow 参照)
+    const pcConverting = this.isPcMode() && (this.fullConversionNow
+      || (AppStorage.get<string>('inputState') ?? InputState.IDLE) === InputState.SELECTING);
+    const skipExtras = typingFast && !this.enrichRun && !pcConverting && target.length >= EXTRAS_MIN_KANA;
     clearTimeout(this.enrichTimer);
     this.enrichPending = false;
     const fullKatakana = KanaKanjiConverter.toKatakana(target);
@@ -3032,6 +3043,9 @@ export class InputHandler {
     // 届くまでは前回の候補に新しく打ったかなをつないで出す (AiConverter.candidates)。読み込みが済むまでは読みのまま
     const aiMode = AiConverter.isReady();
     let aiCands: string[] = [];
+    if (aiMode && pcConverting) {
+      AiConverter.ensureFresh(KanaKanjiConverter.recentContext(), target);
+    }
     if (aiMode) {
       aiCands = AiConverter.candidates(KanaKanjiConverter.recentContext(), target, () => {
         if (this.conversionTarget() === target) { this.updateCandidates(); }
@@ -3177,8 +3191,18 @@ export class InputHandler {
     // every source above (dictionaries, learning, the injected predictions) is
     // covered by the one filter -- see SuppressedCandidates.
     const shown = SuppressedCandidates.filter(target, candidates);
+    // PCモードの変換中に一覧が出し直された (裏の変換が後から届いた・範囲を変えた) ときは、
+    // 選んでいた候補を選んだままにする (1 位に戻ると、Space で選んだのに確定で別の候補が入る)
+    let keepSel = 0;
+    if (pcConverting) {
+      const prevCands = AppStorage.get<string[]>('candidates') ?? [];
+      const prevSel = AppStorage.get<number>('selectedCandidateIndex') ?? 0;
+      if (prevSel > 0 && prevSel < prevCands.length) {
+        keepSel = Math.max(0, shown.indexOf(prevCands[prevSel]));
+      }
+    }
     AppStorage.setOrCreate('candidates', shown);
-    AppStorage.setOrCreate('selectedCandidateIndex', 0);
+    AppStorage.setOrCreate('selectedCandidateIndex', keepSel);
     if (DEBUG_INPUT_LOG) {
       promo.forEach((mark: string, c: string) => {
         const o = origin.get(c);
@@ -3331,7 +3355,7 @@ export class InputHandler {
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
     if (state !== InputState.COMPOSING) { return; }
     let composing = AppStorage.get<string>('composingText') ?? '';
-    const pending = this.converter.flushPending();
+    const pending = this.flushPendingRomaji();
     const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
     if (pending.length > 0) {
       const kana = mode === InputMode.KATAKANA ? toKatakana(pending) : pending;
@@ -3614,8 +3638,28 @@ export class InputHandler {
   // のと、確定しても学習しない (読み → ローマ字 を覚えると次の変換を壊す) ため。
   private fixedConversion: string = '';
 
+  // PCモードで変換キーを押した瞬間の updateCandidates の間だけ立てる。
+  // 立っている間 (と、PCモードで変換中の間) は、裏の AI 変換を待たずにこの場で
+  // 変換し (AiConverter.ensureFresh)、打っている間は後回しにしている「おまけ」の
+  // 候補も省かない。物理キーボードは 打つ → 変換 → 確定 が速く、待たずに確定すると
+  // 「前回の 1 位 + 新しく打ったかな」の仮の候補が入ってしまうため。
+  private fullConversionNow: boolean = false;
+
   private clearFixedConversion(): void {
     this.fixedConversion = '';
+  }
+
+  private isPcMode(): boolean {
+    return AppStorage.get<boolean>('pcModeActive') ?? false;
+  }
+
+  // 打ちかけのローマ字を読みに入れる。PCモードは Windows の IME と同じく、
+  // 末尾に残った n を「ん」にする (hon + 変換 で「ほn」ではなく「ほん」)。
+  // ソフトキーボードは今までどおり (n のまま)。
+  private flushPendingRomaji(): string {
+    const pending = this.converter.flushPending();
+    if (pending === 'n' && this.isPcMode()) { return 'ん'; }
+    return pending;
   }
 
   // 入力中・変換中のものを確定する (Ctrl・Alt のショートカットを素通しする前、
@@ -3716,7 +3760,7 @@ export class InputHandler {
       return;
     }
     let composing = AppStorage.get<string>('composingText') ?? '';
-    const pending = this.converter.flushPending();
+    const pending = this.flushPendingRomaji();
     if (pending.length > 0) {
       const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
       composing += mode === InputMode.KATAKANA ? toKatakana(pending) : pending;

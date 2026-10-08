@@ -249,6 +249,40 @@ export class AiConverter {
     return [AiConverter.fSurf + tail];
   }
 
+  // candidates() が仮の候補 (前回の 1 位 + 新しく打ったかな) ではなく本当の変換を返せるよう、
+  // 結果がまだ無ければこの場で (呼んだスレッドで) 変換して置いておく。PCモードの変換キー用:
+  // 物理キーボードでは 変換 → 確定 を一瞬で打てるので、裏の変換を待たずに確定すると仮の候補が
+  // 入ってしまう (Windows の IME も変換キーでは結果が出るまで待つ)。固定の扱いは candidates() と同じ
+  static ensureFresh(context: string, target: string): void {
+    if (!AiConverter.ready || target.length === 0) {
+      return;
+    }
+    if (AiConverter.fCtx !== context || !target.startsWith(AiConverter.fKana)) {
+      AiConverter.fCtx = context;
+      AiConverter.fKana = '';
+      AiConverter.fSurf = '';
+      AiConverter.chunks = [];
+      AiConverter.prevSegs.clear();
+    }
+    const tail = target.slice(AiConverter.fKana.length);
+    if (tail.length === 0) {
+      return;
+    }
+    const ctx2 = (context + AiConverter.fSurf).slice(-40);
+    const key = AiConverter.key(ctx2, tail);
+    const hit = AiConverter.cache.get(key);
+    if (hit !== undefined && hit.cands.length > 0) {
+      return;
+    }
+    const r = kkc.convert(ctx2, tail, AiConverter.CANDIDATES);
+    const cands = r.cands.filter((c: string) => !AiConverter.SLURS.test(c));
+    const ok = cands.length > 0 && cands[0] === r.cands[0];
+    if (AiConverter.cache.size > 256) {
+      AiConverter.cache.clear();
+    }
+    AiConverter.cache.set(key, { cands: cands, ends: ok ? r.ends : [], lens: ok ? r.lens : [] } as KkcResult);
+  }
+
   // オート確定のとき: 固定した読みと表記 (呼ぶ側がこれを入力欄に確定して、残りだけを入力中に残す)
   static frozenKana(): string {
     return AiConverter.fKana;

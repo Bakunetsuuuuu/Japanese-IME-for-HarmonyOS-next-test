@@ -110,10 +110,12 @@ export class KeyMap {
 
 // ---------- 文字の幅 ----------
 
-// かな入力中に打った記号・数字を、Windows の IME の既定 (ひらがなモードでは
-// 全角、句読点・かぎ括弧は和文の字) と同じ字に直す。英字は romaji なので
-// そのまま返す (ローマ字の表を引く側が小文字にする)。'-' も ROMAJI_TABLE が
-// 'ー' に直すので触らない。
+// かな入力中に打った記号を、Windows の IME の既定 (ひらがなモードでは全角、
+// 句読点・かぎ括弧は和文の字) と同じ字に直す。英字は romaji なのでそのまま返す
+// (ローマ字の表を引く側が小文字にする)。'-' も ROMAJI_TABLE が 'ー' に直すので触らない。
+// 数字は半角のまま: ソフトキーボードの QWERTY と同じで、変換 (AI 変換の辞書・
+// 数字の書き換え・日付の候補) は半角の数字の読みを前提にしている。全角にすると
+// 「2026ねん」のような読みがうまく変換されない。全角にしたいときは F9。
 const JAPANESE_PUNCT: Map<string, string> = buildJapanesePunct();
 
 function buildJapanesePunct(): Map<string, string> {
@@ -133,7 +135,7 @@ function buildJapanesePunct(): Map<string, string> {
 
 export function toJapaneseInputChar(ch: string): string {
   if (ch.length !== 1) { return ch; }
-  if (/[a-zA-Z]/.test(ch) || ch === '-') { return ch; }
+  if (/[a-zA-Z0-9]/.test(ch) || ch === '-') { return ch; }
   const p = JAPANESE_PUNCT.get(ch);
   if (p !== undefined) { return p; }
   return toFullWidth(ch);
