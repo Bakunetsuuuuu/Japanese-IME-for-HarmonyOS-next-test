@@ -2276,17 +2276,27 @@ std::vector<ustr> date_candidates(const ustr& r) {
         auto numof = [&](const ustr& x, int64_t& v) { bool sk; return parse_num(x, v) || parse(x, v, sk) || (x == U"いっ" && (v = 1, true)); };
         int64_t v;
         if ((ends_with(body, U"かげつ") || ends_with(body, U"かげつかん")) && numof(body.substr(0, body.find(U"かげつ")), v) && v >= 1 && v <= 36) {
+            // らいげつ と同じく月で (さんかげつご -> 1月・2027年1月)。日まで要るとき用に日付も後ろに
             std::tm t = local(now);
             t.tm_mon += int(v) * suf.second;
             t.tm_hour = 12;
-            put_date(std::mktime(&t));
+            const time_t tt = std::mktime(&t);
+            const std::tm u = local(tt);
+            out.push_back(num(u.tm_mon + 1) + U"月");
+            out.push_back(num(u.tm_year + 1900) + U"年" + num(u.tm_mon + 1) + U"月");
+            put_date(tt);
             return out;
         }
         if (ends_with(body, U"ねん") && numof(body.substr(0, body.size() - 2), v) && v >= 1 && v <= 30) {
+            // らいねん と同じく年で (いちねんご -> 2027年・令和9年)。日付も後ろに
             std::tm t = local(now);
             t.tm_year += int(v) * suf.second;
             t.tm_hour = 12;
-            put_date(std::mktime(&t));
+            const time_t tt = std::mktime(&t);
+            const int Y = local(tt).tm_year + 1900;
+            out.push_back(num(Y) + U"年");
+            if (Y >= 2019) out.push_back(U"令和" + (Y == 2019 ? ustr(U"元") : num(Y - 2018)) + U"年");
+            put_date(tt);
             return out;
         }
         int64_t mins = -1;
