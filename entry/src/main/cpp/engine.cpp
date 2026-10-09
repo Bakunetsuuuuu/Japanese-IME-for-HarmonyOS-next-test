@@ -2761,6 +2761,27 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         }
         if (int(res.size()) > maxout) res.resize(size_t(maxout));
     }
+    // 提案モード: 絵文字・顔文字・かっこ・記号だけの候補 (かな・漢字・英数字を含まない) は候補の帯から提案の帯へ。
+    // 読みにかなが無い (記号を打った) ときはそのまま。候補が 1 つも残らないときもそのまま
+    if (e->suggest_mode && std::any_of(r.begin(), r.end(), [](char32_t c) { return c >= 0x3041 && c <= 0x30FA; })) {
+        auto symbolic = [](const ustr& c) {
+            size_t letters = 0;
+            for (char32_t ch : c) {
+                if ((ch >= 0x3041 && ch <= 0x3096) || (ch >= 0x30A1 && ch <= 0x30FA) || (ch >= 0x4E00 && ch <= 0x9FFF) ||
+                    (ch >= U'0' && ch <= U'9') || (ch >= 0xFF10 && ch <= 0xFF19))
+                    return false;
+                if ((ch >= U'a' && ch <= U'z') || (ch >= U'A' && ch <= U'Z')) letters++;
+            }
+            // 英字は半分以下なら顔文字 (:D・m(_ _)m・^m^)。それより多いもの (orz・OK) は語として候補に残す
+            return !c.empty() && letters * 2 <= c.size();
+        };
+        std::vector<ustr> keep, moved;
+        for (auto& c : res) (symbolic(c) ? moved : keep).push_back(c);
+        if (!moved.empty() && !keep.empty()) {
+            res.swap(keep);
+            for (auto& c : moved) e->suggest.push_back({KKC_SUGGEST_SYMBOL, c});
+        }
+    }
     // 文の気分の絵文字・顔文字 (提案): 読みの終わりの語 (語の区切りから始まる 2 字以上、読み全体は除く: そこは候補に出ている) に
     // 当たる絵文字 (コスト 8000 台) と顔文字 (9300〜9399) を。きょうはつかれた -> つかれた の 😫・(´・ω・｀)
     if (e->suggest_mode && !e->last_segs.empty() && n >= 3) {

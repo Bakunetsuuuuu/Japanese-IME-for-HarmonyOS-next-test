@@ -204,6 +204,34 @@ struct KeyboardPage {
     return [w, Math.max(0.4, avail / w)];
   }
 
+  // 提案の帯 (「提案」+ 札) の本来の幅 (vp)
+  private suggestWidthVp(): number {
+    const mu = this.getUIContext().getMeasureUtils();
+    const fs: number = this.isLandscape ? 11 : 13;
+    let w = this.getUIContext().px2vp(mu.measureText({ textContent: '提案', fontSize: this.isLandscape ? 10 : 11, fontFamily: JP_FONT_FAMILY })) + 6 + 14;
+    for (let i = 0; i < this.suggestList.length; i++) {
+      const t = this.suggestList[i];
+      const k = i < this.suggestKinds.length ? this.suggestKinds[i] : 0;
+      const shown = k === 1 ? `${this.suggestFrom}→${t}` : (k === 6 && t.startsWith(this.suggestFrom) ? t.slice(this.suggestFrom.length) : t);
+      w += this.getUIContext().px2vp(mu.measureText({ textContent: shown, fontSize: fs, fontFamily: JP_FONT_FAMILY })) + 16 + 6;
+    }
+    return w;
+  }
+
+  // 提案が出ているときの入力中の文字の [本来の幅, 横の縮め率, 並べる幅]。提案と重なるなら、文字を消さずに横に縮めて詰める
+  // (提案の帯は本来の幅、ただし帯の 6 割まで。それより長い提案は横にめくる)
+  private composingFitWithSuggest(text: string): number[] {
+    const fs: number = this.isLandscape ? 12 : 16;
+    const strip = this.composingStripWidthVp;
+    const px = this.getUIContext().getMeasureUtils().measureText({
+      textContent: text, fontSize: fs, fontWeight: FontWeight.Medium, fontFamily: JP_FONT_FAMILY
+    });
+    const w = this.getUIContext().px2vp(px);
+    const avail = Math.max(strip * 0.35, strip - Math.min(this.suggestWidthVp(), strip * 0.6) - 8) - 24;
+    const sc = w <= avail || w <= 0 ? 1 : Math.max(0.35, avail / w);
+    return [w, sc, w * sc + 24];
+  }
+
   private stripHeightVp(): number {
     return Math.max(STRIP_MIN_VP, Math.min(STRIP_MAX_VP, this.keyboardHeightVp * STRIP_HEIGHT_RATIO));
   }
@@ -669,6 +697,23 @@ struct KeyboardPage {
                         .fontSize(this.isLandscape ? 12 : 16)
                         .fontColor(kbTheme(this.isDark).textSecondary)
                         .maxLines(1)
+                    } else if (this.suggestList.length > 0) {
+                      // 提案が出ているとき: 入力中の文字は消さずに横に縮めて詰める (均等割付)。並べる幅は縮めた幅
+                      Stack({ alignContent: Alignment.Start }) {
+                        Text(this.composingText + this.pendingRomaji)
+                          .fontFamily(JP_FONT_FAMILY)
+                          .fontSize(this.isLandscape ? 12 : 16)
+                          .fontWeight(FontWeight.Medium)
+                          .fontColor(kbTheme(this.isDark).textPrimary)
+                          .maxLines(1)
+                          .padding({ left: 12, right: 8 })
+                          .border({ width: { bottom: 2 }, color: kbTheme(this.isDark).accent })
+                          .width(this.composingFitWithSuggest(this.composingText + this.pendingRomaji)[0] + 24)
+                          .scale({ x: this.composingFitWithSuggest(this.composingText + this.pendingRomaji)[1], y: 1, centerX: 0, centerY: '50%' })
+                      }
+                      .width(this.composingFitWithSuggest(this.composingText + this.pendingRomaji)[2])
+                      .height('100%')
+                      .flexShrink(0)
                     } else {
                       Text(this.composingText + this.pendingRomaji)
                         .fontFamily(JP_FONT_FAMILY)
