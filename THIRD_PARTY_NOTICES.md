@@ -48,6 +48,15 @@ shuntorge also contains:
   "Wikipedia contributors, Japanese Wikipedia". Because of this, the
   dictionary file `kkc_lex.bin` as a whole is distributed under CC BY-SA 4.0
   as well (the same share-alike terms already apply through JMdict).
+- **Readings of Latin-script words** (Win, GitHub, Excel …) from
+  **mecab-ipadic-NEologd** (https://github.com/neologd/mecab-ipadic-neologd,
+  `seed/mecab-user-dict-seed.20200910.csv.xz`), Copyright (C) 2015-2019
+  Toshinori Sato (@overlast), under the **Apache License 2.0**. NEologd uses the
+  spellings and readings of the Hatena Keyword list (株式会社はてな,
+  http://developer.hatena.ne.jp/ja/documents/keyword/misc/catalog) and other
+  sources listed in its COPYING file. Only Latin-script nouns that appear 30+
+  times in FineWeb-2 Japanese were taken; whether the Latin spelling ranks first
+  was decided from word counts in this project's training text.
 - **Postal codes → addresses** from Japan Post's postal code data
   (`utf_ken_all.csv`, https://www.post.japanpost.jp/zipcode/). Japan Post
   states: "郵便番号データに限っては日本郵便株式会社は著作権を主張しません。

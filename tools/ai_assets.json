@@ -8,7 +8,7 @@
       "src": "kkc_lex_v3.bin",
       "size": 65373538,
       "sha256": "66b0dbb07faab6d371d6c81c8146cebc26c4552ff8726ee4ebaddd69a6c216ef",
-      "license": "shuntorge: 全体は CC BY-SA 4.0 (Wikipedia 由来の語を含む)。独自部分 MIT + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0 + 日本郵便 + Unicode License v3"
+      "license": "shuntorge: 全体は CC BY-SA 4.0 (Wikipedia 由来の語を含む)。独自部分 MIT + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0 + NEologd Apache-2.0 + 日本郵便 + Unicode License v3"
     },
     "kkc_model.bin": {
       "src": "kkc_model_q8.bin",

@@ -320,5 +320,6 @@ shunti IMEは広告なし・完全無料で個人が開発しているオープ�
 - mozc（Google）— BSD-3-Clause
 - JMdict/EDICT（読みへの追加候補表記としてのみ利用）— CC BY-SA 4.0
 - SudachiDict（Works Applications）— Apache License 2.0
+- mecab-ipadic-NEologd（英字の語の読み）— Apache License 2.0
 
 ライセンス全文は [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) を参照してください。

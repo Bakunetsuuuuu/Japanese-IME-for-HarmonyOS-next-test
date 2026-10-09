@@ -171,6 +171,7 @@ AI変換（設定 → 変換エンジン → AI変換）のモデル **shuntelli
 | 地名 | shunti IME 地名パック（日本郵便 郵便番号データの町域名と照合） | MIT |
 | ネットの読み・技術用語・【速報】等の定型 | 本プロジェクトで作成（定型の読みは SudachiDict） | MIT / SudachiDict（Apache 2.0） |
 | 文章から拾った名詞 | 上記の教材に30回以上出て mozc に無い名詞（読みは SudachiDict） | MIT / SudachiDict（Apache 2.0） |
+| 英字の語の読み（Win・GitHub・Excel など） | mecab-ipadic-NEologd（`mecab-user-dict-seed.20200910`。はてなキーワード一覧ファイルほかの表記と読み）。FineWeb-2 に30回以上出る英字の名詞のみ。英字を先に出すかは教材の回数で決定 | Apache License 2.0 |
 
 差別語は辞書と候補から除いている。
 
