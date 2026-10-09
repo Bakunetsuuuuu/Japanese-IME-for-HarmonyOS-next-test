@@ -3,8 +3,10 @@
 ベースはHarmonyOS NEXT (API 12+) の日本語 IME です。フリック入力・QWERTY ローマ字入力の両方に対応し、独自AI(shuntelligence)によるgoogle日本語入力やCopilot Keyboardを超える高精度な漢字変換をスマホでも完全ローカルで実現します。個人開発のオープンソースプロジェクトです。
 
 > **開発者**: shuntilettuce
-> **コントリビューター**: [HiSubway] (https://github.com/HiSubway)（さぶうぇい） — テーマ機能を追加（[#57](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/pull/57)）<br>
-> [端島] (https://github.com/Bakunetsuuuuu)　-　HarmonyOSPC向けモードの実装 <br>
+> **コントリビューター**: [HiSubway] (https://github.com/HiSubway)
+> （さぶうぇい） — テーマ機能を追加（[#57](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/pull/57)）<br>
+> [端島] (https://github.com/Bakunetsuuuuu)
+>（ばくねつ）　-　HarmonyOSPC向けモードの実装 <br>
 > **最新バージョン**: 1.6.0（[更新履歴](./CHANGELOG.md)）<br>
 > **ライセンス**: [MIT](./LICENSE)（バンドル辞書データは別ライセンス、下記参照）<br
                                                       >
