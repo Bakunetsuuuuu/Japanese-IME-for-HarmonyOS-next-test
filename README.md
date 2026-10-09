@@ -1,15 +1,14 @@
 # shunti Japanese IME — 高精度AIによる日本語入力
 
-ベースはHarmonyOS NEXT (API 12+) の日本語 IME です。フリック入力・QWERTY ローマ字入力の両方に対応し、独自AI(shuntelligence)によるgoogle日本語入力やCopilot Keyboardを超える高精度な漢字変換をスマホでも完全ローカルで実現します。個人開発のオープンソースプロジェクトです。
+ベースはHarmonyOS NEXT (API 15+) の日本語 IME です。フリック入力・QWERTY ローマ字入力の両方に対応し、独自AI(shuntelligence)によるgoogle日本語入力やCopilot Keyboardを超える高精度な漢字変換をスマホでも完全ローカルで実現します。個人開発のオープンソースプロジェクトです。
 
 > **開発者**: shuntilettuce
-> **コントリビューター**: [HiSubway] (https://github.com/HiSubway)
+> **コントリビューター**: [HiSubway](https://github.com/HiSubway)
 > （さぶうぇい） — テーマ機能を追加（[#57](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/pull/57)）<br>
-> [端島] (https://github.com/Bakunetsuuuuu)
+> [端島](https://github.com/Bakunetsuuuuu)
 >（ばくねつ）　-　HarmonyOSPC向けモードの実装 <br>
 > **最新バージョン**: 1.6.0（[更新履歴](./CHANGELOG.md)）<br>
-> **ライセンス**: [MIT](./LICENSE)（バンドル辞書データは別ライセンス、下記参照）<br
-                                                      >
+> **ライセンス**: [MIT](./LICENSE)（バンドル辞書データは別ライセンス、下記参照）<br>
 
 ---
 
@@ -79,7 +78,7 @@ sudo apt install ./fcitx5-shunti_0.1.0_amd64.deb
 |---|---|
 | **フリック入力** | Gboard 風 4×5 レイアウト。上下左右フリックでかな入力 |
 | **QWERTY ローマ字入力** | 全ローマ字パターン対応（っ/ん/拗音含む） |
-| **物理キーボードによるローマ字・英字入力** | 物理キーボードでの日本語ローマ字入力・英字入力に対応（っ/ん/拗音含む）日本語入力時に一文字目を大文字にすると自動的に英字入力に切り替える機能搭載 |
+| **物理キーボードによるローマ字・英字入力** | 物理キーボード（US 配列）での日本語ローマ字入力・英字入力に対応（っ/ん/拗音含む）。Shift で大文字にすると、そこから後ろは英字のまま入る（`Windows` → Windows / windows / WINDOWS と全角）。どの読みでも候補の最後に英字の候補を足す |
 | **モード切替** | ひらがな / カタカナ / 英数字をワンタップで切替 |
 | **濁点・半濁点** | フリックキーで゛゜を即時付与・サイクル |
 
@@ -106,10 +105,29 @@ sudo apt install ./fcitx5-shunti_0.1.0_amd64.deb
 | **クリップボード** | コピーしたテキストを候補バーに表示してワンタップ貼り付け。画像・ファイルは対応アプリの貼り付け機能を呼び出し |
 | **片手モード** | キーボード全体を左右どちらかに寄せて縮小表示 |
 | **ダークモード** | 端末の設定に自動追従（手動切替なし） |
-| **PC用コンパクトIME機能** | PCやタブレットでの仕様を想定し、物理キーボードに特化したコンパクトなIMEインターフェースと変換候補ポップアップを実装。AIによるリアルタイム変換と合わせてストレスフリーに入力が可能。 |
+| **PC モード** | 物理キーボードをつなぐと自動で切り替わる。ソフトキーボードの代わりに小さな言語バーと、カーソルの下に出る Windows 11 風の候補ウィンドウを表示。キー操作は Windows の IME（Microsoft IME）に合わせた。詳しくは下記「PC モード（物理キーボード）」 |
 
 ### 設定
-キーボードパネルの ⚙ から開く設定画面で、キーボードレイアウト（QWERTY / フリック）・片手モード・変換エンジン・クリップボード履歴・などを利用できます。
+キーボードパネルの ⚙ から開く設定画面で、キーボードレイアウト（QWERTY / フリック）・片手モード・変換エンジン・クリップボード履歴・PCモード（自動／オン／オフ）などを利用できます。
+
+---
+
+## PC モード（物理キーボード）
+
+物理キーボードをつなぐと、ソフトキーボードの代わりに **言語バー** と **候補ウィンドウ** を出します。設定の「PCモード」で 自動（既定）／オン／オフ を選べます。
+
+- **言語バー**: [あ/A] [仮想キー] [絵文字] [設定]。ドラッグで動かせ、位置は覚えておく。設定・絵文字は言語バーから今までの画面を開く
+- **候補ウィンドウ**: カーソルの下（入らなければ上）に Windows 11 風の一覧
+- **主なキー**（Windows の IME と同じ）
+  - 半角/全角・Alt+` … 日本語入力のオン／オフ
+  - Space・変換 … 変換／次の候補、Enter … 確定、Esc … 取り消し
+  - ← → … 読みの中のカーソル移動、Shift+← → … 変換する範囲の伸び縮み
+  - F6〜F10 … ひらがな／カタカナ／半角カタカナ／全角英数／半角英数
+  - Ctrl・Alt との同時押し … 確定してからアプリへ渡す
+- 対応は US 配列のローマ字入力です（かな入力・JIS 配列は未対応）
+- **Android コンテナ（卓易通）のアプリでは物理キーで入力できません**。システム側で、この IME へキーが渡されないためです。そこではシステムの入力メソッド（Celia）を使ってください
+
+キー操作の一覧と仕組みは [entry/src/main/ets/pc/README.md](./entry/src/main/ets/pc/README.md) にあります。
 
 ---
 
@@ -128,7 +146,7 @@ AI変換による高精度な変換が可能になったため、旧来の独自
 
 ### 必要環境
 
-- [DevEco Studio](https://developer.huawei.com/consumer/cn/deveco-studio/)（HarmonyOS NEXT SDK, API 12+）
+- [DevEco Studio](https://developer.huawei.com/consumer/cn/deveco-studio/)（HarmonyOS NEXT SDK, API 15+）
 - Node.js（辞書生成・評価スクリプト用）
 - 実機または HarmonyOS エミュレータ、`hdc`（HarmonyOS Device Connector、SDK同梱）
 
@@ -202,8 +220,12 @@ entry/src/main/ets/
     JapaneseConverter.ets    ローマ字/フリック入力の変換・文字種処理
     ConjugationEngine.ets    活用形の自動展開（ユーザー辞書登録時など）
     InputLog.ets             デバッグ専用の入力ログ収集（下記参照）
+  pc/           PCモード（物理キーボード・言語バー・候補ウィンドウ）
+    PcModeController.ets     PCモードの入り切り・パネルの置き場所
+    PhysicalKeyRouter.ets    物理キーの処理（Windows の IME に合わせたキー操作）
+    KeyMap.ets               US 配列のキー表・全角半角の書き換え
   components/    キーボードUI（フリック/QWERTY/記号/絵文字/設定画面 等）
-  pages/         本体アプリ側の画面（設定・ユーザー辞書・プライバシーポリシー）
+  pages/         本体アプリ側の画面（設定・ユーザー辞書・プライバシーポリシー）、言語バーの画面（LangBarPage）
 tools/
   mozc_data/     mozc/JMdict/SudachiDictから統計データエンジンの辞書を構築するスクリプト群
   ime-eval/      変換精度の回帰テスト（corpus_test*.js）
