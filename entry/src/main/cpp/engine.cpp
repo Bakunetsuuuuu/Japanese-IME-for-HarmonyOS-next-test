@@ -208,11 +208,42 @@ struct Lex {
             const uint64_t h = hash16(r, rn), h2 = (h >> 32) | 1;
             for (int j = 0; j < 4; j++) { const size_t b = size_t((h + j * h2) % bits); bloom[b >> 6] |= 1ULL << (b & 63); }
         }
+        build_pbloom();
     }
-    bool maybe(const uint16_t* k, int n) const {
+    // 読みの頭 (どこかの読みがこれで始まる) のブルームフィルタ。打ち間違いの辺づくりで、区間を後ろへ延ばしても語が無いと
+    // 分かったら延ばすのをやめる (結果は同じ。頭の無い区間の引きを省く)
+    std::vector<uint64_t> pbloom;
+    size_t pbits = 0;
+    void build_pbloom() {
+        if (!pbloom.empty() || nread <= 0) return;
+        std::unordered_set<uint64_t> heads;   // 頭の数を数えてから大きさを決める (同じ頭は 1 つ)
+        uint16_t buf[MAXR];
+        for (int i = 0; i < nread; i++) {
+            int rn;
+            const uint16_t* r = reading(i, rn, buf);
+            uint64_t h = 1469598103934665603ULL;
+            for (int j = 0; j < rn; j++) { h ^= r[j]; h *= 1099511628211ULL; heads.insert(h ^ (h >> 29)); }
+        }
+        pbits = std::max<size_t>(64, heads.size() * 10);
+        pbloom.assign((pbits + 63) / 64, 0);
+        for (uint64_t h : heads) {
+            const uint64_t h2 = (h >> 32) | 1;
+            for (int j = 0; j < 3; j++) { const size_t b = size_t((h + j * h2) % pbits); pbloom[b >> 6] |= 1ULL << (b & 63); }
+        }
+    }
+    // h = 読みの頭の FNV (hash16 と同じ作り)。無ければ false (あるかもしれなければ true)
+    bool maybe_head(uint64_t h) const {
+        if (pbloom.empty()) return true;
+        const uint64_t h2 = (h >> 32) | 1;
+        for (int j = 0; j < 3; j++) { const size_t b = size_t((h + j * h2) % pbits); if (!(pbloom[b >> 6] >> (b & 63) & 1)) return false; }
+        return true;
+    }
+    bool maybe(const uint16_t* k, int n) const { return maybe_hash(hash16(k, n)); }
+    // h = hash16 の値
+    bool maybe_hash(uint64_t h) const {
         if (bloom.empty()) return true;
         const size_t bits = bloom.size() * 64 > size_t(nread) * 12 ? size_t(nread) * 12 : bloom.size() * 64;
-        const uint64_t h = hash16(k, n), h2 = (h >> 32) | 1;
+        const uint64_t h2 = (h >> 32) | 1;
         for (int j = 0; j < 4; j++) { const size_t b = size_t((h + j * h2) % bits); if (!(bloom[b >> 6] >> (b & 63) & 1)) return false; }
         return true;
     }
@@ -734,6 +765,18 @@ std::string neighbors(char c) {
 double T_[6] = {0, 0, 0, 0, 0, 0};   // 計測用: 候補づくり・かなへ直す・1 語・2 語・道のコスト・残り (ミリ秒の合計)
 inline double now_ms() { return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now().time_since_epoch()).count(); }
 
+// 読み s の [a, e) の頭の FNV を、e を延ばしながら作る (Lex::maybe_head で「その頭で始まる読みがあるか」を見る)
+struct Head {
+    const ustr& s;
+    int a, e;
+    uint64_t h = 1469598103934665603ULL;
+    Head(const ustr& s0, int a0) : s(s0), a(a0), e(a0) {}
+    bool to(int upto, const Lex& L) {
+        while (e < upto) { h ^= uint64_t(s[size_t(e)]); h *= 1099511628211ULL; e++; }
+        return L.maybe_head(h ^ (h >> 29));
+    }
+};
+
 void add_edges(const Lex& L, const ustr& r, int off, const std::vector<Edge>& base, const Ctx& ctx, std::vector<Edge>& out) {
     init();
     double t0 = now_ms();
@@ -795,8 +838,12 @@ void add_edges(const Lex& L, const ustr& r, int off, const std::vector<Edge>& ba
     // 鍵は読みの 64 ビットのハッシュ (文字列を作らずに引く。かなの読みどうしの衝突は実際上起きない)
     std::unordered_map<uint64_t, std::pair<uint32_t, uint32_t>> memo;
     auto look = [&](const ustr& s, int a0, int a1, uint32_t& a, uint32_t& b) -> bool {
-        uint64_t h = 1469598103934665603ULL ^ uint64_t(a1 - a0);
+        // まず読みのブルームフィルタ (hash16 と同じハッシュ) で、辞書に無い区間を覚えずに捨てる (ほとんどの区間は無い)
+        uint64_t h = 1469598103934665603ULL;
         for (int i = a0; i < a1; i++) h = (h ^ uint64_t(s[size_t(i)])) * 1099511628211ULL;
+        h ^= h >> 29;
+        if (!L.maybe_hash(h)) return false;
+        h ^= uint64_t(a1 - a0) << 56;   // 覚える鍵は長さも混ぜる
         auto it = memo.find(h);
         if (it == memo.end()) {
             std::u16string k16(s.begin() + a0, s.begin() + a1);
@@ -893,7 +940,11 @@ void add_edges(const Lex& L, const ustr& r, int off, const std::vector<Edge>& ba
         double ta = now_ms();
         // 直した読みで、変わった所 [p, n2 - q) を覆う語 (2 字以上)
         for (int s2 = std::max(0, p - MAX_WORD_KANA + 1); s2 <= std::min(p, n2 - 1); s2++) {
-            for (int e2 = std::max(n2 - q, s2 + 2); e2 <= std::min(n2, s2 + MAX_WORD_KANA); e2++) {
+            const int emin = std::max(n2 - q, s2 + 2), emax = std::min(n2, s2 + MAX_WORD_KANA);
+            if (emin > emax) continue;
+            Head hd(k2, s2);
+            for (int e2 = emin; e2 <= emax; e2++) {
+                if (!hd.to(e2, L)) break;   // k2[s2, e2) で始まる読みが無い: 延ばしても語は無い
                 const int s = s2, e = e2 - n2 + n1;   // 元の読みの区間 (変わった所より前は同じ、後ろは長さの差だけずれる)
                 if (e <= s || e > n1 || e < n1 - q) continue;
                 // 区間の下限 (語のコスト 0・つながり 0) で引く前に捨てる
@@ -923,7 +974,9 @@ void add_edges(const Lex& L, const ustr& r, int off, const std::vector<Edge>& ba
                 if (!look(k2, s2, m, a1, b1)) continue;
                 const std::vector<Ent>& c1 = cheapest_m(a1, b1);
                 if (c1.empty()) continue;
+                Head hd2(k2, m);
                 for (int e2 = std::max(hi, m + 1); e2 <= std::min(n2, m + MAX_WORD_KANA); e2++) {
+                    if (!hd2.to(e2, L)) break;   // 後ろの語 k2[m, e2) で始まる読みが無い
                     if (m == lo && e2 == hi && lo == hi) continue;
                     uint32_t a2, b2;
                     const int s = s2, e = e2 - n2 + n1;
