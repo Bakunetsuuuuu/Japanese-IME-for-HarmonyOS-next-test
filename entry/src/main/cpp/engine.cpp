@@ -612,7 +612,7 @@ void init() {
 
 bool is_vowel(char c) { return c == 'a' || c == 'i' || c == 'u' || c == 'e' || c == 'o'; }
 
-// かな 1 字の置き換えの候補: 同じ行の母音違い (か -> き・く・け・こ)、清濁・半濁 (か <-> が、は <-> ば・ぱ)、大小 (や <-> ゃ)
+// かな 1 字の置き換えの候補: 同じ行の母音違い (か -> き・く・け・こ)、清濁・半濁 (か <-> が、は <-> ば・ぱ)、大小 (や <-> ゃ)、フリックの隣のキー
 std::vector<char32_t> kana_alts(char32_t c) {
     static const char32_t* ROWS[] = {U"あいうえお", U"かきくけこ", U"さしすせそ", U"たちつてと", U"なにぬねの", U"はひふへほ",
                                      U"まみむめも", U"やゆよ", U"らりるれろ", U"わをん", U"がぎぐげご", U"ざじずぜぞ", U"だぢづでど",
@@ -630,6 +630,34 @@ std::vector<char32_t> kana_alts(char32_t c) {
             if (std::u32string_view(g[k]).find(c) != std::u32string_view::npos)
                 for (const char32_t* x = g[k]; *x; x++) if (*x != c) out.push_back(*x);
     }
+    // フリックの隣のキー (考えている向きの隣: 上下フリックなら上下、左右なら左右、タップは上下左右)。こんにちは -> のんにちは。
+    // typo_sampler.flick_adjacent と同じ。濁点つきの字は隣の字にも濁点をつける (つけられなければそのまま)
+    static const char32_t* KEYS[4][3] = {{U"あいうえお", U"かきくけこ", U"さしすせそ"}, {U"たちつてと", U"なにぬねの", U"はひふへほ"},
+                                         {U"まみむめも", U"や_ゆ_よ", U"らりるれろ"}, {nullptr, U"わをん__", nullptr}};
+    static const std::u32string_view VB = U"かきくけこさしすせそたちつてとはひふへほ", VV = U"がぎぐげござじずぜぞだぢづでどばびぶべぼ",
+                                     PP = U"ぱぴぷぺぽ";
+    char32_t base = c;
+    if (size_t q = VV.find(c); q != std::u32string_view::npos) base = VB[q];
+    if (size_t q = PP.find(c); q != std::u32string_view::npos) base = VB[15 + q];
+    for (int r = 0; r < 4; r++)
+        for (int col = 0; col < 3; col++) {
+            const char32_t* row = KEYS[r][col];
+            if (!row) continue;
+            for (int d = 0; row[d]; d++) {
+                if (row[d] != base) continue;
+                static const int ALL[4][2] = {{-1, 0}, {1, 0}, {0, -1}, {0, 1}};
+                const int lo = d == 0 ? 0 : (d == 2 || d == 4) ? 0 : 2, hi = d == 0 ? 4 : (d == 2 || d == 4) ? 2 : 4;
+                for (int k = lo; k < hi; k++) {
+                    const int rr = r + ALL[k][0], cc = col + ALL[k][1];
+                    if (rr < 0 || rr > 3 || cc < 0 || cc > 2 || !KEYS[rr][cc]) continue;
+                    const std::u32string_view nb = KEYS[rr][cc];
+                    if (size_t(d) >= nb.size() || nb[d] == U'_') continue;
+                    char32_t x = nb[d];
+                    if (base != c) if (size_t q = VB.find(x); q != std::u32string_view::npos) x = VV[q];
+                    if (x != c && std::find(out.begin(), out.end(), x) == out.end()) out.push_back(x);
+                }
+            }
+        }
     return out;
 }
 
