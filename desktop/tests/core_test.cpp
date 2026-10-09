@@ -223,6 +223,22 @@ int main(int argc, char** argv) {
         expect("suggestion commit", c.take_commit(), first);
     }
 
+    // ---- 提案の列: Shift+↓ で入り、→ で 2 つ目、Enter で確定
+    keys(c, "kyou{S-down}{right}");
+    if (c.view().sugg_sel != 1) { printf("FAIL sugg_sel %d\n", c.view().sugg_sel); failures++; }
+    {
+        u16 second = c.view().sugg_text.size() > 1 ? c.view().sugg_text[1] : u16();
+        keys(c, "{enter}");
+        expect("suggestion second", c.take_commit(), second);
+    }
+
+    // ---- 候補の続き: 最後のページまで進むと読み足す (30 件で切れない)
+    keys(c, "kou{sp}");
+    for (int i = 0; i < 6; i++) keys(c, "{pgdn}");
+    printf("     kou cands after paging: %d\n", int(c.view().cands.size()));
+    if (c.view().cands.size() <= 31) { printf("FAIL no more candidates loaded\n"); failures++; }
+    keys(c, "{esc}{esc}");
+
     // ---- 変換したらすぐ候補の窓が出る
     keys(c, "kawa{sp}");
     if (!c.view().cand_open) { printf("FAIL cands not open after convert\n"); failures++; }

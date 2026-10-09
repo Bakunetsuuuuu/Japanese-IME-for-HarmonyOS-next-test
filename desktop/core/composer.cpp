@@ -235,6 +235,34 @@ void Composer::type_char(char16_t c, bool raw) {
 }
 
 bool Composer::press_input(const KeyEvent& ev) {
+    // 提案の列: Shift+↓ / Shift+Tab で入り、←→ / Tab / Shift+Tab で選び、Enter・空白で確定、Esc・↑ で戻る。ほかのキーは列を出てふつうに
+    if (sugg_focus_ < 0 && ev.shift && (ev.key == Key::Down || ev.key == Key::Tab) && !live_sugg_.empty()) {
+        sugg_focus_ = 0;
+        return true;
+    }
+    if (sugg_focus_ >= 0) {
+        const int n = int(live_sugg_.size());
+        switch (ev.key) {
+            case Key::Right: case Key::Down:
+                sugg_focus_ = (sugg_focus_ + 1) % std::max(1, n);
+                return true;
+            case Key::Left:
+                sugg_focus_ = (sugg_focus_ + n - 1) % std::max(1, n);
+                return true;
+            case Key::Tab:
+                sugg_focus_ = ev.shift ? (sugg_focus_ + n - 1) % std::max(1, n) : (sugg_focus_ + 1) % std::max(1, n);
+                return true;
+            case Key::Enter: case Key::Space:
+                select_suggestion(sugg_focus_);
+                return true;
+            case Key::Escape: case Key::Up:
+                sugg_focus_ = -1;
+                return true;
+            default:
+                sugg_focus_ = -1;
+                break;
+        }
+    }
     switch (ev.key) {
         case Key::Char:
             type_char(ev.ch, ev.raw);
@@ -328,6 +356,8 @@ bool Composer::press_convert(const KeyEvent& ev) {
     auto set_sel = [&](int i) {
         if (!s.loaded) load_cands(focus_);
         if (s.cands.empty()) return;
+        // 最後のページに入るなら、先に続きを読む (候補が途中で切れないように)
+        if (i >= 0 && i / PAGE >= (int(s.cands.size()) - 1) / PAGE) load_more(focus_);
         int n = int(s.cands.size());
         s.sel = ((i % n) + n) % n;
         s.surface = s.cands[size_t(s.sel)];
@@ -461,6 +491,7 @@ void Composer::update_live() {
         return;
     }
     live_key_ = key;
+    sugg_focus_ = -1;
     live_sugg_.clear();
     live_sugg_kinds_.clear();
     for (size_t i = 0; i < c.sugg.size(); i++) {
@@ -728,6 +759,22 @@ void Composer::load_cands(size_t i) {
     s.loaded = true;
 }
 
+void Composer::load_more(size_t i) {
+    Seg& s = segs_[i];
+    if (!conv_ || s.limit >= 2000) return;
+    s.limit = std::max(s.limit, kCandidates) * 4;
+    u16 head = s.reading.substr(0, s.reading.size() - s.tail_r.size());
+    std::vector<u16> more;
+    if (segs_.size() == 1 && !whole_.empty()) {   // 文全体の候補: 変換の上位をもっと
+        for (auto& c : conv_->convert(left_context(i), s.reading, s.limit).cands) more.push_back(c);
+    } else {
+        for (auto& c : conv_->convert(left_context(i), head, s.limit).cands) more.push_back(c + s.tail_s);
+    }
+    // その読みの辞書の語を全部 (読みがちょうどその語。打ち切らない)
+    for (auto& w : conv_->complete(head, s.limit, 0)) more.push_back(w + s.tail_s);
+    for (auto& c : more) push_unique(s.cands, c);
+}
+
 void Composer::resize_focus(int delta) {
     cand_open_ = false;
     Seg& s = segs_[focus_];
@@ -856,6 +903,7 @@ void Composer::to_idle() {
     live_key_.clear();
     live_cands_.clear();
     live_sugg_.clear();
+    sugg_focus_ = -1;
     live_sugg_kinds_.clear();
     prev_segs_.clear();
     frozen_.clear();
@@ -921,6 +969,7 @@ void Composer::rebuild_view() {
                 v.sugg_text.push_back(fz + s);
                 v.sugg_kinds.push_back(k);
             }
+            v.sugg_sel = sugg_focus_ < int(v.sugg.size()) ? sugg_focus_ : -1;
             v.cand_open = true;
         }
     } else if (state_ == State::Convert) {

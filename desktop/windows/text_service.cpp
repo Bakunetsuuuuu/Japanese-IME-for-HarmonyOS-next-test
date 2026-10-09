@@ -540,7 +540,7 @@ void TextService::apply(TfEditCookie ec, ITfContext* ctx) {
 }
 
 void TextService::update_candidates(TfEditCookie ec, ITfContext* ctx, const View& v) {
-    if (!v.cand_open || !comp_) { cand_.hide(); return; }
+    if (!comp_ || ((!v.cand_open || v.cands.empty()) && v.sugg.empty())) { cand_.hide(); return; }
     ComPtr<ITfContextView> view;
     ComPtr<ITfRange> r, a;
     RECT rc = {};
@@ -564,7 +564,7 @@ void TextService::update_candidates(TfEditCookie ec, ITfContext* ctx, const View
         }
     }
     if (!hwnd) hwnd = GetFocus();
-    cand_.show(v.cands, v.cand_sel, rc, hwnd, v.sugg);
+    cand_.show(v.cand_open ? v.cands : std::vector<u16>{}, v.cand_sel, rc, hwnd, v.sugg, v.sugg_sel);
 }
 
 void TextService::finish_composition() {

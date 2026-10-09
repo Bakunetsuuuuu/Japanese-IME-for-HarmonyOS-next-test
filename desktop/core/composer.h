@@ -52,6 +52,7 @@ struct View {
     // 提案 (打っている間だけ。候補の窓の上の行に出す)。sugg = 見せる形、sugg_text = 確定する文 (固定した前の方込み)
     std::vector<u16> sugg, sugg_text;
     std::vector<int> sugg_kinds;
+    int sugg_sel = -1;            // 提案の列で選んでいるもの (-1 = 提案の列に入っていない)
 };
 
 // 入力の記録 (デバッグ用のビルドだけが受け取って書く。HarmonyOS 版 InputLog.ets と同じ種別とキー)。
@@ -124,6 +125,7 @@ private:
         bool loaded = false;
         int sel = 0;
         bool changed = false;    // 変換のあとで選び直した (確定したときに学習する)
+        int limit = 0;           // 読み込んだ候補の数の上限 (最後のページに来たら増やして続きを読む)
     };
 
     void start_input();
@@ -138,6 +140,7 @@ private:
     std::vector<Seg> convert_phrases(const u16& ctx, const u16& reading, std::vector<u16>* whole);
     u16 left_context(size_t seg) const;
     void load_cands(size_t i);
+    void load_more(size_t i);   // 最後のページに来た: 候補の続き (変換の上位をもっと + その読みの辞書の語を全部) を足す
     void resize_focus(int delta);
     void transform(Key f);
     u16 alpha_source(const u16& reading) const;
@@ -180,6 +183,7 @@ private:
     std::vector<u16> live_cands_;
     std::vector<u16> live_sugg_;          // 提案 (Conversion::sugg。打っている間の変換のもの)
     std::vector<int> live_sugg_kinds_;
+    int sugg_focus_ = -1;                 // 提案の列で選んでいるもの (Shift+↓ / Shift+Tab で入る。-1 = 入っていない)
     u16 live_top_;                       // 打っている間の変換そのものの 1 位 (予測・決まり文句を足す前)。ライブ変換で見せる
     std::map<size_t, u16> prev_segs_;    // 前回の 1 位の (語の区切りの読みの位置 -> そこまでの表記)
     // 固定した前の方 (保留)。入力欄には確定せず、変換した形で入力中の頭に見せる。変換 (空白) すると頭の文節になり、選び直せる。

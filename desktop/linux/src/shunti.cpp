@@ -219,8 +219,10 @@ void ShuntiState::apply() {
     }
     // 提案 (候補の上の補助の行に。Shift+Enter で 1 つ目を確定)
     if (!v.sugg.empty()) {
-        std::string a = "提案 (Shift+Enter):";
-        for (size_t i = 0; i < v.sugg.size() && i < 5; i++) a += "  " + to_utf8(v.sugg[i]);
+        // 選んでいる提案は [ ] で囲む (Shift+↓ で列に入り ←→ で選ぶ)
+        std::string a = "提案 (Shift+↓):";
+        for (size_t i = 0; i < v.sugg.size() && i < 6; i++)
+            a += int(i) == v.sugg_sel ? "  [" + to_utf8(v.sugg[i]) + "]" : "  " + to_utf8(v.sugg[i]);
         panel.setAuxUp(fcitx::Text(a));
     }
     if (v.cand_open && !v.cands.empty()) {

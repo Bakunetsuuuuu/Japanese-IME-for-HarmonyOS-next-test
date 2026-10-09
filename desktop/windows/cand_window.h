@@ -16,7 +16,9 @@ public:
     ~CandWindow();
     // anchor = 選んでいる文節の字の画面上の四角。owner = 入力欄の窓
     // sugg = 提案 (候補の上の 1 行。空なら出さない)
-    void show(const std::vector<u16>& cands, int sel, const RECT& anchor, HWND owner, const std::vector<u16>& sugg = {});
+    // sugg = 提案 (いちばん下の行の左に札で並べる)。sugg_sel = 選んでいる提案 (-1 = 提案の列に入っていない)
+    void show(const std::vector<u16>& cands, int sel, const RECT& anchor, HWND owner, const std::vector<u16>& sugg = {},
+              int sugg_sel = -1);
     void hide();
     void destroy();
     bool visible() const { return hwnd_ && IsWindowVisible(hwnd_); }
@@ -30,6 +32,8 @@ private:
     void layout();
     int hit(int x, int y) const;
     int hit_sugg(int x, int y) const;
+    std::wstring sugg_label() const;
+    std::wstring foot_text(int n) const;
 
     HWND hwnd_ = nullptr;
     HWND owner_ = nullptr;
@@ -38,7 +42,7 @@ private:
     std::vector<u16> cands_;
     std::vector<u16> sugg_;
     std::vector<std::pair<int, int>> sugg_x_;   // 提案の札の左右 (当たり判定)
-    int sugg_h_ = 0;                             // 提案の行の高さ (無ければ 0)
+    int sugg_sel_ = -1;
     int sel_ = 0, page_ = 0;
     int row_h_ = 0, pad_ = 0, num_w_ = 0, width_ = 0, height_ = 0, footer_h_ = 0;
 };
