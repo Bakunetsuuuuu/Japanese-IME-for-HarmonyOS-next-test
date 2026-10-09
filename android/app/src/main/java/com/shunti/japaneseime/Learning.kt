@@ -67,9 +67,20 @@ class Learning(private val file: File) {
         if (prefix.isEmpty()) return emptyList()
         return learned.entries.asSequence()
             .filter { it.key.length > prefix.length && it.key.startsWith(prefix) }
-            .flatMap { e -> e.value.entries.map { it.key to it.value } }
+            .flatMap { e -> e.value.entries.filter { !redundant(prefix, e.key, it.key) }.map { it.key to it.value } }
             .sortedByDescending { it.second }
             .map { it.first }.distinct().take(max).toList()
+    }
+
+    /**
+     * 続きの候補として冗長か (HarmonyOS 版 PredictiveConversion.redundantCompletion と同じ。ユーザー 2026-10-09: 冗長な候補を学習しやすく、
+     * 1 熟語で変換したいのに余分を消す手間が出る)。
+     * 続きが表記の終わりのかなを足しただけ (しゃしん + を -> 写真を)、または助詞を挟んで別の語に続く (写真を撮った) もの
+     */
+    private fun redundant(prefix: String, reading: String, surface: String): Boolean {
+        val ext = reading.substring(prefix.length)
+        if (ext.isNotEmpty() && surface.endsWith(ext)) return true
+        return PARTICLE_GAP.containsMatchIn(surface)
     }
 
     fun clear() {
@@ -92,6 +103,8 @@ class Learning(private val file: File) {
 
     companion object {
         private val ENGLISH = Regex("[a-z][a-z-]+")
+        /** 語の切れ目の助詞 (の・送り仮名は 1 語の中にもあるので見ない: 柿の種・お疲れ様) */
+        private val PARTICLE_GAP = Regex("[一-鿿々ァ-ヺ][をにがはでとへもや][一-鿿々ァ-ヺ]")
         private var instance: Learning? = null
 
         /** キーボードと設定画面で同じものを使う (設定画面で消した学習を、キーボードが古い中身で書き戻さないように) */
