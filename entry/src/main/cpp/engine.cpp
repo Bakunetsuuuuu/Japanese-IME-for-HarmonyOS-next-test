@@ -2761,6 +2761,20 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         }
         if (int(res.size()) > maxout) res.resize(size_t(maxout));
     }
+    // 端末のフォントに無く豆腐 (□) になる字を含む候補は出さない (2026-10-09 HarmonyOS で 𛀂 が豆腐に):
+    // 変体仮名・かなの拡張 (U+1B000-1B16F)、ヒエログリフ (U+13000-1345F)、麻雀牌・ドミノ・トランプ (U+1F000-1F0FF、絵文字の 🀄 🃏 は残す)
+    {
+        auto tofu = [](const ustr& c) {
+            for (char32_t ch : c)
+                if ((ch >= 0x1B000 && ch <= 0x1B16F) || (ch >= 0x13000 && ch <= 0x1345F) ||
+                    (ch >= 0x1F000 && ch <= 0x1F0FF && ch != 0x1F004 && ch != 0x1F0CF))
+                    return true;
+            return false;
+        };
+        res.erase(std::remove_if(res.begin(), res.end(), tofu), res.end());
+        e->suggest.erase(std::remove_if(e->suggest.begin(), e->suggest.end(), [&](const std::pair<int, ustr>& x) { return tofu(x.second); }),
+                         e->suggest.end());
+    }
     // 提案モード: 絵文字・顔文字・かっこ・記号だけの候補 (かな・漢字・英数字を含まない) は候補の帯から提案の帯へ。
     // 読みにかなが無い (記号を打った) ときはそのまま。候補が 1 つも残らないときもそのまま
     if (e->suggest_mode && std::any_of(r.begin(), r.end(), [](char32_t c) { return c >= 0x3041 && c <= 0x30FA; })) {
