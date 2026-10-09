@@ -190,7 +190,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
             addView(sRow, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         val sBox = FrameLayout(this).apply {
-            visibility = View.GONE
+            visibility = suggHidden()
             addView(sScroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
         }
         val blk = LinearLayout(this).apply {
@@ -552,11 +552,17 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         main.post(r)
     }
 
+    /**
+     * 提案が無いときの提案の行。提案を分けて出す設定では場所を空けたまま (INVISIBLE) にする:
+     * 出し入れでキーボードの高さが変わると、打っている最中にキーが上下してフリックが暴発した (ユーザー 2026-10-09)
+     */
+    private fun suggHidden(): Int = if (settings.separateSuggest) View.INVISIBLE else View.GONE
+
     private fun showSuggestions() {
         val box = suggBox ?: return
         val row = suggRow ?: return
         val sg = input.suggestions
-        if (sg.isEmpty() || input.inputState != InputHandler.InputState.COMPOSING) { box.visibility = View.GONE; return }
+        if (sg.isEmpty() || input.inputState != InputHandler.InputState.COMPOSING) { box.visibility = suggHidden(); return }
         val dp = resources.displayMetrics.density
         val accent = theme.getValue("accent")
         row.removeAllViews()
@@ -651,7 +657,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         if (key != suggKey) {
             suggKey = key
             main.removeCallbacks(suggShow)
-            suggBox?.visibility = View.GONE
+            suggBox?.visibility = suggHidden()
             if (sg.isNotEmpty()) main.postDelayed(suggShow, 200)
         }
         // 選んでいる候補が見えるように
