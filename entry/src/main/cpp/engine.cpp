@@ -964,6 +964,23 @@ void add_edges(const Lex& L, const ustr& r, int off, const std::vector<Edge>& ba
         t_two += now_ms() - tb;
     }
     T_[2] += t_one; T_[3] += t_two;
+    // よくある誤読 (げっきょく -> 月極・はじょう -> 破綻): 辞書の、読みの頭に印 U+0001 をつけた項目 (kkc/make_misread_list.py。
+    // JMdict の ik と教材の「〜と読んでた」から)。打ち間違いの直しと同じ辺にして、直すか (その読みの別の語か) は採点器が文脈で決める
+    {
+        ustr mk;
+        for (int s = 0; s < n1; s++)
+            for (int e = s + 2; e <= std::min(n1, s + MAX_WORD_KANA); e++) {
+                if (ctx.lmin[size_t(s + off)] + TYPO_COST + ctx.rmin[size_t(e + off)] - 2000 > ctx.best + TYPO_KEEP) continue;
+                mk.assign(1, char32_t(1));
+                mk.append(r, size_t(s), size_t(e - s));
+                uint32_t a, b;
+                if (!look(mk, 0, int(mk.size()), a, b)) continue;
+                for (uint32_t j = a; j < b; j++) {
+                    const Ent en = L.ent(j);
+                    add(s, e, from16(L.s_blob + en.soff, en.slen), int32_t(en.lid), int32_t(en.rid), en.cost + TYPO_COST);
+                }
+            }
+    }
     double t3 = now_ms();
     std::vector<Cand> cs;
     for (auto& kv : cand) cs.push_back(kv.second);
