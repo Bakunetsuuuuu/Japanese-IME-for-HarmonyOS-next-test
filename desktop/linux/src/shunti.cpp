@@ -217,6 +217,12 @@ void ShuntiState::apply() {
         if (ic_->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) panel.setClientPreedit(t);
         else panel.setPreedit(t);
     }
+    // 提案 (候補の上の補助の行に。Shift+Enter で 1 つ目を確定)
+    if (!v.sugg.empty()) {
+        std::string a = "提案 (Shift+Enter):";
+        for (size_t i = 0; i < v.sugg.size() && i < 5; i++) a += "  " + to_utf8(v.sugg[i]);
+        panel.setAuxUp(fcitx::Text(a));
+    }
     if (v.cand_open && !v.cands.empty()) {
         auto list = std::make_unique<fcitx::CommonCandidateList>();
         list->setPageSize(Composer::PAGE);
@@ -269,6 +275,7 @@ Core& ShuntiEngine::core() {
 void ShuntiEngine::useModel() {
     static const char* const NAMES[] = {"light", "standard", "high"};
     if (core_) core_->use_model(NAMES[std::clamp(*config_.model, 0, 2)]);
+    if (core_) core_->conv.set_suggest(*config_.separateSuggest);
 }
 
 void ShuntiEngine::applyConfig(Composer& c) const {

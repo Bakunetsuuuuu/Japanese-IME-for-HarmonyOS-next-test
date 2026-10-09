@@ -69,6 +69,10 @@ LRESULT CALLBACK CandWindow::proc(HWND h, UINT m, WPARAM w, LPARAM l) {
         case WM_ERASEBKGND:
             return 1;
         case WM_LBUTTONUP:
+            if (self && self->on_sugg_click) {
+                int i = self->hit_sugg(short(LOWORD(l)), short(HIWORD(l)));
+                if (i >= 0) { self->on_sugg_click(i); return 0; }
+            }
             if (self && self->on_click) {
                 int i = self->hit(short(LOWORD(l)), short(HIWORD(l)));
                 if (i >= 0) self->on_click(i);
@@ -80,8 +84,9 @@ LRESULT CALLBACK CandWindow::proc(HWND h, UINT m, WPARAM w, LPARAM l) {
     return DefWindowProcW(h, m, w, l);
 }
 
-void CandWindow::show(const std::vector<u16>& cands, int sel, const RECT& anchor, HWND owner) {
-    if (cands.empty()) { hide(); return; }
+void CandWindow::show(const std::vector<u16>& cands, int sel, const RECT& anchor, HWND owner, const std::vector<u16>& sugg) {
+    if (cands.empty() && sugg.empty()) { hide(); return; }
+    sugg_ = sugg;
     if (!register_class()) return;
     if (!hwnd_ || owner_ != owner) {
         if (hwnd_) DestroyWindow(hwnd_);
@@ -133,6 +138,27 @@ void CandWindow::layout() {
     GetTextExtentPoint32W(dc, L"9", 1, &sz);
     num_w_ = sz.cx + MulDiv(12, int(dpi_), 96);
     int text_w = MulDiv(120, int(dpi_), 96);
+    // 提案の行: 「提案 Shift+Enter」+ 札を横に並べる (小さい字)。幅が足りなければ窓を広げる (640 まで)
+    sugg_x_.clear();
+    sugg_h_ = 0;
+    if (!sugg_.empty()) {
+        SelectObject(dc, small_);
+        TEXTMETRICW st;
+        GetTextMetricsW(dc, &st);
+        sugg_h_ = st.tmHeight + MulDiv(10, int(dpi_), 96);
+        SIZE lz;
+        GetTextExtentPoint32W(dc, L"提案 Shift+Enter", 16, &lz);
+        int x = pad_ + lz.cx + MulDiv(8, int(dpi_), 96);
+        for (auto& s : sugg_) {
+            SIZE z;
+            GetTextExtentPoint32W(dc, W(s), int(s.size()), &z);
+            int w = z.cx + MulDiv(14, int(dpi_), 96);
+            sugg_x_.push_back({x, x + w});
+            x += w + MulDiv(6, int(dpi_), 96);
+        }
+        text_w = std::max(text_w, x - pad_ * 3 - num_w_);
+        SelectObject(dc, font_);
+    }
     int start = page_ * Composer::PAGE;
     int end = std::min(int(cands_.size()), start + Composer::PAGE);
     for (int i = start; i < end; i++) {
@@ -146,11 +172,20 @@ void CandWindow::layout() {
     SelectObject(dc, old);
     ReleaseDC(hwnd_, dc);
     width_ = pad_ + num_w_ + text_w + pad_ * 2;
-    height_ = pad_ / 2 + row_h_ * (end - start) + footer_h_;
+    if (cands_.empty()) footer_h_ = 0;
+    height_ = sugg_h_ + pad_ / 2 + row_h_ * (end - start) + footer_h_;
+}
+
+int CandWindow::hit_sugg(int x, int y) const {
+    if (y < 0 || y >= sugg_h_) return -1;
+    for (size_t i = 0; i < sugg_x_.size(); i++)
+        if (x >= sugg_x_[i].first && x < sugg_x_[i].second) return int(i);
+    return -1;
 }
 
 int CandWindow::hit(int x, int y) const {
     (void)x;
+    y -= sugg_h_;
     int start = page_ * Composer::PAGE;
     int row = (y - pad_ / 2) / std::max(1, row_h_);
     int n = std::min(int(cands_.size()) - start, Composer::PAGE);
@@ -176,8 +211,29 @@ void CandWindow::paint(HDC wdc) {
     int start = page_ * Composer::PAGE;
     int end = std::min(int(cands_.size()), start + Composer::PAGE);
     HGDIOBJ oldf = SelectObject(dc, font_);
+    if (sugg_h_ > 0) {   // 提案の行 (青い字の札)
+        SelectObject(dc, small_);
+        RECT lr = {pad_, 0, width_ - pad_, sugg_h_};
+        SetTextColor(dc, c.accent);
+        DrawTextW(dc, L"提案 Shift+Enter", 16, &lr, DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOPREFIX);
+        HPEN pen = CreatePen(PS_SOLID, 1, c.accent);
+        HGDIOBJ op = SelectObject(dc, pen);
+        HGDIOBJ ob = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        int r = MulDiv(10, int(dpi_), 96), m = MulDiv(3, int(dpi_), 96);
+        for (size_t i = 0; i < sugg_.size() && i < sugg_x_.size(); i++) {
+            const auto& xs = sugg_x_[i];
+            if (xs.second > width_ - pad_ / 2) break;
+            RoundRect(dc, xs.first, m, xs.second, sugg_h_ - m, r, r);
+            RECT tr2 = {xs.first, 0, xs.second, sugg_h_};
+            DrawTextW(dc, W(sugg_[i]), int(sugg_[i].size()), &tr2, DT_SINGLELINE | DT_VCENTER | DT_CENTER | DT_NOPREFIX);
+        }
+        SelectObject(dc, ob);
+        SelectObject(dc, op);
+        DeleteObject(pen);
+        SelectObject(dc, font_);
+    }
     for (int i = start; i < end; i++) {
-        int top = pad_ / 2 + (i - start) * row_h_;
+        int top = sugg_h_ + pad_ / 2 + (i - start) * row_h_;
         RECT row = {MulDiv(3, int(dpi_), 96), top, width_ - MulDiv(3, int(dpi_), 96), top + row_h_};
         bool selected = i == sel_;
         if (selected) {
@@ -200,6 +256,7 @@ void CandWindow::paint(HDC wdc) {
         DrawTextW(dc, W(s), int(s.size()), &tr, DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOPREFIX | DT_END_ELLIPSIS);
     }
     SelectObject(dc, small_);
+    if (cands_.empty()) { SelectObject(dc, oldf); BitBlt(wdc, 0, 0, width_, height_, dc, 0, 0, SRCCOPY); SelectObject(dc, oldb); DeleteObject(bmp); DeleteDC(dc); return; }
     std::wstring foot = sel_ < 0 ? L"Tab で選ぶ  " + std::to_wstring(cands_.size()) + L" 件"
                                  : std::to_wstring(sel_ + 1) + L" / " + std::to_wstring(cands_.size());
     RECT fr = {pad_, height_ - footer_h_, width_ - pad_, height_ - MulDiv(3, int(dpi_), 96)};

@@ -33,6 +33,9 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
     private var prevSegs = HashMap<Int, String>()   // 前回の結果の (区切りの位置 -> そこまでの表記)
     private var lastTarget = ""                     // 最後に出した読みと、その候補 (結果を待つ間の表示に使う)
     private var lastCands: List<String> = emptyList()
+    /** いまの読みの提案 (種類, 表記。表記は固定した前の方込み)。candidates() が更新する */
+    var suggestions: List<Pair<Int, String>> = emptyList()
+        private set
 
     /**
      * 読みの全体 target の候補 (固定した部分を前に付けた文)。変換がまだ届いていなければ、裏で変換を頼み、
@@ -54,6 +57,7 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
             val out = withFrozenAlternatives(hit.cands.map { fSurf + it }, hit.cands[0])
             lastTarget = target
             lastCands = out
+            suggestions = hit.sugg.map { it.first to fSurf + it.second }.filter { it.second != out.firstOrNull() }
             maybeFreeze(tail, hit)
             return out
         }

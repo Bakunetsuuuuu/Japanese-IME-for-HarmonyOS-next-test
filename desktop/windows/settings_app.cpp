@@ -22,7 +22,7 @@ namespace {
 constexpr wchar_t VERSION[] = L"0.4.0";
 
 enum Id {
-    ID_THEME = 100, ID_PUNCT, ID_SPACE, ID_DIGITS, ID_LIVE, ID_LIVEDISPLAY, ID_LIVECOMMIT, ID_CTRLSPACE,
+    ID_THEME = 100, ID_PUNCT, ID_SPACE, ID_DIGITS, ID_LIVE, ID_LIVEDISPLAY, ID_LIVECOMMIT, ID_CTRLSPACE, ID_SUGGEST,
     ID_LIST, ID_READING, ID_WORD, ID_POS, ID_ADD, ID_REMOVE, ID_RESET, ID_LICENSE, ID_GITHUB, ID_ICON, ID_MODEL,
 };
 
@@ -88,6 +88,7 @@ void save() {
     g_s.live_display = checked(ID_LIVEDISPLAY);
     g_s.live_commit = checked(ID_LIVECOMMIT);
     g_s.ctrl_space = checked(ID_CTRLSPACE);
+    g_s.separate_suggest = checked(ID_SUGGEST);
     g_s.model = MODELS[std::clamp(selected(ID_MODEL), 0, 2)];
     if (!save_settings(g_dir / L"settings.json", g_s))
         MessageBoxW(g_wnd, L"設定を保存できませんでした。", L"shunti IME", MB_ICONWARNING);
@@ -163,7 +164,7 @@ void build() {
          0, 24, y + 52, 432, 34, 0);
     y += 102;
 
-    group(L"入力", y, 209);
+    group(L"入力", y, 234);
     make(L"STATIC", L"句読点:", 0, 24, y + 27, 170, 20, 0);
     combo(200, y + 23, 120, ID_PUNCT, {L"、。", L"，．", L"、．", L"，。"});
     make(L"BUTTON", L"何も入力していないときのスペースを全角にする", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 54, 430, 22, ID_SPACE);
@@ -172,7 +173,8 @@ void build() {
     make(L"BUTTON", L"入力中の文字も変換して表示する (ライブ変換)", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 129, 430, 22, ID_LIVEDISPLAY);
     make(L"BUTTON", L"長い入力の前の方を固定して変換を軽く保つ (確定はしない)", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 154, 430, 22, ID_LIVECOMMIT);
     make(L"BUTTON", L"Ctrl + Space でも日本語入力をオン/オフする", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 179, 430, 22, ID_CTRLSPACE);
-    y += 217;
+    make(L"BUTTON", L"提案 (打ち間違いの直し・日付・絵文字など) を候補と分けて表示する", BS_AUTOCHECKBOX | WS_TABSTOP, 24, y + 204, 430, 22, ID_SUGGEST);
+    y += 242;
 
     group(L"ユーザー辞書", y, 266);
     g_list = make(WC_LISTVIEWW, L"", LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS | WS_BORDER | WS_TABSTOP, 24, y + 22, 432, 140, ID_LIST);
@@ -223,6 +225,7 @@ void build() {
     check(ID_LIVEDISPLAY, g_s.live_display);
     check(ID_LIVECOMMIT, g_s.live_commit);
     check(ID_CTRLSPACE, g_s.ctrl_space);
+    check(ID_SUGGEST, g_s.separate_suggest);
     g_loading = false;
     refresh_list();
 }
@@ -233,7 +236,7 @@ LRESULT CALLBACK proc(HWND h, UINT m, WPARAM w, LPARAM l) {
             int id = LOWORD(w), code = HIWORD(w);
             if ((id == ID_THEME || id == ID_PUNCT || id == ID_MODEL) && code == CBN_SELCHANGE) save();
             else if (id == IDCANCEL) DestroyWindow(h);   // 「閉じる」と Esc
-            else if (id >= ID_SPACE && id <= ID_CTRLSPACE && code == BN_CLICKED) save();
+            else if (((id >= ID_SPACE && id <= ID_CTRLSPACE) || id == ID_SUGGEST) && code == BN_CLICKED) save();
             else if (id == ID_ADD) add_word();
             else if (id == ID_REMOVE) remove_word();
             else if (id == ID_RESET) reset_learning();
@@ -298,7 +301,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int show) {
     RegisterClassExW(&wc);
 
     g_dpi = GetDpiForSystem();
-    RECT rc = {0, 0, S(480), S(839)};
+    RECT rc = {0, 0, S(480), S(864)};
     AdjustWindowRectExForDpi(&rc, WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME), FALSE, 0, g_dpi);
     g_wnd = CreateWindowExW(0, wc.lpszClassName, L"shunti IME の設定", WS_OVERLAPPEDWINDOW & ~(WS_MAXIMIZEBOX | WS_THICKFRAME),
                             CW_USEDEFAULT, CW_USEDEFAULT, rc.right - rc.left, rc.bottom - rc.top, nullptr, nullptr, inst, nullptr);

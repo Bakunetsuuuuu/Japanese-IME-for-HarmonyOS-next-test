@@ -49,6 +49,11 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
     private var viewSig = ""   // 画面の作りに効く設定。変わったら作り直す
 
     private var bar: LinearLayout? = null
+    // 提案の行 (候補の帯の上。提案があるときだけ出す)
+    private var suggBox: FrameLayout? = null
+    private var suggRow: LinearLayout? = null
+    private var suggKey = ""
+    private val suggShow = Runnable { showSuggestions() }
     private var scroll: HorizontalScrollView? = null
     private var flick: KeyboardView? = null
     private var qwerty: QwertyKeyboardView? = null
@@ -92,6 +97,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
             main.post {
                 val old = engine
                 engine = e
+                e?.setSuggest(settings.separateSuggest)
                 ai = if (e != null) AiConverter(e, worker, main) else null
                 userSynced = -1   // 新しいエンジンにユーザー辞書を入れ直す
                 syncUserWords()
@@ -176,10 +182,22 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
             addView(sc, LinearLayout.LayoutParams(0, (44 * dp).toInt(), 1f))
             addView(gear, LinearLayout.LayoutParams((44 * dp).toInt(), (44 * dp).toInt()))
         }
+        // 提案の行: 「提案」+ 札を横に (はみ出したら横に動かせる)。打ち間違いの直しは左寄せ、ほかは右寄せ
+        val sRow = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL; gravity = Gravity.CENTER_VERTICAL }
+        val sScroll = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            isFillViewport = true
+            addView(sRow, FrameLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        val sBox = FrameLayout(this).apply {
+            visibility = View.GONE
+            addView(sScroll, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
         val blk = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(theme.getValue("panelBg"))
             if (floating) addView(DragHandle(), LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (20 * dp).toInt()))
+            addView(sBox, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, (34 * dp).toInt()))
             addView(strip)
             addView(frame)
         }
@@ -230,6 +248,9 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         }
         bar = b
         scroll = sc
+        suggBox = sBox
+        suggRow = sRow
+        suggKey = ""
         flick = kb
         qwerty = qw
         palette = pal
@@ -374,6 +395,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         styleNavBar()   // 開くたびに当て直す (窓を作り直すと戻ることがある)
         readClip()
         openEngine()   // 設定で変換モデルを替えた (同じなら何もしない)
+        engine?.setSuggest(settings.separateSuggest)
         syncUserWords()
     }
 
@@ -530,6 +552,53 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         main.post(r)
     }
 
+    private fun showSuggestions() {
+        val box = suggBox ?: return
+        val row = suggRow ?: return
+        val sg = input.suggestions
+        if (sg.isEmpty() || input.inputState != InputHandler.InputState.COMPOSING) { box.visibility = View.GONE; return }
+        val dp = resources.displayMetrics.density
+        val accent = theme.getValue("accent")
+        row.removeAllViews()
+        row.addView(TextView(this).apply {
+            text = "提案"
+            setTextSize(TypedValue.COMPLEX_UNIT_SP, 11f)
+            setTextColor(accent)
+            setPadding((8 * dp).toInt(), 0, (6 * dp).toInt(), 0)
+        })
+        val top = input.candidates.firstOrNull() ?: ""
+        for ((i, s) in sg.withIndex()) {
+            val shown = when {
+                s.first == 1 -> "$top→${s.second}"
+                s.first == 6 && s.second.startsWith(top) -> s.second.substring(top.length)
+                else -> s.second
+            }
+            row.addView(TextView(this).apply {
+                text = shown
+                setTextSize(TypedValue.COMPLEX_UNIT_SP, 13f)
+                setTextColor(accent)
+                setPadding((10 * dp).toInt(), (2 * dp).toInt(), (10 * dp).toInt(), (2 * dp).toInt())
+                background = android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 12 * dp
+                    setStroke((1 * dp).toInt().coerceAtLeast(1), accent)
+                }
+                setOnClickListener {
+                    tick()
+                    input.commitSuggestion(i)
+                    render()
+                }
+            }, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { marginEnd = (6 * dp).toInt() })
+        }
+        // 打ち間違いの直しは入力中の文字に近い左、日付・絵文字などは右に寄せる
+        row.gravity = Gravity.CENTER_VERTICAL or (if (sg.first().first == 1) Gravity.START else Gravity.END)
+        (row.layoutParams as? FrameLayout.LayoutParams)?.let { it.width = ViewGroup.LayoutParams.MATCH_PARENT; row.layoutParams = it }
+        box.visibility = View.VISIBLE
+        // 右から引き出すように出る
+        box.translationX = box.width.takeIf { it > 0 }?.toFloat() ?: (200 * dp)
+        box.alpha = 0f
+        box.animate().translationX(0f).alpha(1f).setDuration(220).start()
+    }
+
     override fun render() {
         val b = bar ?: return
         val sub = input.subMode
@@ -575,6 +644,15 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
                 }
             }
             b.addView(tv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (44 * dp).toInt()))
+        }
+        // 提案の行: 同じ提案が 0.2 秒続いてから出す (1・2 字ごとにぴょこぴょこしないように)。消すのはすぐ
+        val sg = if (input.inputState == InputHandler.InputState.COMPOSING) input.suggestions else emptyList()
+        val key = sg.joinToString("\u0001") { it.second }
+        if (key != suggKey) {
+            suggKey = key
+            main.removeCallbacks(suggShow)
+            suggBox?.visibility = View.GONE
+            if (sg.isNotEmpty()) main.postDelayed(suggShow, 200)
         }
         // 選んでいる候補が見えるように
         if (sel >= 0) b.post { b.getChildAt(sel)?.let { scroll?.smoothScrollTo(maxOf(0, it.left - (40 * dp).toInt()), 0) } }

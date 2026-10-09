@@ -18,6 +18,9 @@ struct Phrase { u16 reading, surface; size_t head_r = 0, head_s = 0; };
 struct Conversion {
     std::vector<u16> cands;      // 候補 (よい順)
     std::vector<Word> words;     // cands[0] の語の区切り (分からなければ空)
+    // 提案 (set_suggest がオンのとき): 打ち間違いの直し・日付・住所・英単語・絵文字・顔文字・かっこ など、候補に混ぜないもの
+    std::vector<u16> sugg;
+    std::vector<int> sugg_kinds;   // engine.h の KKC_SUGGEST_*
 };
 
 class Converter {
@@ -33,6 +36,8 @@ public:
 
     // ctx = 左の文脈 (確定済みの文)、kana = 読み
     Conversion convert(const u16& ctx, const u16& kana, int max);
+    // 提案を候補に混ぜず Conversion::sugg に分けて出すか (設定「提案を分けて表示する」)
+    void set_suggest(bool on);
     // 予測: 読みが prefix で始まる辞書の語
     std::vector<u16> complete(const u16& prefix, int max, int max_extra = 6);
     // ユーザー辞書の語を網に入れ直す (前の分は消す)
@@ -45,6 +50,7 @@ private:
     kkc_engine* e_ = nullptr;
     std::vector<UserDict::Form> user_;   // 最後に入れたユーザー辞書の語 (モデルを替えて開き直したときに入れ直す)
     int user_bonus_ = 800;
+    bool suggest_ = true;
 };
 
 // 語をつないで差別語になった候補か (HarmonyOS 版 AiConverter.SLURS と同じ)

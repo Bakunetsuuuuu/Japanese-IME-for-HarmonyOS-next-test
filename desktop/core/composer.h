@@ -49,6 +49,9 @@ struct View {
     bool cand_open = false;
     std::vector<u16> cands;
     int cand_sel = -1;            // 選んでいる候補 (-1 = まだ選んでいない。打っている間の候補)
+    // 提案 (打っている間だけ。候補の窓の上の行に出す)。sugg = 見せる形、sugg_text = 確定する文 (固定した前の方込み)
+    std::vector<u16> sugg, sugg_text;
+    std::vector<int> sugg_kinds;
 };
 
 // 入力の記録 (デバッグ用のビルドだけが受け取って書く。HarmonyOS 版 InputLog.ets と同じ種別とキー)。
@@ -105,6 +108,8 @@ public:
 
     // 候補の窓の index 番目をマウスで選んだ
     void select_candidate(int index);
+    // 提案の index 番目を選んだ (マウス、または Shift+Enter で 0 番目)。打ったとおりの変換ではないので学習しない
+    void select_suggestion(int index);
     // 入力中のものをいま見えているまま確定する (入力欄を離れたときなど)。確定した文は take_commit で
     void finish();
     // 入力中のものを捨てる
@@ -173,6 +178,8 @@ private:
     // 打っている間の変換
     u16 live_key_;                       // live_cands_ を作ったときの文脈と読み
     std::vector<u16> live_cands_;
+    std::vector<u16> live_sugg_;          // 提案 (Conversion::sugg。打っている間の変換のもの)
+    std::vector<int> live_sugg_kinds_;
     u16 live_top_;                       // 打っている間の変換そのものの 1 位 (予測・決まり文句を足す前)。ライブ変換で見せる
     std::map<size_t, u16> prev_segs_;    // 前回の 1 位の (語の区切りの読みの位置 -> そこまでの表記)
     // 固定した前の方 (保留)。入力欄には確定せず、変換した形で入力中の頭に見せる。変換 (空白) すると頭の文節になり、選び直せる。

@@ -108,6 +108,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* tm, TfClientId cid, DWORD) {
         input_log_simple("diag", "activate");
     }
     cand_.on_click = [this](int i) { on_candidate_clicked(i); };
+    cand_.on_sugg_click = [this](int i) { on_suggestion_clicked(i); };
 
     ComPtr<ITfSource> src;
     if (SUCCEEDED(tm_->QueryInterface(IID_PPV_ARGS(&src))))
@@ -273,6 +274,7 @@ void TextService::apply_settings() {
     c.settings.refresh();
     const Settings& s = c.settings.get();
     c.use_model(s.model);   // 変換モデルを替えた (同じなら何もしない)
+    c.conv.set_suggest(s.separate_suggest);
     if (composer_) {
         composer_->options.live = s.live;
         composer_->options.live_commit = s.live_commit;
@@ -562,7 +564,7 @@ void TextService::update_candidates(TfEditCookie ec, ITfContext* ctx, const View
         }
     }
     if (!hwnd) hwnd = GetFocus();
-    cand_.show(v.cands, v.cand_sel, rc, hwnd);
+    cand_.show(v.cands, v.cand_sel, rc, hwnd, v.sugg);
 }
 
 void TextService::finish_composition() {
@@ -574,6 +576,16 @@ void TextService::finish_composition() {
     edit(keep.Get(), TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep](TfEditCookie ec) {
         if (!composer_) return;
         composer_->finish();
+        apply(ec, keep.Get());
+    });
+}
+
+void TextService::on_suggestion_clicked(int index) {
+    if (!composer_ || !comp_ctx_) return;
+    ComPtr<ITfContext> keep(comp_ctx_);
+    edit(keep.Get(), TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep, index](TfEditCookie ec) {
+        if (!composer_) return;
+        composer_->select_suggestion(index);
         apply(ec, keep.Get());
     });
 }

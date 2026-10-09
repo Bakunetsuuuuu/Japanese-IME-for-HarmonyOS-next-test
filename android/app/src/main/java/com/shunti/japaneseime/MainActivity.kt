@@ -115,6 +115,8 @@ class MainActivity : Activity() {
         col.addView(radios(listOf("QWERTY", "フリック"), if (settings.alphaLayout == "FLICK") 1 else 0) {
             settings.alphaLayout = if (it == 1) "FLICK" else "QWERTY"
         })
+        col.addView(switch("提案を分けて表示する", settings.separateSuggest) { settings.separateSuggest = it }, lp(top = 8))
+        col.addView(text("打ち間違いの直し・日付・住所・絵文字・顔文字・かっこを、変換候補に混ぜずに候補の帯の上に分けて出します。", 12f, secondary = true))
         col.addView(switch("オート確定", settings.liveCommit) { settings.liveCommit = it }, lp(top = 8))
         col.addView(text("オンにすると、長く打ったときに前の方から自動で確定していきます。オフ (最初の状態) なら、確定するまで前の方も候補から直せます。", 12f, secondary = true))
         col.addView(switch("あA キーで数字パッドにも切り替える", settings.numericPad) { settings.numericPad = it }, lp(top = 8))

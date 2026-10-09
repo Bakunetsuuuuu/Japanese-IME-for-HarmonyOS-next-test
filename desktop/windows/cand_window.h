@@ -15,11 +15,13 @@ class CandWindow {
 public:
     ~CandWindow();
     // anchor = 選んでいる文節の字の画面上の四角。owner = 入力欄の窓
-    void show(const std::vector<u16>& cands, int sel, const RECT& anchor, HWND owner);
+    // sugg = 提案 (候補の上の 1 行。空なら出さない)
+    void show(const std::vector<u16>& cands, int sel, const RECT& anchor, HWND owner, const std::vector<u16>& sugg = {});
     void hide();
     void destroy();
     bool visible() const { return hwnd_ && IsWindowVisible(hwnd_); }
     std::function<void(int)> on_click;   // 候補をマウスで選んだ (候補の番号)
+    std::function<void(int)> on_sugg_click;   // 提案をマウスで選んだ (提案の番号)
     std::string theme = "auto";          // auto (Windows に合わせる)・light・dark
 
 private:
@@ -27,12 +29,16 @@ private:
     void paint(HDC dc);
     void layout();
     int hit(int x, int y) const;
+    int hit_sugg(int x, int y) const;
 
     HWND hwnd_ = nullptr;
     HWND owner_ = nullptr;
     HFONT font_ = nullptr, small_ = nullptr;
     UINT dpi_ = 0;
     std::vector<u16> cands_;
+    std::vector<u16> sugg_;
+    std::vector<std::pair<int, int>> sugg_x_;   // 提案の札の左右 (当たり判定)
+    int sugg_h_ = 0;                             // 提案の行の高さ (無ければ 0)
     int sel_ = 0, page_ = 0;
     int row_h_ = 0, pad_ = 0, num_w_ = 0, width_ = 0, height_ = 0, footer_h_ = 0;
 };

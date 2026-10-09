@@ -48,6 +48,7 @@ bool Converter::open(const void* lex, size_t lex_size, const void* model, size_t
     if (e_) kkc_close(e_);
     e_ = kkc_open(lex, lex_size, model, model_size);
     if (e_ && threads > 0) kkc_set_threads(e_, threads);
+    if (e_) kkc_set_suggest(e_, suggest_ ? 1 : 0);
     if (e_ && !user_.empty()) set_user_words(std::vector<UserDict::Form>(user_), user_bonus_);   // モデルを替えて開き直したとき
     return e_ != nullptr;
 }
@@ -69,6 +70,18 @@ bool Converter::convert_once(const u16& ctx, const u16& kana, int max, Conversio
     for (auto& c : raw) {
         if (int(out.cands.size()) >= max) break;
         if (!is_slur(c)) out.cands.push_back(c);
+    }
+    {   // 提案
+        std::vector<uint16_t> sb(8192);
+        int32_t kinds[32];
+        int ns = kkc_last_suggest(e_, sb.data(), int(sb.size()), kinds, 32);
+        for (size_t i = 0, st = 0, k = 0; ns > 0 && int(k) < ns && i < sb.size(); i++) {
+            if (sb[i] != 0) continue;
+            u16 t(reinterpret_cast<const char16_t*>(sb.data() + st), i - st);
+            if (!is_slur(t)) { out.sugg.push_back(std::move(t)); out.sugg_kinds.push_back(kinds[k]); }
+            st = i + 1;
+            k++;
+        }
     }
     // 差別語で 1 位が落ちたときは区切りを使わない (区切りは元の 1 位のもの)
     if (raw.empty() || out.cands.empty() || out.cands[0] != raw[0]) return true;
@@ -106,6 +119,11 @@ Conversion Converter::convert(const u16& ctx, const u16& kana, int max) {
     out.words = a.words;
     out.words.insert(out.words.end(), b.words.begin(), b.words.end());
     return out;
+}
+
+void Converter::set_suggest(bool on) {
+    suggest_ = on;
+    if (e_) kkc_set_suggest(e_, on ? 1 : 0);
 }
 
 std::vector<u16> Converter::complete(const u16& prefix, int max, int max_extra) {

@@ -211,6 +211,18 @@ int main(int argc, char** argv) {
     keys(c, "{down}{enter}");
     expect("live select", c.take_commit(), u"こんにちは");
 
+    // ---- 提案 (日付・絵文字は候補に混ぜず、候補の窓の上の行に。Shift+Enter で 1 つ目を確定)
+    keys(c, "kyou");
+    printf("     sugg:");
+    for (auto& x : c.view().sugg) printf(" [%s]", u8(x).c_str());
+    printf("\n");
+    if (c.view().sugg.empty()) { printf("FAIL no suggestion for kyou\n"); failures++; }
+    {
+        u16 first = c.view().sugg_text.empty() ? u16() : c.view().sugg_text[0];
+        keys(c, "{S-enter}");
+        expect("suggestion commit", c.take_commit(), first);
+    }
+
     // ---- 変換したらすぐ候補の窓が出る
     keys(c, "kawa{sp}");
     if (!c.view().cand_open) { printf("FAIL cands not open after convert\n"); failures++; }

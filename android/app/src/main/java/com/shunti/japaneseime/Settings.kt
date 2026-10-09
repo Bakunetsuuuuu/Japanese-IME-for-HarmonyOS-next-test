@@ -64,6 +64,11 @@ class Settings(context: Context) {
         set(v) = p.edit().putString("alphaLayout", v).apply()
 
     /** 長い入力の扱い: false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = オート確定 (前の方から次々に確定) */
+    /** 提案 (打ち間違いの直し・日付・住所・絵文字・顔文字・かっこ など) を候補に混ぜず、候補の帯の上の行に分けて出す */
+    var separateSuggest: Boolean
+        get() = p.getBoolean("separateSuggest", true)
+        set(v) = p.edit().putBoolean("separateSuggest", v).apply()
+
     var liveCommit: Boolean
         get() = p.getBoolean("liveCommit", false)
         set(v) = p.edit().putBoolean("liveCommit", v).apply()

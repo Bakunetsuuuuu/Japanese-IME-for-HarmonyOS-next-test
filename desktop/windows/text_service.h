@@ -65,6 +65,7 @@ public:
     void set_open(bool open);
     // 候補の窓をマウスで選んだ
     void on_candidate_clicked(int index);
+    void on_suggestion_clicked(int index);
 
 private:
     enum class Action { None, Compose, Open, Close, Toggle };

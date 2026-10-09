@@ -83,6 +83,38 @@ extern "C" JNIEXPORT jobjectArray JNICALL Java_com_shunti_japaneseime_Engine_nat
     return arr;
 }
 
+// 提案 (kkc_set_suggest / kkc_last_suggest)。各要素は「種類 + \u0001 + 表記」
+extern "C" JNIEXPORT void JNICALL Java_com_shunti_japaneseime_Engine_nativeSetSuggest(JNIEnv*, jclass, jlong p, jboolean on, jint charFilter) {
+    auto* h = reinterpret_cast<Handle*>(p);
+    if (!h) return;
+    kkc_set_suggest(h->e, on ? 1 : 0);
+    kkc_set_char_filter(h->e, charFilter);
+}
+
+extern "C" JNIEXPORT jobjectArray JNICALL Java_com_shunti_japaneseime_Engine_nativeLastSuggest(JNIEnv* env, jclass, jlong p) {
+    auto* h = reinterpret_cast<Handle*>(p);
+    jclass str = env->FindClass("java/lang/String");
+    std::vector<uint16_t> buf(8192);
+    int32_t kinds[32];
+    int n = h ? kkc_last_suggest(h->e, buf.data(), int(buf.size()), kinds, 32) : 0;
+    if (n < 0) n = 0;
+    jobjectArray arr = env->NewObjectArray(n, str, nullptr);
+    size_t st = 0;
+    for (int i = 0; i < n; i++) {
+        size_t e = st;
+        while (buf[e]) e++;
+        std::vector<jchar> t;
+        t.push_back(jchar(u'0' + kinds[i]));
+        t.push_back(jchar(1));
+        for (size_t j = st; j < e; j++) t.push_back(jchar(buf[j]));
+        jstring s = env->NewString(t.data(), jsize(t.size()));
+        env->SetObjectArrayElement(arr, i, s);
+        env->DeleteLocalRef(s);
+        st = e + 1;
+    }
+    return arr;
+}
+
 extern "C" JNIEXPORT void JNICALL Java_com_shunti_japaneseime_Engine_nativeSetThreads(JNIEnv*, jclass, jlong p, jint n) {
     auto* h = reinterpret_cast<Handle*>(p);
     if (h) kkc_set_threads(h->e, n);

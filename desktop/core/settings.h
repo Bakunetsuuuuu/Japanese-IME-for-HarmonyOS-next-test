@@ -15,6 +15,7 @@ struct Settings {
     bool live_commit = true;         // リアルタイム確定
     bool live_display = false;       // ライブ変換: 入力中の文字を、空白を押す前から変換して見せる
     bool ctrl_space = false;         // Ctrl+Space でも日本語入力のオン・オフ
+    bool separate_suggest = true;    // 提案 (打ち間違いの直し・日付・住所・絵文字など) を候補に混ぜず、候補の窓の上の行に分けて出す
     std::string model = "standard";  // 変換モデル: light (XS・メモリの少ない PC 向け)・standard (S6)・high (M4・速い PC 向け)
 };
 

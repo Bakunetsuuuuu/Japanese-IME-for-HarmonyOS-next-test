@@ -51,6 +51,22 @@ class InputHandler(
         private set
     var predictions: List<String> = emptyList()   // 確定のあとに出す候補 (絵文字)
         private set
+    /** 提案 (種類, 確定する文)。設定「提案を分けて表示する」のとき、候補の帯の上の行に出す */
+    var suggestions: List<Pair<Int, String>> = emptyList()
+        private set
+    private val glyphPaint = android.graphics.Paint()
+    private val glyphOk = HashMap<String, Boolean>()
+    /** この端末のフォントで出せる字か (豆腐にならないか)。変体仮名は Android 15 から出る端末がある */
+    private fun renderable(s: String): Boolean = glyphOk.getOrPut(s) {
+        var i = 0
+        var ok = true
+        while (i < s.length && ok) {
+            val cp = s.codePointAt(i)
+            if (cp in 0x1B000..0x1B16F || cp in 0x13000..0x1345F || cp in 0x1F000..0x1F0FF) ok = glyphPaint.hasGlyph(String(Character.toChars(cp)))
+            i += Character.charCount(cp)
+        }
+        ok
+    }
 
     private var conversionEnd = 0                  // 0 = 読みの全体を変換。それ以外は先頭からこの字数だけ
     private var ctx = ""                           // 変換の文脈 (入力を始めたときのカーソルの左 + その後に確定した分)
@@ -269,6 +285,20 @@ class InputHandler(
     }
 
     /** 候補の帯をタップ */
+    /** 提案を選んだ: その文で確定する (打ったとおりの変換ではないので学習しない) */
+    fun commitSuggestion(index: Int) {
+        val text = suggestions.getOrNull(index)?.second ?: return
+        val (_, tail) = splitAtConversionEnd(composingText)
+        insertText(text)
+        ctx += text
+        suggestions = emptyList()
+        if (tail.isNotEmpty()) {
+            continueWithTail(tail)
+            return
+        }
+        resetComposition()
+    }
+
     fun commitCandidate(index: Int) {
         val text = candidates.getOrNull(index)
         if (text.isNullOrEmpty()) {
@@ -338,6 +368,7 @@ class InputHandler(
 
     private fun resetComposition() {
         romaji.reset()
+        suggestions = emptyList()
         if (composingText.isNotEmpty() || inputState != InputState.IDLE) {
             host.ic?.setComposingText("", 1)
             host.ic?.finishComposingText()
@@ -523,6 +554,7 @@ class InputHandler(
     fun updateCandidates() {
         if (composingText.isEmpty()) {
             candidates = emptyList()
+            suggestions = emptyList()
             showComposing()   // ローマ字の打ちかけだけのとき
             host.render()
             return
@@ -594,6 +626,21 @@ class InputHandler(
             if (e !in cands) cands.add(e)
         }
         cands = ArrayList(learning.applyLearnedOrder(target, cands))
+        // 提案: 候補に混ぜず分ける (エンジンの提案 + こちらの日付・括弧・絵文字・顔文字)。候補からは外す
+        if (settings.separateSuggest && ai != null) {
+            val sg = ArrayList(ai.suggestions)
+            val dates = DateTimePredictor.predict(target, Calendar.getInstance())
+            val moveDates = sg.any { it.first == 2 }
+            val symbolic = { c: String -> c.none { it.isLetterOrDigit() } || (tables.EMOJI_MAP[target]?.contains(c) == true) || (tables.KAOMOJI_MAP[target]?.contains(c) == true) }
+            val moved = cands.filter { c -> c != target && (sg.any { it.second == c } || (moveDates && c in dates) || (symbolic(c) && target.any { it in 'ぁ'..'ゖ' })) }
+            for (c in moved) if (sg.none { it.second == c }) sg.add(7 to c)
+            val rest = cands.filter { it !in moved }
+            if (rest.isNotEmpty()) cands = ArrayList(rest)
+            suggestions = sg.filter { renderable(it.second) }.distinctBy { it.second }.take(12)
+        } else {
+            suggestions = emptyList()
+        }
+        cands = ArrayList(cands.filter { renderable(it) })
         candidates = cands
         if (inputState != InputState.SELECTING) selectedCandidateIndex = 0
         else selectedCandidateIndex = selectedCandidateIndex.coerceAtMost(cands.size - 1)

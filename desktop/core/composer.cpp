@@ -255,6 +255,10 @@ bool Composer::press_input(const KeyEvent& ev) {
             return true;
         case Key::Enter:
             flush_romaji();
+            if (ev.shift && !live_sugg_.empty()) {   // Shift+Enter: 提案の 1 つ目で確定
+                update_live();
+                if (!live_sugg_.empty()) { select_suggestion(0); return true; }
+            }
             if (live_shown()) {   // ライブ変換: 見えている変換をそのまま確定する
                 update_live();
                 u16 t = live_top_;
@@ -397,6 +401,20 @@ bool Composer::press_convert(const KeyEvent& ev) {
     }
 }
 
+void Composer::select_suggestion(int index) {
+    if (state_ != State::Input || index < 0 || index >= int(live_sugg_.size())) return;
+    flush_romaji();
+    u16 t = frozen_surface() + live_sugg_[size_t(index)];
+    {
+        LogEvent e{"commit", frozen_reading() + kana_, t, ctx_, live_sugg_, index};
+        e.extra = "suggest";
+        log(e);
+    }
+    commit_text(t);
+    to_idle();
+    rebuild_view();
+}
+
 void Composer::select_candidate(int index) {
     if (state_ == State::Input) {   // 打っている間の候補: それを確定する
         if (index < 0 || index >= int(live_cands_.size())) return;
@@ -443,6 +461,13 @@ void Composer::update_live() {
         return;
     }
     live_key_ = key;
+    live_sugg_.clear();
+    live_sugg_kinds_.clear();
+    for (size_t i = 0; i < c.sugg.size(); i++) {
+        if (!c.cands.empty() && c.sugg[i] == c.cands[0]) continue;
+        live_sugg_.push_back(c.sugg[i]);
+        live_sugg_kinds_.push_back(i < c.sugg_kinds.size() ? c.sugg_kinds[i] : 0);
+    }
     std::vector<u16> cands = c.cands;
     add_brackets(kana_, cands);   // 学習の並べ替えより前に (よく選ぶ括弧が上に来るように)
     if (learning_) cands = learning_->apply_order(kana_, cands);
@@ -830,6 +855,8 @@ void Composer::to_idle() {
     alpha_run_ = false;
     live_key_.clear();
     live_cands_.clear();
+    live_sugg_.clear();
+    live_sugg_kinds_.clear();
     prev_segs_.clear();
     frozen_.clear();
 }
@@ -881,6 +908,20 @@ void Composer::rebuild_view() {
             v.cand_open = true;
             v.cands = live_cands_;
             v.cand_sel = -1;
+        }
+        // 提案: 打ち間違いの直しは 元→直した形、気分の絵文字・顔文字 (6) は足す分だけを見せる
+        if (!live_sugg_.empty() && live_key_ == conv_ctx() + u'\x01' + kana_) {
+            for (size_t i = 0; i < live_sugg_.size() && i < 9; i++) {
+                const u16& s = live_sugg_[i];
+                const int k = live_sugg_kinds_[i];
+                u16 shown = s;
+                if (k == 1) shown = live_top_ + u"\u2192" + s;
+                else if (k == 6 && s.size() > live_top_.size() && s.compare(0, live_top_.size(), live_top_) == 0) shown = s.substr(live_top_.size());
+                v.sugg.push_back(shown);
+                v.sugg_text.push_back(fz + s);
+                v.sugg_kinds.push_back(k);
+            }
+            v.cand_open = true;
         }
     } else if (state_ == State::Convert) {
         for (size_t i = 0; i < segs_.size(); i++) {
