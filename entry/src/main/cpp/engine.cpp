@@ -1583,6 +1583,9 @@ struct kkc_engine {
     // 提案 (kkc_set_suggest でオン): 変換の域を超えるもの (打ち間違いの直し・日付・郵便番号の住所) を候補に混ぜず、
     // 別の出口 (kkc_last_suggest) に種類つきで出す。候補は打ったとおりの変換だけになる
     bool suggest_mode = false;
+    // 豆腐になる字の除外 (kkc_set_char_filter)。既定は全部除外 (HarmonyOS)。Android は Paint.hasGlyph、PC は字形の有無で
+    // 端末側が調べるので切る (Android 15 から AOSP に Noto Serif Hentaigana が入り、変体仮名も出る端末がある)
+    int char_filter = 7;   // 1 = 変体仮名・かなの拡張、2 = ヒエログリフ、4 = 麻雀牌・ドミノ・トランプ
     std::vector<std::pair<int, ustr>> suggest;   // (種類 KKC_SUGGEST_*, 表記)
     // 語の k は文脈に依らないので、打鍵をまたいで取っておく (表記+種別 -> K の行)。多くなったら捨てる
     std::unordered_map<ustr, int> kcache;
@@ -1952,6 +1955,7 @@ KKC_API void kkc_set_threads(kkc_engine* e, int n) { if (e) e->pool.resize(n); }
 // 打ち間違いの直し (S7 から。モデルが辺の種類 typo を知っているときだけ効く): on = 0 で作らない、
 // bias = 打ち間違いの辺の点数から引く値 (0 で学習どおり。大きいほど余計な直しが減り、直せる誤字も減る)
 KKC_API void kkc_set_suggest(kkc_engine* e, int on) { if (e) e->suggest_mode = on != 0; }
+KKC_API void kkc_set_char_filter(kkc_engine* e, int mask) { if (e) e->char_filter = mask; }
 
 KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias) {
     if (!e) return;
@@ -2764,10 +2768,11 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
     // 端末のフォントに無く豆腐 (□) になる字を含む候補は出さない (2026-10-09 HarmonyOS で 𛀂 が豆腐に):
     // 変体仮名・かなの拡張 (U+1B000-1B16F)、ヒエログリフ (U+13000-1345F)、麻雀牌・ドミノ・トランプ (U+1F000-1F0FF、絵文字の 🀄 🃏 は残す)
     {
-        auto tofu = [](const ustr& c) {
+        const int cf = e->char_filter;
+        auto tofu = [cf](const ustr& c) {
             for (char32_t ch : c)
-                if ((ch >= 0x1B000 && ch <= 0x1B16F) || (ch >= 0x13000 && ch <= 0x1345F) ||
-                    (ch >= 0x1F000 && ch <= 0x1F0FF && ch != 0x1F004 && ch != 0x1F0CF))
+                if (((cf & 1) && ch >= 0x1B000 && ch <= 0x1B16F) || ((cf & 2) && ch >= 0x13000 && ch <= 0x1345F) ||
+                    ((cf & 4) && ch >= 0x1F000 && ch <= 0x1F0FF && ch != 0x1F004 && ch != 0x1F0CF))
                     return true;
             return false;
         };
@@ -2825,6 +2830,11 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
             for (size_t i = 0; i < km.size() && i < 2; i++) e->suggest.push_back({KKC_SUGGEST_MOOD, top + km[i].second});
             break;
         }
+    }
+    // 提案の並び: 打ち間違いの直し・日付・住所・気分の絵文字・記号・英単語の順 (英単語 KYO が日付より前に出ていた)
+    {
+        auto pri = [](int k) { static const int P[] = {9, 0, 1, 2, 5, 9, 3, 4}; return k >= 0 && k < 8 ? P[k] : 9; };
+        std::stable_sort(e->suggest.begin(), e->suggest.end(), [&](const auto& x, const auto& y) { return pri(x.first) < pri(y.first); });
     }
     std::vector<uint16_t> buf;
     for (auto& s : res) { to16(s, buf); buf.push_back(0); }

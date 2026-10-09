@@ -24,6 +24,8 @@ KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias);
 enum { KKC_SUGGEST_TYPO = 1, KKC_SUGGEST_DATE = 2, KKC_SUGGEST_ADDRESS = 3, KKC_SUGGEST_ENGLISH = 4, KKC_SUGGEST_ALT = 5, KKC_SUGGEST_MOOD = 6, KKC_SUGGEST_SYMBOL = 7 };
 // 提案: オンにすると、変換の域を超えるもの (打ち間違いの直し・日付・郵便番号の住所) を候補に混ぜず kkc_last_suggest に出す
 KKC_API void kkc_set_suggest(kkc_engine* e, int on);
+// 豆腐になる字を含む候補を除外する (1 = 変体仮名、2 = ヒエログリフ、4 = 麻雀牌など。既定 7)。端末側で字形の有無を調べるなら 0 に
+KKC_API void kkc_set_char_filter(kkc_engine* e, int mask);
 KKC_API int kkc_last_suggest(kkc_engine* e, uint16_t* out, int cap, int32_t* kinds, int kcap);   // 打ち間違いの直し (S7〜): on/off と控えめにする値
 
 // 変換。ctx = 左の文脈 (確定済みの文)、kana = 読み (UTF-16)。上位 maxout 個の表記を 0 区切りの UTF-16 で out に書く。
