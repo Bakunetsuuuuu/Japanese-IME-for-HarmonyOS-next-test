@@ -912,7 +912,15 @@ void Composer::to_idle() {
 void Composer::finish() {
     if (state_ == State::Input) {
         flush_romaji();
-        commit_text(frozen_surface() + kana_);
+        // ライブ変換で変換した文が見えているなら、それで確定する (Enter と同じ)。英語入力に切り替えたときに、
+        // 見えていた変換がかなに戻って確定され、取り消されたように見えた (ユーザー 2026-10-09)
+        if (options.live_display && options.live && !kana_.empty()) update_live();
+        if (live_shown()) {
+            log({"commit", kana_, live_top_, ctx_, live_cands_, 0, {}, "live"});
+            commit_text(frozen_surface() + live_top_);
+        } else {
+            commit_text(frozen_surface() + kana_);
+        }
         to_idle();
     } else if (state_ == State::Convert) {
         commit_all();

@@ -278,6 +278,10 @@ int main(int argc, char** argv) {
     expect("live display enter commits what is shown", c.take_commit(), shown);
     keys(c, "kyouhaiiten{left}{enter}");   // 読みの途中にカーソルを動かしたら、かなで見せてかなで確定
     expect("live display falls back to kana mid-reading", c.take_commit(), u"きょうはいいてん");
+    keys(c, "kyouhaiitenki");   // 英語入力に切り替えた (finish): 見えている変換のまま確定する
+    shown = c.view().text;
+    c.finish();
+    expect("live display finish commits what is shown", c.take_commit(), shown);
     c.options.live_display = false;
 
     // ---- 打ち間違いを消して子音だけが残ったとき、続けて打った字とつながる
