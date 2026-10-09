@@ -3014,6 +3014,7 @@ export class InputHandler {
     // 入力中の文字が無くなったら提案も消す (み を消したあとに提案だけ残っていた)
     if ((AppStorage.get<string>('composingText') ?? '').length === 0) {
       AppStorage.setOrCreate('suggestList', [] as string[]);
+      AppStorage.setOrCreate('suggestPending', [] as string[]);
     }
     if (!DEBUG_INPUT_LOG) {
       this.updateCandidatesInner();
@@ -3214,9 +3215,9 @@ export class InputHandler {
     let shown = SuppressedCandidates.filter(target, candidates);
     // 提案の帯に出ているもの (打ち間違いの直し・日付・住所) は候補の帯から外す。日付の提案があるときは、
     // こちらの日付の予測 (DateTimePredictor、形が少し違う) もまとめて外す
-    const sugg = AppStorage.get<string[]>('suggestList') ?? [];
+    const sugg = AppStorage.get<string[]>('suggestPending') ?? [];   // 帯に出る前 (0.2 秒待つ間) でも外す
     if (sugg.length > 0) {
-      const kinds = AppStorage.get<number[]>('suggestKinds') ?? [];
+      const kinds = AppStorage.get<number[]>('suggestPendingKinds') ?? [];
       const dates = kinds.indexOf(2) >= 0 ? DateTimePredictor.predict(target, new Date()) : [] as string[];
       const rest = shown.filter((c: string) => sugg.indexOf(c) < 0 && dates.indexOf(c) < 0);
       if (rest.length > 0) { shown = rest; }

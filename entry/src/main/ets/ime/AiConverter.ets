@@ -387,12 +387,32 @@ export class AiConverter {
         kinds.push(i < k.length ? k[i] : 0);
       }
     }
-    AppStorage.setOrCreate('suggestList', list);
-    AppStorage.setOrCreate('suggestKinds', kinds);
-    AppStorage.setOrCreate('suggestText', list.length > 0 ? list[0] : '');
-    AppStorage.setOrCreate('suggestKind', kinds.length > 0 ? kinds[0] : 0);
-    AppStorage.setOrCreate('suggestFrom', top);
+    // 候補の帯から外す判定はすぐ (suggestPending)、帯に出すのは 0.2 秒同じ提案が続いてから (1・2 字ごとに出たり消えたり
+    // してぴょこぴょこしないように)。消すのはすぐ
+    AppStorage.setOrCreate('suggestPending', list);
+    AppStorage.setOrCreate('suggestPendingKinds', kinds);
+    const key = list.join('\u0001') + '\u0002' + top;
+    if (key === AiConverter.suggestKey) { return; }
+    AiConverter.suggestKey = key;
+    clearTimeout(AiConverter.suggestTimer);
+    const show = () => {
+      AppStorage.setOrCreate('suggestList', list);
+      AppStorage.setOrCreate('suggestKinds', kinds);
+      AppStorage.setOrCreate('suggestText', list.length > 0 ? list[0] : '');
+      AppStorage.setOrCreate('suggestKind', kinds.length > 0 ? kinds[0] : 0);
+      AppStorage.setOrCreate('suggestFrom', top);
+    };
+    if (list.length === 0) {
+      show();
+    } else {
+      AppStorage.setOrCreate('suggestList', [] as string[]);   // 前の提案は消して、新しい提案は少し待ってから
+      AiConverter.suggestTimer = setTimeout(show, AiConverter.SUGGEST_DELAY_MS);
+    }
   }
+
+  private static SUGGEST_DELAY_MS: number = 200;
+  private static suggestKey: string = '';
+  private static suggestTimer: number = -1;
 
   private static run(): void {
     AiConverter.inflight = true;
