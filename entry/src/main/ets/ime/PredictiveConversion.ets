@@ -168,6 +168,17 @@ export class PredictiveConversion {
   //   - curated (手書き表) + dictHits (辞書全体) は、この prefix の続きとして
   //     あり得る語がちょうど1つに絞られたとき (=決まり字に達したとき) だけ、
   //     その1語だけを出す。2つ以上あり得るうちはまだ確実ではないので出さない。
+  // 学習から出す続きの候補として冗長か (ユーザー 2026-10-09: 冗長な候補を学習しやすく、1 熟語で変換したいのに余分を消す手間が出る)。
+  //   - 続きが表記の終わりのかなをそのまま足しただけ (しゃしん + を -> 写真を、たべ + る -> 食べる): 打てば済む付属語・送り仮名で、
+  //     選ぶと余分を消すことになる
+  //   - 助詞を挟んで漢字・カタカナが続く 2 語以上 (写真を撮った): 文節ごとに学習した文の残りで、1 語を出したいときに邪魔
+  static redundantCompletion(prefix: string, reading: string, surface: string): boolean {
+    const ext = reading.slice(prefix.length);
+    if (ext.length > 0 && surface.endsWith(ext)) { return true; }
+    // 語の切れ目は助詞 (を・に・が・は・で・と・へ・も・や) で見る。の・送り仮名 (柿の種・お疲れ様・取り扱い) は 1 語の中にもある
+    return /[一-鿿々ァ-ヺ][をにがはでとへもや][一-鿿々ァ-ヺ]/.test(surface);
+  }
+
   static predict(prefix: string, learned: Record<string, Record<string, number>>,
       dictHits?: string[], shortTermHits?: ShortTermHit[]): string[] {
     if (prefix.length < MIN_PREFIX) { return []; }
@@ -193,7 +204,9 @@ export class PredictiveConversion {
         for (const surface of Object.keys(counts)) {
           if (counts[surface] > bestCount) { bestCount = counts[surface]; bestSurface = surface; }
         }
-        if (bestSurface.length > 0) { hits.push({ surface: bestSurface, count: bestCount }); }
+        if (bestSurface.length > 0 && !PredictiveConversion.redundantCompletion(prefix, reading, bestSurface)) {
+          hits.push({ surface: bestSurface, count: bestCount });
+        }
       }
       hits.sort((a: LearnedHit, b: LearnedHit) => b.count - a.count);
       for (const h of hits) {
@@ -208,6 +221,7 @@ export class PredictiveConversion {
     const weakShortTerm: string[] = [];
     if (shortTermHits !== undefined) {
       for (const h of shortTermHits) {
+        if (PredictiveConversion.redundantCompletion(prefix, h.reading, h.surface)) { continue; }
         if (h.count >= SHORT_TERM_STRONG_MIN) {
           push(h.surface);
         } else {
