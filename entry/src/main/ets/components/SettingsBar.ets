@@ -50,6 +50,7 @@ export struct SettingsBar {
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
   @StorageLink('liveCommit') liveCommit: boolean = false;
   @StorageLink('separateSuggest') separateSuggest: boolean = true;
+  @StorageLink('alphaCompose') alphaCompose: boolean = true;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
@@ -588,6 +589,35 @@ export struct SettingsBar {
           .selectedColor(kbTheme(this.isDark).accent)
           .onChange((isOn: boolean) => {
             InputHandler.getInstance().setSeparateSuggest(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 12, bottom: 12 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      // 英数字キーボードで英字も変換するか (iphone -> iPhone)。使い心地が分かれるので切り替え
+      Row() {
+        Column({ space: 2 }) {
+          Text('英数字キーボードで英字も変換する')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text(this.alphaCompose
+            ? '英字も入力中の文字にして変換します (iphone → iPhone)。英文は空白でそのまま確定'
+            : '英字はそのまま入力します。数字と、かなに続けた英字だけ変換します')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(10)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.alphaCompose })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setAlphaCompose(isOn);
           })
       }
       .width('100%')

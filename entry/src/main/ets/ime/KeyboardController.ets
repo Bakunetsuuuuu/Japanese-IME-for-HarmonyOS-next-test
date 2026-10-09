@@ -632,6 +632,7 @@ export class InputHandler {
         AppStorage.setOrCreate('liveCommit', s.liveCommit);
         AiConverter.liveCommit = s.liveCommit;
         AppStorage.setOrCreate('separateSuggest', s.separateSuggest);
+        AppStorage.setOrCreate('alphaCompose', s.alphaCompose);
         AiConverter.setSuggestMode(s.separateSuggest);
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
@@ -912,6 +913,14 @@ export class InputHandler {
     AppStorage.setOrCreate('suggestList', [] as string[]);
     if (this.imeContext) {
       SettingsStore.saveSeparateSuggest(this.imeContext, enabled);
+    }
+  }
+
+  // 英数字キーボードで英字も組み立てて変換するか (使い心地が分かれるので切り替え。ユーザー 2026-10-09)
+  setAlphaCompose(enabled: boolean): void {
+    AppStorage.setOrCreate('alphaCompose', enabled);
+    if (this.imeContext) {
+      SettingsStore.saveAlphaCompose(this.imeContext, enabled);
     }
   }
 
@@ -1929,6 +1938,10 @@ export class InputHandler {
     AppStorage.setOrCreate('convEnd', 0);
   }
 
+  private alphaComposeOn(): boolean {
+    return AppStorage.get<boolean>('alphaCompose') !== false;
+  }
+
   handleKeyPress(key: string): void {
     const mode = AppStorage.get<string>('inputMode') ?? InputMode.HIRAGANA;
     const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
@@ -1936,8 +1949,14 @@ export class InputHandler {
     if (mode === InputMode.ALPHANUMERIC) {
       InputLog.recordKey(key, '', '', mode);
       // 英数字も入力中の文字として組み立てて変換する (2000 -> 2,000・二千、ぱちんこ + CR -> パチンコCR、iphone -> iPhone)。
-      // 英文は空白・Enter でそのまま確定して続けて打てる (handleSpaceKey)。2026-10-09 ユーザー: 英数字キーボードから変換を起こせるように
-      this.appendRaw(key);
+      // 英文は空白・Enter でそのまま確定して続けて打てる (handleSpaceKey)。2026-10-09 ユーザー: 英数字キーボードから変換を起こせるように。
+      // 設定「英字も変換する」がオフなら前のまま: 入力中の文字があるときと数字だけ組み立て、ほかはそのまま入れる
+      if (this.alphaComposeOn() || (AppStorage.get<string>('composingText') ?? '').length > 0 || /^[0-9]$/.test(key)) {
+        this.appendRaw(key);
+        return;
+      }
+      this.commitPending();
+      this.insertText(key);
       return;
     }
 
@@ -3361,9 +3380,11 @@ export class InputHandler {
     InputLog.recordKana(kana, mode);
 
     if (mode === InputMode.ALPHANUMERIC) {
-      // 英数字も入力中の文字として組み立てて変換する (handleKeyPress と同じ)
-      this.appendRaw(kana);
-      return;
+      // 英数字も入力中の文字として組み立てて変換する (handleKeyPress と同じ。設定がオフなら入力中の文字があるときと数字だけ)
+      if (this.alphaComposeOn() || (AppStorage.get<string>('composingText') ?? '').length > 0 || /^[0-9]$/.test(kana)) {
+        this.appendRaw(kana);
+        return;
+      }
       this.commitPending();
       // raw: true -- 英数モードは1打鍵ごとに insertText が飛ぶ (かなモード
       // のように単語単位でまとまらない)。素のまま扱わないと、括弧を開いた

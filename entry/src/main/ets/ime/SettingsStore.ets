@@ -53,6 +53,8 @@ export interface KeyboardSettings {
   liveCommit: boolean;
   // 提案 (打ち間違いの直し・日付・住所) を候補の帯に混ぜず、ひらがなの帯に分けて出す (既定オン)
   separateSuggest: boolean;
+  // 英数字キーボードで英字も入力中の文字として組み立てて変換する (iphone -> iPhone)。オフは英字をそのまま入れる (数字は組み立てる)
+  alphaCompose: boolean;
   // キーボードのライト／ダーク。'system' は端末のカラーモードに従う（既定）。
   // 'light' / 'dark' はキーボードだけ固定する（ホストアプリの色は変えない）。
   themeMode: string;
@@ -130,6 +132,7 @@ const DEFAULTS: KeyboardSettings = {
   hapticEnabled: false,
   liveCommit: false,
   separateSuggest: true,
+  alphaCompose: true,
   themeMode: 'system',
   keyChromeEnabled: true,
   composingInPanel: true,
@@ -174,6 +177,7 @@ export class SettingsStore {
       const haptic = await prefs.get('hapticEnabled', DEFAULTS.hapticEnabled);
       const liveCommit = await prefs.get('liveCommit', DEFAULTS.liveCommit);
       const separateSuggest = await prefs.get('separateSuggest', DEFAULTS.separateSuggest);
+      const alphaCompose = await prefs.get('alphaCompose', DEFAULTS.alphaCompose);
       const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
       const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
@@ -208,6 +212,7 @@ export class SettingsStore {
         hapticEnabled: haptic === true,
         liveCommit: liveCommit === true,
         separateSuggest: separateSuggest !== false,
+        alphaCompose: alphaCompose !== false,
         themeMode: String(themeMode),
         keyChromeEnabled: keyChrome !== false,
         composingInPanel: inPanel !== false,
@@ -238,6 +243,7 @@ export class SettingsStore {
         hapticEnabled: DEFAULTS.hapticEnabled,
         liveCommit: DEFAULTS.liveCommit,
         separateSuggest: DEFAULTS.separateSuggest,
+        alphaCompose: DEFAULTS.alphaCompose,
         themeMode: DEFAULTS.themeMode,
         keyChromeEnabled: DEFAULTS.keyChromeEnabled,
         composingInPanel: DEFAULTS.composingInPanel,
@@ -328,6 +334,15 @@ export class SettingsStore {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('separateSuggest', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveAlphaCompose(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('alphaCompose', String(enabled));
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('alphaCompose', enabled);
       await prefs.flush();
     } catch (_e) {}
   }
