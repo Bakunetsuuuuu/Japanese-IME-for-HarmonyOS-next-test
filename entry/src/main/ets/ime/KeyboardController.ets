@@ -4785,7 +4785,7 @@ export class KeyboardController {
         this.inputHandle.onInputStart(kbCtrl, client);
         // PCモードではソフトキーボードを出さない (言語バーと候補ウィンドウを
         // PcModeController が出す)。仮想キーを出しているときは false が返る
-        if (PcModeController.getInstance().onInputStart(client)) { return; }
+        if (PcModeController.getInstance().onInputStart()) { return; }
         this.panel?.show();
         this.panelVisible = true;
       });
@@ -4847,10 +4847,6 @@ export class KeyboardController {
       this.kbDelegate.on('cursorContextChange', (x: number, y: number, height: number) => {
         PcModeController.getInstance().onCursorContextChange(x, y, height);
       });
-      // 入力欄の文字が変わった (PCモードで、キーが IME に届いているかを確かめるのに使う)
-      this.kbDelegate.on('textChange', (_text: string) => {
-        PcModeController.getInstance().onTextChange();
-      });
     } catch (err) {
       console.error('shuntiIME getKeyboardDelegate error', err);
     }
@@ -4861,6 +4857,5 @@ export class KeyboardController {
     this.kbDelegate?.off('keyDown');
     this.kbDelegate?.off('keyEvent');
     this.kbDelegate?.off('cursorContextChange');
-    this.kbDelegate?.off('textChange');
   }
 }

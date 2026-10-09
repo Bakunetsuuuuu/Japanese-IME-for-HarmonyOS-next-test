@@ -121,9 +121,6 @@ export class PcModeController implements PcKeyHost {
   private anchor: CursorInfo | undefined = undefined;
 
   private screen: ScreenInfo | undefined = undefined;
-  // この入力欄で届いたキーの数と、「キーが届いていない」を記録したか (onTextChange 参照)
-  private sessionKeyEvents: number = 0;
-  private bypassLogged: boolean = false;
   // 使える範囲 (Dock を除いた範囲) を getAvailableArea で知っているか。知らないうちは
   // 画面全体で計算することになり、言語バーを Dock の裏に置いてしまう
   private availKnown: boolean = false;
@@ -304,17 +301,8 @@ export class PcModeController implements PcKeyHost {
 
   // 入力欄に入った。PCモードでソフトキーボードを出さないなら true
   // (KeyboardController はパネルを show しない)
-  onInputStart(client: inputMethodEngine.InputClient): boolean {
+  onInputStart(): boolean {
     this.sessionActive = true;
-    this.sessionKeyEvents = 0;
-    this.bypassLogged = false;
-    // どのアプリの入力欄か (Android コンテナなどで物理キーが IME に届かないときの切り分け用)。
-    // 入力欄の中身は出さない
-    client.getEditorAttribute()
-      .then((attr: inputMethodEngine.EditorAttribute) => {
-        console.info(`shuntiIME pc field bundle=${attr.bundleName ?? '?'} consumeKeyEvents=${attr.consumeKeyEvents ?? '?'} preview=${attr.isTextPreviewSupported}`);
-      })
-      .catch((_e: Error) => {});
     clearTimeout(this.hideLangBarTimer);
     this.cursor = undefined;
     this.anchor = undefined;
@@ -371,24 +359,11 @@ export class PcModeController implements PcKeyHost {
 
   onKeyEvent(e: InputKeyEvent): boolean {
     if (this.router === undefined) { return false; }
-    if (this.sessionKeyEvents === 0) {
-      console.info('shuntiIME pc key events are reaching the IME in this field');
-    }
-    this.sessionKeyEvents++;
     // 何も入力していないときに来た打鍵の時点のカーソル = これから打つ読みの頭
     if ((AppStorage.get<string>('inputState') ?? InputState.IDLE) === InputState.IDLE) {
       this.anchor = this.cursor;
     }
     return this.router.onKeyEvent(e);
-  }
-
-  // 入力欄の文字が変わった。PCモードで、この欄ではまだキーが 1 つも IME に届いていないのに
-  // 文字が変わったなら、物理キーが IME を通らずアプリへ直接渡っている (Android コンテナの
-  // アプリなど)。その欄では IME はキーを受け取れないので変換できない。切り分けのため 1 回だけ記録する
-  onTextChange(): void {
-    if (!this.active || this.sessionKeyEvents > 0 || this.bypassLogged) { return; }
-    this.bypassLogged = true;
-    console.info('shuntiIME pc text changed but no key event reached the IME (keys go straight to the app)');
   }
 
   onCursorContextChange(x: number, y: number, height: number): void {

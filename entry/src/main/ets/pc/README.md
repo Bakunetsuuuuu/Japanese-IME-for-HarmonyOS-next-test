@@ -124,11 +124,7 @@ flag の切り替えは `setFloatingMode` と同じ手順です（隠す → `ch
 
 ## Android コンテナのアプリ
 
-Android コンテナのアプリの入力欄にも IME はつながる（`inputStart` が来て、下線付きの表示にも対応している）。ただし物理キーが IME に届かず、Android 側のアプリへ直接渡っている可能性がある。届かない欄では IME はキーを受け取れないので変換できない。切り分けのため、ログに次の行を出す（打ったキーの内容は出さない）。
-
-- `shuntiIME pc field bundle=… consumeKeyEvents=… preview=…`: 入力欄に入ったとき。どのアプリの欄か
-- `shuntiIME pc key events are reaching the IME in this field`: その欄で最初のキーが IME に届いたとき
-- `shuntiIME pc text changed but no key event reached the IME (keys go straight to the app)`: キーが 1 つも届かないのに欄の文字が変わったとき
+Android コンテナ（卓易通）のアプリの入力欄にも IME はつながる（`inputStart` が来て、下線付きの表示にも対応している）。ただし物理キーは届かない。実機のログでは、キーは卓易通の窓から ANCO の窓口（anco broker）へ渡り、窓口が `InputMethodController::DispatchKeyEvent` で IME へ送るが、この IME に対しては 29201 で失敗していた（システムの入力メソッドの Celia では成功する）。窓口から IME への呼び出しがシステム側で通らないので、この IME からは直せない。
 
 Android コンテナの入力欄から離れても `inputStop` が来ないことがある（OS は言語バーを隠す）。言語バーを出し直して「入力欄がつながっていない」(12800003) で断られたら、入力欄を離れたものとして扱う。
 
