@@ -760,11 +760,15 @@ struct KeyboardPage {
                         }, (t: string, i: number) => `${i}:${t}`)
                       }
                       .padding({ right: 8 })
+                      // 右寄せは中身の並び自体で (Scroll の align は見た目だけ動いて、押せる所が左に残っていた)。
+                      // 横幅を帯いっぱいにして、札を右に詰める。はみ出すときは横にめくれる
+                      .constraintSize({ minWidth: '100%' })
+                      .justifyContent(this.suggestKinds.length > 0 && this.suggestKinds[0] === 1 ? FlexAlign.Start : FlexAlign.End)
                     }
                     .scrollable(ScrollDirection.Horizontal)
                     .scrollBar(BarState.Off)
                     .edgeEffect(EdgeEffect.Spring)
-                    .align(this.suggestKinds.length > 0 && this.suggestKinds[0] === 1 ? Alignment.Start : Alignment.End)
+                    .align(Alignment.Start)
                     .layoutWeight(1)
                     .margin({ left: 6 })
                     .transition(TransitionEffect.translate({ x: 240 }).combine(TransitionEffect.OPACITY)
