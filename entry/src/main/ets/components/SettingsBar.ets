@@ -51,7 +51,7 @@ export struct SettingsBar {
   @StorageLink('liveCommit') liveCommit: boolean = false;
   @StorageLink('separateSuggest') separateSuggest: boolean = true;
   @StorageLink('alphaCompose') alphaCompose: boolean = true;
-  @StorageLink('allowSlurs') allowSlurs: boolean = false;
+  @StorageLink('allowSlurs') allowSlurs: boolean = true;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
@@ -626,7 +626,7 @@ export struct SettingsBar {
 
       Divider().color(kbTheme(this.isDark).divider)
 
-      // 差別的・不適切な語も候補に出すか (既定オフ)
+      // 差別的・不適切な語も候補に出すか (既定オン)
       Row() {
         Column({ space: 2 }) {
           Text('不適切な語も候補に出す')

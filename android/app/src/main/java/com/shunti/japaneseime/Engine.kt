@@ -4,8 +4,8 @@ import android.content.res.AssetManager
 
 /** 変換エンジン (kkc/engine/engine.cpp) の窓口。辞書とモデルは APK の資産をそのままメモリに写して使う。 */
 class Engine private constructor(private var handle: Long, private val slurs: Regex?) {
-    /** 設定「不適切な語も候補に出す」(既定オフ)。オンなら slurs で弾かない */
-    var allowSlurs = false
+    /** 設定「不適切な語も候補に出す」(既定オン)。オンなら slurs で弾かない */
+    var allowSlurs = true
 
 
     /** 変換の結果: 候補と、1 位の候補の語の区切り (ends[i] = i 語目の読みの終わり、lens[i] = 表記の長さ) */

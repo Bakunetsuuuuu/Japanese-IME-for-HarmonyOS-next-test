@@ -55,7 +55,7 @@ export interface KeyboardSettings {
   separateSuggest: boolean;
   // 英数字キーボードで英字も入力中の文字として組み立てて変換する (iphone -> iPhone)。オフは英字をそのまま入れる (数字は組み立てる)
   alphaCompose: boolean;
-  // 差別的・不適切な語も候補に出す (既定オフ)
+  // 差別的・不適切な語も候補に出す (既定オン)
   allowSlurs: boolean;
   // キーボードのライト／ダーク。'system' は端末のカラーモードに従う（既定）。
   // 'light' / 'dark' はキーボードだけ固定する（ホストアプリの色は変えない）。
@@ -135,7 +135,7 @@ const DEFAULTS: KeyboardSettings = {
   liveCommit: false,
   separateSuggest: true,
   alphaCompose: true,
-  allowSlurs: false,
+  allowSlurs: true,
   themeMode: 'system',
   keyChromeEnabled: true,
   composingInPanel: true,
@@ -217,7 +217,7 @@ export class SettingsStore {
         liveCommit: liveCommit === true,
         separateSuggest: separateSuggest !== false,
         alphaCompose: alphaCompose !== false,
-        allowSlurs: allowSlurs === true,
+        allowSlurs: allowSlurs !== false,
         themeMode: String(themeMode),
         keyChromeEnabled: keyChrome !== false,
         composingInPanel: inPanel !== false,

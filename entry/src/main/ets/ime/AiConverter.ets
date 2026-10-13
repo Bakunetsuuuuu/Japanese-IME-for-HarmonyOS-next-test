@@ -206,8 +206,8 @@ export class AiConverter {
   // 変換で受け取る候補の数。10 では短い読み (き・かん) の単漢字が足りない (期・季・記が 11 位より後ろにある)
   private static CANDIDATES: number = 30;
   static liveCommit: boolean = false;
-  // 設定「不適切な語も候補に出す」(既定はオフ = 差別語を候補から外す)。ユーザー 2026-10-13:「キチガイ が極端に出ない」
-  static allowSlurs: boolean = false;
+  // 設定「不適切な語も候補に出す」(既定はオン。ユーザー 2026-10-13:「キチガイ が極端に出ない」「不適切語は常時出していい」)
+  static allowSlurs: boolean = true;
   static blocked(c: string): boolean {
     return !AiConverter.allowSlurs && AiConverter.SLURS.test(c);
   }        // 設定「オート確定」(既定はオフ = 保留)
@@ -396,8 +396,7 @@ export class AiConverter {
         kinds.push(i < k.length ? k[i] : 0);
       }
     }
-    // 候補の帯から外す判定はすぐ (suggestPending)、帯に出すのは 0.2 秒同じ提案が続いてから (1・2 字ごとに出たり消えたり
-    // してぴょこぴょこしないように)。消すのはすぐ
+    // 候補の帯から外す判定 (suggestPending) と帯に出すのは同時
     AppStorage.setOrCreate('suggestPending', list);
     AppStorage.setOrCreate('suggestPendingKinds', kinds);
     const key = list.join('\u0001') + '\u0002' + top;
@@ -411,12 +410,8 @@ export class AiConverter {
       AppStorage.setOrCreate('suggestKind', kinds.length > 0 ? kinds[0] : 0);
       AppStorage.setOrCreate('suggestFrom', top);
     };
-    if (list.length === 0) {
-      show();
-    } else {
-      AppStorage.setOrCreate('suggestList', [] as string[]);   // 前の提案は消して、新しい提案は少し待ってから
-      AiConverter.suggestTimer = setTimeout(show, AiConverter.SUGGEST_DELAY_MS);
-    }
+    // 提案は候補の帯の中に出すようになったので、待たずにすぐ出す (ユーザー 2026-10-13「0.2 秒の遅延はもういらない」)
+    show();
   }
 
   // 確定・取り消しで入力中の文字が無くなった: 待っている提案を捨てて帯を空にする。変換の結果が確定の後から届いたり、
@@ -430,7 +425,6 @@ export class AiConverter {
     AppStorage.setOrCreate('suggestText', '');
   }
 
-  private static SUGGEST_DELAY_MS: number = 200;
   private static suggestKey: string = '';
   private static suggestTimer: number = -1;
 

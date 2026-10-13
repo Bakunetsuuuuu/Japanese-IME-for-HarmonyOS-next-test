@@ -69,9 +69,9 @@ class Settings(context: Context) {
         get() = p.getBoolean("separateSuggest", true)
         set(v) = p.edit().putBoolean("separateSuggest", v).apply()
 
-    /** 差別的・不適切とされる語も候補に出す (既定オフ。ユーザー 2026-10-13) */
+    /** 差別的・不適切とされる語も候補に出す (既定オン。ユーザー 2026-10-13) */
     var allowSlurs: Boolean
-        get() = p.getBoolean("allowSlurs", false)
+        get() = p.getBoolean("allowSlurs", true)
         set(v) = p.edit().putBoolean("allowSlurs", v).apply()
 
     var liveCommit: Boolean

@@ -282,6 +282,18 @@ int main(int argc, char** argv) {
     shown = c.view().text;
     c.finish();
     expect("live display finish commits what is shown", c.take_commit(), shown);
+    {   // 。。。 は三点リーダーの形も候補に
+        keys(c, "soredesu...{sp}");
+        const auto& cs = c.view().cands;
+        bool ell = false;
+        for (const auto& x : cs) ell = ell || x.find(u"…") != u16::npos;
+        printf("     ellipsis cands:");
+        for (size_t i = 0; i < cs.size() && i < 4; i++) printf(" [%s]", u8(cs[i]).c_str());
+        printf("\n");
+        if (!ell) { printf("FAIL no ellipsis candidate\n"); failures++; }
+        keys(c, "{esc}{esc}");
+        c.take_commit();
+    }
     c.options.live_display = false;
 
     // ---- 打ち間違いを消して子音だけが残ったとき、続けて打った字とつながる

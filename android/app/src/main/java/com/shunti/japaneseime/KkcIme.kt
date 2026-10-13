@@ -653,14 +653,14 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
             }
             b.addView(tv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (44 * dp).toInt()))
         }
-        // 提案の行: 同じ提案が 0.2 秒続いてから出す (1・2 字ごとにぴょこぴょこしないように)。消すのはすぐ
+        // 提案の行: すぐ出す (ユーザー 2026-10-13「0.2 秒の遅延はもういらない」)
         val sg = if (input.inputState == InputHandler.InputState.COMPOSING) input.suggestions else emptyList()
         val key = sg.joinToString("\u0001") { it.second }
         if (key != suggKey) {
             suggKey = key
             main.removeCallbacks(suggShow)
             suggBox?.visibility = suggHidden()
-            if (sg.isNotEmpty()) main.postDelayed(suggShow, 200)
+            if (sg.isNotEmpty()) main.post(suggShow)
         }
         // 選んでいる候補が見えるように
         if (sel >= 0) b.post { b.getChildAt(sel)?.let { scroll?.smoothScrollTo(maxOf(0, it.left - (40 * dp).toInt()), 0) } }

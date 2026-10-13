@@ -27,6 +27,9 @@ size_t split_point(const u16& kana) {
 }
 }  // namespace
 
+// 不適切な語も候補に出す (ユーザー 2026-10-13「不適切語は常時出していい」。スマホ版の設定の既定と同じ)
+bool allow_slurs = true;
+
 bool is_slur(const u16& s) {
     for (const auto& r : SLURS) {
         u16 w = r.word;
@@ -69,7 +72,7 @@ bool Converter::convert_once(const u16& ctx, const u16& kana, int max, Conversio
     }
     for (auto& c : raw) {
         if (int(out.cands.size()) >= max) break;
-        if (!is_slur(c)) out.cands.push_back(c);
+        if (allow_slurs || !is_slur(c)) out.cands.push_back(c);
     }
     {   // 提案
         std::vector<uint16_t> sb(8192);
@@ -78,10 +81,23 @@ bool Converter::convert_once(const u16& ctx, const u16& kana, int max, Conversio
         for (size_t i = 0, st = 0, k = 0; ns > 0 && int(k) < ns && i < sb.size(); i++) {
             if (sb[i] != 0) continue;
             u16 t(reinterpret_cast<const char16_t*>(sb.data() + st), i - st);
-            if (!is_slur(t)) { out.sugg.push_back(std::move(t)); out.sugg_kinds.push_back(kinds[k]); }
+            if (allow_slurs || !is_slur(t)) { out.sugg.push_back(std::move(t)); out.sugg_kinds.push_back(kinds[k]); }
             st = i + 1;
             k++;
         }
+    }
+    // 。。。・・・ (ピリオドや中黒を 3 つ打った) は三点リーダー … にした形も 1 位のすぐ後ろに (ユーザー 2026-10-13)
+    if (!out.cands.empty()) {
+        u16 t = out.cands[0];
+        bool hit = false;
+        for (const u16& dots : {u16(u"。。。"), u16(u"・・・"), u16(u"．．．")}) {
+            for (size_t at = t.find(dots); at != u16::npos; at = t.find(dots, at + 1)) {
+                t.replace(at, 3, u"…");
+                hit = true;
+            }
+        }
+        if (hit && std::find(out.cands.begin(), out.cands.end(), t) == out.cands.end())
+            out.cands.insert(out.cands.begin() + 1, t);
     }
     // 差別語で 1 位が落ちたときは区切りを使わない (区切りは元の 1 位のもの)
     if (raw.empty() || out.cands.empty() || out.cands[0] != raw[0]) return true;
@@ -134,7 +150,7 @@ std::vector<u16> Converter::complete(const u16& prefix, int max, int max_extra) 
     for (size_t i = 0, st = 0; n > 0 && int(out.size()) < n && i < buf.size(); i++) {
         if (buf[i] == 0) { out.emplace_back(reinterpret_cast<const char16_t*>(buf.data() + st), i - st); st = i + 1; }
     }
-    out.erase(std::remove_if(out.begin(), out.end(), is_slur), out.end());
+    if (!allow_slurs) out.erase(std::remove_if(out.begin(), out.end(), is_slur), out.end());
     return out;
 }
 
