@@ -28,6 +28,7 @@ import { bracketVariants } from './Brackets';
 import { EmojiSuggest } from './EmojiSuggest';
 import { AppMaintenance } from './AppMaintenance';
 import { AiConverter } from './AiConverter';
+import { SentenceFlow } from './SentenceFlow';
 
 interface InputMethodSubtype {
   id: string;
@@ -400,6 +401,8 @@ export class InputHandler {
   private learningSaveTimer: number = -1;
   private nextWordPrefs: dataPreferences.Preferences | undefined = undefined;
   private nextWordSaveTimer: number = -1;
+  private flowPrefs: dataPreferences.Preferences | undefined = undefined;
+  private flowSaveTimer: number = -1;
   private unknownWordPrefs: dataPreferences.Preferences | undefined = undefined;
   private unknownWordSaveTimer: number = -1;
   private suppressedPrefs: dataPreferences.Preferences | undefined = undefined;
@@ -458,6 +461,26 @@ export class InputHandler {
         } catch (_e) {}
       })
       .catch((e: Error) => { InputLog.recordInit('shunti_learning', e); });
+    // 文の流れの予測 (SentenceFlow) の覚えた流れ
+    dataPreferences.getPreferences(this.imeContext, 'shunti_flow')
+      .then((prefs: dataPreferences.Preferences) => {
+        this.flowPrefs = prefs;
+        return prefs.get('v1', '{}');
+      })
+      .then((val: dataPreferences.ValueType) => {
+        try {
+          SentenceFlow.setLearned(JSON.parse(String(val)) as Record<string, Record<string, number>>);
+        } catch (_e) {}
+      })
+      .catch((e: Error) => { InputLog.recordInit('shunti_flow', e); });
+    SentenceFlow.onChange = () => {
+      clearTimeout(this.flowSaveTimer);
+      this.flowSaveTimer = setTimeout(() => {
+        const prefs = this.flowPrefs;
+        if (!prefs) { return; }
+        prefs.put('v1', JSON.stringify(SentenceFlow.getLearned())).then(() => prefs.flush());
+      }, 1000);
+    };
     dataPreferences.getPreferences(this.imeContext, 'shunti_nextword')
       .then((prefs: dataPreferences.Preferences) => {
         this.nextWordPrefs = prefs;
@@ -1826,6 +1849,7 @@ export class InputHandler {
   // (書き出しの候補は出さない。pushPredictions の説明)。
   private markSentenceBoundary(): void {
     InputLog.recordBoundary('sentence');
+    SentenceFlow.boundary();
     this.recentWords = [];
     // A finished sentence also finishes whatever word was being assembled.
     this.endUnknownWordRun();
@@ -1880,6 +1904,7 @@ export class InputHandler {
   ): void {
     this.kbController = kbCtrl;
     this.inputClient = client;
+    SentenceFlow.reset();   // 別の欄に移った: 途中の節はつながらない
     // 入力中のかなを、キーボード内ではなくホストアプリの入力欄に直接
     // 下線付きで出せるか (setPreviewTextSync)。対応は入力欄ごとに違い、
     // 非対応の欄で呼ぶと 12800011 で失敗するので、必ずここで確認してから使う。
@@ -2085,6 +2110,7 @@ export class InputHandler {
       } catch (_e) {
         deleted = '';
       }
+      SentenceFlow.backspace();
       if (deleted.length === 0) { deleted = this.insertedBuffer.pop() ?? ''; }
       else { this.insertedBuffer.pop(); }
       if (deleted.length > 0) { this.pushHostOp('delete', deleted); }
@@ -3727,22 +3753,46 @@ export class InputHandler {
       this.pushHostOp('insert', finalText);
       // @ を入れた (あっと の変換・記号の欄・英数字キーボード): 予測の帯にメールのドメインを出す (ユーザー 2026-10-13)。
       // 確定の後に呼ばれる pushPredictions が帯を書き換えるので、その後で
-      if (finalText.indexOf('@') >= 0 || /@[A-Za-z0-9.\-]*$/.test(this.insertedBuffer.join(''))) {
-        setTimeout(() => { this.showEmailDomains(); }, 0);
-      }
+      // 文の流れ (SentenceFlow) にも入れて、確定の後の帯に「。」や次の文を出す (メールのドメインが先)
+      SentenceFlow.feed(finalText);
+      setTimeout(() => {
+        if (!this.showEmailDomains()) { this.showFlowPredictions(); }
+      }, 0);
     }
   }
 
   // 入力欄の @ の後ろに打ったドメインの続き (gmail.com・yahoo.co.jp …) を予測の帯に出す。押すとその続きを入れる
-  private showEmailDomains(): void {
+  private showEmailDomains(): boolean {
     const m = /[A-Za-z0-9._%+\-]*@([A-Za-z0-9.\-]*)$/.exec(this.insertedBuffer.join(''));
-    if (m === null) { return; }
+    if (m === null) { return false; }
     const typed = m[1].toLowerCase();
     const strip = EMAIL_DOMAINS.filter((d: string) => d.startsWith(typed) && d !== typed).slice(0, 6)
       .map((d: string) => d.slice(typed.length));
-    if (strip.length === 0) { return; }
+    if (strip.length === 0) { return false; }
     AppStorage.setOrCreate('predictions', strip);
     this.predictionWordGroups = strip.map((t: string) => [t]);
+    return true;
+  }
+
+  // 文の流れの予測を、確定の後の帯の先頭に足す (お疲れ様です -> 。 -> 本日の進捗報告です。)
+  private showFlowPredictions(): void {
+    if ((AppStorage.get<string>('inputState') ?? InputState.IDLE) !== InputState.IDLE) { return; }
+    const f = SentenceFlow.predict();
+    if (f.length === 0) { return; }
+    const cur = AppStorage.get<string[]>('predictions') ?? [];
+    const strip: string[] = [];
+    const groups: string[][] = [];
+    for (const t of f) {
+      if (strip.indexOf(t) < 0) { strip.push(t); groups.push([t]); }
+    }
+    for (let i = 0; i < cur.length && strip.length < 6; i++) {
+      if (strip.indexOf(cur[i]) < 0) {
+        strip.push(cur[i]);
+        groups.push(i < this.predictionWordGroups.length ? this.predictionWordGroups[i] : [cur[i]]);
+      }
+    }
+    AppStorage.setOrCreate('predictions', strip);
+    this.predictionWordGroups = groups;
   }
 
   hideKeyboard(): void {
