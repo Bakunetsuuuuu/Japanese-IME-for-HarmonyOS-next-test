@@ -679,7 +679,9 @@ struct KeyboardPage {
               // 無くなるので、候補バーの右端へ移す (下の previewInField 分岐)。
               // ただし変換範囲を ◀▶ で変えている最中だけは、どこまでを変換
               // するかが入力欄側では分からないのでこの行を出す。
-              if (this.showComposingPanel || this.suggestList.length > 0
+              // 提案は、この帯が無い (入力欄にプレビューを出す) ときは候補の帯の中に出す (CandidateBar)。帯を出し入れすると
+              // キーボードの高さが変わって打っている最中にキーがずれる
+              if (this.showComposingPanel
                   || (this.convEnd > 0 && this.convEnd < this.composingText.length)) {
               Row() {
                 Row() {
@@ -697,7 +699,7 @@ struct KeyboardPage {
                         .fontSize(this.isLandscape ? 12 : 16)
                         .fontColor(kbTheme(this.isDark).textSecondary)
                         .maxLines(1)
-                    } else if (this.suggestList.length > 0) {
+                    } else if (this.suggestList.length > 0 && this.showComposingPanel) {
                       // 提案が出ているとき: 入力中の文字は消さずに横に縮めて詰める (均等割付)。並べる幅は縮めた幅
                       Stack({ alignContent: Alignment.Start }) {
                         Text(this.composingText + this.pendingRomaji)
@@ -737,7 +739,7 @@ struct KeyboardPage {
                   // 候補の帯は打ったとおりの変換だけにする (2026-10-09 ユーザー: 左端に置くと候補が潰れる)
                   // 複数の提案 (2026/10/9・2026年10月9日・10/9 …) は横に並べて、はみ出す分は横にめくる。右から引き出すように出る
                   // 打ち間違いの直しは入力中の文字のすぐ右 (左寄せ)、日付・住所・英単語などは右寄せ
-                  if (this.suggestList.length > 0 && (this.composingText.length > 0 || this.pendingRomaji.length > 0)) {
+                  if (this.showComposingPanel && this.suggestList.length > 0 && (this.composingText.length > 0 || this.pendingRomaji.length > 0)) {
                     Scroll() {
                       Row({ space: 6 }) {
                         Text('提案')
