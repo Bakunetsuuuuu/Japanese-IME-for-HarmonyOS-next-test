@@ -120,7 +120,7 @@ Composer::Composer(Converter* conv, Learning* learning, UserDict* dict) : conv_(
 
 bool Composer::will_handle(const KeyEvent& ev) const {
     if (ev.ctrl || ev.alt) return false;
-    if (state_ == State::Idle) return ev.key == Key::Char || ev.key == Key::Space;
+    if (state_ == State::Idle) return ev.key == Key::Char || ev.key == Key::Space || (ev.key == Key::Tab && !ev.shift && !post_.empty());
     return true;
 }
 
@@ -129,7 +129,11 @@ bool Composer::press(const KeyEvent& ev) {
     bool handled = false;
     switch (state_) {
         case State::Idle:
-            if (ev.key == Key::Space) {   // 何も打っていないときの空白: 全角 (Shift で半角)
+            if (ev.key == Key::Tab) {   // 文の流れの続きを入れる (お疲れ様です -> 。 -> 本日の進捗報告です。)
+                const u16 t = post_[0];
+                commit_text(t);
+                handled = true;
+            } else if (ev.key == Key::Space) {   // 何も打っていないときの空白: 全角 (Shift で半角)
                 commit_text(ev.shift != options.space_fullwidth ? u"　" : u" ");
                 handled = true;
             } else if (ev.key == Key::Char) {
@@ -152,6 +156,7 @@ bool Composer::press(const KeyEvent& ev) {
 }
 
 void Composer::start_input() {
+    post_.clear();
     u16 c = context_ ? context_() : u16();
     ctx_ = tail(c.empty() ? history_ : c, CTX_MAX);
     state_ = State::Input;
@@ -887,6 +892,28 @@ void Composer::log(LogEvent e) {
 void Composer::commit_text(const u16& t) {
     commit_ += t;
     history_ = tail(history_ + t, CTX_MAX);
+    if (flow) {
+        flow->feed(t);
+        post_ = flow->predict();
+        flow->save();   // 節が閉じたときだけ書く (dirty)
+    }
+}
+
+void Composer::select_post(int index) {
+    if (state_ != State::Idle || index < 0 || index >= int(post_.size())) return;
+    const u16 t = post_[size_t(index)];
+    commit_text(t);
+    rebuild_view();
+}
+
+void Composer::passthrough(const KeyEvent& ev) {
+    if (!flow || state_ != State::Idle) return;
+    if (ev.key == Key::Backspace) flow->backspace();
+    else if (ev.key == Key::Enter) flow->boundary();
+    else flow->reset();   // 矢印・Home など: カーソルが動いた
+    post_.clear();
+    flow->save();
+    rebuild_view();
 }
 
 void Composer::to_idle() {
@@ -944,6 +971,7 @@ bool Composer::live_shown() const {
 
 void Composer::rebuild_view() {
     View v;
+    if (state_ == State::Idle) v.post = post_;
     if (state_ == State::Input) {
         const u16& p = romaji_.pending();
         const u16 fz = frozen_surface();   // 固定した前の方 (変換した形で見せる)

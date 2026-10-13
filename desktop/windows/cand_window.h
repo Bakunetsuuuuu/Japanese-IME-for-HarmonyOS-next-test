@@ -24,6 +24,7 @@ public:
     bool visible() const { return hwnd_ && IsWindowVisible(hwnd_); }
     std::function<void(int)> on_click;   // 候補をマウスで選んだ (候補の番号)
     std::function<void(int)> on_sugg_click;   // 提案をマウスで選んだ (提案の番号)
+    std::wstring label;                        // 下の行の頭の字 (空なら「提案 Shift+↓」。文の流れの続きでは「続き Tab」)
     std::string theme = "auto";          // auto (Windows に合わせる)・light・dark
 
 private:

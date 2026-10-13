@@ -100,6 +100,7 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* tm, TfClientId cid, DWORD) {
 
     Core& c = core();
     composer_ = std::make_unique<Composer>(c.conv.ok() ? &c.conv : nullptr, &c.learning, &c.dict);
+    composer_->flow = &c.flow;
     composer_->set_context_provider([this] { return left_ctx_; });
     if (INPUT_LOG_ENABLED) {   // デバッグ用のビルドだけ (リリース用では INPUT_LOG_ENABLED が false で、書き出す関数も空)
         composer_->on_log = [this](const LogEvent& e) {
@@ -377,6 +378,11 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL*
     if (INPUT_LOG_ENABLED && a == Action::None && wp == VK_BACK && composer_ && !composer_->composing() && !secure_ && is_open())
         input_log_simple("delchar", "IDLE");
     *eaten = a != Action::None;
+    // 何も打っていないときにアプリへ渡したキー (Backspace・Enter・矢印): 文の流れに知らせ、続きの窓を消す
+    if (a == Action::None && composer_ && !composer_->composing() && is_open() && to_key_event(wp, lp, ev) && ev.key != Key::Char) {
+        composer_->passthrough(ev);
+        if (composer_->view().post.empty()) cand_.hide();
+    }
     switch (a) {
         case Action::Open: set_open(true); break;
         case Action::Close: set_open(false); break;
@@ -540,6 +546,35 @@ void TextService::apply(TfEditCookie ec, ITfContext* ctx) {
 }
 
 void TextService::update_candidates(TfEditCookie ec, ITfContext* ctx, const View& v) {
+    // 確定した後の文の流れの続き (お疲れ様です -> 。 -> 本日の進捗報告です。): カーソルの所に小さく。Tab かクリックで入れる
+    if (!comp_ && !v.post.empty()) {
+        ComPtr<ITfContextView> view;
+        RECT rc = {};
+        BOOL clipped = FALSE;
+        HWND hwnd = nullptr;
+        TF_SELECTION sel = {};
+        ULONG n = 0;
+        bool ok = SUCCEEDED(ctx->GetActiveView(&view)) && SUCCEEDED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) && n == 1;
+        if (ok) {
+            ok = view->GetTextExt(ec, sel.range, &rc, &clipped) == S_OK && (rc.right > rc.left || rc.bottom > rc.top);
+            view->GetWnd(&hwnd);
+            sel.range->Release();
+        }
+        if (!ok) {
+            GUITHREADINFO gi = {sizeof gi};
+            if (GetGUIThreadInfo(0, &gi) && gi.hwndCaret) {
+                rc = gi.rcCaret;
+                MapWindowPoints(gi.hwndCaret, nullptr, reinterpret_cast<POINT*>(&rc), 2);
+                if (!hwnd) hwnd = gi.hwndCaret;
+            }
+        }
+        if (!hwnd) hwnd = GetFocus();
+        post_ctx_ = ctx;
+        cand_.label = L"続き Tab";
+        cand_.show({}, -1, rc, hwnd, v.post, -1);
+        return;
+    }
+    cand_.label.clear();
     if (!comp_ || ((!v.cand_open || v.cands.empty()) && v.sugg.empty())) { cand_.hide(); return; }
     ComPtr<ITfContextView> view;
     ComPtr<ITfRange> r, a;
@@ -581,6 +616,15 @@ void TextService::finish_composition() {
 }
 
 void TextService::on_suggestion_clicked(int index) {
+    if (composer_ && !composer_->composing() && post_ctx_) {   // 文の流れの続きを押した
+        ComPtr<ITfContext> keep(post_ctx_);
+        edit(keep.Get(), TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep, index](TfEditCookie ec) {
+            if (!composer_) return;
+            composer_->select_post(index);
+            apply(ec, keep.Get());
+        });
+        return;
+    }
     if (!composer_ || !comp_ctx_) return;
     ComPtr<ITfContext> keep(comp_ctx_);
     edit(keep.Get(), TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep, index](TfEditCookie ec) {

@@ -46,7 +46,7 @@ cl /nologo /c /O2 /MT /EHsc /std:c++17 /utf-8 /W3 /GS /guard:cf /DNOMINMAX /DUNI
   /I"%ROOT%\entry\src\main\cpp" /Fo"%OBJ%\\" ^
   "%HERE%dllmain.cpp" "%HERE%globals.cpp" "%HERE%text_service.cpp" "%HERE%cand_window.cpp" "%HERE%display_attr.cpp" "%HERE%langbar.cpp" ^
   "%HERE%input_log.cpp" "%CORE%\text.cpp" "%CORE%\romaji.cpp" "%CORE%\store.cpp" "%CORE%\settings.cpp" ^
-  "%CORE%\converter.cpp" "%CORE%\composer.cpp" "%ROOT%\entry\src\main\cpp\engine.cpp" || exit /b 1
+  "%CORE%\converter.cpp" "%CORE%\composer.cpp" "%CORE%\flow.cpp" "%ROOT%\entry\src\main\cpp\engine.cpp" || exit /b 1
 rem 変換エンジンの AVX2 版の計算だけは /arch:AVX2 で (使うのは CPU が対応しているときだけ。engine_simd.h を参照)
 cl /nologo /c /O2 /MT /EHsc /std:c++17 /utf-8 /W3 /GS /guard:cf /arch:AVX2 %DEFS% /Fo"%OBJ%\\" ^
   "%ROOT%\entry\src\main\cpp\engine_avx2.cpp" || exit /b 1

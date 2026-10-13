@@ -19,6 +19,7 @@
 #include <vector>
 
 #include "converter.h"
+#include "flow.h"
 #include "romaji.h"
 #include "store.h"
 #include "text.h"
@@ -53,6 +54,8 @@ struct View {
     std::vector<u16> sugg, sugg_text;
     std::vector<int> sugg_kinds;
     int sugg_sel = -1;            // 提案の列で選んでいるもの (-1 = 提案の列に入っていない)
+    // 文の流れの続き (確定した後、何も打っていないときだけ。Tab で 1 つ目を入れる)
+    std::vector<u16> post;
 };
 
 // 入力の記録 (デバッグ用のビルドだけが受け取って書く。HarmonyOS 版 InputLog.ets と同じ種別とキー)。
@@ -94,7 +97,11 @@ public:
     // 入力欄のカーソルの左の文 (変換の文脈)。読めない入力欄では空を返してよい (そのときはこれまでに確定した文を使う)
     void set_context_provider(std::function<u16()> f) { context_ = std::move(f); }
     // 入力欄が変わったとき: これまでに確定した文 (文脈の代わり) を忘れる
-    void reset_history() { history_.clear(); }
+    void reset_history() { history_.clear(); post_.clear(); if (flow) flow->reset(); }
+    // 文の流れの予測 (無ければ使わない)。確定した文字を覚え、確定の後に続きを view().post に出す
+    SentenceFlow* flow = nullptr;
+    // 何も打っていないときに、こちらで扱わずアプリへ渡したキー (Backspace・Enter・矢印など)。文の流れに知らせる
+    void passthrough(const KeyEvent& ev);
 
     // このキーをこちらで扱うか (状態は変えない。TSF の OnTestKeyDown 用)
     bool will_handle(const KeyEvent& ev) const;
@@ -111,6 +118,8 @@ public:
     void select_candidate(int index);
     // 提案の index 番目を選んだ (マウス、または Shift+Enter で 0 番目)。打ったとおりの変換ではないので学習しない
     void select_suggestion(int index);
+    // 文の流れの続き (view().post) の index 番目を入れた (マウス)
+    void select_post(int index);
     // 入力中のものをいま見えているまま確定する (入力欄を離れたときなど)。確定した文は take_commit で
     void finish();
     // 入力中のものを捨てる
@@ -118,6 +127,7 @@ public:
 
 private:
     enum class State { Idle, Input, Convert };
+    std::vector<u16> post_;   // 文の流れの続き (view().post)
     struct Seg {
         u16 reading, surface;
         u16 tail_r, tail_s;      // 付属語の読みと表記 (候補は自立語だけを変換して、これをつなぐ)

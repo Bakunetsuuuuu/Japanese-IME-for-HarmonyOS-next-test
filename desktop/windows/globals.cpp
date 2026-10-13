@@ -51,6 +51,7 @@ const void* map_file(const std::filesystem::path& p, size_t& size) {
 Core::Core()
     : learning(user_dir() / L"learned.json"), dict(user_dir() / L"userdict.json"), settings(user_dir() / L"settings.json") {
     dir_ = module_dir();
+    flow.load(user_dir() / L"flow.tsv");
     // 計測用: 別のフォルダの辞書とモデルを使う (同じ DLL のまま、モデルを替えて比べるため)
     if (const wchar_t* d = _wgetenv(L"SHUNTI_DATA_DIR"); d && *d) dir_ = d;
     lex_ = map_file(dir_ / L"kkc_lex.bin", lex_size_);

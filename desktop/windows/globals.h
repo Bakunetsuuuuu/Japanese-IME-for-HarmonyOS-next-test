@@ -6,6 +6,7 @@
 #include <string>
 
 #include "../core/converter.h"
+#include "../core/flow.h"
 #include "../core/settings.h"
 #include "../core/store.h"
 
@@ -44,6 +45,7 @@ struct Core {
     Learning learning;
     UserDict dict;
     SettingsFile settings;   // 設定画面が書く settings.json (入力を始めるたびに読み直す)
+    SentenceFlow flow;       // 文の流れの予測 (flow.tsv)
     Core();
     // 変換モデルを設定の値 (light・standard・high) のものにする。今と同じなら何もしない。
     // ファイルが無ければ standard (kkc_model.bin) を使う。前のモデルはメモリから外す

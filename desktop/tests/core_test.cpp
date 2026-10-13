@@ -282,6 +282,21 @@ int main(int argc, char** argv) {
     shown = c.view().text;
     c.finish();
     expect("live display finish commits what is shown", c.take_commit(), shown);
+    {   // 文の流れ: お疲れ様です -> 。 -> 本日の進捗報告です。 (2 回あった流れ)
+        SentenceFlow f;
+        for (int i = 0; i < 2; i++) { f.feed(u"お疲れ様です。本日の進捗報告です。"); f.boundary(); }
+        f.feed(u"お疲れ様です");
+        auto p = f.predict();
+        expect("flow: punct after clause", p.empty() ? u16() : p[0], u"。");
+        c.flow = &f;
+        keys(c, ".{enter}");
+        c.take_commit();
+        const auto& post = c.view().post;
+        expect("flow: next clause after punct", post.empty() ? u16() : post[0], u"本日の進捗報告です。");
+        keys(c, "{tab}");
+        expect("flow: tab inserts it", c.take_commit(), u"本日の進捗報告です。");
+        c.flow = nullptr;
+    }
     {   // 。。。 は三点リーダーの形も候補に
         keys(c, "soredesu...{sp}");
         const auto& cs = c.view().cands;

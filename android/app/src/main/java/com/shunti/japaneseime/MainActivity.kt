@@ -228,6 +228,7 @@ class MainActivity : Activity() {
                 .setMessage("覚えた変換をすべて消します。元に戻せません。")
                 .setPositiveButton("消す") { _, _ ->
                     Learning.get(this).apply { clear(); save() }
+                    SentenceFlow.init(this); SentenceFlow.clear()
                 }
                 .setNegativeButton("やめる", null)
                 .show()

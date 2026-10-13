@@ -186,6 +186,7 @@ void CandWindow::layout() {
 
 // 提案の頭の文字: 列に入る方法 (入ったら出し方)
 std::wstring CandWindow::sugg_label() const {
+    if (!label.empty()) return label;
     return sugg_sel_ < 0 ? L"提案 Shift+↓" : L"提案";
 }
 

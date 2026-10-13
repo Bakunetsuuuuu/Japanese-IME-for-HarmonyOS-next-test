@@ -39,6 +39,7 @@ struct Core {
     Converter conv;
     Learning learning;
     UserDict dict;
+    SentenceFlow flow;   // 文の流れの予測 (flow.tsv)
     Core();
     // 変換モデルを設定の値 (light・standard・high) のものにする。今と同じなら何もしない。
     // ファイルが無ければ standard (kkc_model.bin)。前のモデルはメモリから外す

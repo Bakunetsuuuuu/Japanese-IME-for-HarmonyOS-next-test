@@ -138,6 +138,7 @@ private:
 }  // namespace
 
 Core::Core() : learning(user_dir() / "learned.json"), dict(user_dir() / "userdict.json") {
+    flow.load(user_dir() / "flow.tsv");
     dir_ = data_dir();
     if (dir_.empty()) return;
     lex_ = map_file(dir_ / "kkc_lex.bin", lex_size_);
@@ -167,6 +168,7 @@ void Core::use_model(const std::string& name) {
 ShuntiState::ShuntiState(ShuntiEngine* engine, fcitx::InputContext* ic)
     : engine_(engine), ic_(ic),
       composer_(engine->core().conv.ok() ? &engine->core().conv : nullptr, &engine->core().learning, &engine->core().dict) {
+    composer_.flow = &engine->core().flow;
     // 変換の文脈 = 入力欄のカーソルの左 (アプリが教えてくれるときだけ。教えてくれなければこれまでに確定した文を使う)
     composer_.set_context_provider([this]() -> u16 {
         if (!ic_->capabilityFlags().test(fcitx::CapabilityFlag::SurroundingText)) return {};
@@ -187,7 +189,15 @@ void ShuntiState::keyEvent(fcitx::KeyEvent& event) {
         engine_->applyConfig(composer_);
         engine_->useModel();
     }
-    if (!composer_.will_handle(ev)) return;
+    if (!composer_.will_handle(ev)) {
+        // 何も打っていないときにアプリへ渡すキー (Backspace・Enter・矢印): 文の流れに知らせる
+        if (!composer_.composing() && ev.key != Key::Char) {
+            const bool had = !composer_.view().post.empty();
+            composer_.passthrough(ev);
+            if (had) apply();
+        }
+        return;
+    }
     composer_.press(ev);
     apply();
     event.filterAndAccept();
@@ -216,6 +226,12 @@ void ShuntiState::apply() {
         t.setCursor(int(to_utf8(v.text.substr(0, size_t(std::max(0, v.caret)))).size()));
         if (ic_->capabilityFlags().test(fcitx::CapabilityFlag::Preedit)) panel.setClientPreedit(t);
         else panel.setPreedit(t);
+    }
+    // 文の流れの続き (確定した後。Tab で 1 つ目を入れる)
+    if (v.text.empty() && !v.post.empty()) {
+        std::string a = "続き (Tab):";
+        for (size_t i = 0; i < v.post.size(); i++) a += "  " + to_utf8(v.post[i]);
+        panel.setAuxUp(fcitx::Text(a));
     }
     // 提案 (候補の上の補助の行に。Shift+Enter で 1 つ目を確定)
     if (!v.sugg.empty()) {

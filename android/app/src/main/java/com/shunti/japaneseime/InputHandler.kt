@@ -85,6 +85,7 @@ class InputHandler(
 
     fun onInputStart(ei: EditorInfo?, restarting: Boolean) {
         if (restarting) return
+        SentenceFlow.reset()   // 別の欄に移った: 途中の節はつながらない
         resetComposition()
         numericField = false
         predictions = emptyList()
@@ -256,6 +257,7 @@ class InputHandler(
                     ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER))
                     ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER))
                 }
+                SentenceFlow.boundary()   // 送信・改行で文が終わった
                 predictions = emptyList()
                 host.render()
             }
@@ -341,7 +343,7 @@ class InputHandler(
     fun commitPrediction(index: Int) {
         val text = predictions.getOrNull(index) ?: return
         insertText(text)
-        predictions = emailStrip()
+        predictions = afterInsertStrip(emptyList())
         host.render()
     }
 
@@ -463,11 +465,18 @@ class InputHandler(
         val ic = host.ic ?: return
         ic.commitText(text, 1)
         cursor()?.let { pushHostOp(true, text, it - text.length) }
-        // @ を入れた (あっと の変換・記号): 確定の後の帯にメールのドメインの続きを出す (ユーザー 2026-10-13)
-        if ('@' in text) {
-            val es = emailStrip()
-            if (es.isNotEmpty()) { predictions = es; host.render() }
-        }
+        // 文の流れ (SentenceFlow) に入れる。@ を入れた (あっと の変換・記号) ときはメールのドメインの続き、ほかは文の流れの続きを
+        // 確定の後の帯に出す (ユーザー 2026-10-13)。変換の確定のときは、この後の pushPredictions がまとめて出し直す
+        SentenceFlow.feed(text)
+        val st = afterInsertStrip(emptyList())
+        if (st.isNotEmpty()) { predictions = st; host.render() }
+    }
+
+    /** 確定の後の帯: メールのドメインの続き > 文の流れの続き > base (絵文字など) */
+    private fun afterInsertStrip(base: List<String>): List<String> {
+        val es = emailStrip()
+        if (es.isNotEmpty()) return es
+        return (SentenceFlow.predict() + base).distinct().take(6)
     }
 
     /** 入力欄のカーソルの前が「…@打ちかけのドメイン」なら、ドメインの続き (gmail.com …) */
@@ -479,6 +488,7 @@ class InputHandler(
     }
 
     private fun deleteBeforeCursor() {
+        SentenceFlow.backspace()
         val ic = host.ic ?: return
         val sel = ic.getSelectedText(0)
         if (!sel.isNullOrEmpty()) {
@@ -701,8 +711,9 @@ class InputHandler(
             for (x in e) if (x !in strip && strip.size < 6) strip.add(x)
             break
         }
-        predictions = emailStrip().ifEmpty { strip }
+        predictions = afterInsertStrip(strip)
         host.render()
+        SentenceFlow.save()
     }
 
     companion object {

@@ -3,6 +3,7 @@
 #pragma once
 #include <windows.h>
 #include <msctf.h>
+#include <wrl/client.h>
 
 #include <functional>
 #include <memory>
@@ -103,6 +104,7 @@ private:
     u16 left_ctx_;
     bool secure_ = false;   // いまの入力欄がパスワードの欄 (デバッグ用のビルドの入力の記録だけが使う)
     CandWindow cand_;
+    Microsoft::WRL::ComPtr<ITfContext> post_ctx_;   // 文の流れの続きを出した入力欄 (クリックで入れるとき)
     LangBarButton* langbar_ = nullptr;
 };
 

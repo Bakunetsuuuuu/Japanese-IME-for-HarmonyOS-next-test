@@ -77,6 +77,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         super.onCreate()
         tables = Tables.load(assets)
         learning = Learning.get(this)
+        SentenceFlow.init(this)
         settings = Settings(this)
         haptics = Haptics(this)
         recent = RecentSymbols(getSharedPreferences("shunti", MODE_PRIVATE), tables.DEFAULT_RECENT_SYMBOLS)
