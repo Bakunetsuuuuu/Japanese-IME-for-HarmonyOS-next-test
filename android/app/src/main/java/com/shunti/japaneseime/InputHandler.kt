@@ -341,7 +341,7 @@ class InputHandler(
     fun commitPrediction(index: Int) {
         val text = predictions.getOrNull(index) ?: return
         insertText(text)
-        predictions = emptyList()
+        predictions = emailStrip()
         host.render()
     }
 
@@ -463,6 +463,19 @@ class InputHandler(
         val ic = host.ic ?: return
         ic.commitText(text, 1)
         cursor()?.let { pushHostOp(true, text, it - text.length) }
+        // @ を入れた (あっと の変換・記号): 確定の後の帯にメールのドメインの続きを出す (ユーザー 2026-10-13)
+        if ('@' in text) {
+            val es = emailStrip()
+            if (es.isNotEmpty()) { predictions = es; host.render() }
+        }
+    }
+
+    /** 入力欄のカーソルの前が「…@打ちかけのドメイン」なら、ドメインの続き (gmail.com …) */
+    private fun emailStrip(): List<String> {
+        val before = host.ic?.getTextBeforeCursor(64, 0)?.toString() ?: return emptyList()
+        val m = EMAIL_TAIL.find(before) ?: return emptyList()
+        val typed = m.groupValues[1].lowercase()
+        return EMAIL_DOMAINS.filter { it.startsWith(typed) && it != typed }.take(6).map { it.substring(typed.length) }
     }
 
     private fun deleteBeforeCursor() {
@@ -624,6 +637,9 @@ class InputHandler(
         // メールアドレス: @ の後ろにドメインの候補 (HarmonyOS 版 emailCompletions と同じ。ユーザー 2026-10-13)
         var emailAt = minOf(1, cands.size)
         for (m in emailCompletions(target)) if (m !in cands) cands.add(emailAt++, m)
+        // あっと -> 全角の ＠ しか無かった。メールアドレスに使う半角の @ をその前に
+        val fwAt = cands.indexOf("＠")
+        if (fwAt >= 0 && "@" !in cands) cands.add(fwAt, "@")
         // 絵文字・顔文字は後ろに (HarmonyOS 版の辞書変換と同じ位置)
         for (e in (tables.EMOJI_MAP[target] ?: emptyList()) + (tables.KAOMOJI_MAP[target] ?: emptyList())) {
             if (e !in cands) cands.add(e)
@@ -685,11 +701,12 @@ class InputHandler(
             for (x in e) if (x !in strip && strip.size < 6) strip.add(x)
             break
         }
-        predictions = strip
+        predictions = emailStrip().ifEmpty { strip }
         host.render()
     }
 
     companion object {
+        private val EMAIL_TAIL = Regex("""[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]*)$""")
         private const val MAX_HOST_UNDO = 50
         private val RANGE_BG = Color.argb(0x60, 0x4C, 0x8D, 0xFF)
         private val ALPHA_VARIATIONS = setOf(

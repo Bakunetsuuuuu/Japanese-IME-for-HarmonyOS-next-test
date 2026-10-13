@@ -86,7 +86,7 @@ bool Converter::convert_once(const u16& ctx, const u16& kana, int max, Conversio
             k++;
         }
     }
-    // 。。。・・・ (ピリオドや中黒を 3 つ打った) は三点リーダー … にした形も 1 位のすぐ後ろに (ユーザー 2026-10-13)
+    // 。。。・・・ (ピリオドや中黒を 3 つ打った) は三点リーダー … と半角の ... にした形も 1 位のすぐ後ろに (ユーザー 2026-10-13)
     if (!out.cands.empty()) {
         u16 t = out.cands[0];
         bool hit = false;
@@ -96,8 +96,13 @@ bool Converter::convert_once(const u16& ctx, const u16& kana, int max, Conversio
                 hit = true;
             }
         }
-        if (hit && std::find(out.cands.begin(), out.cands.end(), t) == out.cands.end())
+        if (hit && std::find(out.cands.begin(), out.cands.end(), t) == out.cands.end()) {
             out.cands.insert(out.cands.begin() + 1, t);
+            // 半角の ... の形も (ユーザー 2026-10-13)
+            u16 a = t;
+            for (size_t at = a.find(u"…"); at != u16::npos; at = a.find(u"…", at + 3)) a.replace(at, 1, u"...");
+            if (std::find(out.cands.begin(), out.cands.end(), a) == out.cands.end()) out.cands.insert(out.cands.begin() + 2, a);
+        }
     }
     // 差別語で 1 位が落ちたときは区切りを使わない (区切りは元の 1 位のもの)
     if (raw.empty() || out.cands.empty() || out.cands[0] != raw[0]) return true;

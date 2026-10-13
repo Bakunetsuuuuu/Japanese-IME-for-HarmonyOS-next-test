@@ -3219,6 +3219,9 @@ export class InputHandler {
     for (const m of emailCompletions(target)) {
       if (!candidates.includes(m)) { candidates.splice(insAt, 0, m); insAt++; }
     }
+    // あっと -> 全角の ＠ しか無かった。メールアドレスに使う半角の @ をその前に
+    const fwAt = candidates.indexOf('＠');
+    if (fwAt >= 0 && !candidates.includes('@')) { candidates.splice(fwAt, 0, '@'); }
 
     // 括弧は全種類を必ず出す (Brackets.ets)。括弧 1 字を打ったときは同じ側の全種類を先頭から
     // (打った字が 1 位)、かっこ などの読みでは全種類の組を 1 位の後ろに足す。
@@ -3722,7 +3725,24 @@ export class InputHandler {
       // クリップボード貼り付け...どの経路で来ても、ホストへ実際に文字が
       // 出た時点はここ1箇所なので、取消キー用の記録もここで行う。
       this.pushHostOp('insert', finalText);
+      // @ を入れた (あっと の変換・記号の欄・英数字キーボード): 予測の帯にメールのドメインを出す (ユーザー 2026-10-13)。
+      // 確定の後に呼ばれる pushPredictions が帯を書き換えるので、その後で
+      if (finalText.indexOf('@') >= 0 || /@[A-Za-z0-9.\-]*$/.test(this.insertedBuffer.join(''))) {
+        setTimeout(() => { this.showEmailDomains(); }, 0);
+      }
     }
+  }
+
+  // 入力欄の @ の後ろに打ったドメインの続き (gmail.com・yahoo.co.jp …) を予測の帯に出す。押すとその続きを入れる
+  private showEmailDomains(): void {
+    const m = /[A-Za-z0-9._%+\-]*@([A-Za-z0-9.\-]*)$/.exec(this.insertedBuffer.join(''));
+    if (m === null) { return; }
+    const typed = m[1].toLowerCase();
+    const strip = EMAIL_DOMAINS.filter((d: string) => d.startsWith(typed) && d !== typed).slice(0, 6)
+      .map((d: string) => d.slice(typed.length));
+    if (strip.length === 0) { return; }
+    AppStorage.setOrCreate('predictions', strip);
+    this.predictionWordGroups = strip.map((t: string) => [t]);
   }
 
   hideKeyboard(): void {
