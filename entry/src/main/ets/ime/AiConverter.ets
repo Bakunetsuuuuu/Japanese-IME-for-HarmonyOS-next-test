@@ -75,7 +75,7 @@ export class AiConverter {
       return { cands: [], ends: [], lens: [], waitMs: 0, runMs: 0, deliverMs: 0 } as KkcResult;
     }
     const r = kkc.convert(context, kana, max);
-    const cands = r.cands.filter((c: string) => !AiConverter.SLURS.test(c));
+    const cands = r.cands.filter((c: string) => !AiConverter.blocked(c));
     const ok = cands.length > 0 && cands[0] === r.cands[0];
     return { cands: cands, ends: ok ? r.ends : [], lens: ok ? r.lens : [], waitMs: 0, runMs: 0, deliverMs: 0 } as KkcResult;
   }
@@ -205,7 +205,12 @@ export class AiConverter {
   private static LIVE_KEEP: number = 8;      // オート確定のときに、末尾に残す字数 (以前の決まり)
   // 変換で受け取る候補の数。10 では短い読み (き・かん) の単漢字が足りない (期・季・記が 11 位より後ろにある)
   private static CANDIDATES: number = 30;
-  static liveCommit: boolean = false;        // 設定「オート確定」(既定はオフ = 保留)
+  static liveCommit: boolean = false;
+  // 設定「不適切な語も候補に出す」(既定はオフ = 差別語を候補から外す)。ユーザー 2026-10-13:「キチガイ が極端に出ない」
+  static allowSlurs: boolean = false;
+  static blocked(c: string): boolean {
+    return !AiConverter.allowSlurs && AiConverter.SLURS.test(c);
+  }        // 設定「オート確定」(既定はオフ = 保留)
   private static ALT: number = 4;
   private static chunks: FrozenChunk[] = [];   // 固定した部分 (前から順に)。表記は cands[0]
   private static fCtx: string = '';      // 固定を始めたときの文脈
@@ -339,7 +344,7 @@ export class AiConverter {
       }
       // 固定した部分だけを 1 回変換して、選び直せる候補を持たせる (以後この部分は AI にかけない)
       kkc.convertAsync(ctx, kana, 8).then((r2: KkcResult) => {
-        const alts = r2.cands.filter((c: string) => c !== surf && !AiConverter.SLURS.test(c));
+        const alts = r2.cands.filter((c: string) => c !== surf && !AiConverter.blocked(c));
         chunk.cands = [surf].concat(alts.slice(0, AiConverter.ALT - 1));
       }).catch((_e: Error) => {});
     }
@@ -376,6 +381,10 @@ export class AiConverter {
 
   // 提案 (ひらがなの帯に左寄せで出す。KeyboardPage の suggestText): 固定した表記 + 提案。無ければ消す
   private static setSuggestion(r: KkcResult, top: string): void {
+    if ((AppStorage.get<string>('composingText') ?? '').length === 0) {   // 確定した後に届いた結果
+      AiConverter.clearSuggestion();
+      return;
+    }
     const s = r.sugg ?? [];
     const k = r.suggKinds ?? [];
     const list: string[] = [];
@@ -410,6 +419,17 @@ export class AiConverter {
     }
   }
 
+  // 確定・取り消しで入力中の文字が無くなった: 待っている提案を捨てて帯を空にする。変換の結果が確定の後から届いたり、
+  // 0.2 秒待ちの提案が確定の後に出たりして、提案が残った (ユーザー 2026-10-13「変換なしで確定した後も候補が消えない」)
+  static clearSuggestion(): void {
+    clearTimeout(AiConverter.suggestTimer);
+    AiConverter.suggestKey = '';
+    AppStorage.setOrCreate('suggestPending', [] as string[]);
+    AppStorage.setOrCreate('suggestPendingKinds', [] as number[]);
+    AppStorage.setOrCreate('suggestList', [] as string[]);
+    AppStorage.setOrCreate('suggestText', '');
+  }
+
   private static SUGGEST_DELAY_MS: number = 200;
   private static suggestKey: string = '';
   private static suggestTimer: number = -1;
@@ -431,7 +451,7 @@ export class AiConverter {
       if (AiConverter.cache.size > 256) {
         AiConverter.cache.clear();
       }
-      const cands = r.cands.filter((c: string) => !AiConverter.SLURS.test(c));
+      const cands = r.cands.filter((c: string) => !AiConverter.blocked(c));
       // 差別語で 1 位が落ちたら区切りは使えない (1 位の区切りなので)
       const ok = cands.length > 0 && cands[0] === r.cands[0];
       AiConverter.cache.set(key, { cands: cands, ends: ok ? r.ends : [], lens: ok ? r.lens : [],

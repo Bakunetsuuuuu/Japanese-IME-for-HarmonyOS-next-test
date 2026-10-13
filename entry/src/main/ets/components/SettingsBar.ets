@@ -51,6 +51,7 @@ export struct SettingsBar {
   @StorageLink('liveCommit') liveCommit: boolean = false;
   @StorageLink('separateSuggest') separateSuggest: boolean = true;
   @StorageLink('alphaCompose') alphaCompose: boolean = true;
+  @StorageLink('allowSlurs') allowSlurs: boolean = false;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
@@ -618,6 +619,35 @@ export struct SettingsBar {
           .selectedColor(kbTheme(this.isDark).accent)
           .onChange((isOn: boolean) => {
             InputHandler.getInstance().setAlphaCompose(isOn);
+          })
+      }
+      .width('100%')
+      .padding({ top: 12, bottom: 12 })
+
+      Divider().color(kbTheme(this.isDark).divider)
+
+      // 差別的・不適切な語も候補に出すか (既定オフ)
+      Row() {
+        Column({ space: 2 }) {
+          Text('不適切な語も候補に出す')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(14)
+            .fontColor(kbTheme(this.isDark).textPrimary)
+          Text(this.allowSlurs
+            ? '差別的・不適切とされる語も、打てば候補に出します'
+            : '差別的・不適切とされる語は候補に出しません')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(10)
+            .fontColor(kbTheme(this.isDark).textSecondary)
+        }
+        .alignItems(HorizontalAlign.Start)
+        .layoutWeight(1)
+        Toggle({ type: ToggleType.Switch, isOn: this.allowSlurs })
+          .width(44)
+          .height(26)
+          .selectedColor(kbTheme(this.isDark).accent)
+          .onChange((isOn: boolean) => {
+            InputHandler.getInstance().setAllowSlurs(isOn);
           })
       }
       .width('100%')

@@ -8,7 +8,7 @@ import pasteboard from '@ohos.pasteboard';
 import vibrator from '@ohos.vibrator';
 import bundleManager from '@ohos.bundle.bundleManager';
 
-import { JapaneseConverter, toKatakana } from './JapaneseConverter';
+import { JapaneseConverter, toKatakana, toHalfKatakana } from './JapaneseConverter';
 import { KanaKanjiConverter } from './KanaKanjiConverter';
 import { UserDictStore } from './UserDictStore';
 import { UserPosStore } from './UserPosStore';
@@ -259,6 +259,21 @@ const SMALL_KANA: Record<string, string> = {
 };
 
 // ---------- InputHandler ----------
+
+// メールのドメイン。順は教材 (FineWeb・おーぷん2ちゃんねる) に「@ドメイン」が書かれた回数の多い順 (2026-10-13 に数えた。
+// gmail.com 253・yahoo.co.jp 128・docomo.ne.jp 56・i.softbank.jp 38・hotmail.com 30・ezweb.ne.jp 21・live.jp 20 …)。
+// 教材は古めの文が多く icloud.com が少ない (7) ので、今よく使われる icloud.com・outlook.jp は後ろに足した
+const EMAIL_DOMAINS: string[] = ['gmail.com', 'yahoo.co.jp', 'docomo.ne.jp', 'i.softbank.jp', 'hotmail.com', 'ezweb.ne.jp',
+  'live.jp', 'hotmail.co.jp', 'ybb.ne.jp', 'softbank.ne.jp', 'nifty.com', 'me.com', 'yahoo.com', 'icloud.com', 'outlook.jp',
+  'outlook.com', 'au.com', 'rakuten.jp'];
+
+function emailCompletions(composing: string): string[] {
+  const m = /^([A-Za-z0-9._%+\-]+)@([A-Za-z0-9.\-]*)$/.exec(composing);
+  if (m === null) { return []; }
+  const typed = m[2].toLowerCase();
+  return EMAIL_DOMAINS.filter((d: string) => d.startsWith(typed) && d !== typed).slice(0, 5)
+    .map((d: string) => `${m[1]}@${d}`);
+}
 
 export class InputHandler {
   private static _instance: InputHandler | undefined = undefined;
@@ -633,6 +648,8 @@ export class InputHandler {
         AiConverter.liveCommit = s.liveCommit;
         AppStorage.setOrCreate('separateSuggest', s.separateSuggest);
         AppStorage.setOrCreate('alphaCompose', s.alphaCompose);
+        AppStorage.setOrCreate('allowSlurs', s.allowSlurs);
+        AiConverter.allowSlurs = s.allowSlurs;
         AiConverter.setSuggestMode(s.separateSuggest);
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
@@ -917,6 +934,14 @@ export class InputHandler {
   }
 
   // 英数字キーボードで英字も組み立てて変換するか (使い心地が分かれるので切り替え。ユーザー 2026-10-09)
+  setAllowSlurs(enabled: boolean): void {
+    AppStorage.setOrCreate('allowSlurs', enabled);
+    AiConverter.allowSlurs = enabled;
+    if (this.imeContext) {
+      SettingsStore.saveAllowSlurs(this.imeContext, enabled);
+    }
+  }
+
   setAlphaCompose(enabled: boolean): void {
     AppStorage.setOrCreate('alphaCompose', enabled);
     if (this.imeContext) {
@@ -2463,9 +2488,8 @@ export class InputHandler {
     this.composingUndoStack = [];
     this.conversionEnd = 0;
     this.composingWatermark = '';
-    AppStorage.setOrCreate('suggestText', '');
-    AppStorage.setOrCreate('suggestList', [] as string[]);
     AppStorage.setOrCreate('composingText', '');
+    AiConverter.clearSuggestion();
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
@@ -3191,6 +3215,11 @@ export class InputHandler {
       if (!candidates.includes(nf)) { candidates.splice(insAt, 0, nf); insAt++; }
     }
 
+    // メールアドレス: @ の後ろにドメインの候補 (taro@ -> taro@gmail.com …、taro@ya -> taro@yahoo.co.jp)。ユーザー 2026-10-13
+    for (const m of emailCompletions(target)) {
+      if (!candidates.includes(m)) { candidates.splice(insAt, 0, m); insAt++; }
+    }
+
     // 括弧は全種類を必ず出す (Brackets.ets)。括弧 1 字を打ったときは同じ側の全種類を先頭から
     // (打った字が 1 位)、かっこ などの読みでは全種類の組を 1 位の後ろに足す。
     const brackets = bracketVariants(target);
@@ -3228,6 +3257,9 @@ export class InputHandler {
     }
     tagNew(candidates, 'quasi');
     AppStorage.setOrCreate('quasiCandidateSurfaces', quasi);
+    // 半角カタカナ (ほかに出す手段が無かった。ユーザー 2026-10-13)。いちばん後ろに
+    const halfKata = toHalfKatakana(fullKatakana);
+    if (halfKata !== fullKatakana && !candidates.includes(halfKata)) { candidates.push(halfKata); }
     // Candidates the user deleted by long-pressing them are dropped last, so
     // every source above (dictionaries, learning, the injected predictions) is
     // covered by the one filter -- see SuppressedCandidates.

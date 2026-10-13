@@ -55,6 +55,8 @@ export interface KeyboardSettings {
   separateSuggest: boolean;
   // 英数字キーボードで英字も入力中の文字として組み立てて変換する (iphone -> iPhone)。オフは英字をそのまま入れる (数字は組み立てる)
   alphaCompose: boolean;
+  // 差別的・不適切な語も候補に出す (既定オフ)
+  allowSlurs: boolean;
   // キーボードのライト／ダーク。'system' は端末のカラーモードに従う（既定）。
   // 'light' / 'dark' はキーボードだけ固定する（ホストアプリの色は変えない）。
   themeMode: string;
@@ -133,6 +135,7 @@ const DEFAULTS: KeyboardSettings = {
   liveCommit: false,
   separateSuggest: true,
   alphaCompose: true,
+  allowSlurs: false,
   themeMode: 'system',
   keyChromeEnabled: true,
   composingInPanel: true,
@@ -178,6 +181,7 @@ export class SettingsStore {
       const liveCommit = await prefs.get('liveCommit', DEFAULTS.liveCommit);
       const separateSuggest = await prefs.get('separateSuggest', DEFAULTS.separateSuggest);
       const alphaCompose = await prefs.get('alphaCompose', DEFAULTS.alphaCompose);
+      const allowSlurs = await prefs.get('allowSlurs', DEFAULTS.allowSlurs);
       const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
       const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
@@ -213,6 +217,7 @@ export class SettingsStore {
         liveCommit: liveCommit === true,
         separateSuggest: separateSuggest !== false,
         alphaCompose: alphaCompose !== false,
+        allowSlurs: allowSlurs === true,
         themeMode: String(themeMode),
         keyChromeEnabled: keyChrome !== false,
         composingInPanel: inPanel !== false,
@@ -244,6 +249,7 @@ export class SettingsStore {
         liveCommit: DEFAULTS.liveCommit,
         separateSuggest: DEFAULTS.separateSuggest,
         alphaCompose: DEFAULTS.alphaCompose,
+        allowSlurs: DEFAULTS.allowSlurs,
         themeMode: DEFAULTS.themeMode,
         keyChromeEnabled: DEFAULTS.keyChromeEnabled,
         composingInPanel: DEFAULTS.composingInPanel,
@@ -334,6 +340,15 @@ export class SettingsStore {
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('separateSuggest', enabled);
+      await prefs.flush();
+    } catch (_e) {}
+  }
+
+  static async saveAllowSlurs(context: common.Context, enabled: boolean): Promise<void> {
+    InputLog.recordSetting('allowSlurs', String(enabled));
+    try {
+      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
+      await prefs.put('allowSlurs', enabled);
       await prefs.flush();
     } catch (_e) {}
   }

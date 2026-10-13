@@ -104,6 +104,28 @@ export function toKatakana(hiragana: string): string {
   return hiragana.replace(/[ぁ-ゖ]/g, (c) => String.fromCharCode(c.charCodeAt(0) + 0x60));
 }
 
+// 全角カタカナ -> 半角カタカナ (濁点・半濁点は 2 字に)。半角にできない字はそのまま
+const HALF_BASE = 'ｧｱｨｲｩｳｪｴｫｵｶｶｷｷｸｸｹｹｺｺｻｻｼｼｽｽｾｾｿｿﾀﾀﾁﾁｯﾂﾂﾃﾃﾄﾄﾅﾆﾇﾈﾉﾊﾊﾊﾋﾋﾋﾌﾌﾌﾍﾍﾍﾎﾎﾎﾏﾐﾑﾒﾓｬﾔｭﾕｮﾖﾗﾘﾙﾚﾛﾜﾜｲｴｦﾝｳｶｹ';
+const HALF_MARK = '00000000000101010101010101010101010010101000000120120120120120000000000000000000000100';
+
+export function toHalfKatakana(katakana: string): string {
+  let out = '';
+  for (const c of katakana) {
+    const i = c.charCodeAt(0) - 0x30A1;   // ァ (U+30A1) から ヶ (U+30F6)
+    if (i >= 0 && i < HALF_BASE.length) {
+      const mark = HALF_MARK.charAt(i);
+      out += HALF_BASE.charAt(i) + (mark === '1' ? 'ﾞ' : mark === '2' ? 'ﾟ' : '');
+    } else if (c === 'ー') {
+      out += 'ｰ';
+    } else if (c === '・') {
+      out += '･';
+    } else {
+      out += c;
+    }
+  }
+  return out;
+}
+
 export class JapaneseConverter {
   private buffer: string = '';
 
