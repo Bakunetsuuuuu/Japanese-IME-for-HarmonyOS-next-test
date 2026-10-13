@@ -621,6 +621,9 @@ class InputHandler(
         // ユーザー辞書に登録した語は先頭に (HarmonyOS 版 withRegisteredWords と同じ)
         val user = userDict.lookup(target)
         if (user.isNotEmpty()) cands = ArrayList(user + cands.filter { it !in user })
+        // メールアドレス: @ の後ろにドメインの候補 (HarmonyOS 版 emailCompletions と同じ。ユーザー 2026-10-13)
+        var emailAt = minOf(1, cands.size)
+        for (m in emailCompletions(target)) if (m !in cands) cands.add(emailAt++, m)
         // 絵文字・顔文字は後ろに (HarmonyOS 版の辞書変換と同じ位置)
         for (e in (tables.EMOJI_MAP[target] ?: emptyList()) + (tables.KAOMOJI_MAP[target] ?: emptyList())) {
             if (e !in cands) cands.add(e)
@@ -640,6 +643,9 @@ class InputHandler(
         } else {
             suggestions = emptyList()
         }
+        // 半角カタカナ (ほかに出す手段が無かった。ユーザー 2026-10-13)。いちばん後ろに
+        val half = toHalfKatakana(toKatakana(target))
+        if (half != toKatakana(target) && half !in cands) cands.add(half)
         cands = ArrayList(cands.filter { renderable(it) })
         candidates = cands
         if (inputState != InputState.SELECTING) selectedCandidateIndex = 0
@@ -693,5 +699,33 @@ class InputHandler(
         )
 
         fun toKatakana(s: String) = buildString { for (c in s) append(if (c in 'ぁ'..'ゖ') c + 0x60 else c) }
+
+        private const val HALF_BASE = "ｧｱｨｲｩｳｪｴｫｵｶｶｷｷｸｸｹｹｺｺｻｻｼｼｽｽｾｾｿｿﾀﾀﾁﾁｯﾂﾂﾃﾃﾄﾄﾅﾆﾇﾈﾉﾊﾊﾊﾋﾋﾋﾌﾌﾌﾍﾍﾍﾎﾎﾎﾏﾐﾑﾒﾓｬﾔｭﾕｮﾖﾗﾘﾙﾚﾛﾜﾜｲｴｦﾝｳｶｹ"
+        private const val HALF_MARK = "00000000000101010101010101010101010010101000000120120120120120000000000000000000000100"
+
+        /** 全角カタカナ -> 半角カタカナ (HarmonyOS 版 toHalfKatakana と同じ表) */
+        fun toHalfKatakana(s: String) = buildString {
+            for (c in s) {
+                val i = c - 'ァ'
+                when {
+                    i in HALF_BASE.indices -> { append(HALF_BASE[i]); when (HALF_MARK[i]) { '1' -> append('ﾞ'); '2' -> append('ﾟ') } }
+                    c == 'ー' -> append('ｰ')
+                    c == '・' -> append('･')
+                    else -> append(c)
+                }
+            }
+        }
+
+        /** メールのドメイン。順は教材に「@ドメイン」が書かれた回数の多い順 (HarmonyOS 版 EMAIL_DOMAINS と同じ) */
+        private val EMAIL_DOMAINS = listOf("gmail.com", "yahoo.co.jp", "docomo.ne.jp", "i.softbank.jp", "hotmail.com", "ezweb.ne.jp",
+            "live.jp", "hotmail.co.jp", "ybb.ne.jp", "softbank.ne.jp", "nifty.com", "me.com", "yahoo.com", "icloud.com", "outlook.jp",
+            "outlook.com", "au.com", "rakuten.jp")
+        private val EMAIL = Regex("""^([A-Za-z0-9._%+-]+)@([A-Za-z0-9.-]*)$""")
+
+        fun emailCompletions(s: String): List<String> {
+            val m = EMAIL.matchEntire(s) ?: return emptyList()
+            val typed = m.groupValues[2].lowercase()
+            return EMAIL_DOMAINS.filter { it.startsWith(typed) && it != typed }.take(5).map { "${m.groupValues[1]}@$it" }
+        }
     }
 }

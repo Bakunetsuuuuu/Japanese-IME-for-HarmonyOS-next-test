@@ -98,6 +98,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
                 val old = engine
                 engine = e
                 e?.setSuggest(settings.separateSuggest)
+                e?.allowSlurs = settings.allowSlurs
                 ai = if (e != null) AiConverter(e, worker, main) else null
                 userSynced = -1   // 新しいエンジンにユーザー辞書を入れ直す
                 syncUserWords()
@@ -396,6 +397,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         readClip()
         openEngine()   // 設定で変換モデルを替えた (同じなら何もしない)
         engine?.setSuggest(settings.separateSuggest)
+        engine?.allowSlurs = settings.allowSlurs
         syncUserWords()
     }
 

@@ -4,6 +4,9 @@ import android.content.res.AssetManager
 
 /** 変換エンジン (kkc/engine/engine.cpp) の窓口。辞書とモデルは APK の資産をそのままメモリに写して使う。 */
 class Engine private constructor(private var handle: Long, private val slurs: Regex?) {
+    /** 設定「不適切な語も候補に出す」(既定オフ)。オンなら slurs で弾かない */
+    var allowSlurs = false
+
 
     /** 変換の結果: 候補と、1 位の候補の語の区切り (ends[i] = i 語目の読みの終わり、lens[i] = 表記の長さ) */
     class Result(val cands: List<String>, val ends: IntArray, val lens: IntArray,
@@ -21,8 +24,8 @@ class Engine private constructor(private var handle: Long, private val slurs: Re
         val sugg = nativeLastSuggest(handle).mapNotNull { s ->
             val i = s.indexOf('\u0001')
             if (i <= 0) null else (s.substring(0, i).toIntOrNull() ?: 0) to s.substring(i + 1)
-        }.filter { slurs == null || !slurs.containsMatchIn(it.second) }
-        val cands = raw.asSequence().filter { slurs == null || !slurs.containsMatchIn(it) }.take(max).toList()
+        }.filter { allowSlurs || slurs == null || !slurs.containsMatchIn(it.second) }
+        val cands = raw.asSequence().filter { allowSlurs || slurs == null || !slurs.containsMatchIn(it) }.take(max).toList()
         // 差別語で 1 位が落ちたときは区切りを使わない (区切りは元の 1 位のもの)
         val ok = raw.isNotEmpty() && cands.isNotEmpty() && cands[0] == raw[0]
         val n = if (ok) seg.size / 2 else 0
