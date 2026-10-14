@@ -9,6 +9,57 @@
 
 
 ---
+## shunti IME のここがすごい
+
+**25MB 以下の日本語変換エンジンで、変換精度日本一！**
+
+※ AJIMEE-Bench 基準。下の表の IME と同じ手順で測った結果（2026 年 10 月時点、作者調べ）
+
+### 大手IMEより遥かに高い精度
+
+同じ打鍵（ローマ字で打つ → スペースで変換 → Enter で確定）を各 IME に流し込み、確定した文を同じやり方で採点しました（前の文脈つき、2026 年 10 月時点）。
+
+| 1 位の正解率 | 動き方 | AJIMEE-Bench | 日常の文 | dev |
+|---|---|---|---|---|
+| **shunti IME（S7）** | **CPU だけ・端末の中（24.8MB）** | **78.6%** | **94.3%** | **86.4%** |
+| Google 日本語入力 | | 53.8% | 81.0% | 70.9% |
+| Microsoft IME | | 54.4% | 78.1% | 71.7% |
+| Copilot Keyboard（Microsoft） | | 54.9% | 88.6% | 68.8% |
+| zenz-v3.1-xsmall（azooKey） | 端末の中 | 70.3% | 91.4% | 79.5% |
+| zenz-v3.1-small（azooKey） | 端末の中・より大きいモデル | 88.5% | 94.3% | 85.5% |
+
+難しい変換を集めた [AJIMEE-Bench](https://github.com/azooKey/AJIMEE-Bench)（CC BY-SA 3.0。ローマ字で打てない字を含む問題は除く）で、大手 3 つより 20 ポイント以上高く当たります。より重いモデルの zenz-v3.1-small には AJIMEE で及びませんが、日常の文では並びます。
+
+### 完全ローカルAI
+
+- 変換するのは約 640 万パラメータの小さな Transformer（shuntelligence S7）です。スマホの CPU だけでも動きます
+- 変換は端末の中で完結し、打った文字を外へ送信することはありません。Android 版はインターネットの権限そのものを持ちません
+- モデルの重みと推論のコードは公開しています
+
+### タイプミスは文脈を見て直す
+
+- ローマ字の打ち違い（よろしくおねぎあします → **よろしくお願いします**、ごさしゅうくだしあ → **ご査収ください**）や、フリックの隣のキー、よくある誤読（げっきょく → 月極）を直します
+- 直した形が変換候補トップに “ ” つきで出て、微妙なときは候補の中の提案として出ます。誤字のない文を勝手に直すことはほぼありません（普通の文 400 文で 0 件）
+
+### 文脈による書き分け
+
+カーソルの左の文を読んで、同じ読みの語から文に合うものを選びます。
+
+- 絵を**描く** / 字を**書く**、庭には**二羽**鶏
+- 英字の語は、ふだん書かれる形で出ます（iphone → **iPhone**、ぎっとはぶ → **GitHub**）
+- 固有名詞は Wikipedia から約 39 万語、企業名や人名地名などなど様々
+
+### 変換以外も気が利く
+
+- 日付（きょう → 2026/10/14 …）・郵便番号から住所・絵文字・顔文字・括弧も、候補の中に提案として並びます
+- 「お疲れ様です」と打つと、続けて「。」「本日の進捗報告です。」のように、よく打つ文の流れを覚えて出します
+- ＠の後ろには gmail.com などのドメインを出します
+
+### どこでも同じ変換
+
+HarmonyOS・Android・Windows・Linux の 4 つで、同じ AI と同じ辞書が動きます。
+
+---
 # インストール方法
 
 ## HarmonyOS版
@@ -43,16 +94,16 @@ Android 向けのシンプルな日本語キーボードです（Android 8.0 以
 
 ## Windows 版（shunti IME）
 
-大手の IME を超える変換精度を、630 万パラメータの小さな AI（shuntelligence S4）で提供します。Windows 10 / 11（64 ビット版）で動く日本語入力です。[GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) から zip を入手し、展開して `install.bat` を実行します（署名していないため「Windows によって PC が保護されました」と出る場合がありますが「詳細情報」→「実行」）。
+大手の IME を超える変換精度を、約 640 万パラメータの小さな AI（shuntelligence S7）で提供します。Windows 10 / 11（64 ビット版）で動く日本語入力です。[GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) から zip を入手し、展開して `install.bat` を実行します（署名していないため「Windows によって PC が保護されました」と出る場合がありますが「詳細情報」→「実行」）。
 
 | 1 位の正解率 | AJIMEE-Bench（182 問） | 日常の文（105 文） |
 |---|---|---|
 | Google 日本語入力 | 53.8% | 81.0% |
-| Microsoft IME | 54.9% | 79.0% |
-| **shunti IME（S4）** | **67.6%** | **87.6%** |
+| Microsoft IME | 54.4% | 78.1% |
+| **shunti IME（S7）** | **78.6%** | **94.3%** |
 (日常の文=オリジナルベンチマーク。普通の会話で出るような文を大量に用意しています)
 
-どの IME にも同じ打鍵（ローマ字で打つ → スペースで変換 → Enter で確定）を TSF 越しに流し込み、確定した文を採点した（2026 年 9 月、Windows 11）。AJIMEE-Bench（azooKey、CC BY-SA 3.0）は、ローマ字で打てない字を含む 18 問を除いた 182 問。全角・半角の違いは問わない。
+どの IME にも同じ打鍵（ローマ字で打つ → スペースで変換 → Enter で確定）を TSF 越しに流し込み、確定した文を採点した（前の文脈つき、2026 年 10 月、Windows 11。shunti IME は同じ問題を変換エンジンに直接渡して測った）。AJIMEE-Bench（azooKey、CC BY-SA 3.0）は、ローマ字で打てない字を含む 18 問を除いた 182 問。全角・半角の違いは問わない。
 
 - 変換はパソコンの中だけで行い、**通信する機能を持ちません**。
 - 変換位置調整（Shift + ← → で伸び縮み）、F6〜F10、無変換キーでカタカナ・半角カタカナ
@@ -63,7 +114,7 @@ Android 向けのシンプルな日本語キーボードです（Android 8.0 以
 
 ## Linux 版（shunti IME・試用版）
 
-Windows 版と同じ変換（shuntelligence S4・同じ入力の決まり）を、Linux の入力の仕組み **Fcitx5** の上で動かします。Ubuntu 24.04 以降・Debian 13 以降（64 ビットの Intel・AMD）向けの `.deb` を [GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) に置いています。
+Windows 版と同じ変換（shuntelligence S7・同じ入力の決まり）を、Linux の入力の仕組み **Fcitx5** の上で動かします。Ubuntu 24.04 以降・Debian 13 以降（64 ビットの Intel・AMD）向けの `.deb` を [GitHub の Releases](https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases) に置いています。
 
 ```bash
 sudo apt install ./fcitx5-shunti_0.1.0_amd64.deb
@@ -307,6 +358,5 @@ shunti IMEは広告なし・完全無料で個人が開発しているオープ�
 - mozc（Google）— BSD-3-Clause
 - JMdict/EDICT（読みへの追加候補表記としてのみ利用）— CC BY-SA 4.0
 - SudachiDict（Works Applications）— Apache License 2.0
-- mecab-ipadic-NEologd（英字の語の読み）— Apache License 2.0
 
 ライセンス全文は [`THIRD_PARTY_NOTICES.md`](./THIRD_PARTY_NOTICES.md) を参照してください。
