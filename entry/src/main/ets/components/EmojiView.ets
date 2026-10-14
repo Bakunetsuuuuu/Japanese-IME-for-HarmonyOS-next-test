@@ -95,9 +95,6 @@ const EMOJI_CATEGORIES: string[][][] = [
   ],
 ];
 
-// Grid area budget — matches SymbolView's so switching between the symbol
-// and emoji panels never shifts the keyboard's total height.
-const GRID_AREA_H = 252;
 const GRID_ROW_GAP = 4;
 // 連続スクロールになったので、行を領域に押し込む必要がなくなった。
 // 以前は全8行を 252px に収めるため行高を計算で縮めていた。
@@ -211,7 +208,7 @@ export struct EmojiView {
         }, (row: EmojiRow, idx: number) => 'r' + String(idx))
       }
       .width('100%')
-      .height(GRID_AREA_H)
+      .layoutWeight(1)   // キーボードを低くしても下の段が埋もれないように、残りの高さを使う (スクロールできる)
       .scrollBar(BarState.Off)
       .edgeEffect(EdgeEffect.Spring)
       // 先頭に見えている行のカテゴリへタブを合わせる。指で送っている間も

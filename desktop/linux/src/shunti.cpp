@@ -248,7 +248,12 @@ void ShuntiState::apply() {
         std::vector<std::string> labels;
         for (int i = 1; i <= Composer::PAGE; i++) labels.push_back(std::to_string(i) + ". ");
         list->setLabels(labels);
-        for (size_t i = 0; i < v.cands.size(); i++) list->append<Candidate>(engine_, int(i), to_utf8(v.cands[i]));
+        // 提案の種類は候補の後ろに添える (もしかして・絵文字 …。2026-10-14)
+        for (size_t i = 0; i < v.cands.size(); i++) {
+            std::string t = to_utf8(v.cands[i]);
+            if (i < v.cand_notes.size() && !v.cand_notes[i].empty()) t += "  " + to_utf8(v.cand_notes[i]);
+            list->append<Candidate>(engine_, int(i), t);
+        }
         if (v.cand_sel >= 0 && v.cand_sel < int(v.cands.size())) {
             list->setPage(v.cand_sel / Composer::PAGE);   // 選んでいる候補のページを見せる (1〜9 の数字と同じページ)
             list->setGlobalCursorIndex(v.cand_sel);
@@ -291,7 +296,7 @@ Core& ShuntiEngine::core() {
 }
 
 void ShuntiEngine::useModel() {
-    static const char* const NAMES[] = {"light", "standard", "high"};
+    static const char* const NAMES[] = {"light", "standard", "standard"};   // 2 (高精度 M4) は廃止、標準 (S7) に (2026-10-14)
     if (core_) core_->use_model(NAMES[std::clamp(*config_.model, 0, 2)]);
     if (core_) core_->conv.set_suggest(*config_.separateSuggest);
 }

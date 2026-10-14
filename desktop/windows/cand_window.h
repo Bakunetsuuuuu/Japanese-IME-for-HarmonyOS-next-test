@@ -18,7 +18,7 @@ public:
     // sugg = 提案 (候補の上の 1 行。空なら出さない)
     // sugg = 提案 (いちばん下の行の左に札で並べる)。sugg_sel = 選んでいる提案 (-1 = 提案の列に入っていない)
     void show(const std::vector<u16>& cands, int sel, const RECT& anchor, HWND owner, const std::vector<u16>& sugg = {},
-              int sugg_sel = -1);
+              int sugg_sel = -1, const std::vector<u16>& notes = {});   // notes = 候補の右に薄く添える種類
     void hide();
     void destroy();
     bool visible() const { return hwnd_ && IsWindowVisible(hwnd_); }
@@ -41,6 +41,7 @@ private:
     HFONT font_ = nullptr, small_ = nullptr;
     UINT dpi_ = 0;
     std::vector<u16> cands_;
+    std::vector<u16> notes_;
     std::vector<u16> sugg_;
     std::vector<std::pair<int, int>> sugg_x_;   // 提案の札の左右 (当たり判定)
     int sugg_sel_ = -1;

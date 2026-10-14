@@ -211,26 +211,45 @@ int main(int argc, char** argv) {
     keys(c, "{down}{enter}");
     expect("live select", c.take_commit(), u"こんにちは");
 
-    // ---- 提案 (日付・絵文字は候補に混ぜず、候補の窓の上の行に。Shift+Enter で 1 つ目を確定)
-    keys(c, "kyou");
-    printf("     sugg:");
-    for (auto& x : c.view().sugg) printf(" [%s]", u8(x).c_str());
-    printf("\n");
-    if (c.view().sugg.empty()) { printf("FAIL no suggestion for kyou\n"); failures++; }
-    {
-        u16 first = c.view().sugg_text.empty() ? u16() : c.view().sugg_text[0];
-        keys(c, "{S-enter}");
-        expect("suggestion commit", c.take_commit(), first);
+    // ---- 打っている間に気分の絵文字の提案は出さない (確定の後の予測で出す)
+    for (const char* w : {"soresika", "hannkyouteii", "kyouhatukareta"}) {
+        keys(c, w);
+        printf("     mood %s:", w);
+        bool mood = false;
+        for (size_t i = 0; i < c.view().sugg.size(); i++) {
+            printf(" [%s]", u8(c.view().sugg[i]).c_str());
+            mood = mood || c.view().sugg_kinds[i] == 6;
+        }
+        printf("\n");
+        if (mood) { printf("FAIL mood %s\n", w); failures++; }
+        keys(c, "{esc}{esc}");
+        c.take_commit();
     }
 
-    // ---- 提案の列: Shift+↓ で入り、→ で 2 つ目、Enter で確定
-    keys(c, "kyou{S-down}{right}");
-    if (c.view().sugg_sel != 1) { printf("FAIL sugg_sel %d\n", c.view().sugg_sel); failures++; }
-    {
-        u16 second = c.view().sugg_text.size() > 1 ? c.view().sugg_text[1] : u16();
-        keys(c, "{enter}");
-        expect("suggestion second", c.take_commit(), second);
+    // ---- 明らかな打ち間違いは直した形が 1 位 (よろしくおねぎあします)
+    keys(c, "yorosikuonegiasimasu{sp}{enter}");
+    expect("typo promoted", c.take_commit(), u"よろしくお願いします");
+
+    // ---- 提案 (日付など): 候補と交互に ✦ を付けて混ぜる (2 位の後ろから)。Shift+Enter で 1 つ目を確定
+    keys(c, "kyou");
+    u16 first_sugg;
+    printf("     cands:");
+    for (auto& x : c.view().cands) {
+        printf(" [%s]", u8(x).c_str());
+        (void)x;
     }
+    printf("\n");
+    for (size_t i = 0; i < c.view().cand_notes.size(); i++) if (first_sugg.empty() && c.view().cand_notes[i] == u"日付") first_sugg = c.view().cands[i];
+    if (first_sugg.empty() || c.view().cands.size() < 3 || c.view().cands[2] != first_sugg) {
+        printf("FAIL no suggestion after top for kyou\n");
+        failures++;
+    }
+    keys(c, "{S-enter}");
+    expect("suggestion commit", c.take_commit(), first_sugg);
+
+    // ---- ↓ で候補に入って、3 つ目 (提案) を Enter で確定
+    keys(c, "kyou{down}{down}{down}{enter}");
+    expect("suggestion via cands", c.take_commit(), first_sugg);
 
     // ---- 候補の続き: 最後のページまで進むと読み足す (30 件で切れない)
     keys(c, "kou{sp}");

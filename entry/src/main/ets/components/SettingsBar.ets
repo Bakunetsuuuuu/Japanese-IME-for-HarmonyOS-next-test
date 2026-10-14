@@ -25,7 +25,6 @@ const CATEGORIES: CategoryDef[] = [
   { id: 'dict', label: '辞書' },
   { id: 'input', label: '入力' },
   { id: 'visual', label: 'ビジュアル調整' },
-  { id: 'composing', label: '入力中の表示' },
   { id: 'repair', label: '修復' },
   { id: 'other', label: 'その他' },
   { id: 'support', label: '開発を応援' },
@@ -51,13 +50,12 @@ export struct SettingsBar {
   @StorageLink('liveCommit') liveCommit: boolean = false;
   @StorageLink('separateSuggest') separateSuggest: boolean = true;
   @StorageLink('alphaCompose') alphaCompose: boolean = true;
-  @StorageLink('allowSlurs') allowSlurs: boolean = true;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
   @StorageLink('flickHintsEnabled') flickHintsEnabled: boolean = true;
-  @StorageLink('bracketCloseMode') bracketCloseMode: string = 'manual';
+  @StorageLink('bracketCloseMode') bracketCloseMode: string = 'pair';
   // タブレット/フォルダブルの展開画面かどうか (KeyboardController が画面の
   // 短辺から判定)。幅の上限調整は普通のスマホでは効かないので、この端末
   // 区分のときだけ出す。
@@ -76,6 +74,8 @@ export struct SettingsBar {
   // 設定メニューの2ペイン構成 (CategoryNav/MenuView 参照) で、いま右側に
   // 表示しているカテゴリ。CATEGORIES の id のいずれか。
   @State selectedCategory: string = 'clipboard';
+  private menuScroller: Scroller = new Scroller();
+  private sectionTop: Map<string, number> = new Map<string, number>();   // 各種類の見出しの位置 (縦に送る量)
   @State showHistory: boolean = false;
   @State showDict: boolean = false;
   // ユーザー辞書の中の下位画面。'' = 入口のメニュー / 'suggest' = 登録候補 /
@@ -294,7 +294,12 @@ export struct SettingsBar {
             .width('100%')
             .borderRadius(10)
             .padding({ left: 12, right: 6, top: 10, bottom: 10 })
-            .onClick(() => { this.selectedCategory = cat.id; })
+            .onClick(() => {
+              this.selectedCategory = cat.id;
+              // その種類の見出しへ送る (全部の種類を 1 本につないで縦に送れるようにした。ユーザー 2026-10-14)
+              const y = this.sectionTop.get(cat.id);
+              if (y !== undefined) { this.menuScroller.scrollTo({ xOffset: 0, yOffset: y, animation: { duration: 250 } }); }
+            })
         }, (cat: CategoryDef) => cat.id)
       }
       .width('100%')
@@ -317,28 +322,41 @@ export struct SettingsBar {
         .vertical(true)
         .color(kbTheme(this.isDark).divider)
 
-      Scroll() {
+      // 全部の種類を見出しつきで 1 本につなぐ。見えている所に合わせて左の一覧の選択が動く
+      Scroll(this.menuScroller) {
         Column() {
-          if (this.selectedCategory === 'clipboard') {
-            this.ClipboardSection()
-          } else if (this.selectedCategory === 'dict') {
-            this.DictSection()
-          } else if (this.selectedCategory === 'input') {
-            this.InputSection()
-          } else if (this.selectedCategory === 'visual') {
-            this.VisualSection()
-          } else if (this.selectedCategory === 'composing') {
-            this.ComposingSection()
-          } else if (this.selectedCategory === 'repair') {
-            this.RepairSection()
-            if (DEBUG_INPUT_LOG) {
-              this.InputLogSection()
-            }
-          } else if (this.selectedCategory === 'other') {
-            this.OtherSection()
-          } else {
-            this.SupportSection()
-          }
+          ForEach(CATEGORIES, (cat: CategoryDef) => {
+              Column() {
+                Text(cat.label)
+                  .fontFamily(JP_FONT_FAMILY)
+                  .fontSize(16)
+                  .fontWeight(FontWeight.Bold)
+                  .fontColor(kbTheme(this.isDark).textPrimary)
+                  .width('100%')
+                  .padding({ top: 8, bottom: 10 })
+                if (cat.id === 'clipboard') {
+                  this.ClipboardSection()
+                } else if (cat.id === 'dict') {
+                  this.DictSection()
+                } else if (cat.id === 'input') {
+                  this.InputSection()
+                } else if (cat.id === 'visual') {
+                  this.VisualSection()
+                } else if (cat.id === 'repair') {
+                  this.RepairSection()
+                  if (DEBUG_INPUT_LOG) {
+                    this.InputLogSection()
+                  }
+                } else if (cat.id === 'other') {
+                  this.OtherSection()
+                } else {
+                  this.SupportSection()
+                }
+              }
+              .width('100%')
+              .padding({ bottom: 20 })
+              .onAreaChange((_o: Area, n: Area) => { this.sectionTop.set(cat.id, Number(n.position.y)); })
+          }, (cat: CategoryDef) => cat.id)
         }
         .padding(16)
       }
@@ -346,6 +364,15 @@ export struct SettingsBar {
       .height('100%')
       .align(Alignment.Top)
       .scrollBar(BarState.Auto)
+      .onDidScroll(() => {
+        const y = this.menuScroller.currentOffset().yOffset + 24;
+        let cur = CATEGORIES[0].id;
+        for (const c of CATEGORIES) {
+          const t = this.sectionTop.get(c.id);
+          if (t !== undefined && t <= y) { cur = c.id; }
+        }
+        if (cur !== this.selectedCategory) { this.selectedCategory = cur; }
+      })
       .edgeEffect(EdgeEffect.Spring)
     }
     .width('100%')
@@ -568,122 +595,8 @@ export struct SettingsBar {
 
       Divider().color(kbTheme(this.isDark).divider)
 
-      // 提案 (打ち間違いの直し・日付・住所) を候補の帯に混ぜず、ひらがなの帯に分けて出すか (好みが分かれるので切り替え)
-      Row() {
-        Column({ space: 2 }) {
-          Text('提案を分けて表示する')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-          Text(this.separateSuggest
-            ? '打ち間違いの直し・日付・住所を、入力中の文字の横に分けて出します'
-            : '打ち間違いの直し・日付・住所も、変換候補に混ぜて出します')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(10)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.separateSuggest })
-          .width(44)
-          .height(26)
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setSeparateSuggest(isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: 12, bottom: 12 })
 
-      Divider().color(kbTheme(this.isDark).divider)
 
-      // 英数字キーボードで英字も変換するか (iphone -> iPhone)。使い心地が分かれるので切り替え
-      Row() {
-        Column({ space: 2 }) {
-          Text('英数字キーボードで英字も変換する')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-          Text(this.alphaCompose
-            ? '英字も入力中の文字にして変換します (iphone → iPhone)。英文は空白でそのまま確定'
-            : '英字はそのまま入力します。数字と、かなに続けた英字だけ変換します')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(10)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.alphaCompose })
-          .width(44)
-          .height(26)
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setAlphaCompose(isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: 12, bottom: 12 })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      // 差別的・不適切な語も候補に出すか (既定オン)
-      Row() {
-        Column({ space: 2 }) {
-          Text('不適切な語も候補に出す')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-          Text(this.allowSlurs
-            ? '差別的・不適切とされる語も、打てば候補に出します'
-            : '差別的・不適切とされる語は候補に出しません')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(10)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.allowSlurs })
-          .width(44)
-          .height(26)
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setAllowSlurs(isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: 12, bottom: 12 })
-
-      Divider().color(kbTheme(this.isDark).divider)
-
-      // 長い入力の扱い。オフ (既定) は保留: 前の方は候補を持たせて入力中のまま残し、一覧から直して確定できる。
-      // オンは Mac の IME のように、前の方が固まったら次々に確定していく
-      Row() {
-        Column({ space: 2 }) {
-          Text('オート確定')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-          Text(this.liveCommit
-            ? '長く打つと、前の方から自動で確定していきます'
-            : '長く打っても、確定するまで前の方を直せます')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(10)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-        }
-        .alignItems(HorizontalAlign.Start)
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.liveCommit })
-          .width(44)
-          .height(26)
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setLiveCommit(isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: 12, bottom: 12 })
-
-      Divider().color(kbTheme(this.isDark).divider)
 
       // 開き括弧を入れたあと、閉じ括弧をいつ出すか。どちらのモードでも
       // 「開きだけ先に出して閉じは保留する」仕組み自体は共通で、違うのは
@@ -696,25 +609,26 @@ export struct SettingsBar {
           .layoutWeight(1)
 
         Row({ space: 2 }) {
+          Text('組で')
+            .fontFamily(JP_FONT_FAMILY)
+            .fontSize(12)
+            .fontWeight(FontWeight.Medium)
+            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
+            .borderRadius(PILL_RADIUS)
+            .backgroundColor(this.bracketCloseMode !== 'manual' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.bracketCloseMode !== 'manual' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .onClick(() => { InputHandler.getInstance().setBracketCloseMode('pair'); })
+
           Text('手動')
             .fontFamily(JP_FONT_FAMILY)
             .fontSize(12)
             .fontWeight(FontWeight.Medium)
             .padding({ left: 12, right: 12, top: 6, bottom: 6 })
             .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.bracketCloseMode !== 'auto' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.bracketCloseMode !== 'auto' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
+            .backgroundColor(this.bracketCloseMode === 'manual' ? kbTheme(this.isDark).accent : 'transparent')
+            .fontColor(this.bracketCloseMode === 'manual' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
             .onClick(() => { InputHandler.getInstance().setBracketCloseMode('manual'); })
 
-          Text('自動')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(12)
-            .fontWeight(FontWeight.Medium)
-            .padding({ left: 12, right: 12, top: 6, bottom: 6 })
-            .borderRadius(PILL_RADIUS)
-            .backgroundColor(this.bracketCloseMode === 'auto' ? kbTheme(this.isDark).accent : 'transparent')
-            .fontColor(this.bracketCloseMode === 'auto' ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textSecondary)
-            .onClick(() => { InputHandler.getInstance().setBracketCloseMode('auto'); })
         }
         .backgroundColor(kbTheme(this.isDark).funcBg)
         .borderRadius(TRACK_RADIUS)
@@ -723,8 +637,8 @@ export struct SettingsBar {
       .width('100%')
       .padding({ top: 12, bottom: 4 })
 
-      Text(this.bracketCloseMode === 'auto'
-        ? '次に確定した内容の直後で自動的に閉じます（従来の動作）'
+      Text(this.bracketCloseMode !== 'manual'
+        ? '開きと閉じを一緒に入れて、カーソルを括弧の中に置きます'
         : '► キー（フリック・数字パッド）か、候補バーの待機バッジのタップで閉じます。括弧の中で何度確定しても勝手には閉じません')
         .fontFamily(JP_FONT_FAMILY)
         .fontSize(10)
@@ -1068,30 +982,6 @@ export struct SettingsBar {
 
   @Builder ComposingSection() {
     Column() {
-      Row() {
-        Column({ space: 2 }) {
-          Text('キーボード内に表示')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .width('100%')
-          Text('候補バーの上に入力中のかなを出します')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .width('100%')
-        }
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.composingInPanel })
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setComposingDisplay(isOn, this.composingInField);
-          })
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: 13 })
-
-      Divider().color(kbTheme(this.isDark).divider)
 
       Row() {
         Column({ space: 2 }) {

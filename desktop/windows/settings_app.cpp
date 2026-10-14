@@ -19,7 +19,7 @@ namespace fs = std::filesystem;
 
 namespace {
 
-constexpr wchar_t VERSION[] = L"0.4.0";
+constexpr wchar_t VERSION[] = L"0.5.0";
 
 enum Id {
     ID_THEME = 100, ID_PUNCT, ID_SPACE, ID_DIGITS, ID_LIVE, ID_LIVEDISPLAY, ID_LIVECOMMIT, ID_CTRLSPACE, ID_SUGGEST,
@@ -27,7 +27,7 @@ enum Id {
 };
 
 // 変換モデル (settings.json の model の値と、画面の表示)。名前は配布の呼び名 (開発名は出さない)
-const char* const MODELS[] = {"light", "standard", "high"};
+const char* const MODELS[] = {"light", "standard"};
 
 struct PosItem { const wchar_t* label; const char* pos; const char* group; };
 const PosItem POS[] = {
@@ -159,8 +159,8 @@ void build() {
 
     group(L"変換", y, 94);
     make(L"STATIC", L"変換モデル:", 0, 24, y + 27, 170, 20, 0);
-    combo(200, y + 23, 250, ID_MODEL, {L"軽量 (XS3)", L"標準 (S6)", L"高精度 (M4)"});
-    make(L"STATIC", L"軽量はメモリの少ない PC 向け、高精度は速い PC 向けです。次に打ち始めたときから変わります",
+    combo(200, y + 23, 250, ID_MODEL, {L"軽量 (XS3)", L"標準 (S7)"});
+    make(L"STATIC", L"軽量はメモリの少ない PC 向けです (打ち間違いの直しは標準だけ)。次に打ち始めたときから変わります",
          0, 24, y + 52, 432, 34, 0);
     y += 102;
 
@@ -217,7 +217,7 @@ void build() {
     g_loading = true;
     select(ID_THEME, g_s.theme == "light" ? 1 : g_s.theme == "dark" ? 2 : 0);
     select(ID_PUNCT, g_s.punct);
-    select(ID_MODEL, g_s.model == "light" ? 0 : g_s.model == "high" ? 2 : 1);
+    select(ID_MODEL, g_s.model == "light" ? 0 : 1);
     select(ID_POS, 0);
     check(ID_SPACE, g_s.space_fullwidth);
     check(ID_DIGITS, g_s.digits_fullwidth);

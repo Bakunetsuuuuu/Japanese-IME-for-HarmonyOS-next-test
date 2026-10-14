@@ -22,7 +22,7 @@ class InputHandler(
     private val host: Host,
     private val tables: Tables,
     private val learning: Learning,
-    private val settings: Settings,
+    val settings: Settings,
     private val userDict: UserDict,
 ) {
 
@@ -49,6 +49,8 @@ class InputHandler(
         private set
     var selectedCandidateIndex = 0
         private set
+    var typoTop = ""   // 1 位にした打ち間違いの直し (候補の帯で “ ” で囲む)
+    private var afterEmoji: List<String> = emptyList()   // 1 位の文の語に当たる絵文字・顔文字 (確定の後の帯に)
     var predictions: List<String> = emptyList()   // 確定のあとに出す候補 (絵文字)
         private set
     /** 提案 (種類, 確定する文)。設定「提案を分けて表示する」のとき、候補の帯の上の行に出す */
@@ -76,7 +78,8 @@ class InputHandler(
     /** まだかなに決まっていないローマ字 (QWERTY) */
     val pendingRomaji get() = romaji.pending()
 
-    private class HostOp(val insert: Boolean, val text: String, val at: Int)
+    // kind: 0 入れた・1 消した・2 カーソルを動かした (at = 動かす前の位置)。t は続けて消した分をまとめるための時刻
+    private class HostOp(val kind: Int, var text: String, var at: Int, var t: Long = System.currentTimeMillis())
     private val hostUndoStack = ArrayList<HostOp>()
 
     // ---------------------------------------------------------------- 入力欄の出入り
@@ -289,7 +292,10 @@ class InputHandler(
     /** 候補の帯をタップ */
     /** 提案を選んだ: その文で確定する (打ったとおりの変換ではないので学習しない) */
     fun commitSuggestion(index: Int) {
-        val text = suggestions.getOrNull(index)?.second ?: return
+        val sg = suggestions.getOrNull(index) ?: return
+        settings.recordSuggestUse(sg.second)
+        // 気分の絵文字・顔文字 (6) は絵文字だけが来る: いま見えている 1 位の後ろに足す
+        val text = if (sg.first == 6) (candidates.firstOrNull() ?: "") + sg.second else sg.second
         val (_, tail) = splitAtConversionEnd(composingText)
         insertText(text)
         ctx += text
@@ -448,7 +454,9 @@ class InputHandler(
         val op = hostUndoStack.removeLastOrNull() ?: return
         val ic = host.ic ?: return
         ic.beginBatchEdit()
-        if (op.insert) {
+        if (op.kind == 2) {
+            ic.setSelection(op.at, op.at)
+        } else if (op.kind == 0) {
             // 入れた字の直後へ動いて、その字が本当にそこにあるときだけ消す
             ic.setSelection(op.at + op.text.length, op.at + op.text.length)
             if (ic.getTextBeforeCursor(op.text.length, 0)?.toString() == op.text) ic.deleteSurroundingText(op.text.length, 0)
@@ -463,6 +471,18 @@ class InputHandler(
     /** 入力欄に文字を確定する (出口はここ 1 箇所。取消のための記録もここ) */
     fun insertText(text: String) {
         val ic = host.ic ?: return
+        // 開き括弧 (記号の欄の 1 字・かっこ の変換の組) は閉じと組で入れて、カーソルを中へ (HarmonyOS 版 組で。2026-10-14)
+        val close = Brackets.PAIRS[text] ?: if (text.length == 2 && Brackets.PAIRS[text.substring(0, 1)] == text.substring(1)) "" else null
+        if (close != null) {
+            val pair = if (close.isEmpty()) text else text + close
+            ic.beginBatchEdit()
+            ic.commitText(pair, 1)
+            val at = cursor()
+            at?.let { ic.setSelection(it - 1, it - 1); pushHostOp(true, pair, it - pair.length) }
+            ic.endBatchEdit()
+            SentenceFlow.feed(pair.substring(0, 1))
+            return
+        }
         ic.commitText(text, 1)
         cursor()?.let { pushHostOp(true, text, it - text.length) }
         // 文の流れ (SentenceFlow) に入れる。@ を入れた (あっと の変換・記号) ときはメールのドメインの続き、ほかは文の流れの続きを
@@ -475,9 +495,12 @@ class InputHandler(
     /** 確定の後の帯: メールのドメインの続き > 文の流れの続き > base (絵文字など) */
     private fun afterInsertStrip(base: List<String>): List<String> {
         val es = emailStrip()
+        lastEmailStrip = es
         if (es.isNotEmpty()) return es
-        return (SentenceFlow.predict() + base).distinct().take(6)
+        return (SentenceFlow.predict() + base).distinct().take(16)
     }
+
+    private var lastEmailStrip: List<String> = emptyList()
 
     /** 入力欄のカーソルの前が「…@打ちかけのドメイン」なら、ドメインの続き (gmail.com …) */
     private fun emailStrip(): List<String> {
@@ -488,6 +511,15 @@ class InputHandler(
     }
 
     private fun deleteBeforeCursor() {
+        deleteBeforeCursorRaw()
+        // メールのドメインを出していたら、消した後の形で出し直す (@ を消したら帯を空に。ユーザー 2026-10-13)
+        if (lastEmailStrip.isNotEmpty() && predictions == lastEmailStrip) {
+            predictions = emailStrip()
+            lastEmailStrip = predictions
+        }
+    }
+
+    private fun deleteBeforeCursorRaw() {
         SentenceFlow.backspace()
         val ic = host.ic ?: return
         val sel = ic.getSelectedText(0)
@@ -518,7 +550,16 @@ class InputHandler(
 
     private fun pushHostOp(insert: Boolean, text: String, at: Int) {
         if (text.isEmpty() || at < 0) return
-        hostUndoStack.add(HostOp(insert, text, at))
+        val now = System.currentTimeMillis()
+        val last = hostUndoStack.lastOrNull()
+        // ⌫ を続けて押して消した分は 1 回にまとめる (取消キー 1 回で消した語ごと戻る。HarmonyOS 版と同じ、2026-10-14)
+        if (!insert && last != null && last.kind == 1 && last.at == at + text.length && now - last.t < UNDO_MERGE_MS) {
+            last.text = text + last.text
+            last.at = at
+            last.t = now
+            return
+        }
+        hostUndoStack.add(HostOp(if (insert) 0 else 1, text, at))
         if (hostUndoStack.size > MAX_HOST_UNDO) hostUndoStack.removeAt(0)
     }
 
@@ -531,6 +572,8 @@ class InputHandler(
 
     private fun moveCursor(code: Int) {
         val ic = host.ic ?: return
+        // ◄► の移動も取消キーで戻せるように (続けて動かした分は 1 つ、動かす前の位置を残す)
+        cursor()?.let { from -> if (hostUndoStack.lastOrNull()?.kind != 2) hostUndoStack.add(HostOp(2, "", from)) }
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
         ic.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
     }
@@ -626,7 +669,9 @@ class InputHandler(
         }
         if (target.length >= 2 && !isRangeShrunk()) {
             comp.addAll(learning.completions(target, 2))
-            ai?.let { comp.addAll(it.complete(target, 4)) }
+            // 辞書の続きは、4 字以上打っていて続きの語が 1 つに絞れたときだけ (HarmonyOS 版 PredictiveConversion と同じ。
+            // 何でも足すと、打った以上に続きが付いた候補が並んだ。ユーザー 2026-10-14)
+            if (target.length >= 4) ai?.complete(target, 2)?.let { if (it.size == 1) comp.addAll(it) }
         }
         val inserted = ArrayList<String>()
         var at = minOf(1, cands.size)
@@ -657,15 +702,23 @@ class InputHandler(
         cands = ArrayList(learning.applyLearnedOrder(target, cands))
         // 提案: 候補に混ぜず分ける (エンジンの提案 + こちらの日付・括弧・絵文字・顔文字)。候補からは外す
         if (settings.separateSuggest && ai != null) {
-            val sg = ArrayList(ai.suggestions)
+            // 1 位にした打ち間違いの直し (種類 8) は提案に出さず、候補の帯で “ ” で囲む印にだけ使う
+            typoTop = ai.suggestions.firstOrNull { it.first == 8 }?.second ?: ""
+            afterEmoji = ai.suggestions.filter { it.first == 9 }.map { it.second }   // 確定の後の帯に出す絵文字・顔文字
+            val sg = ArrayList(ai.suggestions.filter { it.first != 8 && it.first != 9 })
             val dates = DateTimePredictor.predict(target, Calendar.getInstance())
             val moveDates = sg.any { it.first == 2 }
-            val symbolic = { c: String -> c.none { it.isLetterOrDigit() } || (tables.EMOJI_MAP[target]?.contains(c) == true) || (tables.KAOMOJI_MAP[target]?.contains(c) == true) }
+            // 単位の記号 (℃・%・° …) は文の中で使うので提案に回さない (HarmonyOS 版のエンジンと同じ、2026-10-14)
+            val symbolic = { c: String -> c.any { it !in UNIT_MARKS } && c.none { it.isLetterOrDigit() } || (tables.EMOJI_MAP[target]?.contains(c) == true) || (tables.KAOMOJI_MAP[target]?.contains(c) == true) }
             val moved = cands.filter { c -> c != target && (sg.any { it.second == c } || (moveDates && c in dates) || (symbolic(c) && target.any { it in 'ぁ'..'ゖ' })) }
             for (c in moved) if (sg.none { it.second == c }) sg.add(7 to c)
             val rest = cands.filter { it !in moved }
             if (rest.isNotEmpty()) cands = ArrayList(rest)
-            suggestions = sg.filter { renderable(it.second) }.distinctBy { it.second }.take(12)
+            // 選んだことのある提案を同じ種類の中で前に (括弧は人によって使う組が違う。HarmonyOS 版と同じ、2026-10-14)
+            val kindOrder = sg.map { it.first }.distinct()
+            val use = settings.suggestUse
+            suggestions = sg.filter { renderable(it.second) }.distinctBy { it.second }
+                .sortedWith(compareBy<Pair<Int, String>>({ kindOrder.indexOf(it.first) }, { -(use[it.second] ?: 0) })).take(12)
         } else {
             suggestions = emptyList()
         }
@@ -706,18 +759,32 @@ class InputHandler(
      */
     private fun pushPredictions(text: String) {
         val strip = ArrayList<String>()
-        for (i in text.indices) {
-            val e = tables.EMOJI_FOR_SURFACE[text.substring(i)] ?: continue
-            for (x in e) if (x !in strip && strip.size < 6) strip.add(x)
-            break
+        // 言い方の揺れ (疲れました・疲れちゃった・嬉しいです) は表の形 (疲れた・嬉しい) に戻して引く (HarmonyOS 版 EmojiSuggest.forms)
+        val t = text.replace(Regex("[。．、！!？?ー〜~…・wｗ笑]+$"), "")
+        search@ for (i in t.indices) {
+            val s = t.substring(i)
+            val forms = mutableListOf(s)
+            for (p in PAST_FORMS) if (s.length > p.length && s.endsWith(p)) forms.add(s.dropLast(p.length) + "た")
+            for (p in TAIL_PARTICLES) if (s.length > p.length && s.endsWith(p)) forms.add(s.dropLast(p.length))
+            for (k in forms) {
+                val e = tables.EMOJI_FOR_SURFACE[k] ?: continue
+                for (x in e) if (x !in strip && strip.size < 16) strip.add(x)
+                break@search
+            }
         }
+        for (x in afterEmoji) if (x !in strip && strip.size < 16) strip.add(x)   // 文の中の語の絵文字・顔文字 (2026-10-14)
+        afterEmoji = emptyList()
         predictions = afterInsertStrip(strip)
         host.render()
         SentenceFlow.save()
     }
 
     companion object {
-        private val EMAIL_TAIL = Regex("""[A-Za-z0-9._%+-]*@([A-Za-z0-9.-]*)$""")
+        private const val UNDO_MERGE_MS = 1500L
+        private const val UNIT_MARKS = "℃°%％‰℉Ω㎏㎞㎝㎜㎡㎥¥￥$＄€£"
+        private val PAST_FORMS = listOf("てしまいました", "ちゃいました", "てしまった", "ちゃった", "ちゃう", "ました", "ています", "ている", "てる", "ます")
+        private val TAIL_PARTICLES = listOf("ですね", "ですよ", "でした", "です", "だね", "だよ", "だな", "すぎる", "すぎ", "ね", "よ", "な", "わ", "だ")
+        private val EMAIL_TAIL = Regex("""[A-Za-z0-9._%+-]*[@＠]([A-Za-z0-9.-]*)$""")
         private const val MAX_HOST_UNDO = 50
         private val RANGE_BG = Color.argb(0x60, 0x4C, 0x8D, 0xFF)
         private val ALPHA_VARIATIONS = setOf(

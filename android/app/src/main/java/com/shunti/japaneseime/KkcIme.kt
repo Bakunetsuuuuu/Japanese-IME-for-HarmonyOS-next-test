@@ -627,8 +627,22 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
         val dp = resources.displayMetrics.density
         val sel = if (input.inputState == InputHandler.InputState.SELECTING) input.selectedCandidateIndex else -1
         val chips = ArrayList<Pair<String, () -> Unit>>()
+        val suggAt = HashSet<Int>()   // 提案のチップ (強調色に ✦)
         if (input.inputState != InputHandler.InputState.IDLE) {
-            for ((i, s) in input.candidates.withIndex()) chips.add(s to { input.commitCandidate(i) })
+            for ((i, s) in input.candidates.withIndex()) chips.add((if (s == input.typoTop) "“$s”" else s) to { input.commitCandidate(i) })
+            // 提案は別の行をやめて候補の帯に強調色で。候補と交互に 1 つずつ (2 位の後ろから): ひと固めにすると惜しい 2 位以降が
+            // 遠くなった (HarmonyOS 版と同じ。ユーザー 2026-10-14)
+            if (input.inputState == InputHandler.InputState.COMPOSING && chips.isNotEmpty()) {
+                val top = input.candidates.firstOrNull() ?: ""
+                for ((j, g) in input.suggestions.withIndex()) {
+                    val at = 2 + 2 * j
+                    if (at > chips.size) break
+                    // 地味に (2026-10-14): 打ち間違いの直しは “ ” で囲んだ普通の字、ほかは強調色の字だけ (枠なし)
+                    val shown = if (g.first == 1) "“${g.second}”" else g.second
+                    chips.add(at, shown to { input.commitSuggestion(j) })
+                    suggAt.add(at)
+                }
+            }
         } else {
             freshClip?.let { c ->
                 val preview = c.replace('\n', ' ').let { if (it.length > 14) it.take(14) + "…" else it }
@@ -645,6 +659,11 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
                 setTextSize(TypedValue.COMPLEX_UNIT_SP, 18f)
                 setTextColor(theme.getValue(if (i == sel) "onAccent" else "textPrimary"))
                 if (i == sel) setBackgroundColor(theme.getValue("accent"))
+                // 提案は青枠を残す (消すと余計に浮いた。ユーザー 2026-10-14)
+                else if (i in suggAt) background = android.graphics.drawable.InsetDrawable(android.graphics.drawable.GradientDrawable().apply {
+                    cornerRadius = 18 * dp
+                    setStroke((1 * dp).toInt().coerceAtLeast(1), theme.getValue("accent"))
+                }, 0, (6 * dp).toInt(), 0, (6 * dp).toInt())
                 setPadding((12 * dp).toInt(), 0, (12 * dp).toInt(), 0)
                 gravity = Gravity.CENTER_VERTICAL
                 setOnClickListener {
@@ -654,15 +673,7 @@ class KkcIme : InputMethodService(), InputHandler.Host, MenuView.Host {
             }
             b.addView(tv, LinearLayout.LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT, (44 * dp).toInt()))
         }
-        // 提案の行: すぐ出す (ユーザー 2026-10-13「0.2 秒の遅延はもういらない」)
-        val sg = if (input.inputState == InputHandler.InputState.COMPOSING) input.suggestions else emptyList()
-        val key = sg.joinToString("\u0001") { it.second }
-        if (key != suggKey) {
-            suggKey = key
-            main.removeCallbacks(suggShow)
-            suggBox?.visibility = suggHidden()
-            if (sg.isNotEmpty()) main.post(suggShow)
-        }
+        suggBox?.visibility = View.GONE   // 提案の行は使わない (候補の帯に入れた)
         // 選んでいる候補が見えるように
         if (sel >= 0) b.post { b.getChildAt(sel)?.let { scroll?.smoothScrollTo(maxOf(0, it.left - (40 * dp).toInt()), 0) } }
         else scroll?.scrollTo(0, 0)

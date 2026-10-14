@@ -55,7 +55,7 @@ bool save_settings(const fs::path& p, const Settings& s) {
 
 const char* model_file_name(const std::string& model) {
     if (model == "light") return "kkc_model_light.bin";
-    if (model == "high") return "kkc_model_high.bin";
+    // 高精度 (M4) は廃止: S7 (標準) の方が精度が上で、誤字も直せる (2026-10-14)。前に high を選んでいた人も標準を読む
     return "kkc_model.bin";
 }
 

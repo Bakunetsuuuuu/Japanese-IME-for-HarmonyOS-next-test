@@ -11,6 +11,9 @@ object Brackets {
         "〚" to "〛", "｢" to "｣", "＜" to "＞", "<" to ">", "«" to "»", "‹" to "›", "“" to "”",
         "‘" to "’", "〝" to "〟", "｟" to "｠",
     )
+    /** 開きを入れたら閉じも組で入れる括弧 (＜ < ‘ は不等号・アポストロフィにも使うので除く。HarmonyOS 版 BRACKET_PAIRS) */
+    val PAIRS: Map<String, String> = ALL.filter { it.first !in setOf("＜", "<", "‘") }.toMap()
+
     private val OPENS = ALL.map { it.first }
     private val CLOSES = ALL.map { it.second }
 

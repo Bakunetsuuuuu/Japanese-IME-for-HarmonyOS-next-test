@@ -22,6 +22,7 @@ export struct CandidateBar {
   // HarmonyOS 7 から) は、候補の帯の 1 位のすぐ後ろに、色と ✦ の印で見分けられるようにして並べる (ユーザー 2026-10-13)
   @StorageLink('suggestList') suggestList: string[] = [];
   @StorageLink('suggestKinds') suggestKinds: number[] = [];
+  @StorageLink('typoTop') typoTop: string = '';   // 1 位にした打ち間違いの直し (“ ” で囲んで見せる)
   @StorageLink('suggestFrom') suggestFrom: string = '';
   @StorageLink('showComposingPanel') showComposingPanel: boolean = true;
   // Which chip is showing its 削除 popup (-1 = none), and the text that chip
@@ -72,6 +73,10 @@ export struct CandidateBar {
     return !this.showComposingPanel && this.suggestList.length > 0 && this.candidates.length > 0;
   }
 
+  private isTypoSugg(i: number): boolean {
+    return i < this.suggestKinds.length && this.suggestKinds[i] === 1;
+  }
+
   private suggestLabel(t: string, i: number): string {
     const k = i < this.suggestKinds.length ? this.suggestKinds[i] : 0;
     if (k === 1) { return `${this.suggestFrom}→${t}`; }
@@ -79,34 +84,39 @@ export struct CandidateBar {
     return t;
   }
 
+  // 帯の地の色を透明にした形 (もっと出すボタンの左のぼかし用)
+  private clearOf(c: ResourceColor): string {
+    const t = String(c);
+    return /^#[0-9A-Fa-f]{6}$/.test(t) ? '#00' + t.slice(1) : 'rgba(0,0,0,0)';
+  }
+
   build() {
-    Row() {
+    Stack({ alignContent: Alignment.End }) {
       Scroll(this.scroller) {
         Row({ space: 6 }) {
           ForEach(this.candidates, (candidate: string, index: number) => {
-            if (index === 1 && this.suggestInBar()) {
-              // 提案: 1 位の後ろに。縁と字を強調色にして ✦ を付ける。押すとその提案で確定 (学習はしない)
-              ForEach(this.suggestList, (t: string, si: number) => {
-                Row({ space: 3 }) {
-                  Text('✦')
-                    .fontSize(this.chipFontSize() * 0.75)
-                    .fontColor(kbTheme(this.isDark).accent)
-                  Text(this.suggestLabel(t, si))
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(this.chipFontSize())
-                    .fontColor(kbTheme(this.isDark).accent)
-                }
-                .justifyContent(FlexAlign.Center)
-                .alignItems(VerticalAlign.Center)
-                .height(this.chipHeightVp())
-                .padding({ left: this.isLandscape ? 8 : 14, right: this.isLandscape ? 10 : 18 })
-                .borderRadius(this.chipHeightVp() / 2)
-                .border({ width: 1, color: kbTheme(this.isDark).accent })
-                .onClick(() => { InputHandler.getInstance().commitSuggestion(si); })
-              }, (t: string, si: number) => `s${si}-${t}`)
+            if (index >= 2 && index - 2 < this.suggestList.length && this.suggestInBar()) {
+              // 提案: 候補と交互に 1 つずつ (1 位・2 位の後ろから)。ひと固めにすると惜しい 2 位以降が遠くなった (ユーザー 2026-10-14)。
+              // 縁と字を強調色に (✦ は青枠で足りるので外した、2026-10-14)。押すとその提案で確定 (学習はしない)
+              Row({ space: 3 }) {
+                // 地味に (派手すぎると指摘、2026-10-14): 打ち間違いの直しは普通の字を “ ” で囲む、ほか (日付など) は強調色の字だけ
+                Text(this.isTypoSugg(index - 2) ? `“${this.suggestList[index - 2]}”` : this.suggestLabel(this.suggestList[index - 2], index - 2))
+                  .fontFamily(JP_FONT_FAMILY)
+                  .fontSize(this.chipFontSize())
+                  .fontColor(kbTheme(this.isDark).textPrimary)   // 字は普通の候補と同じ、青枠だけで提案と分かる (2026-10-14)
+              }
+              .justifyContent(FlexAlign.Center)
+              .alignItems(VerticalAlign.Center)
+              .height(this.chipHeightVp())
+              .padding({ left: this.isLandscape ? 10 : 18, right: this.isLandscape ? 10 : 18 })
+              .backgroundColor(kbTheme(this.isDark).candidateBg)   // 地も普通の候補と同じ (2026-10-14)
+              // 枠は残す (消すと余計に浮いた。ユーザー 2026-10-14)
+              .borderRadius(this.chipHeightVp() / 2)
+              .border({ width: 1, color: kbTheme(this.isDark).accent })
+              .onClick(() => { InputHandler.getInstance().commitSuggestion(index - 2); })
             }
             Row() {
-              Text(candidate)
+              Text(this.typoTop.length > 0 && candidate === this.typoTop ? `“${candidate}”` : candidate)
                 .fontFamily(JP_FONT_FAMILY)
                 .fontSize(this.chipFontSize())
                 .fontColor(index === this.selectedIndex ? kbTheme(this.isDark).onAccent : kbTheme(this.isDark).textPrimary)
@@ -152,7 +162,7 @@ export struct CandidateBar {
             .onClick(() => {
               InputHandler.getInstance().commitCandidate(index);
             })
-          }, (candidate: string, index: number) => `${index}-${candidate}`)
+          }, (candidate: string, index: number) => `${index}-${candidate}-${candidate === this.typoTop ? 'T' : ''}-${this.suggestInBar() && index >= 2 ? (this.suggestList[index - 2] ?? "") : ""}`)
         }
         .padding({ left: 4, right: 4 })
       }
@@ -161,26 +171,43 @@ export struct CandidateBar {
         InputHandler.getInstance().noteCandidateScroll(this.scroller.currentOffset().xOffset);
       })
       .scrollBar(BarState.Off)
-      .layoutWeight(1)
+      .width('100%')
       .height(this.barHeightVp)
+      // もっと出すボタンの下に隠れる分、右に余白 (最後の候補もボタンの左まで送れる)
+      .padding({ right: this.showExpand && this.candidates.length > 0 ? this.chipHeightVp() + 20 : 0 })
 
       if (this.showExpand && this.candidates.length > 0) {
         // 自前の「▼」ではなく HarmonyOS Symbol を使う (PR #58)。高さと
         // グリフサイズは固定値ではなく実際のバー高さから逆算する。
+        // 候補の上に重ねて、左をぼかして帯に溶け込ませる (ボタンの所で候補がぷつっと切れて見えた。ユーザー 2026-10-14)
+        Row() {
         Row() {
           SymbolGlyph($r('sys.symbol.chevron_down'))
             .fontSize(Math.max(9, Math.min(14, this.chipHeightVp() * 0.36)))
             .fontColor([kbTheme(this.isDark).textSecondary])
         }
-        .width(this.isLandscape ? 24 : 36)
-        .height(this.barHeightVp)
+        // 候補の札と同じ丸い札にして帯に馴染ませる (四角い濃い地で浮いていた。ユーザー 2026-10-14)
+        .width(this.chipHeightVp())
+        .height(this.chipHeightVp())
+        .margin({ left: 2, right: 6 })
+        .borderRadius(this.chipHeightVp() / 2)
         .justifyContent(FlexAlign.Center)
         .alignItems(VerticalAlign.Center)
-        .backgroundColor(kbTheme(this.isDark).funcBg)
+        .backgroundColor(kbTheme(this.isDark).candidateBg)
           .onClick(() => {
             InputHandler.getInstance().noteCandidateListToggle(true);
             AppStorage.setOrCreate('candidateExpanded', true);
           })
+        }
+        .height(this.barHeightVp)
+        .padding({ left: 18 })
+        .justifyContent(FlexAlign.End)
+        .alignItems(VerticalAlign.Center)
+        .linearGradient({
+          angle: 90,
+          colors: [[this.clearOf(kbTheme(this.isDark).previewBg), 0.0], [kbTheme(this.isDark).previewBg, 0.45]],
+        })
+        .hitTestBehavior(HitTestMode.Transparent)
       }
     }
     .width('100%')

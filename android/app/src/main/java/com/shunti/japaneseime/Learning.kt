@@ -65,9 +65,10 @@ class Learning(private val file: File) {
     /** 予測: 読みが prefix で始まる、より長い読みで選んだ表記 (選んだ回数の多い順) */
     fun completions(prefix: String, max: Int): List<String> {
         if (prefix.isEmpty()) return emptyList()
+        // 2 回以上選んだものだけ (HarmonyOS 版 LEARNED_CONFIDENT_MIN と同じ。1 回きりの長い文が続きに出ていた。ユーザー 2026-10-14)
         return learned.entries.asSequence()
             .filter { it.key.length > prefix.length && it.key.startsWith(prefix) }
-            .flatMap { e -> e.value.entries.filter { !redundant(prefix, e.key, it.key) }.map { it.key to it.value } }
+            .flatMap { e -> e.value.entries.filter { it.value >= 2 && !redundant(prefix, e.key, it.key) }.map { it.key to it.value } }
             .sortedByDescending { it.second }
             .map { it.first }.distinct().take(max).toList()
     }

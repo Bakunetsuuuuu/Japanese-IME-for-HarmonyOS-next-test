@@ -81,29 +81,25 @@ const SYMBOL_CATEGORIES: string[][][] = [
   ],
 ];
 
-// Grid area budget (unchanged from before the redesign, so the overall
-// keyboard body height doesn't shift when switching into the symbol panel).
-const GRID_AREA_H = 252;
 const GRID_ROW_GAP = 4;
-// Row height is computed per tab (row count ranges 1-7 across categories/the
-// usage-based recent tab) but capped so a low-row tab (e.g. 🕐 with only 1-3
-// rows) gets modestly bigger buttons instead of a few buttons stretched into
-// tall rectangles — the remaining slack is centered as padding instead
-// (design review flag: avoid disproportionate cell stretching).
-const GRID_ROW_MAX = 48;
-const GRID_ROW_MIN = 24;
+// キーは黄金長方形 (横:縦 = 1.618:1) に。44 固定では縦長すぎた (ユーザー 2026-10-13)
+const GOLDEN = 1.618;
 
-function gridRowHeight(numRows: number): number {
-  if (numRows <= 0) { return GRID_ROW_MAX; }
-  const gaps = GRID_ROW_GAP * (numRows - 1);
-  const raw = Math.floor((GRID_AREA_H - gaps) / numRows);
-  return Math.max(GRID_ROW_MIN, Math.min(GRID_ROW_MAX, raw));
+interface SymRow {
+  cat: number;
+  items: string[];   // 空なら種類の見出しの行
 }
+
+// 種類の見出し (タブの並びと同じ。1 本につないだ一覧の区切りに出す。ユーザー 2026-10-14)
+const SYM_GENRES: string[] = ['よく使う', '英数・記号', 'かっこ', '矢印', '数学', '丸数字・ローマ数字', '図形・しるし', '全角の記号'];
 
 @Component
 export struct SymbolView {
   @StorageLink('symKeyWidthVp') symKeyWidthVp: number = 46;
   @StorageLink('isDark') isDark: boolean = false;
+  // 記号は絵文字の欄と同じく全部の種類を 1 本につないで縦に送る (ユーザー 2026-10-13: キーボードを低くすると
+  // 下の段が埋もれ、行を縮めると狭すぎた)。タブはその種類の先頭へ飛ぶ、見えている所に合わせてタブが動く
+  private scroller: Scroller = new Scroller();
   @StorageLink('frequentSymbols') frequentSymbols: string[] = [];
   @State currentTab: number = 1;
 
@@ -134,8 +130,19 @@ export struct SymbolView {
     return rows;
   }
 
-  private currentRows(): string[][] {
-    return this.currentTab === 0 ? this.recentRows() : SYMBOL_CATEGORIES[this.currentTab];
+  private allRows(): SymRow[] {
+    const rows: SymRow[] = [];
+    for (let c = 0; c < SYMBOL_CATEGORIES.length; c++) {
+      rows.push({ cat: c, items: [] });
+      for (const items of (c === 0 ? this.recentRows() : SYMBOL_CATEGORIES[c])) { rows.push({ cat: c, items: items }); }
+    }
+    return rows;
+  }
+
+  private catStart(cat: number): number {
+    let n = 0;
+    for (let c = 0; c < cat; c++) { n += 1 + (c === 0 ? this.recentRows().length : SYMBOL_CATEGORIES[c].length); }
+    return n;
   }
 
   build() {
@@ -168,6 +175,7 @@ export struct SymbolView {
             .borderRadius(8)
             .onClick(() => {
               this.currentTab = i;
+              this.scroller.scrollToIndex(this.catStart(i));
             })
         }, (i: number) => String(i))
       }
@@ -179,32 +187,47 @@ export struct SymbolView {
       // ── Symbol grid: row height fills the fixed grid budget (capped —
       // see gridRowHeight above), extra slack centers as padding so
       // switching tabs never changes the panel's total height. ──
-      Column({ space: GRID_ROW_GAP }) {
-          ForEach([0, 1, 2, 3, 4, 5, 6], (rowIdx: number) => {
-            if (rowIdx < this.currentRows().length) {
-              Row({ space: 4 }) {
-                ForEach(this.currentRows()[rowIdx], (sym: string) => {
-                  Text(sym)
-                    .fontFamily(JP_FONT_FAMILY)
-                    .fontSize(sym.length > 1 ? 12 : 18)
-                    .textAlign(TextAlign.Center)
-                    .width(this.symKeyWidthVp)
-                    .height(gridRowHeight(this.currentRows().length))
-                    .fontColor(kbTheme(this.isDark).textPrimary)
-                    .backgroundColor(kbTheme(this.isDark).keyBg)
-                    .borderRadius(8)
-                    .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
-                    .onClick(() => { this.insert(sym); })
-                }, (sym: string) => String(this.currentTab) + sym)
-              }
-              .width('100%')
-              .justifyContent(FlexAlign.Center)
+      List({ scroller: this.scroller, space: GRID_ROW_GAP }) {
+        ForEach(this.allRows(), (row: SymRow) => {
+          ListItem() {
+            if (row.items.length === 0) {
+              Text(row.cat < SYM_GENRES.length ? SYM_GENRES[row.cat] : '')
+                .fontFamily(JP_FONT_FAMILY)
+                .fontSize(11)
+                .fontColor(kbTheme(this.isDark).textSecondary)
+                .width('100%')
+                .padding({ left: 12, top: row.cat === 0 ? 2 : 8, bottom: 2 })
+            } else {
+            Row({ space: 4 }) {
+              ForEach(row.items, (sym: string) => {
+                Text(sym)
+                  .fontFamily(JP_FONT_FAMILY)
+                  .fontSize(sym.length > 1 ? 12 : 18)
+                  .textAlign(TextAlign.Center)
+                  .width(this.symKeyWidthVp)
+                  .height(Math.max(28, Math.round(this.symKeyWidthVp / GOLDEN)))
+                  .fontColor(kbTheme(this.isDark).textPrimary)
+                  .backgroundColor(kbTheme(this.isDark).keyBg)
+                  .borderRadius(8)
+                  .shadow({ radius: 2, color: kbTheme(this.isDark).shadowColor, offsetY: 1 })
+                  .onClick(() => { this.insert(sym); })
+              }, (sym: string) => 's' + sym)
             }
-          }, (rowIdx: number) => String(rowIdx))
-        }
-        .width('100%')
-        .height(GRID_AREA_H)
-        .justifyContent(FlexAlign.Center)
+            .width('100%')
+            .justifyContent(FlexAlign.Center)
+            }
+          }
+        }, (row: SymRow, idx: number) => `${row.cat}-${idx}-${row.items.join('')}`)
+      }
+      .width('100%')
+      .layoutWeight(1)
+      .scrollBar(BarState.Off)
+      .edgeEffect(EdgeEffect.Spring)
+      .onScrollIndex((first: number) => {
+        const rows = this.allRows();
+        if (first < 0 || first >= rows.length) { return; }
+        if (rows[first].cat !== this.currentTab) { this.currentTab = rows[first].cat; }
+      })
 
       // ── Bottom function row ───────────────────────────────────
       Row({ space: 0 }) {

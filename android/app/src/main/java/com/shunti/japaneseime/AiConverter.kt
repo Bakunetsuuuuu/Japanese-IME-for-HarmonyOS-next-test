@@ -57,7 +57,8 @@ class AiConverter(private val engine: Engine, private val worker: ExecutorServic
             val out = withFrozenAlternatives(hit.cands.map { fSurf + it }, hit.cands[0])
             lastTarget = target
             lastCands = out
-            suggestions = hit.sugg.map { it.first to fSurf + it.second }.filter { it.second != out.firstOrNull() }
+            // 1 位に上げた直し (種類 8) は 1 位と同じ表記なので外さない (候補の帯で “ ” で囲む印に使う。2026-10-14)
+            suggestions = hit.sugg.map { it.first to (if (it.first == 9) it.second else fSurf + it.second) }.filter { it.first == 8 || it.first == 9 || it.second != out.firstOrNull() }
             maybeFreeze(tail, hit)
             return out
         }

@@ -1657,7 +1657,11 @@ struct kkc_engine {
     std::vector<uint8_t> own_lex, own_model;   // kkc_open_files のときだけ中身を持つ
     Pool pool;
     double times[5] = {0, 0, 0, 0, 0};
-    float typo_bias = 0;   // 打ち間違いの辺の点数から引く値 (kkc_set_typo。大きいほど直しが控えめ)
+    float typo_bias = 0;
+    // 直しを候補の 1 位にする差 (1 字あたりのコスト)。kkc_set_typo_promote。200 で web の文 400 のうち 1 位を替えたのは 0、
+    // キーの打ち間違いの 53%・フリックの隣の 43% を 1 位で直す (0 なら 62%・54% だが web で 9 文を替えた。2026-10-14 測定)
+    double typo_promote = 200;
+    double typo_margin = 0;      // 直前の変換の差 (調整用)   // 打ち間違いの辺の点数から引く値 (kkc_set_typo。大きいほど直しが控えめ)
     // 提案 (kkc_set_suggest でオン): 変換の域を超えるもの (打ち間違いの直し・日付・郵便番号の住所) を候補に混ぜず、
     // 別の出口 (kkc_last_suggest) に種類つきで出す。候補は打ったとおりの変換だけになる
     bool suggest_mode = false;
@@ -2559,12 +2563,25 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
         if (e->suggest_mode && has_typo) {
             // 提案: 打ち間違いの辺を使ったいちばんよい変換を別に出し、候補は辺を使わない (打ったとおりの) 変換だけにする
             std::vector<ustr> ty;
-            nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 1, 1, ty);
+            double tyc[2] = {0, 0};
+            nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 1, 1, ty, nullptr, tyc);
             std::vector<float> lit = e->last_u;
             for (size_t i = 0; i < E.size(); i++)
                 if (E[i].kind == K_TYPO) lit[i] = -1e4f;
             nbest(e->lex, E, n, lit.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
-            if (!ty.empty() && !res.empty() && ty[0] != res[0]) e->suggest.push_back({KKC_SUGGEST_TYPO, ty[0]});
+            // 打ったままの道より直した道がはっきり良い (1 字あたり typo_promote 以上) なら、明らかな打ち間違い: 直した形を候補の 1 位に
+            // (打ったままの形は 2 位に残る)。そうでなければ提案に (ユーザー 2026-10-14「明らかに間違ってる誤字は 1 位に」)
+            e->typo_margin = (e->last_cost[0] - tyc[0]) / std::max(1, n);
+            if (!ty.empty() && !res.empty() && ty[0] != res[0]) {
+                if (e->typo_margin >= e->typo_promote) {
+                    res.erase(std::remove(res.begin(), res.end(), ty[0]), res.end());
+                    res.insert(res.begin(), ty[0]);
+                    // 1 位にした直しは種類 8 で知らせる (呼ぶ側が “ ” で囲んで、直した形だと分かるように。提案の帯には出さない)
+                    e->suggest.push_back({KKC_SUGGEST_TYPO_TOP, ty[0]});
+                } else {
+                    e->suggest.push_back({KKC_SUGGEST_TYPO, ty[0]});
+                }
+            }
         } else {
             nbest(e->lex, E, n, e->last_u.data(), M.beta, M.gamma, 10, maxout, res, &e->last_segs, e->last_cost);
         }
@@ -2862,6 +2879,9 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
     // 読みにかなが無い (記号を打った) ときはそのまま。候補が 1 つも残らないときもそのまま
     if (e->suggest_mode && std::any_of(r.begin(), r.end(), [](char32_t c) { return c >= 0x3041 && c <= 0x30FA; })) {
         auto symbolic = [](const ustr& c) {
+            // 単位の記号 (℃・%・° …) は文の中で使うものなので、提案に回さず普通の候補に残す (ユーザー 2026-10-14)
+            static const ustr UNIT_MARKS = U"℃°%％‰℉Ω㎏㎞㎝㎜㎡㎥¥￥$＄€£";
+            if (!c.empty() && std::all_of(c.begin(), c.end(), [](char32_t ch) { return UNIT_MARKS.find(ch) != ustr::npos; })) return false;
             size_t letters = 0;
             for (char32_t ch : c) {
                 if ((ch >= 0x3041 && ch <= 0x3096) || (ch >= 0x30A1 && ch <= 0x30FA) || (ch >= 0x4E00 && ch <= 0x9FFF) ||
@@ -2879,39 +2899,65 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
             for (auto& c : moved) e->suggest.push_back({KKC_SUGGEST_SYMBOL, c});
         }
     }
-    // 文の気分の絵文字・顔文字 (提案): 読みの終わりの語 (語の区切りから始まる 2 字以上、読み全体は除く: そこは候補に出ている) に
-    // 当たる絵文字 (コスト 8000 台) と顔文字 (9300〜9399) を。きょうはつかれた -> つかれた の 😫・(´・ω・｀)
-    if (e->suggest_mode && !e->last_segs.empty() && n >= 3) {
-        std::vector<int> starts = {0};
-        for (const SegInfo& sg : e->last_segs) starts.push_back(sg.e);
-        for (int st : starts) {
-            if (st <= 0 || n - st < 2 || n - st > 8) continue;
-            std::vector<uint16_t> k16(r.begin() + st, r.end());
-            uint32_t a, b;
-            if (!e->lex.find(k16.data(), int(k16.size()), a, b)) continue;
-            std::vector<std::pair<int32_t, ustr>> em, km;
-            for (uint32_t j = a; j < b; j++) {
+    // 数字の後の「度」は ℃ の形も候補に (ななじゅうどで -> 70度で の直後に 70℃で。ユーザー 2026-10-14)
+    for (size_t i = 0; i < res.size() && i < 3; i++) {
+        const ustr& c = res[i];
+        size_t p = c.find(U'度');
+        if (p == ustr::npos || p == 0 || !((c[p - 1] >= U'0' && c[p - 1] <= U'9') || (c[p - 1] >= 0xFF10 && c[p - 1] <= 0xFF19))) continue;
+        ustr v = c;
+        v[p] = U'℃';
+        if (std::find(res.begin(), res.end(), v) == res.end()) res.insert(res.begin() + long(i) + 1, v);
+        break;
+    }
+    // 確定の後に出す絵文字・顔文字 (KKC_SUGGEST_AFTER、提案の帯には出さない): 1 位の文の語のうち、漢字・カタカナを含む語の読みに
+    // 当たる絵文字 (コスト 8000 台) と顔文字 (9300〜9399、読み 3 字以上)。絵文字 8・顔文字 6 まで (もっと出していい、2026-10-14)。文の終わりの語ほど先に。呼ぶ側が確定の後の予測の帯に出す
+    // (ユーザー 2026-10-14「文に絵文字の出る語があれば、予測にその絵文字を」。打っている途中の提案にしたのは 10/13 にやめた)
+    if (e->suggest_mode && !e->last_segs.empty() && !res.empty()) {
+        const ustr top0 = res[0];
+        std::vector<std::pair<int, int>> spans;   // (読みの始め, 終わり) と表記の始め
+        std::vector<std::pair<size_t, size_t>> surfs;
+        int rs = 0;
+        size_t ss = 0;
+        for (const SegInfo& sg : e->last_segs) {
+            size_t se = ss;
+            for (int l = 0; se < top0.size() && l < sg.l16;) l += top0[se++] >= 0x10000 ? 2 : 1;
+            spans.push_back({rs, sg.e});
+            surfs.push_back({ss, se});
+            rs = sg.e;
+            ss = se;
+        }
+        std::vector<ustr> em, km;
+        for (int k = int(spans.size()) - 1; k >= 0 && (em.size() < 8 || km.size() < 6); k--) {
+            const int a0 = spans[size_t(k)].first, b0 = spans[size_t(k)].second;
+            const ustr sf = top0.substr(surfs[size_t(k)].first, surfs[size_t(k)].second - surfs[size_t(k)].first);
+            bool content = false;
+            for (char32_t c : sf) content = content || (c >= 0x4E00 && c <= 0x9FFF) || (c >= 0x30A1 && c <= 0x30FA);
+            if (!content || b0 - a0 < 2) continue;
+            std::vector<uint16_t> k16(r.begin() + a0, r.begin() + b0);
+            uint32_t la, lb;
+            if (!e->lex.find(k16.data(), int(k16.size()), la, lb)) continue;
+            std::vector<std::pair<int32_t, ustr>> ce, ck;
+            for (uint32_t j = la; j < lb; j++) {
                 const Ent en = e->lex.ent(j);
-                ustr sf = from16(e->lex.s_blob + en.soff, en.slen);
-                if (en.cost >= 8000 && en.cost < 9000 && is_emoji(sf)) em.push_back({en.cost, sf});
-                else if (en.cost >= 9300 && en.cost <= 9399) {
+                ustr x = from16(e->lex.s_blob + en.soff, en.slen);
+                if (en.cost >= 8000 && en.cost < 9000 && is_emoji(x)) ce.push_back({en.cost, x});
+                else if (en.cost >= 9300 && en.cost <= 9399 && b0 - a0 >= 3) {
                     bool ok = true;
-                    for (char32_t c : sf) ok = ok && !((c >= 0x3041 && c <= 0x3096) || (c >= 0x4E00 && c <= 0x9FFF));
-                    if (ok) km.push_back({en.cost, sf});
+                    for (char32_t c : x) ok = ok && !((c >= 0x3041 && c <= 0x3096) || (c >= 0x4E00 && c <= 0x9FFF));
+                    if (ok) ck.push_back({en.cost, x});
                 }
             }
-            if (em.empty() && km.empty()) continue;
-            std::stable_sort(em.begin(), em.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
-            std::stable_sort(km.begin(), km.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
-            const ustr top = res.empty() ? ustr() : res[0];
-            for (size_t i = 0; i < em.size() && i < 2; i++) e->suggest.push_back({KKC_SUGGEST_MOOD, top + em[i].second});
-            for (size_t i = 0; i < km.size() && i < 2; i++) e->suggest.push_back({KKC_SUGGEST_MOOD, top + km[i].second});
-            break;
+            std::stable_sort(ce.begin(), ce.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+            std::stable_sort(ck.begin(), ck.end(), [](const auto& x, const auto& y) { return x.first < y.first; });
+            for (auto& x : ce) if (em.size() < 8 && std::find(em.begin(), em.end(), x.second) == em.end()) em.push_back(x.second);
+            for (auto& x : ck) if (km.size() < 6 && std::find(km.begin(), km.end(), x.second) == km.end()) km.push_back(x.second);
         }
+        for (auto& x : em) e->suggest.push_back({KKC_SUGGEST_AFTER, x});
+        for (auto& x : km) e->suggest.push_back({KKC_SUGGEST_AFTER, x});
     }
     // 提案の並び: 打ち間違いの直し・日付・住所・気分の絵文字・記号・英単語の順 (英単語 KYO が日付より前に出ていた)
     {
-        auto pri = [](int k) { static const int P[] = {9, 0, 1, 2, 5, 9, 3, 4}; return k >= 0 && k < 8 ? P[k] : 9; };
+        auto pri = [](int k) { static const int P[] = {9, 0, 1, 2, 5, 9, 3, 4, 0, 9}; return k >= 0 && k < 10 ? P[k] : 9; };
         std::stable_sort(e->suggest.begin(), e->suggest.end(), [&](const auto& x, const auto& y) { return pri(x.first) < pri(y.first); });
     }
     std::vector<uint16_t> buf;
@@ -2924,6 +2970,9 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
 KKC_API double kkc_last_margin(kkc_engine* e) { return e ? e->last_cost[1] - e->last_cost[0] : 0; }
 
 // 直前の kkc_convert の提案 (kkc_set_suggest がオンのとき)。表記を 0 区切りで out に、種類を kinds に。返り値は数 (out が足りなければ -1)
+KKC_API void kkc_set_typo_promote(kkc_engine* e, double per_char) { if (e) e->typo_promote = per_char; }
+KKC_API double kkc_last_typo_margin(kkc_engine* e) { return e ? e->typo_margin : 0; }
+
 KKC_API int kkc_last_suggest(kkc_engine* e, uint16_t* out, int cap, int32_t* kinds, int kcap) {
     if (!e) return 0;
     std::vector<uint16_t> buf;

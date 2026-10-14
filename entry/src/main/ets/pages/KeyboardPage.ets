@@ -590,26 +590,7 @@ struct KeyboardPage {
 
   build() {
     Stack() {
-      // 「キーボード内表示」をOFFにしても、今の入力欄が入力欄側表示に
-      // 非対応だと保険で戻ってくることの説明。切り替わった瞬間だけ出して
-      // 1秒ほどでフェードアウトするトースト風バナー (checkFallbackBanner
-      // 参照)。常時出しっぱなしのバッジは目に入らなかった(実際の指摘)ので
-      // 短時間だけはっきり出す方針に変えた。
-      if (this.fallbackBannerShown) {
-        Text('この入力欄は入力欄内への表示に対応していないため、\nキーボード内に表示しています')
-          .fontFamily(JP_FONT_FAMILY)
-          .fontSize(12)
-          .fontColor(kbTheme(this.isDark).onAccent)
-          .textAlign(TextAlign.Center)
-          .backgroundColor(kbTheme(this.isDark).accent)
-          .borderRadius(10)
-          .padding({ left: 14, right: 14, top: 8, bottom: 8 })
-          .opacity(this.fallbackBannerOpacity)
-          .position({ x: '10%', y: 6 })
-          .width('80%')
-          .zIndex(100)
-          .hitTestBehavior(HitTestMode.Transparent)
-      }
+      // 入力欄内表示に非対応の欄でキーボード内に戻ったときの案内 (トースト) は廃止 (ユーザー 2026-10-13「もう消していい」)
       Column() {
         // Symbol/Emoji/Settings views take the full panel (no preview bar).
         // Numeric keeps the preview bar — without it the pad's rows stretch to

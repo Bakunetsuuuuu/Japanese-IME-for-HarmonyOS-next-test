@@ -1,3 +1,4 @@
+import { bracketVariants } from './Brackets';
 // AI 変換 (shuntelligence)。かな漢字変換はこれだけ (1.6.1 の次で、独自辞書・統計データ・ハイブリッドの旧エンジンを外した)。
 // 中身は C++ (entry/src/main/cpp, libkkc.so): 辞書 shuntorge の単語の網 + 文脈を読む小さな Transformer (約 630 万
 // パラメータ) + 上位 k。学習のコードと教材は公開していない (モデルの重みと推論のコードだけを同梱)。
@@ -389,13 +390,41 @@ export class AiConverter {
     const k = r.suggKinds ?? [];
     const list: string[] = [];
     const kinds: number[] = [];
+    let typoTop = '';
+    const after: string[] = [];
     for (let i = 0; i < s.length; i++) {
-      const t = AiConverter.fSurf + s[i];
+      if (i < k.length && k[i] === 8) { typoTop = AiConverter.fSurf + s[i]; continue; }   // 1 位にした打ち間違いの直し
+      if (i < k.length && k[i] === 9) { after.push(s[i]); continue; }   // 確定の後に出す絵文字・顔文字
+      // 気分の絵文字・顔文字 (6) は絵文字だけが来るので 1 位の後ろに (帯には足す分だけ見せる)
+      const t = (i < k.length && k[i] === 6) ? top + s[i] : AiConverter.fSurf + s[i];
       if (t !== top && list.indexOf(t) < 0) {
         list.push(t);
         kinds.push(i < k.length ? k[i] : 0);
       }
     }
+    // 括弧の組が提案に回っているとき (かっこ など)、エンジンの辞書に無い組 (【】・"" …、Brackets.ets) も提案に揃える。
+    // 揃えないと、候補の側で足した組だけが候補の帯に残っていた (ユーザー 2026-10-13)
+    if (kinds.indexOf(7) >= 0) {
+      for (const b of bracketVariants(AiConverter.lastTarget)) {
+        if (list.indexOf(b) < 0) { list.push(b); kinds.push(7); }
+      }
+    }
+    // 選んだことのある提案を、同じ種類の中で前に (括弧は人によって使う組が違う。ユーザー 2026-10-13)
+    const firstOfKind = (kd: number): number => kinds.indexOf(kd);
+    const order: number[] = list.map((_t: string, i: number) => i);
+    order.sort((x: number, y: number) => {
+      const gx = firstOfKind(kinds[x]);
+      const gy = firstOfKind(kinds[y]);
+      if (gx !== gy) { return gx - gy; }
+      const d = (AiConverter.suggUse[list[y]] ?? 0) - (AiConverter.suggUse[list[x]] ?? 0);
+      return d !== 0 ? d : x - y;
+    });
+    const sl = order.map((i: number) => list[i]);
+    const sk = order.map((i: number) => kinds[i]);
+    list.splice(0, list.length, ...sl);
+    kinds.splice(0, kinds.length, ...sk);
+    AppStorage.setOrCreate('typoTop', typoTop);
+    AiConverter.afterEmoji = after;   // 候補の帯でこの候補を “ ” で囲む
     // 候補の帯から外す判定 (suggestPending) と帯に出すのは同時
     AppStorage.setOrCreate('suggestPending', list);
     AppStorage.setOrCreate('suggestPendingKinds', kinds);
@@ -423,6 +452,26 @@ export class AiConverter {
     AppStorage.setOrCreate('suggestPendingKinds', [] as number[]);
     AppStorage.setOrCreate('suggestList', [] as string[]);
     AppStorage.setOrCreate('suggestText', '');
+    AppStorage.setOrCreate('typoTop', '');
+  }
+
+  // 提案を選んだ回数 (表記 -> 回数)。端末の中だけに保存する (KeyboardController が shunti_flow の 'sugg' に)
+  static suggUse: Record<string, number> = {};
+  static onSuggUse: (() => void) | undefined = undefined;
+
+  static recordSuggestUse(t: string): void {
+    AiConverter.suggUse[t] = (AiConverter.suggUse[t] ?? 0) + 1;
+    AiConverter.suggestKey = '';
+    AiConverter.onSuggUse?.();
+  }
+
+  // 1 位の文の語に当たる絵文字・顔文字 (エンジンの種類 9)。確定の後の予測の帯に出す (takeAfterEmoji)
+  private static afterEmoji: string[] = [];
+
+  static takeAfterEmoji(): string[] {
+    const a = AiConverter.afterEmoji;
+    AiConverter.afterEmoji = [];
+    return a;
   }
 
   private static suggestKey: string = '';

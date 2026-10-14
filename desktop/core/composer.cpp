@@ -241,10 +241,6 @@ void Composer::type_char(char16_t c, bool raw) {
 
 bool Composer::press_input(const KeyEvent& ev) {
     // 提案の列: Shift+↓ / Shift+Tab で入り、←→ / Tab / Shift+Tab で選び、Enter・空白で確定、Esc・↑ で戻る。ほかのキーは列を出てふつうに
-    if (sugg_focus_ < 0 && ev.shift && (ev.key == Key::Down || ev.key == Key::Tab) && !live_sugg_.empty()) {
-        sugg_focus_ = 0;
-        return true;
-    }
     if (sugg_focus_ >= 0) {
         const int n = int(live_sugg_.size());
         switch (ev.key) {
@@ -274,6 +270,16 @@ bool Composer::press_input(const KeyEvent& ev) {
             return true;
         case Key::Space:
         case Key::Henkan:
+            // 打ち間違いの直しがあるときは、文ごとの候補 (直しを 1 位に上げた・交互に混ぜた) のまま変換に入る。
+            // 文節に分けると直しが候補に入らなかった (ユーザー 2026-10-14「win 版も訂正を普通の変換内に」)
+            flush_romaji();
+            update_live();
+            if ((!typo_top_.empty() || !sugg_typo_.empty()) && !live_cands_.empty()) {
+                enter_single(live_cands_[0], live_cands_, 0);
+                first_cands_ = live_cands_;
+                first_via_ = "space";
+                return true;
+            }
             convert_all();
             return true;
         case Key::Down:
@@ -436,15 +442,36 @@ bool Composer::press_convert(const KeyEvent& ev) {
     }
 }
 
+u16 Composer::sugg_note(const u16& x) const {
+    // 候補の右に薄い字で添える種類 (Windows・Linux。スマホの青枠の代わり。2026-10-14)
+    if ((!typo_top_.empty() && x == typo_top_) || contains(sugg_typo_, x)) return u"もしかして";
+    if (!contains(sugg_set_, x)) return u16();
+    int k = 0;
+    for (size_t i = 0; i < live_sugg_.size(); i++) if (live_sugg_[i] == x) { k = live_sugg_kinds_[i]; break; }
+    if (k == 2) return u"日付";
+    if (k == 3) return u"住所";
+    if (k == 4) return u"英語";
+    bool emoji = false, letters = false;
+    for (char16_t c : x) {
+        emoji = emoji || (c >= 0xD800 && c <= 0xDBFF) || (c >= 0x2600 && c <= 0x27BF);
+        letters = letters || (c >= u'a' && c <= u'z') || (c >= u'A' && c <= u'Z') || c == u'ω' || c == u'∀' || c == u'´' || c == u'｀';
+    }
+    if (emoji) return u"絵文字";
+    if (letters || x.size() >= 3) return u"顔文字";
+    return u"記号";
+}
+
 void Composer::select_suggestion(int index) {
     if (state_ != State::Input || index < 0 || index >= int(live_sugg_.size())) return;
     flush_romaji();
-    u16 t = frozen_surface() + live_sugg_[size_t(index)];
+    // 気分の絵文字・顔文字 (6) は絵文字だけが来る: 1 位の後ろに足す
+    u16 t = frozen_surface() + (live_sugg_kinds_[size_t(index)] == 6 ? live_top_ : u16()) + live_sugg_[size_t(index)];
     {
         LogEvent e{"commit", frozen_reading() + kana_, t, ctx_, live_sugg_, index};
         e.extra = "suggest";
         log(e);
     }
+    if (flow) flow->record_suggest(live_sugg_[size_t(index)]);
     commit_text(t);
     to_idle();
     rebuild_view();
@@ -461,7 +488,8 @@ void Composer::select_candidate(int index) {
             e.extra = "live,mouse";
             log(e);
         }
-        if (learning_) learning_->record(kana_, c);
+        if (learning_ && !contains(sugg_set_, c)) learning_->record(kana_, c);
+        if (flow && contains(sugg_set_, c)) flow->record_suggest(c);
         commit_text(frozen_surface() + c);
         to_idle();
         rebuild_view();
@@ -481,7 +509,8 @@ void Composer::select_candidate(int index) {
 // ---------------------------------------------------------------- 打っている間の変換
 
 void Composer::update_live() {
-    if (!options.live || state_ != State::Input || !conv_ || kana_.empty()) {
+    // 打っている間の変換は、候補の窓 (live) かリアルタイム変換 (live_display) のどちらかで要る。窓とは別に選べる (ユーザー 2026-10-14)
+    if (!(options.live || options.live_display) || state_ != State::Input || !conv_ || kana_.empty()) {
         live_cands_.clear();
         live_key_.clear();
         return;
@@ -499,10 +528,30 @@ void Composer::update_live() {
     sugg_focus_ = -1;
     live_sugg_.clear();
     live_sugg_kinds_.clear();
+    typo_top_.clear();
+    after_emoji_.clear();
     for (size_t i = 0; i < c.sugg.size(); i++) {
+        if (i < c.sugg_kinds.size() && c.sugg_kinds[i] == 8) { typo_top_ = c.sugg[i]; continue; }   // 1 位にした打ち間違いの直し
+        if (i < c.sugg_kinds.size() && c.sugg_kinds[i] == 9) { after_emoji_.push_back(c.sugg[i]); continue; }   // 確定の後に出す絵文字
         if (!c.cands.empty() && c.sugg[i] == c.cands[0]) continue;
         live_sugg_.push_back(c.sugg[i]);
         live_sugg_kinds_.push_back(i < c.sugg_kinds.size() ? c.sugg_kinds[i] : 0);
+    }
+    // 選んだことのある提案を、同じ種類の中で前に (スマホ版と同じ。2026-10-14)
+    if (flow && live_sugg_.size() > 1) {
+        std::vector<size_t> ord(live_sugg_.size());
+        for (size_t i = 0; i < ord.size(); i++) ord[i] = i;
+        auto first_of = [&](int k) { return size_t(std::find(live_sugg_kinds_.begin(), live_sugg_kinds_.end(), k) - live_sugg_kinds_.begin()); };
+        std::stable_sort(ord.begin(), ord.end(), [&](size_t x, size_t y) {
+            const size_t gx = first_of(live_sugg_kinds_[x]), gy = first_of(live_sugg_kinds_[y]);
+            if (gx != gy) return gx < gy;
+            return flow->suggest_use(live_sugg_[x]) > flow->suggest_use(live_sugg_[y]);
+        });
+        std::vector<u16> s2;
+        std::vector<int> k2;
+        for (size_t i : ord) { s2.push_back(live_sugg_[i]); k2.push_back(live_sugg_kinds_[i]); }
+        live_sugg_.swap(s2);
+        live_sugg_kinds_.swap(k2);
     }
     std::vector<u16> cands = c.cands;
     add_brackets(kana_, cands);   // 学習の並べ替えより前に (よく選ぶ括弧が上に来るように)
@@ -541,6 +590,20 @@ void Composer::update_live() {
         }
     }
     if (cands.empty()) cands.push_back(kana_);
+    // 提案は別の行をやめて候補に混ぜる (種類は View::cand_notes で右に添える) (スマホ版と同じ。ユーザー 2026-10-14)。選んでも学習はしない
+    // 候補と交互に 1 つずつ (2 位の後ろから): ひと固めにすると惜しい 2 位以降が遠くなった (ユーザー 2026-10-14)
+    sugg_set_.clear();
+    sugg_typo_.clear();
+    size_t at = 2;
+    for (size_t si = 0; si < live_sugg_.size(); si++) {
+        const u16& s = live_sugg_[si];
+        if (contains(cands, s)) continue;
+        if (live_sugg_kinds_[si] == 1) sugg_typo_.push_back(s);
+        if (at > cands.size()) at = cands.size();
+        cands.insert(cands.begin() + long(at), s);
+        at += 2;
+        sugg_set_.push_back(s);
+    }
     live_cands_ = std::move(cands);
 }
 
@@ -870,7 +933,8 @@ void Composer::commit_all() {
         segs.push_back(s.surface);
         if (s.changed) {
             changed++;
-            if (learning_) learning_->record(s.reading, s.surface);
+            if (learning_ && !contains(sugg_set_, s.surface)) learning_->record(s.reading, s.surface);
+            if (flow && contains(sugg_set_, s.surface)) flow->record_suggest(s.surface);
             log({"bseg", s.reading, s.surface, u16(), s.cands, s.sel});
         }
     }
@@ -897,6 +961,7 @@ void Composer::commit_text(const u16& t) {
         post_ = flow->predict();
         flow->save();   // 節が閉じたときだけ書く (dirty)
     }
+    after_emoji_.clear();   // 文の語の絵文字は PC 版では出さない (要らない、ユーザー 2026-10-14)
 }
 
 void Composer::select_post(int index) {
@@ -941,7 +1006,7 @@ void Composer::finish() {
         flush_romaji();
         // ライブ変換で変換した文が見えているなら、それで確定する (Enter と同じ)。英語入力に切り替えたときに、
         // 見えていた変換がかなに戻って確定され、取り消されたように見えた (ユーザー 2026-10-09)
-        if (options.live_display && options.live && !kana_.empty()) update_live();
+        if (options.live_display && !kana_.empty()) update_live();
         if (live_shown()) {
             log({"commit", kana_, live_top_, ctx_, live_cands_, 0, {}, "live"});
             commit_text(frozen_surface() + live_top_);
@@ -965,7 +1030,7 @@ void Composer::cancel() {
 // ライブ変換で変換した文を見せられるか: 設定がオンで、カーソルが読みの末尾にあり、今の読みの変換が出ている
 // (読みの途中にカーソルを動かして直しているときは、かなで見せる)
 bool Composer::live_shown() const {
-    return options.live_display && options.live && state_ == State::Input && !kana_.empty() && caret_ == kana_.size() &&
+    return options.live_display && state_ == State::Input && !kana_.empty() && caret_ == kana_.size() &&
            !alpha_run_ && !live_top_.empty() && live_key_ == conv_ctx() + u'\x01' + kana_;
 }
 
@@ -988,25 +1053,11 @@ void Composer::rebuild_view() {
             v.caret = f + int(caret_ + p.size());
             if (!in.empty()) v.spans.push_back({f, int(in.size()), SpanKind::Input});
         }
-        if (!live_cands_.empty()) {
+        if (!live_cands_.empty() && options.live) {   // 打っている間の候補の窓は live のときだけ (リアルタイム変換だけでも動く)
             v.cand_open = true;
             v.cands = live_cands_;
+            for (auto& x : v.cands) v.cand_notes.push_back(sugg_note(x));
             v.cand_sel = -1;
-        }
-        // 提案: 打ち間違いの直しは 元→直した形、気分の絵文字・顔文字 (6) は足す分だけを見せる
-        if (!live_sugg_.empty() && live_key_ == conv_ctx() + u'\x01' + kana_) {
-            for (size_t i = 0; i < live_sugg_.size() && i < 9; i++) {
-                const u16& s = live_sugg_[i];
-                const int k = live_sugg_kinds_[i];
-                u16 shown = s;
-                if (k == 1) shown = live_top_ + u"\u2192" + s;
-                else if (k == 6 && s.size() > live_top_.size() && s.compare(0, live_top_.size(), live_top_) == 0) shown = s.substr(live_top_.size());
-                v.sugg.push_back(shown);
-                v.sugg_text.push_back(fz + s);
-                v.sugg_kinds.push_back(k);
-            }
-            v.sugg_sel = sugg_focus_ < int(v.sugg.size()) ? sugg_focus_ : -1;
-            v.cand_open = true;
         }
     } else if (state_ == State::Convert) {
         for (size_t i = 0; i < segs_.size(); i++) {
@@ -1019,6 +1070,7 @@ void Composer::rebuild_view() {
         if (cand_open_) {
             v.cand_open = true;
             v.cands = segs_[focus_].cands;
+            if (segs_.size() == 1) for (auto& x : v.cands) v.cand_notes.push_back(sugg_note(x));
             v.cand_sel = segs_[focus_].sel;
         }
     }

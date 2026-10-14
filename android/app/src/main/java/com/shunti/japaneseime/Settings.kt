@@ -65,17 +65,30 @@ class Settings(context: Context) {
 
     /** 長い入力の扱い: false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = オート確定 (前の方から次々に確定) */
     /** 提案 (打ち間違いの直し・日付・住所・絵文字・顔文字・かっこ など) を候補に混ぜず、候補の帯の上の行に分けて出す */
+    /** 提案を選んだ回数 (表記 -> 回数)。よく選ぶ提案を前に */
+    val suggestUse: Map<String, Int>
+        get() = runCatching {
+            val o = org.json.JSONObject(p.getString("suggestUse", "{}") ?: "{}")
+            o.keys().asSequence().associateWith { o.getInt(it) }
+        }.getOrDefault(emptyMap())
+
+    fun recordSuggestUse(t: String) {
+        val m = suggestUse.toMutableMap()
+        m[t] = (m[t] ?: 0) + 1
+        p.edit().putString("suggestUse", org.json.JSONObject(m as Map<*, *>).toString()).apply()
+    }
+
     var separateSuggest: Boolean
-        get() = p.getBoolean("separateSuggest", true)
+        get() = true   // 設定は廃止 (2026-10-14)
         set(v) = p.edit().putBoolean("separateSuggest", v).apply()
 
     /** 差別的・不適切とされる語も候補に出す (既定オン。ユーザー 2026-10-13) */
     var allowSlurs: Boolean
-        get() = p.getBoolean("allowSlurs", true)
+        get() = true   // 常に出す (設定は廃止、2026-10-13)
         set(v) = p.edit().putBoolean("allowSlurs", v).apply()
 
     var liveCommit: Boolean
-        get() = p.getBoolean("liveCommit", false)
+        get() = false   // 設定は廃止 (2026-10-14)
         set(v) = p.edit().putBoolean("liveCommit", v).apply()
 
     /** 変換モデル: "standard" (S6、既定) か "light" (XS3、性能の低い端末向け) */

@@ -49,6 +49,7 @@ struct View {
     int anchor = 0;               // 候補の窓をこの字の下に出す
     bool cand_open = false;
     std::vector<u16> cands;
+    std::vector<u16> cand_notes;  // 候補ごとに右に薄く添える種類 (もしかして・絵文字・日付 …。空なら無し)
     int cand_sel = -1;            // 選んでいる候補 (-1 = まだ選んでいない。打っている間の候補)
     // 提案 (打っている間だけ。候補の窓の上の行に出す)。sugg = 見せる形、sugg_text = 確定する文 (固定した前の方込み)
     std::vector<u16> sugg, sugg_text;
@@ -193,6 +194,11 @@ private:
     std::vector<u16> live_cands_;
     std::vector<u16> live_sugg_;          // 提案 (Conversion::sugg。打っている間の変換のもの)
     std::vector<int> live_sugg_kinds_;
+    u16 typo_top_;
+    std::vector<u16> after_emoji_;        // 1 位の文の語に当たる絵文字・顔文字 (確定の後の続き Tab の窓に)                        // 1 位にした打ち間違いの直し (“ ” で囲んで見せる)
+    std::vector<u16> sugg_typo_;          // そのうち打ち間違いの直し (“ ” で囲んで見せる)
+    u16 sugg_note(const u16& x) const;   // 候補の右に添える種類 (もしかして・絵文字 …)
+    std::vector<u16> sugg_set_;           // 候補に混ぜた提案 (✦ を付けて見せる・学習しない)
     int sugg_focus_ = -1;                 // 提案の列で選んでいるもの (Shift+↓ / Shift+Tab で入る。-1 = 入っていない)
     u16 live_top_;                       // 打っている間の変換そのものの 1 位 (予測・決まり文句を足す前)。ライブ変換で見せる
     std::map<size_t, u16> prev_segs_;    // 前回の 1 位の (語の区切りの読みの位置 -> そこまでの表記)

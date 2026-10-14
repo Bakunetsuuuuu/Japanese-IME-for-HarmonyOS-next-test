@@ -93,6 +93,19 @@ void SentenceFlow::close(const u16& punct) {
     dirty_ = true;
 }
 
+int SentenceFlow::suggest_use(const u16& t) const {
+    auto it = table_.find(u"S" + t);
+    if (it == table_.end()) return 0;
+    auto j = it->second.find(u"1");
+    return j == it->second.end() ? 0 : j->second;
+}
+
+void SentenceFlow::record_suggest(const u16& t) {
+    bump(u"S" + t, u"1");
+    dirty_ = true;
+    save();
+}
+
 void SentenceFlow::bump(const u16& key, const u16& v) {
     auto it = table_.find(key);
     if (it == table_.end()) {

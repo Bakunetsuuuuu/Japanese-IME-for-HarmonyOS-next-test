@@ -27,7 +27,6 @@ xcopy /D /Y /Q "%ROOT%\entry\src\main\resources\rawfile\kkc_lex.bin" "%DIST%\" >
 xcopy /D /Y /Q "%ROOT%\entry\src\main\resources\rawfile\kkc_model.bin" "%DIST%\" >nul
 rem light / high conversion models (models\, fetched by tools\fetch_ai_assets.py; optional)
 if exist "%ROOT%\models\kkc_model_light.bin" xcopy /D /Y /Q "%ROOT%\models\kkc_model_light.bin" "%DIST%\" >nul
-if exist "%ROOT%\models\kkc_model_high.bin" xcopy /D /Y /Q "%ROOT%\models\kkc_model_high.bin" "%DIST%\" >nul
 copy /Y "%HERE%install.ps1" "%DIST%\" >nul
 copy /Y "%HERE%install.bat" "%DIST%\" >nul
 copy /Y "%HERE%uninstall.bat" "%DIST%\" >nul

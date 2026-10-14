@@ -85,7 +85,8 @@ LRESULT CALLBACK CandWindow::proc(HWND h, UINT m, WPARAM w, LPARAM l) {
 }
 
 void CandWindow::show(const std::vector<u16>& cands, int sel, const RECT& anchor, HWND owner, const std::vector<u16>& sugg,
-                      int sugg_sel) {
+                      int sugg_sel, const std::vector<u16>& notes) {
+    notes_ = notes;
     if (cands.empty() && sugg.empty()) { hide(); return; }
     sugg_sel_ = sugg_sel;
     sugg_ = sugg;
@@ -171,7 +172,16 @@ void CandWindow::layout() {
     int end = std::min(int(cands_.size()), start + Composer::PAGE);
     for (int i = start; i < end; i++) {
         GetTextExtentPoint32W(dc, W(cands_[size_t(i)]), int(cands_[size_t(i)].size()), &sz);
-        text_w = std::max(text_w, int(sz.cx));
+        int nw = 0;   // 右に添える種類の幅
+        if (size_t(i) < notes_.size() && !notes_[size_t(i)].empty()) {
+            SIZE ns;
+            const u16& n = notes_[size_t(i)];
+            SelectObject(dc, small_);
+            GetTextExtentPoint32W(dc, W(n), int(n.size()), &ns);
+            SelectObject(dc, font_);
+            nw = ns.cx + MulDiv(12, int(dpi_), 96);
+        }
+        text_w = std::max(text_w, int(sz.cx) + nw);
     }
     text_w = std::min(text_w, MulDiv(640, int(dpi_), 96));
     SelectObject(dc, small_);
@@ -250,9 +260,17 @@ void CandWindow::paint(HDC wdc) {
         SetTextColor(dc, selected ? c.accent : c.sub);
         DrawTextW(dc, num, 1, &nr, DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOPREFIX);
         RECT tr = {pad_ + num_w_, top, width_ - pad_, top + row_h_};
+        u16 s = cands_[size_t(i)];
         SetTextColor(dc, selected ? c.sel_text : c.text);
-        const u16& s = cands_[size_t(i)];
         DrawTextW(dc, W(s), int(s.size()), &tr, DT_SINGLELINE | DT_VCENTER | DT_LEFT | DT_NOPREFIX | DT_END_ELLIPSIS);
+        // 提案の種類を右に薄い字で (もしかして・絵文字 …。Windows の候補の窓の見た目に合わせる、2026-10-14)
+        if (size_t(i) < notes_.size() && !notes_[size_t(i)].empty()) {
+            const u16& n = notes_[size_t(i)];   // 括弧は付けない (薄い字で注釈だと分かる)
+            SelectObject(dc, small_);
+            SetTextColor(dc, selected ? c.sel_text : c.sub);
+            DrawTextW(dc, W(n), int(n.size()), &tr, DT_SINGLELINE | DT_VCENTER | DT_RIGHT | DT_NOPREFIX);
+            SelectObject(dc, font_);
+        }
     }
     SelectObject(dc, small_);
     const int fy = height_ - footer_h_;

@@ -147,7 +147,7 @@ const DEFAULTS: KeyboardSettings = {
   keyboardWidthScale: 1.0,
   keyboardHorizontalOffset: 0,
   flickHintsEnabled: true,
-  bracketCloseMode: 'manual',
+  bracketCloseMode: 'pair',
   floatingMode: false,
   // 既定は画面上寄り、幅60%・高さ35%程度の常識的なサイズ。設定ボタンの
   // 長押し→上スライドで出すジェスチャの向き(上へ引き出す)に合わせて

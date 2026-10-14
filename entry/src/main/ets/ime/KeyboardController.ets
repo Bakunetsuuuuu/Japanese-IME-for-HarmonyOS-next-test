@@ -57,7 +57,8 @@ interface InsertTextOptions {
 }
 
 interface HostEditOp {
-  kind: 'insert' | 'delete';
+  kind: 'insert' | 'delete' | 'move';   // move: ◄► でカーソルを動かした (at = 動かす前の位置)
+  t?: number;                           // 記録した時刻 (続けて消した分をまとめるため)
   text: string;
   at: number;   // IME自己完結の相対座標(ホストの絶対indexではない)
 }
@@ -347,9 +348,46 @@ export class InputHandler {
   // 直接タップしてカーソルを動かした場合は検知できずズレる。それでも
   // 「常に今のカーソル位置で実行する」だった以前より、追跡できる範囲では
   // 確実に正しくなる。
+  // → HarmonyOS 7 では入力欄の位置が正しく取れる (2026-10-14 実機確認) ので、今は selectionChange で
+  //   本当の位置に合わせている (onHostSelection)。指でタップして動かした後も正しい。
   private hostUndoStack: HostEditOp[] = [];
   private hostCursor: number = 0;
   private static readonly MAX_HOST_UNDO = 100;
+  private static readonly UNDO_MERGE_MS = 1500;
+  private static readonly SELF_EDIT_MS = 400;
+
+  // 入力欄のカーソルが動いた (指でタップ・◄►・文字を入れた)。HarmonyOS 7 では入力欄が知らせる位置が実際と合う
+  // (2026-10-14 実機で確認) ので、取消キーの位置 (hostCursor) を入力欄の本当の位置に合わせる。
+  // これで指でタップしてカーソルを動かした後でも、取消キーが正しい場所を戻す
+  //
+  // ただし自分で入れた・消した・動かした直後の知らせは使わない: 自分で数えた分と二重になって、取消キーが
+  // 「あえええきききくけこ」のように違う所へ戻した (ユーザー 2026-10-14)。指でタップして動かしたときだけ合わせる
+  onHostSelection(nb: number): void {
+    if (Date.now() < this.selfEditUntil) { return; }
+    if (nb >= 0) { this.hostCursor = nb; }
+  }
+
+  private selfEditUntil: number = 0;
+  private markSelfEdit(): void {
+    this.selfEditUntil = Date.now() + InputHandler.SELF_EDIT_MS;
+  }
+
+  private syncHostCursor(): void {
+    try {
+      const i = this.inputClient?.getTextIndexAtCursorSync() ?? -1;
+      if (i >= 0) { this.hostCursor = i; }
+    } catch (_e) { /* 古い OS: 自分で動かした分だけ数える */ }
+  }
+
+  // ◄► でカーソルを動かした: 取消キーで元の位置へ戻れるように積む。続けて動かした分は 1 つに (動かす前の位置を残す)
+  private pushHostMove(from: number): void {
+    const last = this.hostUndoStack.length > 0 ? this.hostUndoStack[this.hostUndoStack.length - 1] : undefined;
+    if (last !== undefined && last.kind === 'move') { return; }
+    this.hostUndoStack.push({ kind: 'move', text: '', at: from, t: Date.now() });
+    if (this.hostUndoStack.length > InputHandler.MAX_HOST_UNDO) {
+      this.hostUndoStack = this.hostUndoStack.slice(-InputHandler.MAX_HOST_UNDO);
+    }
+  }
   // 出す機会を待っている閉じ括弧。空なら保留無し。いつ出るかは
   // bracketCloseMode 次第で、詳しい設計意図は BRACKET_PAIRS のコメント参照。
   // AppStorage にも流しているのは、保留中であることを画面に出すため
@@ -363,8 +401,12 @@ export class InputHandler {
   // (パネル内 SettingsBar) と拡張本体は同じプロセスの AppStorage を
   // 共有するので、都度読めば必ず最新になる。
   private bracketCloseMode(): string {
-    return AppStorage.get<string>('bracketCloseMode') ?? 'manual';
+    // 選べるのは 組で (pair)・手動 (manual) の 2 つ。前に保存した 自動 (auto) は 組で に (ユーザー 2026-10-13)
+    const m = AppStorage.get<string>('bracketCloseMode') ?? 'pair';
+    return m === 'manual' ? 'manual' : 'pair';
   }
+
+  private cursorIntoPair: boolean = false;   // 括弧を組で入れた: 入れ終わったらカーソルを中へ
 
   // 保留中の閉じ括弧を今この位置へ出す。出したら true、保留が無ければ false。
   // 先に保留を空にしてから insertText を呼ぶのは、insertText 側の
@@ -471,8 +513,16 @@ export class InputHandler {
         try {
           SentenceFlow.setLearned(JSON.parse(String(val)) as Record<string, Record<string, number>>);
         } catch (_e) {}
+        this.flowPrefs?.get('sugg', '{}').then((v: dataPreferences.ValueType) => {
+          try { AiConverter.suggUse = JSON.parse(String(v)) as Record<string, number>; } catch (_e) {}
+        });
       })
       .catch((e: Error) => { InputLog.recordInit('shunti_flow', e); });
+    AiConverter.onSuggUse = () => {
+      const prefs = this.flowPrefs;
+      if (!prefs) { return; }
+      prefs.put('sugg', JSON.stringify(AiConverter.suggUse)).then(() => prefs.flush());
+    };
     SentenceFlow.onChange = () => {
       clearTimeout(this.flowSaveTimer);
       this.flowSaveTimer = setTimeout(() => {
@@ -667,12 +717,19 @@ export class InputHandler {
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
         AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
         AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
+        // オート確定・提案を分ける・英数字キーボードの変換・キーボード内の表示は設定を廃止して決め打ち
+        // (ユーザー 2026-10-14「もういらない」。前に保存した値は無視)
+        s.liveCommit = false;
+        s.separateSuggest = true;
+        s.alphaCompose = true;
+        s.composingInPanel = true;
+        s.composingInField = true;   // 入力欄に表示も決め打ち (設定は廃止、2026-10-14)
         AppStorage.setOrCreate('liveCommit', s.liveCommit);
         AiConverter.liveCommit = s.liveCommit;
         AppStorage.setOrCreate('separateSuggest', s.separateSuggest);
         AppStorage.setOrCreate('alphaCompose', s.alphaCompose);
-        AppStorage.setOrCreate('allowSlurs', s.allowSlurs);
-        AiConverter.allowSlurs = s.allowSlurs;
+        // 不適切な語は常に出す (設定は廃止。ユーザー 2026-10-13「オフにする意味がない」。前に保存したオフは無視)
+        AiConverter.allowSlurs = true;
         AiConverter.setSuggestMode(s.separateSuggest);
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
@@ -1823,7 +1880,7 @@ export class InputHandler {
     const strip: string[] = [];
     const wordGroups: string[][] = [];
     const pushChip = (text: string, words: string[]): void => {
-      if (text.length > 0 && strip.indexOf(text) < 0 && strip.length < 6) {
+      if (text.length > 0 && strip.indexOf(text) < 0 && strip.length < 16) {   // 絵文字・顔文字を多めに出すので 16 まで (横に送れる)
         strip.push(text);
         wordGroups.push(words);
       }
@@ -1834,6 +1891,8 @@ export class InputHandler {
       const phrase = NextWordPredictor.phraseCompletion(w2, w1);
       if (phrase.length >= 2) { pushChip(phrase.join(''), phrase); }
       for (const e of EmojiSuggest.forSurface(w2)) { pushChip(e, [e]); }
+      // 文の中の語に当たる絵文字・顔文字 (辞書の。ユーザー 2026-10-14)
+      for (const e of AiConverter.takeAfterEmoji()) { pushChip(e, [e]); }
       for (const w of NextWordPredictor.predict(w2, w1)) { pushChip(w, [w]); }
     }
     AppStorage.setOrCreate('predictions', strip);
@@ -1944,6 +2003,7 @@ export class InputHandler {
     // が指す座標系ごと無効になる。持ち越すと別の場所を編集しかねない。
     this.hostUndoStack = [];
     this.hostCursor = 0;
+    this.syncHostCursor();
     this.setPendingBracketClose('');
     this.conversionEnd = 0;
     AppStorage.setOrCreate('convEnd', 0);
@@ -2103,10 +2163,12 @@ export class InputHandler {
       // 直前に実際にある文字」を読む。矢印キーでカーソルを動かした後の
       // backspace は別の文字を消すので、insertedBuffer.pop() だけに
       // 頼ると取消キーへ誤った文字を記録してしまう (今回の修正対象)。
-      // getBackwardSync が使えない/失敗する欄向けに従来の推測へ落とす。
+      // getForwardSync が使えない/失敗する欄向けに従来の推測へ落とす。
       let deleted = '';
       try {
-        deleted = this.inputClient?.getBackwardSync(1) ?? '';
+        // getForward = カーソルの前、getBackward = カーソルの後ろ (名前と逆。deleteForward が前を消すのと同じ)。
+        // getBackwardSync にしていて、文の途中で消すとカーソルの後ろの字を覚え、取消キーで「いう」の代わりに「ええ」が入った (2026-10-14)
+        deleted = this.inputClient?.getForwardSync(1) ?? '';
       } catch (_e) {
         deleted = '';
       }
@@ -2125,6 +2187,14 @@ export class InputHandler {
         this.setPendingBracketClose('');
       }
       this.inputClient?.deleteForward(1);
+      // メールのドメインを出していたら、消した後の形で出し直す (@ を消したら帯を空に。ユーザー 2026-10-13)
+      if (this.emailStripShown.length > 0 && (AppStorage.get<string[]>('predictions') ?? []).join('') === this.emailStripShown) {
+        if (!this.showEmailDomains()) {
+          this.emailStripShown = '';
+          AppStorage.setOrCreate('predictions', [] as string[]);
+          this.predictionWordGroups = [];
+        }
+      }
       // 直前の確定 (熟語など) をバックスペースで削っていく間、漢字の手がかりが
       // 残っている限り truncate() で末尾を追う (かける→翔ける→⌫⌫→翔 のような、
       // 熟語や活用語尾の一部だけを残すケースを検出するため)。全部ひらがな
@@ -2281,12 +2351,19 @@ export class InputHandler {
   // 提案 (ひらがなの帯の「提案: …」) をタップした: 変換する所をその表記で確定する。学習はしない (打ったとおりの変換ではないので)
   commitSuggestion(index: number = 0): void {
     const list = AppStorage.get<string[]>('suggestList') ?? [];
-    const text = index < list.length ? list[index] : '';
+    let text = index < list.length ? list[index] : '';
     if (text.length === 0) { return; }
     const composing = AppStorage.get<string>('composingText') ?? '';
     const parts = this.splitAtConversionEnd(composing);
     const candidates = AppStorage.get<string[]>('candidates') ?? [];
+    // 気分の絵文字・顔文字 (6): 絵文字だけを、いま見えている 1 位の後ろに足す (提案を作った時の 1 位とずれることがある)
+    const kinds = AppStorage.get<number[]>('suggestKinds') ?? [];
+    const from = AppStorage.get<string>('suggestFrom') ?? '';
+    if (index < kinds.length && kinds[index] === 6 && text.startsWith(from) && candidates.length > 0) {
+      text = candidates[0] + text.slice(from.length);
+    }
     InputLog.recordCommit(parts[0], text, -1, candidates.length, candidates, 'suggest', [] as string[]);
+    AiConverter.recordSuggestUse(list[index]);
     this.insertText(text);
     KanaKanjiConverter.addContext(text);
     AppStorage.setOrCreate('suggestText', '');
@@ -2842,15 +2919,39 @@ export class InputHandler {
   // insertText() の末尾(挿入)と handleBackspace の IDLE 分岐(削除)から
   // 呼ばれる。at はその時点の hostCursor から自己完結で決まる (フィールド
   // コメント参照)。
-  private pushHostOp(kind: 'insert' | 'delete', text: string): void {
-    if (text.length === 0) { return; }
-    if (kind === 'delete') {
+  // 入力欄のカーソルの本当の位置 (HarmonyOS 7 で正しく取れる。取れなければ -1)
+  private hostIndex(): number {
+    try {
+      const i = this.inputClient?.getTextIndexAtCursorSync() ?? -1;
+      return i >= 0 ? i : -1;
+    } catch (_e) {
+      return -1;
     }
+  }
+
+  // pre: 入れる・消す前のカーソルの本当の位置 (-1 なら自分で数えた hostCursor を使う)
+  private pushHostOp(kind: 'insert' | 'delete', text: string, pre: number = -2): void {
+    if (text.length === 0) { return; }
+    if (pre === -2) { pre = this.hostIndex(); }
+    if (pre >= 0) { this.hostCursor = pre; }
     const at = kind === 'insert' ? this.hostCursor : this.hostCursor - text.length;
-    this.hostUndoStack.push({ kind, text, at });
+    const now = Date.now();
+    const last = this.hostUndoStack.length > 0 ? this.hostUndoStack[this.hostUndoStack.length - 1] : undefined;
+    // ⌫ を続けて押して消した分は 1 回の操作にまとめる (取消キー 1 回で消した語ごと戻る。ユーザー 2026-10-13)
+    if (kind === 'delete' && last !== undefined && last.kind === 'delete' && last.at === this.hostCursor &&
+      now - (last.t ?? 0) < InputHandler.UNDO_MERGE_MS) {
+      last.text = text + last.text;
+      last.at = at;
+      last.t = now;
+      this.markSelfEdit();
+      this.hostCursor -= text.length;
+      return;
+    }
+    this.hostUndoStack.push({ kind, text, at, t: now });
     if (this.hostUndoStack.length > InputHandler.MAX_HOST_UNDO) {
       this.hostUndoStack = this.hostUndoStack.slice(-InputHandler.MAX_HOST_UNDO);
     }
+    this.markSelfEdit();
     this.hostCursor += kind === 'insert' ? text.length : -text.length;
   }
 
@@ -2861,16 +2962,41 @@ export class InputHandler {
   // 押す操作なのでこの経路そのものは起きないが、複数歩を連続で出すときの
   // 相互干渉を避けるため、ここでも律儀に1歩ずつ待つ。
   private async moveHostCursorTo(target: number): Promise<void> {
+    // 本当の位置が取れるなら、1 字動かすたびに読み直して target まで (自分で数えるとずれた。selectByRange は
+    // 範囲が空だとカーソルが動かなかった。どちらも 2026-10-14 実機)
+    let cur = this.hostIndex();
+    if (cur >= 0 && target >= 0) {
+      for (let guard = 0; cur !== target && guard < 2000; guard++) {
+        this.markSelfEdit();
+        try {
+          await this.inputClient?.moveCursor(target > cur ? inputMethodEngine.Direction.CURSOR_RIGHT : inputMethodEngine.Direction.CURSOR_LEFT);
+        } catch (_e) {
+          break;
+        }
+        let next = this.hostIndex();
+        if (next === cur) {   // 位置の反映が遅れているだけかもしれないので、少し待って読み直す
+          await new Promise<void>((r: () => void) => { setTimeout(r, 20); });
+          next = this.hostIndex();
+        }
+        if (next === cur) { break; }   // 動かない (欄の端など)
+        cur = next;
+      }
+      this.markSelfEdit();
+      this.hostCursor = cur;
+      return;
+    }
     const dir = target > this.hostCursor
       ? inputMethodEngine.Direction.CURSOR_RIGHT
       : inputMethodEngine.Direction.CURSOR_LEFT;
     const steps = Math.abs(target - this.hostCursor);
     for (let i = 0; i < steps; i++) {
       try {
+        this.markSelfEdit();
         await this.inputClient?.moveCursor(dir);
       } catch (_e) {
         break; // 動かせなかった。これ以上ズレを広げずここで諦める。
       }
+      this.markSelfEdit();
       this.hostCursor += dir === inputMethodEngine.Direction.CURSOR_RIGHT ? 1 : -1;
     }
   }
@@ -2884,12 +3010,18 @@ export class InputHandler {
     const op = this.hostUndoStack.pop();
     if (op === undefined) { return; }
     InputLog.recordUndo(`${op.kind}:${op.text}`);
+    if (op.kind === 'move') {
+      await this.moveHostCursorTo(op.at);
+      return;
+    }
     if (op.kind === 'insert') {
       // 挿入の取り消し = その範囲を削除。挿入直後の位置までカーソルを
       // 動かしてから、その直前を deleteForward で削る。
       await this.moveHostCursorTo(op.at + op.text.length);
       try {
+        this.markSelfEdit();
         await this.inputClient?.deleteForward(op.text.length);
+        this.markSelfEdit();
         this.hostCursor -= op.text.length;
         for (let i = 0; i < op.text.length; i++) { this.insertedBuffer.pop(); }
       } catch (_e) { /* 欄が外れた等。ここで失敗しても入力は続けられる。 */ }
@@ -2897,7 +3029,9 @@ export class InputHandler {
       // 削除の取り消し = 元あった位置へ打ち戻す。
       await this.moveHostCursorTo(op.at);
       try {
+        this.markSelfEdit();
         await this.inputClient?.insertText(op.text);
+        this.markSelfEdit();
         this.hostCursor += op.text.length;
         for (const ch of op.text) { this.insertedBuffer.push(ch); }
       } catch (_e) { /* 同上。 */ }
@@ -3379,8 +3513,11 @@ export class InputHandler {
       // 移動後に取消を押しても正しい位置へ戻れる (hostUndoStack のコメント
       // 参照)。動かせたかどうか確認できないので、成功した(=例外が出なかった)
       // ときだけ加算する。
+      const hi = this.hostIndex();
+      const from = hi >= 0 ? hi : this.hostCursor;
+      this.markSelfEdit();
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT)
-        .then(() => { this.hostCursor -= 1; })
+        .then(() => { this.markSelfEdit(); this.pushHostMove(from); this.hostCursor -= 1; })
         .catch((_e: Error) => {});
     }
   }
@@ -3411,8 +3548,11 @@ export class InputHandler {
         return;
       }
       InputLog.recordCursor(`R ${state}`);
+      const hi = this.hostIndex();
+      const from = hi >= 0 ? hi : this.hostCursor;
+      this.markSelfEdit();
       this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_RIGHT)
-        .then(() => { this.hostCursor += 1; })
+        .then(() => { this.markSelfEdit(); this.pushHostMove(from); this.hostCursor += 1; })
         .catch((_e: Error) => {});
     }
   }
@@ -3697,8 +3837,16 @@ export class InputHandler {
         // 保留中の古い閉じがあれば、入れ子にはせず先に閉じてしまう。次の
         // 確定が古い括弧の中身か新しい括弧の中身か区別する手段が無いため、
         // 単純に「前のは前ので完結させ、新しい括弧を開く」にしてある。
-        finalText = this.pendingBracketClose + newOpen;
-        this.setPendingBracketClose(newClose);
+        if (this.bracketCloseMode() === 'pair') {
+          // HarmonyOS 7 から: 開きと閉じを一緒に入れて、カーソルを 1 つ左 (括弧の中) へ。保留は使わない
+          // (ユーザー 2026-10-13。昔は moveCursor が実機で信用できず保留式にしていた)
+          finalText = this.pendingBracketClose + newOpen + newClose;
+          this.setPendingBracketClose('');
+          this.cursorIntoPair = true;
+        } else {
+          finalText = this.pendingBracketClose + newOpen;
+          this.setPendingBracketClose(newClose);
+        }
       } else if (this.pendingBracketClose.length > 0) {
         if (text === this.pendingBracketClose) {
           // ユーザーが閉じ括弧を自分で打った。保留分と合わせて二重に
@@ -3724,6 +3872,7 @@ export class InputHandler {
     // 呼ぶと、確定したかな + 変換結果 で入力欄に二重に残る (実機で確認)。
     // 正しくは、プレビュー自体を最終的な文字列で置き換えてから確定する。
     let previewCommitted = false;
+    const preIdx = this.hostIndex();   // 入れる前の本当の位置 (取消キー用)
     if (this.previewActive) {
       try {
         this.inputClient?.setPreviewTextSync(finalText, { start: -1, end: -1 });
@@ -3735,7 +3884,19 @@ export class InputHandler {
         this.cancelPreviewText();
       }
     }
-    if (!previewCommitted) { this.inputClient?.insertText(finalText); }
+    this.markSelfEdit();
+    if (!previewCommitted && this.cursorIntoPair) {
+      // 括弧を組で入れた: 同期の API で入れてすぐ中へ動かす (待ってから動かすとカーソルが跳ぶのが見えた。ユーザー 2026-10-13)
+      try {
+        this.inputClient?.insertTextSync(finalText);
+        this.inputClient?.moveCursorSync(inputMethodEngine.Direction.CURSOR_LEFT);
+        this.cursorIntoPair = false;
+        this.markSelfEdit();
+        this.hostCursor -= 1;
+      } catch (_e) {
+        this.inputClient?.insertText(finalText);   // 同期の API が使えない: 下で少し待ってから動かす
+      }
+    } else if (!previewCommitted) { this.inputClient?.insertText(finalText); }
     if (!this.suppressInsertLog) {
       InputLog.recordInsert(finalText,
         `${previewCommitted ? 'preview' : 'direct'}${opts?.raw === true ? ' raw' : ''}`);
@@ -3750,11 +3911,18 @@ export class InputHandler {
       // 変換確定・生かな確定・記号/絵文字タップ・予測変換タップ・
       // クリップボード貼り付け...どの経路で来ても、ホストへ実際に文字が
       // 出た時点はここ1箇所なので、取消キー用の記録もここで行う。
-      this.pushHostOp('insert', finalText);
+      this.pushHostOp('insert', finalText, preIdx);
       // @ を入れた (あっと の変換・記号の欄・英数字キーボード): 予測の帯にメールのドメインを出す (ユーザー 2026-10-13)。
       // 確定の後に呼ばれる pushPredictions が帯を書き換えるので、その後で
       // 文の流れ (SentenceFlow) にも入れて、確定の後の帯に「。」や次の文を出す (メールのドメインが先)
       SentenceFlow.feed(finalText);
+      if (this.cursorIntoPair) {
+        this.cursorIntoPair = false;
+        // insertText の直後に間を置かず動かすと無視される実機バグがあった (moveHostCursorTo のコメント) ので、少し待ってから
+        setTimeout(() => {
+          this.inputClient?.moveCursor(inputMethodEngine.Direction.CURSOR_LEFT).then(() => { this.markSelfEdit(); this.hostCursor -= 1; }).catch(() => {});
+        }, 30);
+      }
       setTimeout(() => {
         if (!this.showEmailDomains()) { this.showFlowPredictions(); }
       }, 0);
@@ -3762,8 +3930,10 @@ export class InputHandler {
   }
 
   // 入力欄の @ の後ろに打ったドメインの続き (gmail.com・yahoo.co.jp …) を予測の帯に出す。押すとその続きを入れる
+  private emailStripShown: string = '';   // 出しているメールのドメインの帯 (消したときに出し直すため)
+
   private showEmailDomains(): boolean {
-    const m = /[A-Za-z0-9._%+\-]*@([A-Za-z0-9.\-]*)$/.exec(this.insertedBuffer.join(''));
+    const m = /[A-Za-z0-9._%+\-]*[@＠]([A-Za-z0-9.\-]*)$/.exec(this.insertedBuffer.join(''));
     if (m === null) { return false; }
     const typed = m[1].toLowerCase();
     const strip = EMAIL_DOMAINS.filter((d: string) => d.startsWith(typed) && d !== typed).slice(0, 6)
@@ -3771,6 +3941,7 @@ export class InputHandler {
     if (strip.length === 0) { return false; }
     AppStorage.setOrCreate('predictions', strip);
     this.predictionWordGroups = strip.map((t: string) => [t]);
+    this.emailStripShown = strip.join('');
     return true;
   }
 
@@ -3785,7 +3956,7 @@ export class InputHandler {
     for (const t of f) {
       if (strip.indexOf(t) < 0) { strip.push(t); groups.push([t]); }
     }
-    for (let i = 0; i < cur.length && strip.length < 6; i++) {
+    for (let i = 0; i < cur.length && strip.length < 16; i++) {
       if (strip.indexOf(cur[i]) < 0) {
         strip.push(cur[i]);
         groups.push(i < this.predictionWordGroups.length ? this.predictionWordGroups[i] : [cur[i]]);
@@ -4503,6 +4674,10 @@ export class KeyboardController {
       this.kbDelegate.on('keyDown', (_keyEvent: inputMethodEngine.KeyEvent) => {
         return false;
       });
+      // 入力欄のカーソルの本当の位置を取消キーの位置合わせに使う (InputHandler.onHostSelection)
+      this.kbDelegate.on('selectionChange', (_ob: number, _oe: number, newBegin: number, _ne: number) => {
+        InputHandler.getInstance().onHostSelection(newBegin);
+      });
     } catch (err) {
       console.error('shuntiIME getKeyboardDelegate error', err);
     }
@@ -4511,5 +4686,6 @@ export class KeyboardController {
   private unregisterListeners(): void {
     display.off('change');
     this.kbDelegate?.off('keyDown');
+    this.kbDelegate?.off('selectionChange');
   }
 }

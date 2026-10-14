@@ -22,6 +22,9 @@ public:
     void backspace();             // 確定した文字を 1 字消した
     void feed(const u16& text);   // 入力欄に文字が出た
     std::vector<u16> predict() const;
+    // 提案を選んだ回数 (よく選ぶ提案を前に。スマホ版の提案の学習と同じ。同じ表に u"S" + 表記 で入れる)
+    int suggest_use(const u16& t) const;
+    void record_suggest(const u16& t);
 
 private:
     void close(const u16& punct);

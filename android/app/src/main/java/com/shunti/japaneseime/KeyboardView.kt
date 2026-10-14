@@ -82,9 +82,10 @@ class KeyboardView(
         1 -> "◀"
         2 -> "記号"
         else -> when {
+            // 数字パッドに回さない設定なら 1 は書かない (ユーザー 2026-10-14)
             h.subMode == InputHandler.SubMode.NUMERIC -> "1あA"
-            h.inputMode == InputHandler.InputMode.ALPHANUMERIC -> "A1あ"
-            else -> "あA1"
+            h.inputMode == InputHandler.InputMode.ALPHANUMERIC -> if (h.settings.numericPad) "A1あ" else "Aあ"
+            else -> if (h.settings.numericPad) "あA1" else "あA"
         }
     } else when (row) {
         0 -> "⌫"

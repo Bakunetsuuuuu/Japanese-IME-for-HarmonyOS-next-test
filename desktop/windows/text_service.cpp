@@ -599,7 +599,7 @@ void TextService::update_candidates(TfEditCookie ec, ITfContext* ctx, const View
         }
     }
     if (!hwnd) hwnd = GetFocus();
-    cand_.show(v.cand_open ? v.cands : std::vector<u16>{}, v.cand_sel, rc, hwnd, v.sugg, v.sugg_sel);
+    cand_.show(v.cand_open ? v.cands : std::vector<u16>{}, v.cand_sel, rc, hwnd, v.sugg, v.sugg_sel, v.cand_notes);
 }
 
 void TextService::finish_composition() {
