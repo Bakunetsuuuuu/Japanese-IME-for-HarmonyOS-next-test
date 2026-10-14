@@ -1413,6 +1413,9 @@ struct Model {
     float beta, gamma;
     std::unordered_map<char32_t, int> vocab;
     Tab emb, Pa, Pb, Pc;
+    // 版 5: Pa・Pb・Pc を持たず、語の k の最初の全結合 (3d → d、(入力, 出力)) をそのまま持つ。語ごとに計算してキャッシュする
+    const float* kW = nullptr;
+    std::vector<std::vector<float>> own;   // 版 5 の int8 から戻した全結合の重み (読み込んだときに作る)
     const float *seg, *pos;
     std::vector<LayerW> L;
     const float *normw, *normb, *end, *q1w, *q1b, *q2w, *q2b, *Kkind, *Klen, *k1b, *k2w, *k2b;
@@ -1656,6 +1659,7 @@ struct kkc_engine {
     Model m;
     std::vector<uint8_t> own_lex, own_model;   // kkc_open_files のときだけ中身を持つ
     Pool pool;
+    std::unordered_map<int, std::vector<float>> prow[3];   // 版 5 の Pa・Pb・Pc の行 (使った文字だけ計算して覚える)
     double times[5] = {0, 0, 0, 0, 0};
     float typo_bias = 0;
     // 直しを候補の 1 位にする差 (1 字あたりのコスト)。kkc_set_typo_promote。200 で web の文 400 のうち 1 位を替えたのは 0、
@@ -1711,7 +1715,9 @@ bool load_model(Model& M, const void* data, size_t size) {
     if (size < 4 || memcmp(data, "KKM1", 4)) return false;
     r.off = 4;
     const int32_t ver = r.val<int32_t>();
-    if (ver < 2 || ver > 4) return false;   // 版 2: 全結合の重みは (入力, 出力)。版 3: + ダイヤル。版 4: 版 3 の文字ごとの表を int8 に
+    // 版 2: 全結合の重みは (入力, 出力)。版 3: + ダイヤル。版 4: 版 3 の文字ごとの表を int8 に。
+    // 版 5: 版 4 + 層の大きな全結合も int8 (出力ごとの倍率)、Pa・Pb・Pc の代わりに k の全結合 (配る大きさ 24.8MB -> 約 6MB)
+    if (ver < 2 || ver > 5) return false;
     M.V = r.val<int32_t>(); M.d = r.val<int32_t>(); M.layers = r.val<int32_t>(); M.heads = r.val<int32_t>();
     M.ff = r.val<int32_t>(); M.dk = r.val<int32_t>(); M.max_len = r.val<int32_t>(); M.n_seg = r.val<int32_t>();
     M.ctx = r.val<int32_t>(); M.draft_max = r.val<int32_t>(); M.draft = r.val<int32_t>();
@@ -1725,23 +1731,36 @@ bool load_model(Model& M, const void* data, size_t size) {
     // 文字ごとの表: 版 4 は倍率 (V 個の fp32) と int8 (V × d)
     auto tab = [&](Tab& t) {
         t.d = d;
-        if (ver == 4) { t.s = r.arr<float>(size_t(V)); t.q = r.arr<int8_t>(size_t(V) * d); }
+        if (ver >= 4) { t.s = r.arr<float>(size_t(V)); t.q = r.arr<int8_t>(size_t(V) * d); }
         else t.f = r.arr<float>(size_t(V) * d);
     };
     tab(M.emb); M.seg = r.arr<float>(size_t(M.n_seg) * d); M.pos = r.arr<float>(size_t(M.max_len) * d);
     for (int l = 0; l < M.layers; l++) {
         LayerW w;
         w.ln1w = r.arr<float>(d); w.ln1b = r.arr<float>(d);
-        w.inw = r.arr<float>(size_t(3) * d * d); w.inb = r.arr<float>(3 * d);
-        w.outw = r.arr<float>(size_t(d) * d); w.outb = r.arr<float>(d);
+        // 版 5 の大きな全結合: 出力ごとの倍率 (out 個) + int8 (入力 × 出力)。float に戻して持つ
+        auto big = [&](int in, int out) -> const float* {
+            if (ver < 5) return r.arr<float>(size_t(in) * out);
+            const float* sc = r.arr<float>(size_t(out));
+            const int8_t* q = r.arr<int8_t>(size_t(in) * out);
+            if (!r.ok) return nullptr;
+            std::vector<float> f(size_t(in) * out);
+            for (int i = 0; i < in; i++)
+                for (int o = 0; o < out; o++) f[size_t(i) * out + o] = sc[o] * float(q[size_t(i) * out + o]);
+            M.own.push_back(std::move(f));
+            return M.own.back().data();
+        };
+        w.inw = big(d, 3 * d); w.inb = r.arr<float>(3 * d);
+        w.outw = big(d, d); w.outb = r.arr<float>(d);
         w.ln2w = r.arr<float>(d); w.ln2b = r.arr<float>(d);
-        w.l1w = r.arr<float>(size_t(ff) * d); w.l1b = r.arr<float>(ff);
-        w.l2w = r.arr<float>(size_t(d) * ff); w.l2b = r.arr<float>(d);
+        w.l1w = big(d, ff); w.l1b = r.arr<float>(ff);
+        w.l2w = big(ff, d); w.l2b = r.arr<float>(d);
         M.L.push_back(w);
     }
     M.normw = r.arr<float>(d); M.normb = r.arr<float>(d); M.end = r.arr<float>(d);
     M.q1w = r.arr<float>(size_t(d) * 3 * d); M.q1b = r.arr<float>(d); M.q2w = r.arr<float>(size_t(dk) * d); M.q2b = r.arr<float>(dk);
-    tab(M.Pa); tab(M.Pb); tab(M.Pc);
+    if (ver >= 5) M.kW = r.arr<float>(size_t(3) * d * d);
+    else { tab(M.Pa); tab(M.Pb); tab(M.Pc); }
     M.Kkind = r.arr<float>(size_t(M.n_kind) * d); M.Klen = r.arr<float>(size_t(17) * d);
     M.k1b = r.arr<float>(d); M.k2w = r.arr<float>(size_t(dk) * d); M.k2b = r.arr<float>(dk);
     if (ver >= 3) { M.gw = r.arr<float>(size_t(dk) * dk); M.gb = r.arr<float>(dk); }
@@ -1857,17 +1876,45 @@ void scores(kkc_engine* E, int rstart, int n, const std::vector<Edge>& ed, std::
         auto it = word_id.find(key);
         if (it != word_id.end()) return it->second;
         const int nc = int(e.surf.size());
-        for (int j = 0; j < d; j++) hid[j] = 0;
-        for (char32_t c : e.surf) {
-            const float* p = M.Pa.row(M.vid(c), tbuf.data());
-            for (int j = 0; j < d; j++) hid[j] += p[j];
-        }
         const float inv = 1.0f / float(std::max(nc, 1));
-        const float* pb = M.Pb.row(M.vid(e.surf.front()), tbuf.data());
-        const float* pc = M.Pc.row(M.vid(e.surf.back()), tbuf.data() + d);
         const float* kk = M.Kkind + size_t(e.kind) * d;
         const float* kl = M.Klen + size_t(std::min(nc, 16)) * d;
-        for (int j = 0; j < d; j++) hid[j] = hid[j] * inv + pb[j] + kk[j] + pc[j] + kl[j] + M.k1b[j];
+        if (M.kW) {
+            // 版 5: Pa・Pb・Pc の行 (文字の表の行 × k の全結合の 3 つの区切り) を、使った文字だけ計算して覚えておく。
+            // 前もって掛けて配っていた表と同じ値 (語ごとに 3d × d を掛けると PC で 2.5 倍遅かった)
+            auto prow = [&](int part, int v) -> const float* {
+                auto& cache = E->prow[part];
+                auto it = cache.find(v);
+                if (it != cache.end()) return it->second.data();
+                std::vector<float> out(size_t(d), 0.0f);
+                const float* er = M.emb.row(v, tbuf.data());
+                const float* W0 = M.kW + size_t(part) * d * d;
+                for (int i = 0; i < d; i++) {
+                    const float x = er[i];
+                    if (x == 0.0f) continue;
+                    const float* wr = W0 + size_t(i) * d;
+                    for (int j = 0; j < d; j++) out[size_t(j)] += x * wr[j];
+                }
+                return cache.emplace(v, std::move(out)).first->second.data();
+            };
+            for (int j = 0; j < d; j++) hid[j] = 0;
+            for (char32_t c : e.surf) {
+                const float* p = prow(0, M.vid(c));
+                for (int j = 0; j < d; j++) hid[j] += p[j];
+            }
+            const float* pb = prow(1, M.vid(e.surf.front()));
+            const float* pc = prow(2, M.vid(e.surf.back()));
+            for (int j = 0; j < d; j++) hid[j] = hid[j] * inv + pb[j] + kk[j] + pc[j] + kl[j] + M.k1b[j];
+        } else {
+            for (int j = 0; j < d; j++) hid[j] = 0;
+            for (char32_t c : e.surf) {
+                const float* p = M.Pa.row(M.vid(c), tbuf.data());
+                for (int j = 0; j < d; j++) hid[j] += p[j];
+            }
+            const float* pb = M.Pb.row(M.vid(e.surf.front()), tbuf.data());
+            const float* pc = M.Pc.row(M.vid(e.surf.back()), tbuf.data() + d);
+            for (int j = 0; j < d; j++) hid[j] = hid[j] * inv + pb[j] + kk[j] + pc[j] + kl[j] + M.k1b[j];
+        }
         gelu_all(hid.data(), size_t(d));
         int id = int(K.size() / dk);
         K.resize(K.size() + dk);

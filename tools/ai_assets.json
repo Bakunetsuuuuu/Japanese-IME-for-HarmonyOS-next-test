@@ -11,10 +11,10 @@
       "license": "shuntorge: 全体は CC BY-SA 4.0 (Wikipedia 由来の語を含む)。独自部分 MIT + Mozc BSD-3-Clause / IPAdic + SudachiDict Apache-2.0 + NEologd Apache-2.0 + 日本郵便 + JMdict CC BY-SA 4.0 + Wikidata CC0 + Unicode License v3"
     },
     "kkc_model.bin": {
-      "src": "kkc_model_s7.bin",
-      "size": 24849056,
-      "sha256": "da390ae56a9b7424e44e4f00739048b027a44c8c695765504bd9a556e21ee01a",
-      "license": "shuntelligence S7 (標準、打ち間違いの直しつき): CC BY 4.0"
+      "src": "kkc_model_s7v5.bin",
+      "size": 8163728,
+      "sha256": "40b636802ce260c5ae455cebb7054efed1dceca7024ed1dbbee1457127d9eaa6",
+      "license": "shuntelligence S7 (標準、打ち間違いの直しつき。版 5: 8.2MB): CC BY 4.0"
     },
     "kkc_model_light.bin": {
       "src": "kkc_model_light.bin",
