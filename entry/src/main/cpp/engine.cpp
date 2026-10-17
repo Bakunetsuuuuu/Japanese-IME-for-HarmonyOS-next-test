@@ -65,7 +65,7 @@ extern "C" void kkc_avx2_lin_q(const short* Xq, const float* xs, int T, int inp,
 namespace {
 
 typedef std::u32string ustr;
-enum Kind { K_DICT = 0, K_KANA = 1, K_KATA = 2, K_PASS = 3, K_NUM = 4, K_TYPO = 5 };   // K_TYPO: 打ち間違いを直した語 (S7 から)
+enum Kind { K_DICT = 0, K_KANA = 1, K_KATA = 2, K_PASS = 3, K_NUM = 4, K_TYPO = 5, K_LATIN = 6 };   // K_TYPO: 打ち間違いを直した語 (S7 から)。K_LATIN: ローマ字で打った英単語
 const int UNK = 1, SEP = 2;
 
 struct Ent { uint32_t soff; uint16_t slen, lid, rid, pad; int32_t cost; };
@@ -75,6 +75,9 @@ struct PEnt { uint16_t a, b, lid, rid; int16_t cost; };
 static_assert(sizeof(PEnt) == 10, "PEnt");
 
 struct Edge { int s, e; ustr surf; int32_t lid, rid, cost; Kind kind; };
+
+// 英単語の一覧の項目 (Lex::latin_words)。小文字の綴り -> 表記・品詞・コスト
+struct LatinWord { ustr surf; int32_t lid, rid, cost; };
 
 // 1 位の候補の語: 読みの終わりの位置・表記の長さ (UTF-16)・品詞の左右 ID
 struct SegInfo { int e, l16, lid, rid; };
@@ -126,6 +129,9 @@ struct Lex {
     const uint16_t* r_blob;
     const uint16_t* s_blob;
     bool typo = false;   // 打ち間違いの辺を作るか (モデルが辺の種類 K_TYPO を知っているとき。kkc_open が決める)
+    bool latin = false;  // 英字の辺 (K_LATIN) を作るか (モデルが辺の種類 K_LATIN を知っているとき。kkc_open が決める)
+    // 英字だけの語 (a-z A-Z と数字、2 字以上) の表: 小文字の綴り -> 表記・品詞・コスト (kkc_open が作って使い回す)
+    std::unordered_map<std::string, LatinWord> latin_words;
     int32_t abbr_lid = -1, abbr_rid = -1;   // 略語 (読みのアルファベットから作る GDP・IME) の品詞 (kkc_open で辞書の GDP から写す)
     static constexpr int RB = 16;      // 版 2 の読みの区切り
     static constexpr int MAXR = 256;   // 読みの長さの上限 (pack_lex.py が確かめる)
@@ -533,6 +539,8 @@ constexpr int32_t LATIN_WORD_BONUS = 500;
 // 英カタカナ辞書の印 (kkc/latin/add_words.py の eng)。このコスト以上の語は変換の網に入れず、読み全体がこの語のときだけ候補に足す
 // (くらいあんと → client。網に入れると普通の外来語を乗っ取った)
 constexpr int32_t ENG_COST = 32000;
+// 英字の辺 (K_LATIN) のコストに上乗せする値。かな・カタカナの語より英字の語を出にくくする (日本語寄りにする)
+constexpr int32_t LATIN_BIAS = 3000;
 
 // ---------------------------------------------------------------- 打ち間違いの辺 (S7、モデルが辺の種類 K_TYPO を知っているときだけ)
 // 打った読みをローマ字に直し、打ち間違い 1 打ぶんを戻した読み (余分な 1 打を消す・隣のキーを正しいキーに・抜けた 1 打を足す・
@@ -1196,6 +1204,39 @@ bool has_latin_word(const ustr& s) {
     return false;
 }
 
+// ---------------------------------------------------------------- 英字の辺 (ローマ字で打った英単語。K_LATIN)
+// 打った鍵の列 (kkc_set_keys) の、かなの区間 [s, e) に対応する鍵の区間 [span_start(s), span_end[e-1]) が英字だけのとき、
+// 小文字にして英単語の一覧 (Lex::latin_words) を引く。当たれば正しい大文字小文字の表記の辺を足す。かなにするか
+// 英字のままにするかは採点器 (モデル) が文脈で決める (K_TYPO と同じ考え方)。コストに LATIN_BIAS を上乗せして日本語寄りにする
+void latin_edges(const Lex& L, const std::vector<uint16_t>& keys, const std::vector<int32_t>& span_end, int n,
+                 std::vector<Edge>& out) {
+    const int nkeys = int(keys.size());
+    // かなの区間 [s, e) に、鍵の区間 [ks, ke) が英字だけの英単語に当たる辺を足す
+    auto add = [&](int ks, int ke, int s, int e) {
+        if (ke - ks < 2) return;   // 2 字以上だけ
+        std::string lower;
+        lower.reserve(size_t(ke - ks));
+        for (int i = ks; i < ke; i++) {
+            const uint16_t c = keys[size_t(i)];
+            if (c >= u'a' && c <= u'z') lower.push_back(char(c));
+            else if (c >= u'A' && c <= u'Z') lower.push_back(char(c + 32));
+            else return;   // 英字だけの区間だけ (記号は見ない)
+        }
+        auto it = L.latin_words.find(lower);
+        if (it == L.latin_words.end()) return;
+        out.push_back({s, e, it->second.surf, it->second.lid, it->second.rid, it->second.cost + LATIN_BIAS, K_LATIN});
+    };
+    for (int s = 0; s < n; s++) {
+        const int ks = s == 0 ? 0 : span_end[size_t(s - 1)];
+        for (int e = s + 1; e <= n; e++) {
+            const int ke = span_end[size_t(e - 1)];
+            add(ks, ke, s, e);
+            // 読みの最後の区間は、読みにならなかった鍵 (余り、語末の子音) も含めて試す
+            if (e == n && nkeys > ke) add(ks, nkeys, s, e);
+        }
+    }
+}
+
 // ---------------------------------------------------------------- 略語 (あいえむいー -> IME)
 // アルファベットの読み。辞書の 1 字の英字 (A〜Z) の読みから取り出した (kkc/latin/README の手順)
 const std::pair<const char16_t*, char32_t> LETTERS[] = {
@@ -1408,7 +1449,7 @@ struct Tab {
 };
 
 struct Model {
-    int n_kind = 5;   // 辺の種類の数 (5、打ち間違いの辺つきは 6)
+    int n_kind = 5;   // 辺の種類の数 (5、打ち間違いの辺つきは 6、英字の辺つきは 7)
     int V, d, layers, heads, ff, dk, max_len, n_seg, ctx, draft_max, draft;
     float beta, gamma;
     std::unordered_map<char32_t, int> vocab;
@@ -1680,6 +1721,9 @@ struct kkc_engine {
     std::vector<SegInfo> last_segs;   // 直前の変換の 1 位の語の区切り
     double last_cost[2] = {0, 0};     // 直前の変換の 1 位・2 位 (表記が違う最初の 2 つ) の経路のコスト。2 位が無ければ大きな値
     std::vector<UserWord> user;                   // ユーザー辞書の語 (kkc_user_add_like で足す)
+    // 打った鍵の列 (kkc_set_keys)。直後の 1 回の変換で英字の辺 (K_LATIN) を作るのに使う
+    std::vector<uint16_t> keys;
+    std::vector<int32_t> span_end;
     // 整数に丸めた重み (層ごとに inw, outw, l1w, l2w)。空なら float のまま
     std::vector<QW> qw;
     // 作業用
@@ -2033,6 +2077,28 @@ KKC_API kkc_engine* kkc_open(const void* lex, size_t lex_size, const void* model
     if (!load_lex(e->lex, lex, lex_size) || !load_model(e->m, model, model_size)) { delete e; return nullptr; }
     e->lex.typo = e->m.n_kind > K_TYPO;   // モデルが打ち間違いの辺を知っていれば作る
     if (e->lex.typo) e->lex.build_bloom();
+    e->lex.latin = e->m.n_kind > K_LATIN;   // モデルが英字の辺を知っていれば作る
+    if (e->lex.latin) {
+        // 英字だけの語を、小文字の綴り -> 表記 の表にする (英字の辺づくりで引く)
+        for (uint32_t j = 0; j < uint32_t(e->lex.nent); j++) {
+            const Ent en = e->lex.ent(j);
+            if (en.slen < 2) continue;
+            const uint16_t* s = e->lex.s_blob + en.soff;
+            std::string lower;
+            lower.reserve(size_t(en.slen));
+            bool ok = true;
+            for (int k = 0; k < en.slen; k++) {
+                const uint16_t c = s[k];
+                if (c >= u'a' && c <= u'z') lower.push_back(char(c));
+                else if (c >= u'A' && c <= u'Z') lower.push_back(char(c + 32));
+                else if (c >= u'0' && c <= u'9') lower.push_back(char(c));
+                else { ok = false; break; }
+            }
+            if (!ok) continue;
+            e->lex.latin_words.emplace(std::move(lower),
+                                       LatinWord{from16(s, en.slen), int32_t(en.lid), int32_t(en.rid), en.cost});
+        }
+    }
     {   // 略語の品詞は、辞書の「じーでぃーぴー → GDP」から写す (無ければ略語の候補は作らない)
         const std::u16string k = u"じーでぃーぴー";
         uint32_t a, b;
@@ -2091,6 +2157,18 @@ KKC_API void kkc_set_typo(kkc_engine* e, int on, float bias) {
     e->lex.typo = on != 0 && e->m.n_kind > K_TYPO;
     if (e->lex.typo) e->lex.build_bloom();
     e->typo_bias = bias;
+}
+
+// 打った鍵の列 (ローマ字の英字) を渡す。英字のまま打った語 (github) を候補にできるようにする。
+// keys = 打った鍵 (英字・記号そのまま)。span_end[i] = 読みの i 文字目が鍵の何文字目までで決まったか (単調増加)。
+// 直後の 1 回の kkc_convert にだけ効く (その変換の読みの長さが nk と合わなければ使わない)
+KKC_API void kkc_set_keys(kkc_engine* e, const uint16_t* keys, int nkeys, const int32_t* span_end, int nk) {
+    if (!e) return;
+    // 区間が鍵の列からはみ出す・逆戻りするものは使わない (範囲外を読まないため)
+    for (int i = 0; i < nk; i++)
+        if (span_end[i] < (i ? span_end[i - 1] : 0) || span_end[i] > nkeys) { e->keys.clear(); e->span_end.clear(); return; }
+    if (nkeys > 0) e->keys.assign(keys, keys + nkeys); else e->keys.clear();
+    if (nk > 0) e->span_end.assign(span_end, span_end + nk); else e->span_end.clear();
 }
 
 // 段階式のしきい値 (読み 1 字あたりのコストの差)。dev・AJIMEE・日常・入力ログで測った (kkc/engine/cascade.cpp)。
@@ -2228,7 +2306,11 @@ std::vector<ustr> date_candidates(const ustr& r) {
     static const char32_t* WD = U"日月火水木金土";
     std::vector<ustr> out;
     time_t now = std::time(nullptr);
-    if (const char* s = std::getenv("KKC_NOW")) now = time_t(std::strtoll(s, nullptr, 10));
+    if (const char* s = std::getenv("KKC_NOW")) {   // 試験用の今の時刻 (strtoll は使わない: glibc 2.38 を要求して Linux 版の動く範囲が狭まる)
+        long long v = 0;
+        while (*s >= '0' && *s <= '9') v = v * 10 + (*s++ - '0');
+        now = time_t(v);
+    }
     auto local = [](time_t t) {
         std::tm tm{};
 #ifdef _WIN32
@@ -2543,7 +2625,21 @@ KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint
     auto t0 = std::chrono::steady_clock::now();
     ustr r = from16(kana, size_t(nk));
     const int n = int(r.size());
+    // 打った鍵の列 (kkc_set_keys) は直後の 1 回の変換だけに効く。ここで取り出して消す (読みの長さが合わなければ使わない)
+    std::vector<uint16_t> keys;
+    std::vector<int32_t> span_end;
+    if (e->lex.latin && int(e->span_end.size()) == n) {
+        keys.swap(e->keys);
+        span_end.swap(e->span_end);
+    }
+    e->keys.clear();
+    e->span_end.clear();
     std::vector<Edge> E = edges(e->lex, r, &e->user);
+    if (!keys.empty()) {
+        std::vector<Edge> lat;
+        latin_edges(e->lex, keys, span_end, n, lat);
+        for (auto& ed : lat) E.push_back(std::move(ed));
+    }
     e->times[0] = ms_since(t0);
     std::vector<ustr> res;
     e->suggest.clear();

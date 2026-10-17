@@ -69,11 +69,6 @@ export class SuppressedCandidates {
     return true;
   }
 
-  static isSuppressed(reading: string, surface: string): boolean {
-    const list = SuppressedCandidates.map[reading];
-    return list !== undefined && list.indexOf(surface) >= 0;
-  }
-
   // Drop every suppressed surface from `cands`. If that would leave nothing to
   // show, the reading's own kana is returned instead of the original list --
   // committing what was typed is always possible, and a deleted candidate must

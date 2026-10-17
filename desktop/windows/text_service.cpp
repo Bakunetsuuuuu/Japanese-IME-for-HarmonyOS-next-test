@@ -1,12 +1,34 @@
 #include "text_service.h"
 
 #include <inputscope.h>
+#include <shellapi.h>
 #include <wrl/client.h>
 
 #include "display_attr.h"
 #include "globals.h"
 #include "input_log.h"
 #include "langbar.h"
+#include "shortcut_key.h"
+
+// 試験用: 設定のフォルダに layout_trace.on があるときだけ、配列が受け取ったキーと時刻を layout_trace.txt に書く
+static void layout_trace(const char* op, const std::string& k, uint64_t t) {
+    static int on = -1;
+    if (on < 0) on = std::filesystem::exists(shunti::win::user_dir() / L"layout_trace.on") ? 1 : 0;
+    if (!on) return;
+    FILE* f = _wfopen((shunti::win::user_dir() / L"layout_trace.txt").c_str(), L"ab");
+    if (!f) return;
+    fprintf(f, "%llu %s %s\n", (unsigned long long)t, op, k.c_str());
+    fclose(f);
+}
+
+// 配列の同時押しの判定に使う時刻 (ms)。GetTickCount64 は約 16ms 刻みで重なりを測るには粗いので、性能カウンタで
+static uint64_t layout_now_ms() {
+    static LARGE_INTEGER freq = [] { LARGE_INTEGER f; QueryPerformanceFrequency(&f); return f; }();
+    LARGE_INTEGER c;
+    QueryPerformanceCounter(&c);
+    return uint64_t(c.QuadPart * 1000 / freq.QuadPart);
+}
+
 
 using Microsoft::WRL::ComPtr;
 
@@ -56,6 +78,42 @@ const Preserved PRESERVED[] = {
     {{0x5a9f1b08, 0x7c3e, 0x4e0b, {0x9e, 0x8d, 0x2b, 0x6a, 0x1f, 0x4c, 0x7d, 0x11}}, VK_OEM_ENLW, TF_MOD_IGNORE_ALL_MODIFIER},
     {{0x5a9f1b09, 0x7c3e, 0x4e0b, {0x9e, 0x8d, 0x2b, 0x6a, 0x1f, 0x4c, 0x7d, 0x11}}, VK_OEM_3, TF_MOD_ALT},
 };
+
+// ショートカットキーの「入力中だけ効く」機能 -> 押したときと同じ KeyEvent (composer に渡す)。知らない id は false
+bool shortcut_compose_event(const std::string& id, KeyEvent& ev) {
+    ev = KeyEvent();
+    struct { const char* id; Key key; bool shift; bool ctrl; } funcs[] = {
+        {"confirm", Key::Enter, false, false},
+        {"cancel", Key::Escape, false, false},
+        {"convert", Key::Space, false, false},
+        {"prev_cand", Key::Up, false, false},
+        {"hiragana", Key::F6, false, false},
+        {"katakana", Key::F7, false, false},
+        {"halfkana", Key::F8, false, false},
+        {"zen_alpha", Key::F9, false, false},
+        {"han_alpha", Key::F10, false, false},
+        {"seg_shrink", Key::Left, true, false},
+        {"seg_grow", Key::Right, true, false},
+        {"seg_prev", Key::Left, false, false},
+        {"seg_next", Key::Right, false, false},
+        {"cand_delete", Key::Delete, false, true},
+        {"backspace", Key::Backspace, false, false},
+        {"delete_char", Key::Delete, false, false},
+        {"seg_first", Key::Home, false, false},
+        {"seg_last", Key::End, false, false},
+        {"page_next", Key::PageDown, false, false},
+        {"page_prev", Key::PageUp, false, false},
+        {"sugg_next", Key::Tab, false, false},
+        {"sugg_prev", Key::Tab, true, false},
+        {"sugg_commit", Key::Enter, true, false},
+        {"kana_cycle", Key::Muhenkan, false, false},
+        {"next_cand_down", Key::Down, false, false},
+    };
+    for (auto& f : funcs) {
+        if (id == f.id) { ev.key = f.key; ev.shift = f.shift; ev.ctrl = f.ctrl; return true; }
+    }
+    return false;
+}
 }  // namespace
 
 TextService::TextService() { dll_add_ref(); }
@@ -131,8 +189,50 @@ STDMETHODIMP TextService::ActivateEx(ITfThreadMgr* tm, TfClientId cid, DWORD) {
     ComPtr<ITfLangBarItemMgr> lbm;
     if (SUCCEEDED(tm_->QueryInterface(IID_PPV_ARGS(&lbm)))) lbm->AddItem(langbar_);
 
-    set_open(true);   // 切り替えてきたら日本語入力から
+    set_open(app_open_state(true));   // このアプリで前にオフにしていればオフのまま (MS-IME と同じくアプリごとに覚える)
     return S_OK;
+}
+
+// アプリ (実行ファイルの名前) ごとの日本語入力のオン・オフ。shunti IME の設定のフォルダの app_open.tsv に覚える
+std::wstring TextService::app_name() {
+    wchar_t path[MAX_PATH] = L"";
+    GetModuleFileNameW(nullptr, path, MAX_PATH);
+    std::wstring s(path);
+    size_t k = s.find_last_of(L"\\/");
+    return k == std::wstring::npos ? s : s.substr(k + 1);
+}
+
+bool TextService::app_open_state(bool def) {
+    std::string t;
+    if (!read_file(user_dir() / L"app_open.tsv", t)) return def;
+    const std::string me = to_utf8(u16(reinterpret_cast<const char16_t*>(app_name().c_str())));
+    size_t i = 0;
+    while (i < t.size()) {
+        size_t j = t.find('\n', i);
+        if (j == std::string::npos) j = t.size();
+        std::string line = t.substr(i, j - i);
+        i = j + 1;
+        size_t tab = line.find('\t');
+        if (tab != std::string::npos && line.substr(0, tab) == me) return line.substr(tab + 1, 1) == "1";
+    }
+    return def;
+}
+
+void TextService::remember_app_open(bool open) {
+    std::string t, out;
+    read_file(user_dir() / L"app_open.tsv", t);
+    const std::string me = to_utf8(u16(reinterpret_cast<const char16_t*>(app_name().c_str())));
+    size_t i = 0;
+    while (i < t.size()) {
+        size_t j = t.find('\n', i);
+        if (j == std::string::npos) j = t.size();
+        std::string line = t.substr(i, j - i);
+        i = j + 1;
+        if (line.empty() || line.substr(0, line.find('\t')) == me) continue;
+        out += line + "\n";
+    }
+    out += me + "\t" + (open ? "1" : "0") + "\n";
+    write_file_atomic(user_dir() / L"app_open.tsv", out);
 }
 
 STDMETHODIMP TextService::Deactivate() {
@@ -274,6 +374,13 @@ void TextService::apply_settings() {
     Core& c = core();
     c.settings.refresh();
     const Settings& s = c.settings.get();
+    if (s.layout != layout_name_) layout_load(s.layout);
+    layout_.window_ms = uint64_t(s.layout_window);
+    layout_.overlap_ratio = s.layout_overlap / 100.0;
+    layout_.thumbs = s.layout_thumbs;
+    layout_.continuous = s.layout_continuous;
+    layout_.thumb_tap = s.layout_thumb_tap;
+    layout_.repeat = s.layout_repeat;
     c.use_model(s.model);   // 変換モデルを替えた (同じなら何もしない)
     c.conv.set_suggest(s.separate_suggest);
     if (composer_) {
@@ -283,6 +390,34 @@ void TextService::apply_settings() {
         composer_->options.space_fullwidth = s.space_fullwidth;
         composer_->options.punct = s.punct;
         composer_->options.digits_fullwidth = s.digits_fullwidth;
+        composer_->options.half_symbols = from_utf8(s.half_symbols);
+        composer_->options.numpad = s.numpad;
+        composer_->options.private_mode = s.private_mode;
+        Composer::PAGE = s.page_size;
+        // ローマ字の表に足す綴り (shunti IME の設定のフォルダの romaji.tsv: 綴り<TAB>かな、# で始まる行は説明)
+        std::string rt;
+        std::error_code tec;
+        const auto rstamp = std::filesystem::last_write_time(user_dir() / L"romaji.tsv", tec);
+        const bool rchanged = tec ? romaji_stamp_ != std::filesystem::file_time_type{} : rstamp != romaji_stamp_;
+        if (rchanged && tec) {   // ファイルを消した: 元の表に戻す
+            composer_->reset_romaji();
+            romaji_stamp_ = {};
+        }
+        if (rchanged && !tec && read_file(user_dir() / L"romaji.tsv", rt)) {
+            romaji_stamp_ = rstamp;   // 読めたときだけ (保存の途中で読めなかったら次の打鍵でもう一度)
+            composer_->reset_romaji();
+            size_t i = 0;
+            while (i < rt.size()) {
+                size_t j = rt.find('\n', i);
+                if (j == std::string::npos) j = rt.size();
+                std::string line = rt.substr(i, j - i);
+                i = j + 1;
+                if (!line.empty() && line.back() == '\r') line.pop_back();
+                size_t tab = line.find('\t');
+                if (line.empty() || line[0] == '#' || tab == std::string::npos) continue;
+                composer_->add_romaji(from_utf8(line.substr(0, tab)), from_utf8(line.substr(tab + 1)));
+            }
+        }
     }
     cand_.theme = s.theme;
 }
@@ -298,8 +433,11 @@ bool TextService::to_key_event(WPARAM vk, LPARAM lp, KeyEvent& ev) {
         case VK_BACK: ev.key = Key::Backspace; return true;
         case VK_DELETE: ev.key = Key::Delete; return true;
         case VK_ESCAPE: ev.key = Key::Escape; return true;
-        case VK_LEFT: ev.key = Key::Left; return true;
-        case VK_RIGHT: ev.key = Key::Right; return true;
+        case VK_LEFT: case VK_RIGHT:
+            ev.key = vk == VK_LEFT ? Key::Left : Key::Right;
+            // ATOK の型: 変換中は ←→ だけで文節を伸び縮み、Shift+←→ で文節を移る (Shift の意味を入れ替える)
+            if (composer_ && composer_->converting() && !ev.ctrl && !ev.alt && core().settings.get().keymap == "atok") ev.shift = !ev.shift;
+            return true;
         case VK_UP: ev.key = Key::Up; return true;
         case VK_DOWN: ev.key = Key::Down; return true;
         case VK_HOME: ev.key = Key::Home; return true;
@@ -348,32 +486,95 @@ std::string key_name(const KeyEvent& ev) {
 }
 }  // namespace
 
-TextService::Action TextService::classify(WPARAM vk, LPARAM lp, KeyEvent& ev) {
+// 選んでいる文字の読み (再変換できるときだけ。できなければ空)
+u16 TextService::reconvert_reading(ITfContext* ctx) {
+    u16 out;
+    edit(ctx, TF_ES_SYNC | TF_ES_READ, [this, ctx, &out](TfEditCookie ec) {
+        TF_SELECTION sel = {};
+        ULONG n = 0;
+        if (!composer_ || FAILED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) || n == 0 || !sel.range) return;
+        ComPtr<ITfRange> r;
+        r.Attach(sel.range);
+        WCHAR buf[257];
+        ULONG got = 0;
+        // 256 字まで。それより長い選択は読みに戻さない (途中で切れた読みで置き換えると後ろが消える)
+        if (FAILED(r->GetText(ec, 0, buf, 257, &got)) || got == 0 || got > 256) return;
+        out = composer_->reading_of(u16(reinterpret_cast<const char16_t*>(buf), got));
+    });
+    return out;
+}
+
+// 入力欄ではない所 (ブラウザでページを読んでいる・読み取り専用の欄) か。そこでは Space などをアプリに渡す
+// (IME がオンだと Space でページが送れなかった。ユーザー 2026-10-15)
+static bool read_only_context(ITfContext* ctx) {
+    if (!ctx) return false;
+    TF_STATUS st = {};
+    if (FAILED(ctx->GetStatus(&st))) return false;
+    return (st.dwDynamicFlags & TF_SD_READONLY) != 0;
+}
+
+TextService::Action TextService::classify(WPARAM vk, LPARAM lp, KeyEvent& ev, ITfContext* ctx) {
     if (!composer_) return Action::None;
     bool composing = composer_->composing();
     if (!composing) apply_settings();   // 設定画面で変えた分 (ファイルの更新を見るだけなので軽い)
-    if (vk == VK_SPACE && core().settings.get().ctrl_space && GetKeyState(VK_CONTROL) < 0 && GetKeyState(VK_MENU) >= 0)
-        return Action::Toggle;
-    bool open = is_open();
-    if (!composing) {
-        // 変換キー・ひらがなキーでオン、無変換キーでオフ (MS-IME と同じ)
-        if (vk == VK_CONVERT || vk == 0xF2 /* VK_DBE_HIRAGANA */) return open ? Action::None : Action::Open;
-        if (vk == VK_NONCONVERT) return open ? Action::Close : Action::None;
+    const bool ctrl = GetKeyState(VK_CONTROL) < 0, shift = GetKeyState(VK_SHIFT) < 0, alt = GetKeyState(VK_MENU) < 0;
+    const bool open = is_open();
+    // ショートカットキー (既定も自分で追加も同じ一覧)。ほかの判定より先に、押したキーと修飾が合うかを見る。
+    // 使えない状態 (入力中だけの機能を打っていないとき など) なら一致しなかったことにして、今までどおりに進む
+    for (const auto& sc : core().settings.get().shortcuts) {
+        const ShortcutKey k = parse_shortcut_key(sc.first);
+        if (!k.ok || k.vk != vk || k.ctrl != ctrl || k.shift != shift || k.alt != alt) continue;
+        KeyEvent cev;
+        if (shortcut_compose_event(sc.second, cev)) {   // 入力中だけ効く機能: KeyEvent にして composer に渡す
+            if (!composing || !composer_->will_handle(cev)) continue;
+            // 文節の伸び縮みは変換中だけ (入力中の Ctrl+K/L は元のキーのまま。今までと同じ)
+            if ((sc.second == "seg_shrink" || sc.second == "seg_grow") && !composer_->converting()) continue;
+            ev = cev;
+            return Action::Compose;
+        }
+        if (sc.second == "ime_toggle") return Action::Toggle;
+        if (sc.second == "ime_on") { if (!open) return Action::Open; continue; }
+        if (sc.second == "ime_off") { if (open && !composing) return Action::Close; continue; }
+        if (sc.second == "private_toggle") return Action::Private;
+        if (sc.second == "undo_commit") {   // 確定した直後だけ (Ctrl+Backspace と同じ)
+            if (!composing && open && !composer_->undoable().first.empty() && !read_only_context(ctx)) return Action::Undo;
+            continue;
+        }
+        if (sc.second == "reconvert") {   // 選んだ文字を読みに戻せるときだけ
+            if (!composing && open && ctx && !read_only_context(ctx) && !reconvert_reading(ctx).empty()) return Action::Reconvert;
+            continue;
+        }
+        if (sc.second == "open_settings") return Action::OpenSettings;
+        if (sc.second == "clear_all") {   // 入力中のものを全部消す (読みが空になるまで Escape)
+            if (!composing) continue;
+            return Action::ClearAll;
+        }
+        if (sc.second == "space_full" || sc.second == "space_half") {   // 何も打っていないとき・日本語入力オンで
+            if (composing || !open) continue;
+            return sc.second == "space_full" ? Action::SpaceFull : Action::SpaceHalf;
+        }
+        if (sc.second == "open_dict") return Action::OpenDict;
+        if (sc.second == "model_toggle") return Action::ModelToggle;
+    }
+    if (open && layout_.loaded() && !ctrl && !alt && !read_only_context(ctx)) {
+        const std::string k = layout_key(lp);
+        if (!k.empty() && layout_.handles(k)) return Action::Layout;
     }
     if (!open) return Action::None;
+    if (!composing && read_only_context(ctx)) return Action::None;   // ページを読んでいる所: Space などをアプリに渡す
     if (!to_key_event(vk, lp, ev)) return Action::None;
     return composer_->will_handle(ev) ? Action::Compose : Action::None;
 }
 
-STDMETHODIMP TextService::OnTestKeyDown(ITfContext*, WPARAM wp, LPARAM lp, BOOL* eaten) {
+STDMETHODIMP TextService::OnTestKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL* eaten) {
     KeyEvent ev;
-    *eaten = classify(wp, lp, ev) != Action::None;
+    *eaten = classify(wp, lp, ev, ctx) != Action::None;
     return S_OK;
 }
 
 STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL* eaten) {
     KeyEvent ev;
-    Action a = classify(wp, lp, ev);
+    Action a = classify(wp, lp, ev, ctx);
     // 確定したあとの Backspace (直したしるし。消した中身は記録しない)
     if (INPUT_LOG_ENABLED && a == Action::None && wp == VK_BACK && composer_ && !composer_->composing() && !secure_ && is_open())
         input_log_simple("delchar", "IDLE");
@@ -384,9 +585,9 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL*
         if (composer_->view().post.empty()) cand_.hide();
     }
     switch (a) {
-        case Action::Open: set_open(true); break;
-        case Action::Close: set_open(false); break;
-        case Action::Toggle: set_open(!is_open()); break;
+        case Action::Open: set_open(true); remember_app_open(true); break;
+        case Action::Close: set_open(false); remember_app_open(false); break;
+        case Action::Toggle: set_open(!is_open()); remember_app_open(is_open()); break;
         case Action::Compose: {
             ComPtr<ITfContext> keep(ctx);
             edit(ctx, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep, ev](TfEditCookie ec) {
@@ -402,13 +603,236 @@ STDMETHODIMP TextService::OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL*
             });
             break;
         }
+        case Action::Private: {
+            Settings s = core().settings.get();
+            s.private_mode = !s.private_mode;
+            save_settings(user_dir() / L"settings.json", s);
+            apply_settings();
+            if (s.private_mode && composer_) composer_->clear_recent();
+            MessageBeep(s.private_mode ? MB_ICONASTERISK : MB_OK);
+            break;
+        }
+        case Action::Undo: {
+            // カーソルの直前を確定した表記の長さだけ選び、同じ文字なら読みに戻す (違えば何もしない: カーソルを動かした等)
+            ComPtr<ITfContext> keep(ctx);
+            edit(ctx, TF_ES_SYNC | TF_ES_READWRITE, [this, keep](TfEditCookie ec) {
+                if (!composer_) return;
+                const std::pair<u16, u16> uc = composer_->undoable();
+                if (uc.first.empty()) return;
+                TF_SELECTION sel = {};
+                ULONG n = 0;
+                if (FAILED(keep->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) || n == 0 || !sel.range) return;
+                ComPtr<ITfRange> r;
+                r.Attach(sel.range);
+                BOOL empty = FALSE;
+                if (FAILED(r->IsEmpty(ec, &empty)) || !empty) return;   // 文字を選んでいるときはしない
+                LONG moved = 0;
+                if (FAILED(r->ShiftStart(ec, -LONG(uc.first.size()), &moved, nullptr)) || moved != -LONG(uc.first.size())) return;
+                std::wstring got(uc.first.size() + 1, L'\0');
+                ULONG gn = 0;
+                if (FAILED(r->GetText(ec, 0, got.data(), ULONG(got.size()), &gn)) || gn != uc.first.size() ||
+                    got.compare(0, gn, reinterpret_cast<const wchar_t*>(uc.first.data()), gn) != 0) return;
+                TF_SELECTION ns = {};
+                ns.range = r.Get();
+                ns.style.ase = TF_AE_NONE;
+                ns.style.fInterimChar = FALSE;
+                if (FAILED(keep->SetSelection(ec, 1, &ns))) return;
+                left_ctx_ = read_left_context(ec, keep.Get());
+                if (composer_->undo_commit()) apply(ec, keep.Get());   // 選んだ範囲を変換中の文字で置き換える
+            });
+            break;
+        }
+        case Action::Layout: {
+            const std::string k = layout_key(lp);
+            layout_down_.insert(k);
+            layout_ctx_ = ctx;
+            const bool shift = GetKeyState(VK_SHIFT) < 0;
+            const uint64_t now = layout_now_ms();
+            layout_trace("d", k, now);
+            layout_apply(ctx, layout_.down(k, shift, now));
+            if (layout_.waiting()) layout_arm_timer();
+            break;
+        }
+        case Action::Reconvert: {
+            // 選んでいる文字を読みに戻して変換し直す。読みが分からない (ほかで入れた漢字) ときはアプリに渡す
+            ComPtr<ITfContext> keep(ctx);
+            const u16 reading = reconvert_reading(ctx);
+            edit(ctx, TF_ES_SYNC | TF_ES_READWRITE, [this, keep, reading](TfEditCookie ec) {
+                if (!composer_ || reading.empty()) return;
+                left_ctx_ = read_left_context(ec, keep.Get());
+                if (composer_->start_reconvert(reading)) apply(ec, keep.Get());
+            });
+            break;
+        }
+        case Action::OpenSettings: {
+            // ショートカットキー「設定を開く」: 同じフォルダの shunti_settings.exe を起動
+            const std::wstring exe = (module_dir() / L"shunti_settings.exe").wstring();
+            ShellExecuteW(nullptr, L"open", exe.c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+            break;
+        }
+        case Action::ClearAll: {
+            // 入力中のものを全部消す (読みが空になるまで Escape。Composer の cancel と同じ)
+            ComPtr<ITfContext> keep(ctx);
+            edit(ctx, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep](TfEditCookie ec) {
+                if (!composer_) return;
+                while (composer_->composing()) {
+                    KeyEvent esc;
+                    esc.key = Key::Escape;
+                    composer_->press(esc);
+                }
+                apply(ec, keep.Get());
+            });
+            break;
+        }
+        case Action::SpaceFull:
+        case Action::SpaceHalf: {
+            const bool full = a == Action::SpaceFull;
+            ComPtr<ITfContext> keep(ctx);
+            edit(ctx, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep, full](TfEditCookie ec) {
+                if (!composer_) return;
+                const u16 t(1, full ? u'　' : u' ');
+                ComPtr<ITfInsertAtSelection> ins;
+                ComPtr<ITfRange> r;
+                if (SUCCEEDED(keep->QueryInterface(IID_PPV_ARGS(&ins))) &&
+                    SUCCEEDED(ins->InsertTextAtSelection(ec, 0, W(t), LONG(t.size()), &r)) && r) {
+                    r->Collapse(ec, TF_ANCHOR_END);
+                    TF_SELECTION sel = {};
+                    sel.range = r.Get();
+                    sel.style.ase = TF_AE_NONE;
+                    sel.style.fInterimChar = FALSE;
+                    keep->SetSelection(ec, 1, &sel);
+                }
+            });
+            break;
+        }
+        case Action::OpenDict: {
+            // ショートカットキー「ユーザー辞書を開く」: 設定を --dict で起動し、辞書の欄を開く
+            const std::wstring exe = (module_dir() / L"shunti_settings.exe").wstring();
+            ShellExecuteW(nullptr, L"open", exe.c_str(), L"--dict", nullptr, SW_SHOWNORMAL);
+            break;
+        }
+        case Action::ModelToggle: {
+            // 変換モデルを XS3 ⇔ S7 で入れ替えて保存・反映 (切り替えたら音で知らせる)
+            Settings s = core().settings.get();
+            s.model = s.model == "light" ? "standard" : "light";
+            save_settings(user_dir() / L"settings.json", s);
+            apply_settings();
+            MessageBeep(MB_OK);
+            break;
+        }
         case Action::None: break;
     }
     return S_OK;
 }
 
+// ---------------------------------------------------------------- キー配列 (core/layout.h)
+
+std::string TextService::layout_key(LPARAM lp) {
+    // 親指キーの割り当て (無変換・空白など) に合わせて読み替えた名前
+    return layout_.map_key(shunti::key_name_from_scancode(unsigned((lp >> 16) & 0xFF), ((lp >> 24) & 1) != 0));
+}
+
+void TextService::layout_load(const std::string& name) {
+    layout_name_ = name;
+    layout_ = shunti::Layout();
+    layout_down_.clear();
+    if (name.empty()) return;
+    const std::wstring file = L"layout_" + std::wstring(name.begin(), name.end()) + L".tsv";
+    for (const auto& dir : {user_dir(), module_dir()}) {   // 自分で足した配列 (設定のフォルダ) が先
+        std::string t;
+        if (read_file(dir / file, t) && layout_.load(t)) return;
+    }
+}
+
+STDMETHODIMP TextService::OnTestKeyUp(ITfContext*, WPARAM, LPARAM lp, BOOL* eaten) {
+    *eaten = layout_down_.count(layout_key(lp)) ? TRUE : FALSE;
+    return S_OK;
+}
+
+STDMETHODIMP TextService::OnKeyUp(ITfContext* ctx, WPARAM, LPARAM lp, BOOL* eaten) {
+    const std::string k = layout_key(lp);
+    *eaten = FALSE;
+    if (!layout_down_.count(k)) return S_OK;
+    layout_down_.erase(k);
+    *eaten = TRUE;
+    const uint64_t now = layout_now_ms();
+    layout_trace("u", k, now);
+    layout_apply(ctx, layout_.up(k, now));
+    if (layout_.waiting()) layout_arm_timer();
+    return S_OK;
+}
+
+static TextService* g_layout_owner = nullptr;   // 時間切れのタイマーの持ち主 (タイマーはスレッドに 1 つ)
+
+void TextService::layout_arm_timer() {
+    g_layout_owner = this;
+    layout_timer_ = SetTimer(nullptr, layout_timer_, UINT(layout_.window_ms + 5), layout_timer_proc);
+}
+
+void CALLBACK TextService::layout_timer_proc(HWND, UINT, UINT_PTR id, DWORD) {
+    KillTimer(nullptr, id);
+    TextService* self = g_layout_owner;
+    if (!self) return;
+    self->layout_timer_ = 0;
+    auto outs = self->layout_.tick(layout_now_ms());
+    if (!outs.empty() && self->layout_ctx_) self->layout_apply(self->layout_ctx_.Get(), outs);
+    if (self->layout_.waiting()) self->layout_arm_timer();
+}
+
+// 配列で決まった字・打鍵を入れる。英字の配列は英字としてローマ字へ、かなの配列はかなのまま。
+// BS・Enter・矢印は、打っている間はこちらで、何も打っていないときはアプリへ (キーを送り直す)
+void TextService::layout_apply(ITfContext* ctx, const std::vector<shunti::Layout::Out>& outs) {
+    if (outs.empty() || !ctx) return;
+    ComPtr<ITfContext> keep(ctx);
+    const bool letters = layout_.kind() == shunti::Layout::Kind::Letters;
+    edit(ctx, TF_ES_ASYNCDONTCARE | TF_ES_READWRITE, [this, keep, outs, letters](TfEditCookie ec) {
+        std::vector<WORD> to_app;   // 何も打っていないときの BS・Enter・矢印 (アプリへ送り直す)
+        if (!composer_) return;
+        for (const auto& o : outs) {
+            if (!composer_->composing()) left_ctx_ = read_left_context(ec, keep.Get());
+            if (!o.text.empty()) {
+                if (letters) {
+                    for (char16_t c : o.text) {
+                        KeyEvent ev;
+                        ev.key = Key::Char;
+                        ev.ch = c;
+                        composer_->press(ev);
+                    }
+                } else {
+                    composer_->type_kana(o.text);
+                }
+                continue;
+            }
+            KeyEvent ev;
+            WORD vk = 0;
+            if (o.key == "bs") { ev.key = Key::Backspace; vk = VK_BACK; }
+            else if (o.key == "enter") { ev.key = Key::Enter; vk = VK_RETURN; }
+            else if (o.key == "left") { ev.key = Key::Left; vk = VK_LEFT; }
+            else if (o.key == "right") { ev.key = Key::Right; vk = VK_RIGHT; }
+            else if (o.key == "space") { ev.key = Key::Space; vk = VK_SPACE; }
+            else if (o.key == "henkan") { ev.key = Key::Henkan; }
+            else if (o.key == "muhenkan") {
+                ev.key = Key::Muhenkan;
+                if (!composer_->composing()) { vk = 0; to_app.push_back(0xFFFF); continue; }
+            } else continue;
+            if (composer_->will_handle(ev)) composer_->press(ev);
+            else if (vk) to_app.push_back(vk);
+        }
+        apply(ec, keep.Get());
+        for (WORD vk : to_app) {
+        if (vk == 0xFFFF) { set_open(false); remember_app_open(false); continue; }   // 親指の無変換を単独で: 日本語入力をオフ
+        INPUT in[2] = {};
+        in[0].type = in[1].type = INPUT_KEYBOARD;
+        in[0].ki.wVk = in[1].ki.wVk = vk;
+        in[1].ki.dwFlags = KEYEVENTF_KEYUP;
+        SendInput(2, in, sizeof(INPUT));
+        }
+    });
+}
+
 STDMETHODIMP TextService::OnPreservedKey(ITfContext*, REFGUID, BOOL* eaten) {
     set_open(!is_open());
+    remember_app_open(is_open());
     *eaten = TRUE;
     return S_OK;
 }

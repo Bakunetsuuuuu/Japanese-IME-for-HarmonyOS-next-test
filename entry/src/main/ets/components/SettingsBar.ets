@@ -39,17 +39,13 @@ const CATEGORY_COL_WIDTH = 96;
 @Component
 export struct SettingsBar {
   @StorageLink('isDark') isDark: boolean = false;
-  @StorageLink('isLandscape') isLandscape: boolean = false;
   @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
+  @StorageLink('clipboardPinned') clipboardPinned: string[] = [];   // 固定した文 (履歴を消しても残る)
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('kanaKeyboardLayout') kanaKeyboardLayout: string = 'QWERTY';
   @StorageLink('alphabetKeyboardLayout') alphabetKeyboardLayout: string = 'QWERTY';
-  @StorageLink('conversionEngine') conversionEngine: string = 'ai';
   @StorageLink('numericPadEnabled') numericPadEnabled: boolean = false;
-  @StorageLink('liveCommit') liveCommit: boolean = false;
-  @StorageLink('separateSuggest') separateSuggest: boolean = true;
-  @StorageLink('alphaCompose') alphaCompose: boolean = true;
   @StorageLink('hapticEnabled') hapticEnabled: boolean = false;
   // キーボードのライト／ダーク。'system' = 端末に合わせる。
   @StorageLink('themeMode') themeMode: string = 'system';
@@ -90,9 +86,6 @@ export struct SettingsBar {
   // 候補の長押しで削除した語 ("よみ	表記")。
   @StorageLink('suppressedRows') suppressedRows: string[] = [];
   // 自由入力の欄の中身と、いまどちらの欄に打鍵が入るか。
-  @StorageLink('dictEditYomi') dictEditYomi: string = '';
-  @StorageLink('dictEditWord') dictEditWord: string = '';
-  @StorageLink('dictCaptureTarget') dictCaptureTarget: string = '';
   // 学習リセットは2回押しで確認する。
   @State confirmResetLearning: boolean = false;
   // 入力ログ (デバッグビルドのみ)。件数/サイズと書き出しの進み具合。
@@ -253,17 +246,6 @@ export struct SettingsBar {
     .width('100%')
     .height('100%')
     .backgroundColor(kbTheme(this.isDark).panelBg)
-  }
-
-  @Builder SectionLabel(text: string) {
-    Text(text)
-      .fontFamily(JP_FONT_FAMILY)
-      .fontSize(12)
-      .fontWeight(FontWeight.Medium)
-      .letterSpacing(0.6)
-      .fontColor(kbTheme(this.isDark).textSecondary)
-      .padding({ left: 4, bottom: 8 })
-      .width('100%')
   }
 
 
@@ -980,70 +962,6 @@ export struct SettingsBar {
     .padding({ left: 14, right: 14 })
   }
 
-  @Builder ComposingSection() {
-    Column() {
-
-      Row() {
-        Column({ space: 2 }) {
-          Text('入力欄に表示')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(14)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .width('100%')
-          Text('アプリの入力欄に直接出します。キーボード内の表示を切ると1行ぶん低くなります')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .width('100%')
-        }
-        .layoutWeight(1)
-        Toggle({ type: ToggleType.Switch, isOn: this.composingInField })
-          .selectedColor(kbTheme(this.isDark).accent)
-          .onChange((isOn: boolean) => {
-            InputHandler.getInstance().setComposingDisplay(this.composingInPanel, isOn);
-          })
-      }
-      .width('100%')
-      .padding({ top: 13, bottom: 13 })
-
-      // 両方OFFにもできるようにしてあるが、打っているかながどこにも
-      // 見えなくなるので、そうと分かるように出す。
-      if (!this.composingInPanel && !this.composingInField) {
-        Row({ space: 6 }) {
-          Text('⚠')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(13)
-          Text('入力中のかながどこにも表示されません。変換候補だけを見て打つことになります。')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textPrimary)
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ top: 10, bottom: 12 })
-        .alignItems(VerticalAlign.Top)
-      } else if (this.composingInField && !this.previewInField) {
-        // 設定はONだが、いま開いている入力欄が setPreviewText 非対応。
-        Row({ space: 6 }) {
-          Text('ⓘ')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(13)
-          Text('この入力欄は入力欄への表示に対応していないため、キーボード内に表示しています。')
-            .fontFamily(JP_FONT_FAMILY)
-            .fontSize(11)
-            .fontColor(kbTheme(this.isDark).textSecondary)
-            .layoutWeight(1)
-        }
-        .width('100%')
-        .padding({ top: 10, bottom: 12 })
-        .alignItems(VerticalAlign.Top)
-      }
-    }
-    .backgroundColor(kbTheme(this.isDark).cardBg)
-    .borderRadius(CARD_RADIUS)
-    .padding({ left: 14, right: 14 })
-  }
-
   // 本体アプリの「修復」はアプリ側のストアしか消せず、キーボードの学習・設定・
   // 辞書には届かない (別サンドボックス)。復旧手段はここに置く。
   @Builder RepairSection() {
@@ -1317,7 +1235,52 @@ export struct SettingsBar {
     .padding({ left: 14, right: 14 })
   }
 
+  // 履歴の 1 行: 押すと貼る、右の 📌 で固定する・外す
+  @Builder ClipRow(item: string, pinned: boolean, onPaste: () => void) {
+    Row() {
+      Text(item)
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(14)
+        .fontColor(kbTheme(this.isDark).textPrimary)
+        .maxLines(1)
+        .textOverflow({ overflow: TextOverflow.Ellipsis })
+        .layoutWeight(1)
+        .padding({ top: 14, bottom: 14 })
+        .onClick(() => { onPaste(); })
+      Text('📌')
+        .fontSize(14)
+        .opacity(pinned ? 1 : 0.3)
+        .padding({ left: 12, right: 4, top: 14, bottom: 14 })
+        .onClick(() => { InputHandler.getInstance().togglePin(item); })
+    }
+    .width('100%')
+  }
+
   @Builder HistoryView() {
+    if (this.clipboardPinned.length > 0) {
+      Text('固定した文')
+        .fontFamily(JP_FONT_FAMILY)
+        .fontSize(11)
+        .fontColor(kbTheme(this.isDark).textSecondary)
+        .width('100%')
+        .padding({ left: 4, bottom: 4 })
+      List() {
+        ForEach(this.clipboardPinned, (item: string) => {
+          ListItem() {
+            this.ClipRow(item, true, () => {
+              InputHandler.getInstance().pastePinned(item);
+              this.close();
+            })
+          }
+        }, (item: string) => `pin-${item}`)
+      }
+      .width('100%')
+      .backgroundColor(kbTheme(this.isDark).cardBg)
+      .borderRadius(CARD_RADIUS)
+      .padding({ left: 14, right: 14 })
+      .divider({ strokeWidth: 1, color: kbTheme(this.isDark).divider })
+      .margin({ bottom: 12 })
+    }
     if (this.clipboardHistory.length === 0) {
       Text('履歴がありません')
         .fontFamily(JP_FONT_FAMILY)
@@ -1330,18 +1293,10 @@ export struct SettingsBar {
       List() {
         ForEach(this.clipboardHistory, (item: string, index: number) => {
           ListItem() {
-            Text(item)
-              .fontFamily(JP_FONT_FAMILY)
-              .fontSize(14)
-              .fontColor(kbTheme(this.isDark).textPrimary)
-              .maxLines(1)
-              .textOverflow({ overflow: TextOverflow.Ellipsis })
-              .width('100%')
-              .padding({ top: 14, bottom: 14 })
-              .onClick(() => {
-                InputHandler.getInstance().pasteFromHistory(index);
-                this.close();
-              })
+            this.ClipRow(item, this.clipboardPinned.indexOf(item) >= 0, () => {
+              InputHandler.getInstance().pasteFromHistory(index);
+              this.close();
+            })
           }
         }, (item: string, index: number) => `${index}-${item}`)
       }

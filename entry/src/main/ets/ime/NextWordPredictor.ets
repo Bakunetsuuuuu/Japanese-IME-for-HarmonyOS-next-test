@@ -99,12 +99,6 @@ const SEED_NEXT: Record<string, string[]> = {
   'とても': ['いい', '良い'],
 };
 
-// Curated cold-start sentence openers: the words a message/sentence commonly
-// begins with, offered before this user's own opener habit has accumulated.
-const SEED_OPENERS: string[] = [
-  'とりあえず', 'あと', 'それで', 'なんか', 'あの', 'すみません', 'お疲れ様です', 'ありがとう',
-];
-
 interface Scored {
   word: string;
   count: number;
@@ -294,19 +288,6 @@ export class NextWordPredictor {
       w2 = next;
     }
     return chain;
-  }
-
-  // Habitual sentence openers, this user's most-used first, then the curated
-  // seed. Offered when the previous commit ended a sentence (or at message
-  // start), where ordinary next-word prediction has no context to work from.
-  static openers(): string[] {
-    const out: string[] = [];
-    const push = (w: string): void => {
-      if (w.length > 0 && out.indexOf(w) < 0 && out.length < MAX_PREDICTIONS) { out.push(w); }
-    };
-    NextWordPredictor.rankedInto(NextWordPredictor.learned[NextWordPredictor.START_KEY], push);
-    for (const w of SEED_OPENERS) { push(w); }
-    return out;
   }
 
   // Predicted next words given the last one or two committed words, best first.

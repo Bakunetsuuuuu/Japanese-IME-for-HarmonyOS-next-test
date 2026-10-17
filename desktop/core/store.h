@@ -20,6 +20,9 @@ public:
     void record(const u16& reading, const u16& surface);
     // その読みでその表記を選んだ記録を消す
     void forget(const u16& reading, const u16& surface);
+    // その読みではその表記を候補に出さない (Ctrl+Delete。MS-IME と同じ。回数 -1 として覚える。選び直すと戻る)
+    void hide(const u16& reading, const u16& surface);
+    bool hidden(const u16& reading, const u16& surface);
     // 選んだことのある表記を回数の多い順に前へ (他の並びはそのまま)
     std::vector<u16> apply_order(const u16& reading, const std::vector<u16>& cands);
     // 予測: 読みが prefix で始まる、より長い読みで選んだ表記 (選んだ回数の多い順)
@@ -58,6 +61,12 @@ public:
     // 登録。うまく登録できなければ理由 (UTF-8)。できたら空
     std::string add(const u16& reading, const u16& word, const std::string& pos, const std::string& group);
     void remove(const u16& reading, const u16& word);
+    // まとめて登録 (MS-IME の一覧の出力の形 / CSV)。(登録できた数, できなかった行の説明)
+    std::pair<int, std::vector<std::string>> import_text(const u16& text);
+    // MS-IME の品詞名から内部の品詞
+    static std::pair<std::string, std::string> pos_from_label(const u16& label);
+    // 書き出し (MS-IME の「一覧の出力」と同じ形: 読み<TAB>語句<TAB>品詞)
+    u16 export_text() const;
     std::vector<Form> engine_forms() const;
     // 変わるたびに増える
     uint32_t version() const { return version_; }

@@ -73,7 +73,9 @@ function Invoke-AdminPart {
     Get-ChildItem -LiteralPath $Dest -Filter '*.old-*' -File -ErrorAction SilentlyContinue | ForEach-Object {
         try { Remove-Item -LiteralPath $_.FullName -Force } catch {}
     }
-    foreach ($f in $Files + ($Optional | Where-Object { Test-Path -LiteralPath (Join-Path $src $_) })) {
+    # キー配列の表 (layout_*.tsv) もあれば全部
+    $Layouts = @(Get-ChildItem -LiteralPath $src -Filter 'layout_*.tsv' -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+    foreach ($f in $Files + $Layouts + ($Optional | Where-Object { Test-Path -LiteralPath (Join-Path $src $_) })) {
         $to = Join-Path $Dest $f
         Remove-OrRetire $to
         Copy-Item -LiteralPath (Join-Path $src $f) -Destination $to -Force

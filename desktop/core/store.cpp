@@ -104,12 +104,35 @@ void Learning::record(const u16& reading, const u16& surface) {
         e = &entries_.back();
     }
     for (auto& c : e->counts) {
-        if (c.first == surface) { c.second++; save(); return; }
+        if (c.first == surface) { c.second = c.second < 0 ? 1 : c.second + 1; save(); return; }   // 消した表記を自分で選んだら戻す
     }
     if (e->counts.size() < MAX_SURFACES) {
         e->counts.push_back({surface, 1});
         save();
     }
+}
+
+void Learning::hide(const u16& reading, const u16& surface) {
+    if (reading.empty() || surface.empty()) return;
+    refresh();
+    Entry* e = find(reading);
+    if (!e) {
+        entries_.push_back({reading, {}});
+        e = &entries_.back();
+    }
+    for (auto& c : e->counts)
+        if (c.first == surface) { c.second = -1; save(); return; }
+    e->counts.push_back({surface, -1});   // 選んだ回数の上限 (MAX_SURFACES) とは別に覚える
+    save();
+}
+
+bool Learning::hidden(const u16& reading, const u16& surface) {
+    refresh();
+    Entry* e = find(reading);
+    if (!e) return false;
+    for (auto& c : e->counts)
+        if (c.first == surface) return c.second < 0;
+    return false;
 }
 
 void Learning::forget(const u16& reading, const u16& surface) {
@@ -132,7 +155,11 @@ std::vector<u16> Learning::apply_order(const u16& reading, const std::vector<u16
     if (!e) return cands;
     auto count = [&](const u16& s) { for (auto& c : e->counts) if (c.first == s) return c.second; return 0; };
     std::vector<u16> boosted, rest;
-    for (auto& c : cands) (count(c) > 0 ? boosted : rest).push_back(c);
+    for (auto& c : cands) {
+        const int n = count(c);
+        if (n < 0) continue;   // 消した表記
+        (n > 0 ? boosted : rest).push_back(c);
+    }
     std::stable_sort(boosted.begin(), boosted.end(), [&](const u16& a, const u16& b) { return count(a) > count(b); });
     boosted.insert(boosted.end(), rest.begin(), rest.end());
     // 英カタカナ辞書の英単語 (全部小文字: いんじぇくしょん → injection) は、学習で上がっても 2 位まで (1 位はカタカナのまま)
@@ -154,7 +181,7 @@ std::vector<u16> Learning::completions(const u16& prefix, size_t max) {
     std::vector<std::pair<u16, int>> all;
     for (auto& e : entries_)
         if (e.reading.size() > prefix.size() && e.reading.compare(0, prefix.size(), prefix) == 0)
-            for (auto& c : e.counts) all.push_back(c);
+            for (auto& c : e.counts) if (c.second > 0) all.push_back(c);
     std::stable_sort(all.begin(), all.end(), [](auto& a, auto& b) { return a.second > b.second; });
     for (auto& c : all) {
         if (out.size() >= max) break;
@@ -222,10 +249,83 @@ bool UserDict::refresh() {
     return true;
 }
 
+// 読みは英数字・記号も使える (＠ほーむ・ｗｗ)。打った読みが全角でも半角でも当たるように、比べるときは半角にそろえる
+static u16 reading_key(const u16& r) { return to_halfwidth_ascii(r); }
+
 std::vector<u16> UserDict::lookup(const u16& reading) const {
     std::vector<u16> out;
-    for (auto& e : entries_) if (e.reading == reading) out.push_back(e.word);
+    const u16 k = reading_key(reading);
+    for (auto& e : entries_) if (reading_key(e.reading) == k) out.push_back(e.word);
     return out;
+}
+
+// MS-IME の品詞名 -> 内部の品詞 (pos, group)。知らない名前は名詞
+std::pair<std::string, std::string> UserDict::pos_from_label(const u16& label) {
+    const std::string l = to_utf8(label);
+    auto has = [&](const char* s) { return l.find(s) != std::string::npos; };
+    if (has("短縮")) return {"abbrev", ""};
+    if (has("顔文字")) return {"kaomoji", ""};
+    if (has("人名") || l == "姓" || l == "名") return {"person", ""};
+    if (has("地名")) return {"place", ""};
+    if (has("組織") || has("固有名詞")) return {"org", ""};
+    if (has("感動詞")) return {"interjection", ""};   // 「動詞」を含むので動詞より先に (ありがとう が五段にされていた)
+    if (has("形容動詞")) return {"noun", ""};   // 有名・静か: 名詞と同じに扱う (「動詞」に当てない)
+    if (has("一段")) return {"verb", "ichidan"};
+    if (has("動詞")) return {"verb", "godan"};
+    if (has("形容詞")) return {"adjective", ""};
+    if (has("副詞")) return {"adverb", ""};
+    return {"noun", ""};
+}
+
+u16 UserDict::export_text() const {
+    auto label = [](const Entry& e) -> const char16_t* {
+        if (e.pos == "person") return u"人名";
+        if (e.pos == "place") return u"地名その他";
+        if (e.pos == "org") return u"固有名詞";
+        if (e.pos == "abbrev") return u"短縮よみ";
+        if (e.pos == "kaomoji") return u"顔文字";
+        if (e.pos == "verb") return e.group == "ichidan" ? u"動詞一段" : u"動詞五段";
+        if (e.pos == "adjective") return u"形容詞";
+        if (e.pos == "adverb") return u"副詞";
+        if (e.pos == "interjection") return u"感動詞";
+        return u"名詞";
+    };
+    u16 o = u"!Microsoft IME Dictionary Tool\r\n!shunti IME から書き出し\r\n";
+    for (auto& e : entries_) o += e.reading + u"\t" + e.word + u"\t" + label(e) + u"\r\n";
+    return o;
+}
+
+// まとめて登録: MS-IME の「一覧の出力」(読み<TAB>語句<TAB>品詞、! で始まる行は説明) や、読み,語句,品詞 の CSV。
+// 返り値: (登録できた数, 登録できなかった行の説明)
+std::pair<int, std::vector<std::string>> UserDict::import_text(const u16& text) {
+    int ok = 0, line_no = 0;
+    std::vector<std::string> bad;
+    size_t i = 0;
+    while (i < text.size()) {
+        size_t j = text.find(u'\n', i);
+        if (j == u16::npos) j = text.size();
+        u16 line = text.substr(i, j - i);
+        i = j + 1;
+        line_no++;
+        if (!line.empty() && line.back() == u'\r') line.pop_back();
+        if (!line.empty() && line[0] == 0xFEFF) line.erase(0, 1);
+        if (line.empty() || line[0] == u'!' || line[0] == u'#') continue;
+        const char16_t sep = line.find(u'\t') != u16::npos ? u'\t' : u',';
+        std::vector<u16> f;
+        size_t a = 0;
+        while (true) {
+            size_t b = line.find(sep, a);
+            f.push_back(line.substr(a, b == u16::npos ? u16::npos : b - a));
+            if (b == u16::npos) break;
+            a = b + 1;
+        }
+        if (f.size() < 2) { bad.push_back(std::to_string(line_no) + " 行目: 読みと語句がありません"); continue; }
+        auto pg = pos_from_label(f.size() >= 3 ? f[2] : u16());
+        std::string err = add(f[0], f[1], pg.first, pg.second);
+        if (err.empty()) ok++;
+        else if (err != "もう登録してあります") bad.push_back(std::to_string(line_no) + " 行目 (" + to_utf8(f[0]) + "): " + err);
+    }
+    return {ok, bad};
 }
 
 std::string UserDict::add(const u16& reading0, const u16& word0, const std::string& pos, const std::string& group) {
@@ -238,7 +338,11 @@ std::string UserDict::add(const u16& reading0, const u16& word0, const std::stri
     };
     u16 r = to_hiragana(trim(reading0)), w = trim(word0);
     if (r.empty() || w.empty()) return "読みと単語を入れてください";
-    for (char16_t c : r) if (!is_hira(c) && c != u'ー') return "読みはひらがなで入れてください";
+    // 読みには、ひらがなのほか英数字・記号も使える (＠ほーむ・ｗｗ・１ばん)。漢字は不可 (打てない)
+    for (char16_t c : r) {
+        if ((c >= 0x4E00 && c <= 0x9FFF) || c == 0x3005) return "読みに漢字は使えません。ひらがなで入れてください";
+        if (c < 0x20) return "読みに使えない字があります";
+    }
     if (pos == "verb") {
         if (group == "ichidan") {
             if (!ends_with(r, u"る") || !ends_with(w, u"る")) return "一段の動詞は「る」で終わる形で入れてください (例: たべる / 食べる)";
@@ -293,8 +397,17 @@ std::vector<UserDict::Form> UserDict::engine_forms() const {
         } else if (e.pos == "adjective") {
             for (auto s : ADJ) stem(u"たかい", u"高い", s);
         } else {
-            Tmpl t = e.pos == "person" ? Tmpl{u"やまだ", u"山田"} : e.pos == "place" ? Tmpl{u"とうきょう", u"東京"} : Tmpl{u"ねこ", u"猫"};
+            // 品詞を写す代表語。組織名は地名と同じ固有名詞、副詞・感動詞はそれぞれの代表語、それ以外 (短縮よみ・顔文字) は名詞
+            Tmpl t = e.pos == "person" ? Tmpl{u"やまだ", u"山田"}
+                   : e.pos == "place" || e.pos == "org" ? Tmpl{u"とうきょう", u"東京"}
+                   : e.pos == "adverb" ? Tmpl{u"とても", u"とても"}
+                   : e.pos == "interjection" ? Tmpl{u"こんにちは", u"こんにちは"}
+                   : Tmpl{u"ねこ", u"猫"};
             out.push_back({r, w, t.r, t.s});
+            // 読みに英数字・記号があれば、全角と半角の両方で引けるように
+            const u16 rh = to_halfwidth_ascii(r), rf = to_fullwidth_ascii(r);
+            if (rh != r) out.push_back({rh, w, t.r, t.s});
+            if (rf != r && rf != rh) out.push_back({rf, w, t.r, t.s});
         }
     }
     return out;

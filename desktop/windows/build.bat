@@ -32,6 +32,8 @@ copy /Y "%HERE%install.bat" "%DIST%\" >nul
 copy /Y "%HERE%uninstall.bat" "%DIST%\" >nul
 copy /Y "%HERE%README.txt" "%DIST%\" >nul
 copy /Y "%HERE%LICENSE.txt" "%DIST%\" >nul
+rem キー配列の表 (desktop\layouts\*.tsv -> layout_<名前>.tsv。インストール先の DLL の隣に置く)
+for %%f in ("%ROOT%\desktop\layouts\*.tsv") do copy /Y "%%f" "%DIST%\layout_%%~nxf" >nul
 echo built: %DIST%
 exit /b 0
 
@@ -45,7 +47,7 @@ cl /nologo /c /O2 /MT /EHsc /std:c++17 /utf-8 /W3 /GS /guard:cf /DNOMINMAX /DUNI
   /I"%ROOT%\entry\src\main\cpp" /Fo"%OBJ%\\" ^
   "%HERE%dllmain.cpp" "%HERE%globals.cpp" "%HERE%text_service.cpp" "%HERE%cand_window.cpp" "%HERE%display_attr.cpp" "%HERE%langbar.cpp" ^
   "%HERE%input_log.cpp" "%CORE%\text.cpp" "%CORE%\romaji.cpp" "%CORE%\store.cpp" "%CORE%\settings.cpp" ^
-  "%CORE%\converter.cpp" "%CORE%\composer.cpp" "%CORE%\flow.cpp" "%ROOT%\entry\src\main\cpp\engine.cpp" || exit /b 1
+  "%CORE%\converter.cpp" "%CORE%\composer.cpp" "%CORE%\flow.cpp" "%CORE%\layout.cpp" "%CORE%\datetime.cpp" "%ROOT%\entry\src\main\cpp\engine.cpp" || exit /b 1
 rem 変換エンジンの AVX2 版の計算だけは /arch:AVX2 で (使うのは CPU が対応しているときだけ。engine_simd.h を参照)
 cl /nologo /c /O2 /MT /EHsc /std:c++17 /utf-8 /W3 /GS /guard:cf /arch:AVX2 %DEFS% /Fo"%OBJ%\\" ^
   "%ROOT%\entry\src\main\cpp\engine_avx2.cpp" || exit /b 1
@@ -63,6 +65,6 @@ if not exist "%OBJ%" mkdir "%OBJ%"
 rc /nologo %DEFS% /fo "%OBJ%\settings_app.res" "%HERE%settings_app.rc" || exit /b 1
 cl /nologo /O2 /MT /EHsc /std:c++17 /utf-8 /W3 /GS /guard:cf /DNOMINMAX /DUNICODE /D_UNICODE /D_CRT_SECURE_NO_WARNINGS %DEFS% /Fo"%OBJ%\\" ^
   "%HERE%settings_app.cpp" "%CORE%\text.cpp" "%CORE%\store.cpp" "%CORE%\settings.cpp" /Fe"%DIST%\shunti_settings.exe" ^
-  /link /SUBSYSTEM:WINDOWS /guard:cf "%OBJ%\settings_app.res" comctl32.lib shell32.lib ole32.lib user32.lib gdi32.lib ^
+  /link /SUBSYSTEM:WINDOWS /guard:cf "%OBJ%\settings_app.res" comctl32.lib comdlg32.lib shell32.lib ole32.lib user32.lib gdi32.lib ^
   /MANIFEST:EMBED "/MANIFESTDEPENDENCY:type='win32' name='Microsoft.Windows.Common-Controls' version='6.0.0.0' processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'" || exit /b 1
 exit /b 0

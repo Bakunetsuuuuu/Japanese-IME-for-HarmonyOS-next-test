@@ -14,33 +14,7 @@ export interface KeyboardSettings {
   alphabetKeyboardLayout: string;
   oneHandedMode: boolean;
   oneHandedSide: string;
-  // 'ai' = 既定 (2026-09)。AI変換 shuntelligence (AiConverter)。辞書 shuntorge の網を文脈を読むモデルが採点する。
-  //   盲検350文: 1位 57.1% / 3位以内 80.9% / 5位以内 87.4% / リストに無い 11.4%。1位は hybrid より 2.3 点低いが、
-  //   外した文の多くは「私→わたし」「何→なに」の表記の好み (私/わたしを正解に数えると約 64%、Google の記録 62.9%)。
-  //   候補リスト全体では全エンジンで最良。辞書とモデル (rawfile の kkc_*.bin) が無ければ hybrid に戻る。
-  // 'hybrid' = 以前の既定。mozc の統計エンジンで文を決めたうえで、候補の2番目以降に
-  // 独自辞書の同音語を織り交ぜる (composeMozcCandidates 参照)。
-  // 'mozc' = 織り交ぜ無しの素の mozc。'custom' = 独自の手作り辞書のみ。
-  //
-  // 根拠は tools/blind-eval の盲検350文 (Tatoeba由来で、この企画のどの調整も
-  // 届いていない)。手持ちコーパスでは custom が勝つが、あれは custom に
-  // 合わせて育てたものなので判断材料にならない。
-  //
-  // 候補[0]の完全一致:  custom 44.6%  /  mozc・hybrid 59.4%
-  // 正解が候補リストの何位に出るか (tools/ime-eval/run_candlist.js):
-  //
-  //            1位     3位以内   5位以内   リストに無い
-  //   custom   44.6%   44.6%     44.6%     55.4%
-  //   mozc     59.4%   63.1%     65.4%     22.9%
-  //   hybrid   59.4%   68.9%     70.3%     20.6%
-  //
-  // custom は候補が平均4.1個あるのに2番目以降がまったく効いていない
-  // (正解は1位にあるか無いかのどちらか)。hybrid は候補[0]では mozc と同点で、
-  // リストは全面的に上 -- 下がる指標が無いので既定はこれ。
-  //
-  // 影響するのは conversionEngine を一度も保存していない利用者だけ。
-  // 自分で「独自辞書」を選んだ人は prefs の値が優先されるので変わらない。
-  // 代わりに mozc のデータを読むぶんメモリが増える (実測で +46MB 程度)。
+  // 変換は AI (shuntelligence、AiConverter) だけ。前に保存した値に関わらず 'ai' (mozc・hybrid・独自辞書は 1.6.2 で撤去)
   conversionEngine: string;
   // Whether the "あA"/"Aあ" mode-switch key cycles 日本語→アルファベット→数字
   // (numeric pad) or just 日本語⇔アルファベット -- see InputHandler.cycleInputMode
@@ -50,13 +24,11 @@ export interface KeyboardSettings {
   // キーを押したときに短く振動させるか。
   hapticEnabled: boolean;
   // 長い入力の扱い。false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = オート確定 (Mac の IME のように前から確定)
-  liveCommit: boolean;
   // 提案 (打ち間違いの直し・日付・住所) を候補の帯に混ぜず、ひらがなの帯に分けて出す (既定オン)
   separateSuggest: boolean;
   // 英数字キーボードで英字も入力中の文字として組み立てて変換する (iphone -> iPhone)。オフは英字をそのまま入れる (数字は組み立てる)
   alphaCompose: boolean;
   // 差別的・不適切な語も候補に出す (既定オン)
-  allowSlurs: boolean;
   // キーボードのライト／ダーク。'system' は端末のカラーモードに従う（既定）。
   // 'light' / 'dark' はキーボードだけ固定する（ホストアプリの色は変えない）。
   themeMode: string;
@@ -100,17 +72,10 @@ export interface KeyboardSettings {
   // 変わらない (FlickKeyboardView の isLandscape 分岐と同じ仕組みを流用)。
   // 使い慣れた人には邪魔になるという要望向けのオフスイッチ。既定はオン。
   flickHintsEnabled: boolean;
-  // 括弧の閉じ括弧をいつホストへ出すか (KeyboardController の BRACKET_PAIRS
-  // 参照)。開き括弧を確定した時点で閉じを保留するところまでは共通で、
-  // 違うのは「保留を解く引き金」だけ。
-  //   'manual' = 既定。► キー (または候補バーの待機バッジのタップ) を
-  //              押したその位置で初めて閉じを出す。括弧の中で何度確定
-  //              しても勝手に閉じないので、囲む範囲を自分で決められる。
-  //   'auto'   = 従来の挙動。次の確定の直後に自動で閉じる。1語だけ囲む
-  //              使い方なら打鍵が1つ減る。
-  // manual を既定にしたのは、auto だと「括弧の中で2語以上確定する」と
-  // いう普通の使い方が成立しなかったため (最初の確定で閉じてしまい、
-  // 続きが括弧の外に出る)。auto でも ► で早めに閉じることはできる。
+  // 括弧の入れ方 (KeyboardController の BRACKET_PAIRS 参照)。
+  //   'pair'   = 既定。開きと閉じを一緒に入れて、カーソルを中へ
+  //   'manual' = 開きだけ入れて閉じは保留。► キー・待機バッジのタップ・送信直前に、その位置へ閉じを出す
+  //   前に保存した 'auto' は 'pair' として扱う (ユーザー 2026-10-13)
   bracketCloseMode: string;
   // フローティングキーボード。画面下端に固定せず、任意の位置・大きさで
   // 浮かせて使えるモード。位置・大きさは画面の縦横比に依存させたくない
@@ -132,10 +97,8 @@ const DEFAULTS: KeyboardSettings = {
   conversionEngine: 'ai',
   numericPadEnabled: false,
   hapticEnabled: false,
-  liveCommit: false,
   separateSuggest: true,
   alphaCompose: true,
-  allowSlurs: true,
   themeMode: 'system',
   keyChromeEnabled: true,
   composingInPanel: true,
@@ -178,10 +141,8 @@ export class SettingsStore {
       const side = await prefs.get('oneHandedSide', DEFAULTS.oneHandedSide);
       const numericPad = await prefs.get('numericPadEnabled', DEFAULTS.numericPadEnabled);
       const haptic = await prefs.get('hapticEnabled', DEFAULTS.hapticEnabled);
-      const liveCommit = await prefs.get('liveCommit', DEFAULTS.liveCommit);
       const separateSuggest = await prefs.get('separateSuggest', DEFAULTS.separateSuggest);
       const alphaCompose = await prefs.get('alphaCompose', DEFAULTS.alphaCompose);
-      const allowSlurs = await prefs.get('allowSlurs', DEFAULTS.allowSlurs);
       const themeMode = await prefs.get('themeMode', DEFAULTS.themeMode);
       const keyChrome = await prefs.get('keyChromeEnabled', DEFAULTS.keyChromeEnabled);
       const inPanel = await prefs.get('composingInPanel', DEFAULTS.composingInPanel);
@@ -214,10 +175,8 @@ export class SettingsStore {
         conversionEngine: DEFAULTS.conversionEngine,
         numericPadEnabled: numericPad === true,
         hapticEnabled: haptic === true,
-        liveCommit: liveCommit === true,
         separateSuggest: separateSuggest !== false,
         alphaCompose: alphaCompose !== false,
-        allowSlurs: allowSlurs !== false,
         themeMode: String(themeMode),
         keyChromeEnabled: keyChrome !== false,
         composingInPanel: inPanel !== false,
@@ -246,10 +205,8 @@ export class SettingsStore {
         conversionEngine: DEFAULTS.conversionEngine,
         numericPadEnabled: DEFAULTS.numericPadEnabled,
         hapticEnabled: DEFAULTS.hapticEnabled,
-        liveCommit: DEFAULTS.liveCommit,
         separateSuggest: DEFAULTS.separateSuggest,
         alphaCompose: DEFAULTS.alphaCompose,
-        allowSlurs: DEFAULTS.allowSlurs,
         themeMode: DEFAULTS.themeMode,
         keyChromeEnabled: DEFAULTS.keyChromeEnabled,
         composingInPanel: DEFAULTS.composingInPanel,
@@ -305,59 +262,11 @@ export class SettingsStore {
     } catch (_e) {}
   }
 
-  static async saveConversionEngine(context: common.Context, engine: string): Promise<void> {
-    InputLog.recordSetting('conversionEngine', String(engine));
-    try {
-      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('conversionEngine', engine);
-      await prefs.flush();
-      console.info('shuntiIME SettingsStore.saveConversionEngine ok', engine);
-    } catch (e) {
-      console.error('shuntiIME SettingsStore.saveConversionEngine error', JSON.stringify(e));
-    }
-  }
-
   static async saveNumericPadEnabled(context: common.Context, enabled: boolean): Promise<void> {
     InputLog.recordSetting('numericPadEnabled', String(enabled));
     try {
       const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
       await prefs.put('numericPadEnabled', enabled);
-      await prefs.flush();
-    } catch (_e) {}
-  }
-
-  static async saveLiveCommit(context: common.Context, enabled: boolean): Promise<void> {
-    InputLog.recordSetting('liveCommit', String(enabled));
-    try {
-      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('liveCommit', enabled);
-      await prefs.flush();
-    } catch (_e) {}
-  }
-
-  static async saveSeparateSuggest(context: common.Context, enabled: boolean): Promise<void> {
-    InputLog.recordSetting('separateSuggest', String(enabled));
-    try {
-      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('separateSuggest', enabled);
-      await prefs.flush();
-    } catch (_e) {}
-  }
-
-  static async saveAllowSlurs(context: common.Context, enabled: boolean): Promise<void> {
-    InputLog.recordSetting('allowSlurs', String(enabled));
-    try {
-      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('allowSlurs', enabled);
-      await prefs.flush();
-    } catch (_e) {}
-  }
-
-  static async saveAlphaCompose(context: common.Context, enabled: boolean): Promise<void> {
-    InputLog.recordSetting('alphaCompose', String(enabled));
-    try {
-      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('alphaCompose', enabled);
       await prefs.flush();
     } catch (_e) {}
   }
@@ -390,16 +299,6 @@ export class SettingsStore {
     } catch (e) {
       console.error('shuntiIME SettingsStore.saveThemeMode error', JSON.stringify(e));
     }
-  }
-
-  static async saveComposingDisplay(context: common.Context, inPanel: boolean, inField: boolean): Promise<void> {
-    InputLog.recordSetting('composingDisplay', JSON.stringify([inPanel, inField]));
-    try {
-      const prefs = await dataPreferences.getPreferences(context, SettingsStore.STORE);
-      await prefs.put('composingInPanel', inPanel);
-      await prefs.put('composingInField', inField);
-      await prefs.flush();
-    } catch (_e) {}
   }
 
   static async saveKeyboardHeightScale(context: common.Context, scale: number, isLandscape: boolean): Promise<void> {

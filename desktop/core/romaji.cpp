@@ -35,6 +35,15 @@ const RomajiPair REVERSE_PREFER[] = {
 };
 }  // namespace
 
+void Romaji::add_pair(const u16& key0, const u16& kana) {
+    u16 key = key0;
+    for (auto& c : key) if (c >= u'A' && c <= u'Z') c = char16_t(c + 32);
+    if (key.empty() || kana.empty()) return;
+    table_[key] = kana;
+    for (size_t i = 1; i <= key.size(); i++) prefixes_.insert(key.substr(0, i));
+    if (kana.size() > max_kana_) max_kana_ = kana.size();
+}
+
 Romaji::Romaji() {
     auto add = [&](const RomajiPair& p) {
         u16 k = p.key, v = p.kana;

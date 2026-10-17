@@ -242,10 +242,6 @@ export class InputLog {
     return InputLog.filesDir + '/' + INPUT_LOG_FILE;
   }
 
-  static writerDir(): string {
-    return InputLog.filesDir;
-  }
-
   // フィールドが変わった。属性が届くまでの記録は保留にする。
   static beginField(): void {
     if (!DEBUG_INPUT_LOG) { return; }

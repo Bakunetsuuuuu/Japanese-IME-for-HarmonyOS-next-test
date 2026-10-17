@@ -6,6 +6,16 @@
 
 namespace shunti {
 
+// 10 進の整数 (atoi は使わない: glibc 2.38 の __isoc23_strtol を要求して、Linux 版の動く範囲が狭まる)
+static int to_int(const char* p) {
+    int sign = 1, v = 0;
+    while (*p == ' ') p++;
+    if (*p == '-') { sign = -1; p++; }
+    while (*p >= '0' && *p <= '9') v = v * 10 + (*p++ - '0');
+    return sign * v;
+}
+
+
 namespace {
 const u16 BOUNDARY = u"。．！？!?、，\n";
 const size_t MAX_CLAUSE = 40;
@@ -34,7 +44,7 @@ void SentenceFlow::load(const std::filesystem::path& path) {
         size_t t1 = line.find('\t'), t2 = t1 == std::string::npos ? t1 : line.find('\t', t1 + 1);
         if (t2 == std::string::npos) continue;
         // 鍵・続きの中の改行は \n と書いてある (続きは句読点の 1 字か節なので実際には入らない)
-        table_[from_utf8(line.substr(0, t1))][from_utf8(line.substr(t1 + 1, t2 - t1 - 1))] = std::max(1, std::atoi(line.c_str() + t2 + 1));
+        table_[from_utf8(line.substr(0, t1))][from_utf8(line.substr(t1 + 1, t2 - t1 - 1))] = std::max(1, to_int(line.c_str() + t2 + 1));
     }
 }
 

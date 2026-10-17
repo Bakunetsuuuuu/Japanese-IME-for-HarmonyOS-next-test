@@ -81,11 +81,14 @@ struct ComposerOptions {
     bool space_fullwidth = true;   // 何も打っていないときの空白を全角に (Shift で逆)
     int punct = 0;                 // 句読点: 0 = 、。 1 = ，． 2 = 、． 3 = ，。
     bool digits_fullwidth = false; // 数字を全角で入れる
+    u16 half_symbols;              // 半角で入れる記号 (詳細設定)
+    int numpad = 0;                // テンキー: 0 = 半角、1 = 数字の設定に合わせる、2 = 全角
+    bool private_mode = false;     // 学習・文の流れ・提案の学習を残さない
 };
 
 class Composer {
 public:
-    static constexpr int PAGE = 9;      // 候補の窓の 1 ページの数 (1〜9 で選ぶ)
+    static inline int PAGE = 9;         // 候補の窓の 1 ページの数 (1〜9 で選ぶ。詳細設定で 5〜9)
     static constexpr size_t KEEP = 8;        // 前の方を固定するとき、固定せずに残す末尾の字数の最小 (スマホ版と同じ)
     static constexpr size_t KEEP_MAX = 32;   // 速い PC で残す字数の上限 (モデルが学んだ読みの長さ)
 
@@ -98,7 +101,19 @@ public:
     // 入力欄のカーソルの左の文 (変換の文脈)。読めない入力欄では空を返してよい (そのときはこれまでに確定した文を使う)
     void set_context_provider(std::function<u16()> f) { context_ = std::move(f); }
     // 入力欄が変わったとき: これまでに確定した文 (文脈の代わり) を忘れる
-    void reset_history() { history_.clear(); post_.clear(); if (flow) flow->reset(); }
+    void reset_history() { history_.clear(); post_.clear(); last_commit_ = {}; if (flow) flow->reset(); }
+    // 確定の取り消し (Ctrl+Backspace、Google 日本語入力と同じ): 確定した直後だけ、その (表記, 読み)。無ければ表記が空
+    const std::pair<u16, u16>& undoable() const { return last_commit_; }
+    // 確定の取り消し: 入力欄から表記を消したあとで呼ぶ。読みに戻して変換し直す (変換中にする)
+    bool undo_commit();
+    // 再変換: 確定した文を読みに戻せるか (読みが分からなければ空)。かなだけの文はそのまま、漢字まじりはこれまで確定した記録から
+    u16 reading_of(const u16& text) const;
+    // 再変換を始める (読みを入れて変換した状態にする)。始めたら true
+    bool start_reconvert(const u16& reading);
+    // ローマ字の表に足す (詳細設定の「ローマ字の表」)
+    void add_romaji(const u16& key, const u16& kana) { romaji_.add_pair(key, kana); }
+    void reset_romaji() { romaji_ = Romaji(); }   // 足した綴りを外して元の表に
+    void clear_recent() { recent_.clear(); }      // 再変換のために覚えた (表記, 読み) を消す (プライベートにしたとき)
     // 文の流れの予測 (無ければ使わない)。確定した文字を覚え、確定の後に続きを view().post に出す
     SentenceFlow* flow = nullptr;
     // 何も打っていないときに、こちらで扱わずアプリへ渡したキー (Backspace・Enter・矢印など)。文の流れに知らせる
@@ -114,6 +129,9 @@ public:
     size_t keep() const { return keep_; }
     void set_keep(size_t n) { keep_ = n; calibrated_ = true; }
     bool composing() const { return state_ != State::Idle; }
+    bool converting() const { return state_ == State::Convert; }
+    // かなを直接入れる (かな入力の配列: JIS かな・NICOLA・薙刀式)。゛ ゜ は前のかなに合わせる (か + ゛ -> が)
+    void type_kana(const u16& s);
 
     // 候補の窓の index 番目をマウスで選んだ
     void select_candidate(int index);
@@ -178,6 +196,8 @@ private:
     State state_ = State::Idle;
     u16 ctx_;          // 左の文脈 (入力を始めたときのカーソルの左 + その後にリアルタイム確定した分)
     u16 history_;      // これまでに確定した文 (入力欄の文が読めないときの文脈)
+    std::pair<u16, u16> last_commit_;   // 直前の確定 (表記, 読み)。確定の取り消しのため (次のキーで忘れる)
+    std::vector<std::pair<u16, u16>> recent_;   // 最近確定した (表記, 読み)。再変換で読みに戻すため (200 件まで)
     u16 commit_;
     View view_;
 
@@ -195,10 +215,13 @@ private:
     std::vector<u16> live_sugg_;          // 提案 (Conversion::sugg。打っている間の変換のもの)
     std::vector<int> live_sugg_kinds_;
     u16 typo_top_;
+    std::vector<u16> live_pred_;          // 打っている間の候補に足した予測 (読みの続く語)。Tab はここから選ぶ
     std::vector<u16> after_emoji_;        // 1 位の文の語に当たる絵文字・顔文字 (確定の後の続き Tab の窓に)                        // 1 位にした打ち間違いの直し (“ ” で囲んで見せる)
     std::vector<u16> sugg_typo_;          // そのうち打ち間違いの直し (“ ” で囲んで見せる)
     u16 sugg_note(const u16& x) const;   // 候補の右に添える種類 (もしかして・絵文字 …)
     std::vector<u16> sugg_set_;           // 候補に混ぜた提案 (✦ を付けて見せる・学習しない)
+    std::vector<u16> date_cands_;         // 日付・時刻の候補 (学習しない。sugg_note で日付と添える)
+    void add_datetime(const u16& reading, std::vector<u16>& list);   // 日付・時刻の候補を list の後ろに足す (学習しない)
     int sugg_focus_ = -1;                 // 提案の列で選んでいるもの (Shift+↓ / Shift+Tab で入る。-1 = 入っていない)
     u16 live_top_;                       // 打っている間の変換そのものの 1 位 (予測・決まり文句を足す前)。ライブ変換で見せる
     std::map<size_t, u16> prev_segs_;    // 前回の 1 位の (語の区切りの読みの位置 -> そこまでの表記)

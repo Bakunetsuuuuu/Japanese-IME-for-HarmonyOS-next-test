@@ -26,10 +26,6 @@ export class AiConverter {
     return AiConverter.ready;
   }
 
-  static hasFailed(): boolean {
-    return AiConverter.failed;
-  }
-
   // 何度呼んでもよい。読み込みは 1 回だけ (裏のスレッドで)
   // 読み込みに失敗したら onFail (呼ぶ側が別のエンジンに切り替える)
   static ensureLoaded(ctx: common.Context, onFail: () => void = () => {}): void {
@@ -76,9 +72,7 @@ export class AiConverter {
       return { cands: [], ends: [], lens: [], waitMs: 0, runMs: 0, deliverMs: 0 } as KkcResult;
     }
     const r = kkc.convert(context, kana, max);
-    const cands = r.cands.filter((c: string) => !AiConverter.blocked(c));
-    const ok = cands.length > 0 && cands[0] === r.cands[0];
-    return { cands: cands, ends: ok ? r.ends : [], lens: ok ? r.lens : [], waitMs: 0, runMs: 0, deliverMs: 0 } as KkcResult;
+    return { cands: r.cands, ends: r.ends, lens: r.lens, waitMs: 0, runMs: 0, deliverMs: 0 } as KkcResult;
   }
 
   // AI 変換がこの読みからこの表記を出せるか (文脈なしで上位 30 個に入るか)。未知語の学習 (UnknownWordLearner) が、
@@ -203,15 +197,8 @@ export class AiConverter {
   private static KEEP_WORDS: number = 4;     // 固定しても、最後のこの語数は必ず AI に残す
   private static BUDGET_MS: number = 80;     // 変換 1 回がこれより速いうちは固定しない (遅れを感じない限界)
   private static MAX_TAIL: number = 60;
-  private static LIVE_KEEP: number = 8;      // オート確定のときに、末尾に残す字数 (以前の決まり)
   // 変換で受け取る候補の数。10 では短い読み (き・かん) の単漢字が足りない (期・季・記が 11 位より後ろにある)
   private static CANDIDATES: number = 30;
-  static liveCommit: boolean = false;
-  // 設定「不適切な語も候補に出す」(既定はオン。ユーザー 2026-10-13:「キチガイ が極端に出ない」「不適切語は常時出していい」)
-  static allowSlurs: boolean = true;
-  static blocked(c: string): boolean {
-    return !AiConverter.allowSlurs && AiConverter.SLURS.test(c);
-  }        // 設定「オート確定」(既定はオフ = 保留)
   private static ALT: number = 4;
   private static chunks: FrozenChunk[] = [];   // 固定した部分 (前から順に)。表記は cands[0]
   private static fCtx: string = '';      // 固定を始めたときの文脈
@@ -321,9 +308,7 @@ export class AiConverter {
       const wordsAfter = r.ends.length - 1 - i;   // この語より後ろに残る語の数
       // 速くても、読みが長すぎるとモデルの入力の長さの上限に届いて変換できなくなるので、MAX_TAIL 字を超えたら固定する
       const slow = AiConverter.lastRunMs > AiConverter.BUDGET_MS || tail.length > AiConverter.MAX_TAIL;
-      // オート確定 (Mac の IME のような動き) では、遅さに関係なく、末尾から LIVE_KEEP 字より前で固まった所を固定する
-      // (固定した所は呼ぶ側が入力欄に確定する)
-      const ready = AiConverter.liveCommit ? end <= tail.length - AiConverter.LIVE_KEEP : slow && wordsAfter >= AiConverter.KEEP_WORDS;
+      const ready = slow && wordsAfter >= AiConverter.KEEP_WORDS;
       if (ready && (stable || punct)) {
         freezeEnd = end;
         freezeLen = cum;
@@ -340,12 +325,9 @@ export class AiConverter {
       AiConverter.fKana += kana;
       AiConverter.fSurf += surf;
       AiConverter.prevSegs.clear();
-      if (AiConverter.liveCommit) {
-        return;   // すぐ入力欄に確定されるので、選び直しの候補は要らない
-      }
       // 固定した部分だけを 1 回変換して、選び直せる候補を持たせる (以後この部分は AI にかけない)
       kkc.convertAsync(ctx, kana, 8).then((r2: KkcResult) => {
-        const alts = r2.cands.filter((c: string) => c !== surf && !AiConverter.blocked(c));
+        const alts = r2.cands.filter((c: string) => c !== surf);
         chunk.cands = [surf].concat(alts.slice(0, AiConverter.ALT - 1));
       }).catch((_e: Error) => {});
     }
@@ -380,7 +362,7 @@ export class AiConverter {
     AiConverter.cache.clear();
   }
 
-  // 提案 (ひらがなの帯に左寄せで出す。KeyboardPage の suggestText): 固定した表記 + 提案。無ければ消す
+  // 提案 (候補の帯に出す。CandidateBar の suggestList): 固定した表記 + 提案。無ければ消す
   private static setSuggestion(r: KkcResult, top: string): void {
     if ((AppStorage.get<string>('composingText') ?? '').length === 0) {   // 確定した後に届いた結果
       AiConverter.clearSuggestion();
@@ -435,8 +417,6 @@ export class AiConverter {
     const show = () => {
       AppStorage.setOrCreate('suggestList', list);
       AppStorage.setOrCreate('suggestKinds', kinds);
-      AppStorage.setOrCreate('suggestText', list.length > 0 ? list[0] : '');
-      AppStorage.setOrCreate('suggestKind', kinds.length > 0 ? kinds[0] : 0);
       AppStorage.setOrCreate('suggestFrom', top);
     };
     // 提案は候補の帯の中に出すようになったので、待たずにすぐ出す (ユーザー 2026-10-13「0.2 秒の遅延はもういらない」)
@@ -451,7 +431,6 @@ export class AiConverter {
     AppStorage.setOrCreate('suggestPending', [] as string[]);
     AppStorage.setOrCreate('suggestPendingKinds', [] as number[]);
     AppStorage.setOrCreate('suggestList', [] as string[]);
-    AppStorage.setOrCreate('suggestText', '');
     AppStorage.setOrCreate('typoTop', '');
   }
 
@@ -494,10 +473,7 @@ export class AiConverter {
       if (AiConverter.cache.size > 256) {
         AiConverter.cache.clear();
       }
-      const cands = r.cands.filter((c: string) => !AiConverter.blocked(c));
-      // 差別語で 1 位が落ちたら区切りは使えない (1 位の区切りなので)
-      const ok = cands.length > 0 && cands[0] === r.cands[0];
-      AiConverter.cache.set(key, { cands: cands, ends: ok ? r.ends : [], lens: ok ? r.lens : [],
+      AiConverter.cache.set(key, { cands: r.cands, ends: r.ends, lens: r.lens,
         sugg: r.sugg ?? [], suggKinds: r.suggKinds ?? [] } as KkcResult);
       AiConverter.inflight = false;
       if (AiConverter.wantKey !== key) {
@@ -510,9 +486,4 @@ export class AiConverter {
       console.error('shuntiIME AiConverter convert error', JSON.stringify(e));
     });
   }
-
-  // 語をつないで差別語になった候補を出さない (学習側 kkc/content_filter.SLURS と同じ)
-  private static SLURS: RegExp = new RegExp('ガイジ|害児|池沼|キチガイ|きちがい|気違い|気狂い|基地外|キチゲェ|チョン(?!マゲ|ボ|チョン|ガー)|' +
-    'チャンコロ|支那人|シナ人|土人|ニガー|ニガ―|黒んぼ|クロンボ|エタ非人|めくら|メクラ|つんぼ|ツンボ|知恵遅れ|片輪|かたわ|' +
-    '三国人|ジャップ|鮮人|ホモガキ');
 }

@@ -1,4 +1,4 @@
-import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
+import { InputHandler, InputMode } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
 import { JP_FONT_FAMILY } from './JpFont';
 

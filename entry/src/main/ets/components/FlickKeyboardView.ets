@@ -188,8 +188,6 @@ export struct FlickKeyboardView {
     return kana;
   }
 
-  private rowH(): number { return this.isLandscape ? 50 : 64; }
-
   private dirFrom(dx: number, dy: number): FlickDir {
     if (Math.abs(dx) < this.THRESHOLD && Math.abs(dy) < this.THRESHOLD) { return 'center'; }
     if (Math.abs(dx) >= Math.abs(dy)) { return dx > 0 ? 'right' : 'left'; }

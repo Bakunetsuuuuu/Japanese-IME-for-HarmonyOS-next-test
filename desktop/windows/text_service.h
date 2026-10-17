@@ -9,6 +9,8 @@
 #include <memory>
 
 #include "../core/composer.h"
+#include "../core/layout.h"
+#include <set>
 #include "cand_window.h"
 
 namespace shunti {
@@ -47,8 +49,8 @@ public:
     STDMETHODIMP OnSetFocus(BOOL) override { return S_OK; }
     STDMETHODIMP OnTestKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL* eaten) override;
     STDMETHODIMP OnKeyDown(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL* eaten) override;
-    STDMETHODIMP OnTestKeyUp(ITfContext*, WPARAM, LPARAM, BOOL* eaten) override { *eaten = FALSE; return S_OK; }
-    STDMETHODIMP OnKeyUp(ITfContext*, WPARAM, LPARAM, BOOL* eaten) override { *eaten = FALSE; return S_OK; }
+    STDMETHODIMP OnTestKeyUp(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL* eaten) override;
+    STDMETHODIMP OnKeyUp(ITfContext* ctx, WPARAM wp, LPARAM lp, BOOL* eaten) override;
     STDMETHODIMP OnPreservedKey(ITfContext* ctx, REFGUID guid, BOOL* eaten) override;
 
     // ITfCompositionSink
@@ -64,15 +66,32 @@ public:
     // 日本語入力のオン・オフ
     bool is_open();
     void set_open(bool open);
+    static std::wstring app_name();
+    bool app_open_state(bool def);
+    void remember_app_open(bool open);
+    u16 reconvert_reading(ITfContext* ctx);
+    std::filesystem::file_time_type romaji_stamp_{};   // romaji.tsv を読んだときの更新時刻
     // 候補の窓をマウスで選んだ
     void on_candidate_clicked(int index);
     void on_suggestion_clicked(int index);
 
 private:
-    enum class Action { None, Compose, Open, Close, Toggle };
+    enum class Action { None, Compose, Open, Close, Toggle, Private, Reconvert, Undo, Layout, OpenSettings, ClearAll,
+                        SpaceFull, SpaceHalf, OpenDict, ModelToggle };
+    // キー配列 (大西・Dvorak・JIS かな・NICOLA・薙刀式。core/layout.h)
+    shunti::Layout layout_;
+    std::string layout_name_;              // 読み込んだ配列 (設定の値)
+    std::set<std::string> layout_down_;    // 配列で受け持って食べたキー (離したときも食べる)
+    Microsoft::WRL::ComPtr<ITfContext> layout_ctx_;   // 待っているキーを時間切れで出すときの入力欄
+    UINT_PTR layout_timer_ = 0;
+    std::string layout_key(LPARAM lp);   // スキャンコードから物理キーの名前 (親指キーの割り当てで読み替え)
+    void layout_load(const std::string& name);
+    void layout_apply(ITfContext* ctx, const std::vector<shunti::Layout::Out>& outs);
+    void layout_arm_timer();
+    static void CALLBACK layout_timer_proc(HWND, UINT, UINT_PTR, DWORD);
     void apply_settings();
     bool is_secure_field(TfEditCookie ec, ITfContext* ctx);   // パスワードの欄か (入力の記録を止める)
-    Action classify(WPARAM vk, LPARAM lp, KeyEvent& ev);
+    Action classify(WPARAM vk, LPARAM lp, KeyEvent& ev, ITfContext* ctx);
     bool to_key_event(WPARAM vk, LPARAM lp, KeyEvent& ev);
     HRESULT edit(ITfContext* ctx, DWORD flags, std::function<void(TfEditCookie)> fn);
     void apply(TfEditCookie ec, ITfContext* ctx);

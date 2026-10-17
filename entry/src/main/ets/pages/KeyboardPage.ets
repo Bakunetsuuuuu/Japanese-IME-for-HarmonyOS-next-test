@@ -1,5 +1,4 @@
 import inputMethodEngine from '@ohos.inputMethodEngine';
-import util from '@ohos.util';
 import { promptAction } from '@kit.ArkUI';
 import { InputHandler, InputState, InputMode, applyKeyboardWidthsForVp } from '../ime/KeyboardController';
 import { CandidateBar } from '../components/CandidateBar';
@@ -59,50 +58,8 @@ struct KeyboardPage {
   @StorageLink('inputState') inputState: string = InputState.IDLE;
   @StorageLink('inputMode') inputMode: string = InputMode.HIRAGANA;
   @StorageLink('composingText') composingText: string = '';
-  @StorageLink('suggestText') suggestText: string = '';     // 提案 (AiConverter.setSuggestion)
-  @StorageLink('suggestKind') suggestKind: number = 0;
-  @StorageLink('suggestFrom') suggestFrom: string = '';
-  @StorageLink('suggestList') suggestList: string[] = [];
-  @StorageLink('suggestKinds') suggestKinds: number[] = [];
   @StorageLink('pendingRomaji') pendingRomaji: string = '';
-  // 入力中のかなをホストアプリの入力欄側に出せているか。出せているときは
-  // パネル内の composing 表示を畳んでキーボードを低くする。
-  @StorageLink('previewInField') @Watch('checkFallbackBanner') previewInField: boolean = false;
-  // かな表示の行をキーボード内に出すか (設定。入力欄側が非対応のときの
-  // 保険もここに含めて KeyboardController が決める)。
   @StorageLink('showComposingPanel') showComposingPanel: boolean = true;
-  // 「キーボード内表示」をOFFにしたつもりでも、今の入力欄が入力欄側表示
-  // (setPreviewText) に非対応だと保険でキーボード内表示に戻る。設定画面
-  // だけに説明を置いていたら気づかれなかったので、実際に打っている
-  // キーボード側にもトースト風のバナーで出す (checkFallbackBanner 参照)。
-  // 常時出しっぱなしだと逆に分かりにくい(実際の指摘)ので、切り替わった
-  // 瞬間だけ出して1秒ほどでフェードアウトする。
-  @StorageLink('composingInPanel') @Watch('checkFallbackBanner') composingInPanel: boolean = true;
-  @StorageLink('composingInField') @Watch('checkFallbackBanner') composingInField: boolean = true;
-  // 入力欄が入力欄側表示に対応しているかの判定待ち。onInputStart は先に
-  // 「非対応」を配ってから非同期で本当の値を配るので、この間の
-  // previewInField=false でバナーを出すと、対応している欄でも毎回出てしまう
-  // (KeyboardController.previewSupportPending 参照)。
-  @StorageLink('previewSupportPending') @Watch('checkFallbackBanner') previewSupportPending: boolean = false;
-  @State fallbackBannerOpacity: number = 0;
-  @State fallbackBannerShown: boolean = false;
-  private prevFallbackActive: boolean = false;
-  private fallbackFadeTimer: number = -1;
-
-  private checkFallbackBanner(): void {
-    const active = !this.previewSupportPending
-      && !this.composingInPanel && this.composingInField && !this.previewInField;
-    if (active && !this.prevFallbackActive) {
-      clearTimeout(this.fallbackFadeTimer);
-      this.fallbackBannerShown = true;
-      this.fallbackBannerOpacity = 1;
-      this.fallbackFadeTimer = setTimeout(() => {
-        animateTo({ duration: 400 }, () => { this.fallbackBannerOpacity = 0; });
-        setTimeout(() => { this.fallbackBannerShown = false; }, 450);
-      }, 1000);
-    }
-    this.prevFallbackActive = active;
-  }
   @StorageLink('candidates') candidates: string[] = [];
   @StorageLink('predictions') predictions: string[] = [];
   @StorageLink('selectedCandidateIndex') selectedIndex: number = 0;
@@ -120,15 +77,13 @@ struct KeyboardPage {
   @StorageLink('pendingBracketClose') pendingBracketClose: string = '';
   // 'manual' | 'auto'。バッジの文言を「► で閉じられる」案内にするか、
   // 従来の「次の確定で出る」案内にするかの切り替え (SettingsStore 参照)。
-  @StorageLink('bracketCloseMode') bracketCloseMode: string = 'manual';
+  @StorageLink('bracketCloseMode') bracketCloseMode: string = 'pair';
   // 辞書の登録欄をキーボードの上に出しているか (DictEditBar 参照)。
   @StorageLink('dictEditMode') dictEditMode: boolean = false;
   @StorageLink('bunsetsuTexts') bunsetsuTexts: string[] = [];
-  @StorageLink('bunsetsuRaw') bunsetsuRaw: string[] = [];
   @StorageLink('bunsetsuCurrent') bunsetsuCurrent: number = 0;
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('clipboardPreview') clipboardPreview: string = '';
-  @StorageLink('clipboardHistory') clipboardHistory: string[] = [];
   @StorageLink('oneHandedMode') oneHandedMode: boolean = false;
   @StorageLink('oneHandedSide') oneHandedSide: string = 'right';
   @StorageLink('candidateExpanded') candidateExpanded: boolean = false;
@@ -202,34 +157,6 @@ struct KeyboardPage {
       return [w, 1];
     }
     return [w, Math.max(0.4, avail / w)];
-  }
-
-  // 提案の帯 (「提案」+ 札) の本来の幅 (vp)
-  private suggestWidthVp(): number {
-    const mu = this.getUIContext().getMeasureUtils();
-    const fs: number = this.isLandscape ? 11 : 13;
-    let w = this.getUIContext().px2vp(mu.measureText({ textContent: '提案', fontSize: this.isLandscape ? 10 : 11, fontFamily: JP_FONT_FAMILY })) + 6 + 14;
-    for (let i = 0; i < this.suggestList.length; i++) {
-      const t = this.suggestList[i];
-      const k = i < this.suggestKinds.length ? this.suggestKinds[i] : 0;
-      const shown = k === 1 ? `${this.suggestFrom}→${t}` : (k === 6 && t.startsWith(this.suggestFrom) ? t.slice(this.suggestFrom.length) : t);
-      w += this.getUIContext().px2vp(mu.measureText({ textContent: shown, fontSize: fs, fontFamily: JP_FONT_FAMILY })) + 16 + 6;
-    }
-    return w;
-  }
-
-  // 提案が出ているときの入力中の文字の [本来の幅, 横の縮め率, 並べる幅]。提案と重なるなら、文字を消さずに横に縮めて詰める
-  // (提案の帯は本来の幅、ただし帯の 6 割まで。それより長い提案は横にめくる)
-  private composingFitWithSuggest(text: string): number[] {
-    const fs: number = this.isLandscape ? 12 : 16;
-    const strip = this.composingStripWidthVp;
-    const px = this.getUIContext().getMeasureUtils().measureText({
-      textContent: text, fontSize: fs, fontWeight: FontWeight.Medium, fontFamily: JP_FONT_FAMILY
-    });
-    const w = this.getUIContext().px2vp(px);
-    const avail = Math.max(strip * 0.35, strip - Math.min(this.suggestWidthVp(), strip * 0.6) - 8) - 24;
-    const sc = w <= avail || w <= 0 ? 1 : Math.max(0.35, avail / w);
-    return [w, sc, w * sc + 24];
   }
 
   private stripHeightVp(): number {
@@ -313,17 +240,10 @@ struct KeyboardPage {
       AppStorage.setOrCreate('keyChromeEnabled', s.keyChromeEnabled);
       AppStorage.setOrCreate('flickHintsEnabled', s.flickHintsEnabled);
       AppStorage.setOrCreate('bracketCloseMode', s.bracketCloseMode);
-      // かなの表示先は「設定値そのまま」ではなく入力欄の対応状況も混ぜて
-      // 決まるので、AppStorage を直接書かず InputHandler に計算させる。
-      InputHandler.getInstance().applyComposingDisplay(s.composingInPanel, s.composingInField);
+      // かなの表示先は決め打ち (設定は廃止、2026-10-14)。入力欄の対応状況は InputHandler が混ぜる
+      InputHandler.getInstance().applyComposingDisplay(false, true);
       InputHandler.getInstance().setThemeMode(s.themeMode);
-      // This panel and the extension's InputHandler share the same process/
-      // KanaKanjiConverter static state (see setConversionEngine's own
-      // lazy-load comment), but this aboutToAppear-driven reload is the more
-      // reliable refresh point per the comment above -- route through
-      // InputHandler.setConversionEngine so a setting persisted from the main
-      // app (a different process) actually applies the mozc engine switch
-      // here too, not just update the SettingsBar toggle's own display value.
+      // AI の変換を読み込む (読み込み済みなら何もしない)
       InputHandler.getInstance().setConversionEngine(s.conversionEngine);
       // 縦横別の値を両方 AppStorage に入れておき (LayoutAdjustBar/
       // FlickKeyboardView が向き問わず自分の StorageLink で読めるように)、
@@ -341,13 +261,6 @@ struct KeyboardPage {
       InputHandler.getInstance().applyKeyboardHorizontalOffsetLive(s.keyboardHorizontalOffset);
       InputHandler.getInstance().syncFloatingFromSettings(s);
     });
-  }
-
-  // 今表示しているキーボード本体が ◄/► のカーソルキーを持っているか。
-  // 閉じ括弧の待機バッジの文言を、その利用者の手元に実在する操作だけで書くために使う。
-  // フリック系・数字パッド・QWERTY (最下段、スペースの右) のどれも持っている
-  private hasCaretKeys(): boolean {
-    return true;
   }
 
   // 実際のキーボード本体を選ぶ部分。通常の入力画面と、レイアウト調整モード
@@ -680,23 +593,6 @@ struct KeyboardPage {
                         .fontSize(this.isLandscape ? 12 : 16)
                         .fontColor(kbTheme(this.isDark).textSecondary)
                         .maxLines(1)
-                    } else if (this.suggestList.length > 0 && this.showComposingPanel) {
-                      // 提案が出ているとき: 入力中の文字は消さずに横に縮めて詰める (均等割付)。並べる幅は縮めた幅
-                      Stack({ alignContent: Alignment.Start }) {
-                        Text(this.composingText + this.pendingRomaji)
-                          .fontFamily(JP_FONT_FAMILY)
-                          .fontSize(this.isLandscape ? 12 : 16)
-                          .fontWeight(FontWeight.Medium)
-                          .fontColor(kbTheme(this.isDark).textPrimary)
-                          .maxLines(1)
-                          .padding({ left: 12, right: 8 })
-                          .border({ width: { bottom: 2 }, color: kbTheme(this.isDark).accent })
-                          .width(this.composingFitWithSuggest(this.composingText + this.pendingRomaji)[0] + 24)
-                          .scale({ x: this.composingFitWithSuggest(this.composingText + this.pendingRomaji)[1], y: 1, centerX: 0, centerY: '50%' })
-                      }
-                      .width(this.composingFitWithSuggest(this.composingText + this.pendingRomaji)[2])
-                      .height('100%')
-                      .flexShrink(0)
                     } else {
                       Text(this.composingText + this.pendingRomaji)
                         .fontFamily(JP_FONT_FAMILY)
@@ -715,47 +611,6 @@ struct KeyboardPage {
                         .layoutWeight(this.composingFit(this.composingText + this.pendingRomaji)[1] < 1 ? 0 : 1)
                         .scale({ x: this.composingFit(this.composingText + this.pendingRomaji)[1], y: 1, centerX: 0, centerY: '50%' })
                     }
-                  }
-                  // 提案 (変換の域を超えるもの: 打ち間違いの直し・日付・住所)。入力中の文字の右に左寄せで、ポップアップ風に。
-                  // 候補の帯は打ったとおりの変換だけにする (2026-10-09 ユーザー: 左端に置くと候補が潰れる)
-                  // 複数の提案 (2026/10/9・2026年10月9日・10/9 …) は横に並べて、はみ出す分は横にめくる。右から引き出すように出る
-                  // 打ち間違いの直しは入力中の文字のすぐ右 (左寄せ)、日付・住所・英単語などは右寄せ
-                  if (this.showComposingPanel && this.suggestList.length > 0 && (this.composingText.length > 0 || this.pendingRomaji.length > 0)) {
-                    Scroll() {
-                      Row({ space: 6 }) {
-                        Text('提案')
-                          .fontFamily(JP_FONT_FAMILY)
-                          .fontSize(this.isLandscape ? 10 : 11)
-                          .fontColor(kbTheme(this.isDark).accent)
-                        ForEach(this.suggestList, (t: string, i: number) => {
-                          // 打ち間違いの直しは 元→直した形、気分の絵文字・顔文字 (6) は足す分だけ (確定するのは文ごと)
-                          Text(i < this.suggestKinds.length && this.suggestKinds[i] === 1 ? `${this.suggestFrom}→${t}`
-                            : (i < this.suggestKinds.length && this.suggestKinds[i] === 6 && t.startsWith(this.suggestFrom)
-                              ? t.slice(this.suggestFrom.length) : t))
-                            .fontFamily(JP_FONT_FAMILY)
-                            .fontSize(this.isLandscape ? 11 : 13)
-                            .fontColor(kbTheme(this.isDark).accent)
-                            .maxLines(1)
-                            .padding({ left: 8, right: 8, top: 2, bottom: 2 })
-                            .borderRadius(10)
-                            .border({ width: 1, color: kbTheme(this.isDark).accent })
-                            .onClick(() => { InputHandler.getInstance().commitSuggestion(i); })
-                        }, (t: string, i: number) => `${i}:${t}`)
-                      }
-                      .padding({ right: 8 })
-                      // 右寄せは中身の並び自体で (Scroll の align は見た目だけ動いて、押せる所が左に残っていた)。
-                      // 横幅を帯いっぱいにして、札を右に詰める。はみ出すときは横にめくれる
-                      .constraintSize({ minWidth: '100%' })
-                      .justifyContent(this.suggestKinds.length > 0 && this.suggestKinds[0] === 1 ? FlexAlign.Start : FlexAlign.End)
-                    }
-                    .scrollable(ScrollDirection.Horizontal)
-                    .scrollBar(BarState.Off)
-                    .edgeEffect(EdgeEffect.Spring)
-                    .align(Alignment.Start)
-                    .layoutWeight(1)
-                    .margin({ left: 6 })
-                    .transition(TransitionEffect.translate({ x: 240 }).combine(TransitionEffect.OPACITY)
-                      .animation({ duration: 220, curve: Curve.EaseOut }))
                   }
                   Blank()
                 }
@@ -878,10 +733,7 @@ struct KeyboardPage {
                 // (► キーが無いレイアウトからの逃げ道も兼ねる)。長押しは
                 // 「開き括弧だけ使いたかった」場合に保留を捨てる。
                 if (this.pendingBracketClose.length > 0) {
-                  Text(this.pendingBracketClose
-                    + (this.bracketCloseMode === 'auto'
-                      ? ' 待ち'
-                      : (this.hasCaretKeys() ? ' ►で閉じる' : ' タップで閉じる')))
+                  Text(this.pendingBracketClose + ' ►で閉じる')
                     .fontFamily(JP_FONT_FAMILY)
                     .fontSize(this.isLandscape ? 10 : 12)
                     .fontColor(kbTheme(this.isDark).onAccent)

@@ -1,7 +1,7 @@
 {
   "note": "AI 変換 (shuntelligence) の辞書とモデル。GitHub Releases に置き、ビルド前に tools/fetch_ai_assets.py で取得する",
-  "release": "shuntelligence-v4",
-  "url": "https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases/download/shuntelligence-v4/",
+  "release": "shuntelligence-v5",
+  "url": "https://github.com/shuntilettuce/Japanese-IME-for-HarmonyOS-next/releases/download/shuntelligence-v5/",
   "dest": "entry/src/main/resources/rawfile",
   "files": {
     "kkc_lex.bin": {
@@ -17,10 +17,10 @@
       "license": "shuntelligence S7 (標準、打ち間違いの直しつき。版 5: 8.2MB): CC BY 4.0"
     },
     "kkc_model_light.bin": {
-      "src": "kkc_model_light.bin",
-      "size": 8310176,
-      "sha256": "3acea4b2c98c25dfa02b4f4852e42edeedc2b007a1835ee98329ea6c5ccad5c5",
-      "license": "shuntelligence XS3 (軽量。PC・Android): CC BY 4.0",
+      "src": "kkc_model_xs5v5.bin",
+      "size": 2653840,
+      "sha256": "33060dc533988f2043fda22be0330b97a453d5817bf47b9fe15f8c9002a6f0a2",
+      "license": "shuntelligence XS5 (軽量、打ち間違いの直しつき。版 5: 2.7MB): CC BY 4.0",
       "dest": "models"
     }
   }

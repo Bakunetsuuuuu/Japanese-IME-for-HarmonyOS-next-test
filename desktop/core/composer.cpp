@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <chrono>
+#include <ctime>
 
+#include "datetime.h"
 #include "tables.h"
 
 namespace shunti {
@@ -119,6 +121,7 @@ Composer::Composer(Converter* conv, Learning* learning, UserDict* dict) : conv_(
 // ---------------------------------------------------------------- キー
 
 bool Composer::will_handle(const KeyEvent& ev) const {
+    if (ev.ctrl && !ev.alt && state_ == State::Convert && ev.key == Key::Delete) return true;   // 候補を消す
     if (ev.ctrl || ev.alt) return false;
     if (state_ == State::Idle) return ev.key == Key::Char || ev.key == Key::Space || (ev.key == Key::Tab && !ev.shift && !post_.empty());
     return true;
@@ -126,6 +129,7 @@ bool Composer::will_handle(const KeyEvent& ev) const {
 
 bool Composer::press(const KeyEvent& ev) {
     if (!will_handle(ev)) return false;
+    last_commit_ = {};   // 取り消せるのは確定の直後だけ (このキーで確定したらまた覚える)
     bool handled = false;
     switch (state_) {
         case State::Idle:
@@ -176,6 +180,59 @@ void Composer::insert(const u16& t) {
     caret_ += t.size();
 }
 
+void Composer::type_kana(const u16& s) {
+    if (s.empty()) return;
+    last_commit_ = {};
+    if (state_ == State::Convert) {   // 変換中に次の字: 確定してから (文脈は確定した文まで)
+        u16 carry = ctx_;
+        for (auto& x : segs_) carry += x.surface;
+        commit_all();
+        start_input();
+        ctx_ = tail(carry, CTX_MAX);
+    } else if (state_ == State::Idle) {
+        start_input();
+    }
+    flush_romaji();
+    raw_valid_ = false;
+    static const char16_t* const DAKU_FROM = u"かきくけこさしすせそたちつてとはひふへほうカキクケコサシスセソタチツテトハヒフヘホウ";
+    static const char16_t* const DAKU_TO = u"がぎぐげござじずぜぞだぢづでどばびぶべぼゔガギグゲゴザジズゼゾダヂヅデドバビブベボヴ";
+    static const char16_t* const HAN_FROM = u"はひふへほハヒフヘホ";
+    static const char16_t* const HAN_TO = u"ぱぴぷぺぽパピプペポ";
+    static const u16 SMALL_FROM = u"あいうえおやゆよつわかけアイウエオヤユヨツワカケ";
+    static const u16 SMALL_TO = u"ぁぃぅぇぉゃゅょっゎゕゖァィゥェォャュョッヮヵヶ";
+    for (char16_t c : s) {
+        if ((c == u'\uE000' || c == u'\uE001') && caret_ > 0) {   // 拗 (小さく) / 修 (濁音 → 半濁音 → 元、または 小さく → 元)
+            char16_t& prev = kana_[caret_ - 1];
+            const u16 dfrom = DAKU_FROM, dto = DAKU_TO, hfrom = HAN_FROM, hto = HAN_TO;
+            size_t at;
+            if (c == u'\uE000') {
+                if ((at = SMALL_FROM.find(prev)) != u16::npos) prev = SMALL_TO[at];
+                else if ((at = SMALL_TO.find(prev)) != u16::npos) prev = SMALL_FROM[at];
+            } else if ((at = dfrom.find(prev)) != u16::npos) prev = dto[at];                 // か -> が
+            else if ((at = dto.find(prev)) != u16::npos) {                                   // が -> か、ば -> ぱ
+                const char16_t plain = dfrom[at];
+                const size_t h = hfrom.find(plain);
+                prev = h != u16::npos ? hto[h] : plain;
+            } else if ((at = hto.find(prev)) != u16::npos) prev = hfrom[at];                 // ぱ -> は
+            else if ((at = SMALL_FROM.find(prev)) != u16::npos) prev = SMALL_TO[at];          // や -> ゃ
+            else if ((at = SMALL_TO.find(prev)) != u16::npos) prev = SMALL_FROM[at];
+            continue;
+        }
+        if ((c == u'゛' || c == u'゜') && caret_ > 0) {
+            const char16_t prev = kana_[caret_ - 1];
+            const u16 from = c == u'゛' ? DAKU_FROM : HAN_FROM, to = c == u'゛' ? DAKU_TO : HAN_TO;
+            const size_t at = from.find(prev);
+            if (at != u16::npos) {
+                kana_[caret_ - 1] = to[at];
+                continue;
+            }
+        }
+        insert(u16(1, c));
+    }
+    update_live();
+    rebuild_view();
+}
+
 void Composer::flush_romaji() {
     if (!romaji_.pending().empty()) insert(romaji_.flush());
 }
@@ -183,9 +240,10 @@ void Composer::flush_romaji() {
 void Composer::type_char(char16_t c, bool raw) {
     if (raw_valid_ && caret_ == kana_.size()) raw_.push_back(c);
     else raw_valid_ = false;
-    if (raw) {
+    if (raw) {   // テンキー: 詳細設定で半角・数字の設定に合わせる・全角
         flush_romaji();
-        insert(u16(1, c));
+        const bool full = options.numpad == 2 || (options.numpad == 1 && options.digits_fullwidth);
+        insert(u16(1, full && c > 0x20 && c < 0x7F ? char16_t(c + 0xFEE0) : c));
         return;
     }
     char16_t prev = caret_ > 0 ? kana_[caret_ - 1] : 0;
@@ -202,6 +260,11 @@ void Composer::type_char(char16_t c, bool raw) {
     }
     if (romaji_.pending().empty() && is_digit(prev) && (c == u'-' || c == u',' || c == u'.' || c == u':' || c == u'/')) {
         insert(u16(1, c));                                  // 数の続きの記号 (03-1234・1,000・3.14・12:30・9/27)
+        return;
+    }
+    // - を半角にしていれば、ローマ字の長音 (ー) にせずそのまま (詳細設定の記号の全角/半角)
+    if (c == u'-' && romaji_.pending().empty() && options.half_symbols.find(u'-') != u16::npos) {
+        insert(u"-");
         return;
     }
     if (is_lower(c) || romaji_.accepts(c) || c == u'-') {
@@ -233,7 +296,8 @@ void Composer::type_char(char16_t c, bool raw) {
         if (c == 0x309B && p == u'う') { kana_[caret_ - 1] = u'ゔ'; return; }
         if (c == 0x309C && u16(semi).find(p) != u16::npos) { kana_[caret_ - 1] = char16_t(p + 2); return; }
     }
-    if (is_digit(c)) insert(u16(1, options.digits_fullwidth ? char16_t(c + 0xFEE0) : c));
+    if (c > 0x20 && c < 0x7F && !is_digit(c) && options.half_symbols.find(c) != u16::npos) insert(u16(1, c));   // 半角にした記号
+    else if (is_digit(c)) insert(u16(1, options.digits_fullwidth ? char16_t(c + 0xFEE0) : c));
     else if (c == u',') insert(options.punct == 1 || options.punct == 3 ? u"，" : u"、");
     else if (c == u'.') insert(options.punct == 1 || options.punct == 2 ? u"．" : u"。");
     else insert(u16(1, japanese_symbol(c)));
@@ -283,11 +347,15 @@ bool Composer::press_input(const KeyEvent& ev) {
             convert_all();
             return true;
         case Key::Down:
-        case Key::Tab:   // 打っている間の候補を選び始める
+        case Key::Tab:   // 打っている間の候補を選び始める。予測 (読みの続く語) があればそこから (MS-IME と同じ)
             flush_romaji();
             update_live();
             if (!live_cands_.empty()) {
-                enter_single(live_cands_[0], live_cands_, 0);
+                int sel = 0;
+                if (ev.key == Key::Tab)
+                    for (size_t i = 0; i < live_cands_.size(); i++)
+                        if (contains(live_pred_, live_cands_[i])) { sel = int(i); break; }
+                enter_single(live_cands_[sel], live_cands_, sel);
                 first_cands_ = live_cands_;
                 first_via_ = "live";
             }
@@ -419,6 +487,18 @@ bool Composer::press_convert(const KeyEvent& ev) {
         case Key::Backspace:
             back_to_input();
             return true;
+        case Key::Delete:   // Ctrl+Delete: 選んでいる候補を消す (MS-IME と同じ。読みのまま・カタカナは消さない)
+            if (ev.ctrl && learning_) {
+                if (!s.loaded) load_cands(focus_);
+                if (s.cands.empty()) return true;
+                const u16 x = s.cands[size_t(std::max(0, std::min(s.sel, int(s.cands.size()) - 1)))];
+                if (x == s.reading || x == to_katakana(s.reading)) return true;
+                learning_->hide(s.reading, x);
+                s.cands.erase(std::remove(s.cands.begin(), s.cands.end(), x), s.cands.end());
+                cand_open_ = true;
+                set_sel(std::min(s.sel, int(s.cands.size()) - 1));
+            }
+            return true;
         case Key::Left:
         case Key::Right:
             if (ev.shift) { resize_focus(ev.key == Key::Left ? -1 : 1); return true; }
@@ -445,6 +525,7 @@ bool Composer::press_convert(const KeyEvent& ev) {
 u16 Composer::sugg_note(const u16& x) const {
     // 候補の右に薄い字で添える種類 (Windows・Linux。スマホの青枠の代わり。2026-10-14)
     if ((!typo_top_.empty() && x == typo_top_) || contains(sugg_typo_, x)) return u"もしかして";
+    if (contains(date_cands_, x)) return u"日付";
     if (!contains(sugg_set_, x)) return u16();
     int k = 0;
     for (size_t i = 0; i < live_sugg_.size(); i++) if (live_sugg_[i] == x) { k = live_sugg_kinds_[i]; break; }
@@ -461,6 +542,16 @@ u16 Composer::sugg_note(const u16& x) const {
     return u"記号";
 }
 
+void Composer::add_datetime(const u16& reading, std::vector<u16>& list) {
+    std::vector<u16> ds = datetime_predict(reading, std::time(nullptr));
+    for (auto& d : ds) {
+        if (contains(list, d)) continue;
+        list.push_back(d);
+        date_cands_.push_back(d);
+        sugg_set_.push_back(d);
+    }
+}
+
 void Composer::select_suggestion(int index) {
     if (state_ != State::Input || index < 0 || index >= int(live_sugg_.size())) return;
     flush_romaji();
@@ -471,7 +562,7 @@ void Composer::select_suggestion(int index) {
         e.extra = "suggest";
         log(e);
     }
-    if (flow) flow->record_suggest(live_sugg_[size_t(index)]);
+    if (flow && !options.private_mode) flow->record_suggest(live_sugg_[size_t(index)]);
     commit_text(t);
     to_idle();
     rebuild_view();
@@ -488,8 +579,8 @@ void Composer::select_candidate(int index) {
             e.extra = "live,mouse";
             log(e);
         }
-        if (learning_ && !contains(sugg_set_, c)) learning_->record(kana_, c);
-        if (flow && contains(sugg_set_, c)) flow->record_suggest(c);
+        if (learning_ && !options.private_mode && !contains(sugg_set_, c)) learning_->record(kana_, c);
+        if (flow && !options.private_mode && contains(sugg_set_, c)) flow->record_suggest(c);
         commit_text(frozen_surface() + c);
         to_idle();
         rebuild_view();
@@ -564,6 +655,7 @@ void Composer::update_live() {
         u16 r = p.reading;
         if (kana_.size() >= size_t(p.min_prefix) && kana_.size() < r.size() && r.compare(0, kana_.size(), kana_) == 0) { phrase = &p; break; }
     }
+    live_pred_.clear();
     if (kana_.size() >= 2) {
         std::vector<u16> comp;
         if (learning_) for (auto& x : learning_->completions(kana_, 2)) push_unique(comp, x);
@@ -574,6 +666,7 @@ void Composer::update_live() {
             if (inserted >= 3) break;
             if (contains(cands, x) || (phrase && x == phrase->text)) continue;
             cands.insert(cands.begin() + long(at++), x);
+            live_pred_.push_back(x);
             inserted++;
         }
     }
@@ -594,6 +687,7 @@ void Composer::update_live() {
     // 候補と交互に 1 つずつ (2 位の後ろから): ひと固めにすると惜しい 2 位以降が遠くなった (ユーザー 2026-10-14)
     sugg_set_.clear();
     sugg_typo_.clear();
+    date_cands_.clear();
     size_t at = 2;
     for (size_t si = 0; si < live_sugg_.size(); si++) {
         const u16& s = live_sugg_[si];
@@ -604,6 +698,7 @@ void Composer::update_live() {
         at += 2;
         sugg_set_.push_back(s);
     }
+    add_datetime(kana_, cands);   // 日付・時刻の候補は最後の方に (きょう→今日 は 1 位のまま)
     live_cands_ = std::move(cands);
 }
 
@@ -758,8 +853,34 @@ void Composer::convert_all() {
     sync_user_dict();
     segs_ = frozen_;
     std::vector<Seg> rest = convert_phrases(conv_ctx(), kana_, &whole_);
+    // 文節に分ける変換 (PC の IME の伝統) はそのままに、打っている間の一覧 (Tab・スマホと同じ) の工夫を受け入れる
+    // (ユーザー 2026-10-16「space は伝統的な挙動で、そのうえで色んな機能を」): 文全体の候補はその一覧 (学習の並べ替え・
+    // ユーザー辞書・挨拶・括弧・提案) から予測 (読みより長い語) を除いたもの。文全体で選び直したことがあるなどで一覧の 1 位が
+    // AI の 1 位と違うときは、その文を 1 つの文節で出す (文節に分けた形だとその 1 位を作れない)
+    if (!live_cands_.empty() && live_key_ == conv_ctx() + u'\x01' + kana_) {
+        std::vector<u16> live;
+        for (auto& x : live_cands_)
+            if (!contains(live_pred_, x)) live.push_back(x);
+        u16 joined;
+        for (auto& s : rest) joined += s.surface;
+        if (!live.empty() && !whole_.empty() && live[0] != whole_[0] && live[0] != joined) {
+            Seg one{kana_, live[0]};
+            rest.assign(1, std::move(one));
+        }
+        if (!live.empty()) whole_ = std::move(live);
+    }
+    size_t first_new = segs_.size();
     segs_.insert(segs_.end(), rest.begin(), rest.end());
     frozen_.clear();
+    if (learning_)
+        for (size_t i = first_new; i < segs_.size(); i++)
+            if (learning_->hidden(segs_[i].reading, segs_[i].surface)) {
+                segs_[i].surface.clear();   // load_cands が今の表記を先頭に入れないように
+                load_cands(i);
+                if (!segs_[i].cands.empty() && segs_[i].cands[0].empty()) segs_[i].cands.erase(segs_[i].cands.begin());
+                segs_[i].surface = segs_[i].cands.empty() ? segs_[i].reading : segs_[i].cands[0];
+                segs_[i].sel = 0;
+            }
     first_cands_ = whole_;
     if (!segs_.empty() && segs_.size() > rest.size()) {   // 記録用の文全体の候補にも固定した表記をつなぐ
         u16 fs;
@@ -933,8 +1054,8 @@ void Composer::commit_all() {
         segs.push_back(s.surface);
         if (s.changed) {
             changed++;
-            if (learning_ && !contains(sugg_set_, s.surface)) learning_->record(s.reading, s.surface);
-            if (flow && contains(sugg_set_, s.surface)) flow->record_suggest(s.surface);
+            if (learning_ && !options.private_mode && !contains(sugg_set_, s.surface)) learning_->record(s.reading, s.surface);
+            if (flow && !options.private_mode && contains(sugg_set_, s.surface)) flow->record_suggest(s.surface);
             log({"bseg", s.reading, s.surface, u16(), s.cands, s.sel});
         }
     }
@@ -955,13 +1076,38 @@ void Composer::log(LogEvent e) {
 
 void Composer::commit_text(const u16& t) {
     commit_ += t;
+    if (!t.empty() && !kana_.empty() && t != kana_) last_commit_ = {t, frozen_reading() + kana_};
+    else last_commit_ = {};
     history_ = tail(history_ + t, CTX_MAX);
-    if (flow) {
+    if (!t.empty() && !kana_.empty() && !options.private_mode) {   // 再変換のための (表記, 読み)
+        recent_.push_back({t, frozen_reading() + kana_});
+        if (recent_.size() > 200) recent_.erase(recent_.begin());
+    }
+    if (flow && !options.private_mode) {
         flow->feed(t);
         post_ = flow->predict();
         flow->save();   // 節が閉じたときだけ書く (dirty)
     }
     after_emoji_.clear();   // 文の語の絵文字は PC 版では出さない (要らない、ユーザー 2026-10-14)
+}
+
+u16 Composer::reading_of(const u16& text) const {
+    if (text.empty()) return u16();
+    bool kana_only = true;
+    for (char16_t c : text) kana_only = kana_only && (is_hira(c) || (c >= 0x309D && c <= 0x309E) || (c >= 0x30A1 && c <= 0x30FE));
+    if (kana_only) return to_hiragana(text);
+    for (auto it = recent_.rbegin(); it != recent_.rend(); ++it)
+        if (it->first == text) return it->second;
+    return u16();
+}
+
+bool Composer::start_reconvert(const u16& reading) {
+    if (reading.empty() || state_ != State::Idle) return false;
+    start_input();
+    insert(reading);
+    convert_all();
+    rebuild_view();
+    return true;
 }
 
 void Composer::select_post(int index) {
@@ -971,7 +1117,18 @@ void Composer::select_post(int index) {
     rebuild_view();
 }
 
+bool Composer::undo_commit() {
+    if (last_commit_.first.empty() || state_ != State::Idle) return false;
+    const u16 surface = last_commit_.first, reading = last_commit_.second;
+    last_commit_ = {};
+    // 文脈から取り消した確定を外す
+    if (history_.size() >= surface.size() && history_.compare(history_.size() - surface.size(), surface.size(), surface) == 0)
+        history_.resize(history_.size() - surface.size());
+    return start_reconvert(reading);
+}
+
 void Composer::passthrough(const KeyEvent& ev) {
+    last_commit_ = {};
     if (!flow || state_ != State::Idle) return;
     if (ev.key == Key::Backspace) flow->backspace();
     else if (ev.key == Key::Enter) flow->boundary();
@@ -999,6 +1156,7 @@ void Composer::to_idle() {
     live_sugg_kinds_.clear();
     prev_segs_.clear();
     frozen_.clear();
+    date_cands_.clear();
 }
 
 void Composer::finish() {

@@ -2,7 +2,6 @@ import inputMethodEngine from '@ohos.inputMethodEngine';
 import InputMethodExtensionContext from '@ohos.InputMethodExtensionContext';
 import type { Want } from '@kit.AbilityKit';
 import display from '@ohos.display';
-import util from '@ohos.util';
 import dataPreferences from '@ohos.data.preferences';
 import pasteboard from '@ohos.pasteboard';
 import vibrator from '@ohos.vibrator';
@@ -29,6 +28,7 @@ import { EmojiSuggest } from './EmojiSuggest';
 import { AppMaintenance } from './AppMaintenance';
 import { AiConverter } from './AiConverter';
 import { SentenceFlow } from './SentenceFlow';
+import { ClipboardPins } from './ClipboardPins';
 
 interface InputMethodSubtype {
   id: string;
@@ -73,14 +73,9 @@ interface HostEditOp {
 // 保留しておいて、あとから「その時点のカーソル位置」へ挿入する。カーソル
 // 移動プリミティブを一切使わないので、上記の実機不具合と無縁になる。
 //
-// 保留を解く引き金は設定 bracketCloseMode で選べる (SettingsStore 参照)。
-//   'manual' (既定): ► キー / 候補バーの待機バッジのタップ / 送信直前
-//                    のいずれかで初めて閉じが出る。確定を何回挟んでも
-//                    勝手に閉じないので、囲む範囲は利用者が決める。
-//   'auto'          : 従来どおり、次の確定の直後に自動で閉じる。
-// 既定を manual にしたのは、auto では「括弧の中で2語以上確定する」という
-// ごく普通の使い方が成立しなかったため -- 最初の確定で閉じてしまい、
-// 続きが括弧の外に出ていた。auto のままでも ► で早めに閉じられる。
+// 括弧の入れ方は設定 bracketCloseMode で選べる (SettingsStore 参照)。
+//   'pair' (既定): 開きと閉じを一緒に入れて、カーソルを中へ (HarmonyOS 7 から moveCursor が使える)
+//   'manual'      : 上の保留式。► キー / 待機バッジのタップ / 送信直前に閉じが出る
 const BRACKET_PAIRS: Record<string, string> = {
   '（': '）', '「': '」', '『': '』', '【': '】',
   '〖': '〗', '〔': '〕', '〈': '〉', '《': '》',
@@ -223,43 +218,6 @@ const VARIANT_CYCLE: Record<string, string> = {
   'ヤ':'ャ','ャ':'ヤ','ユ':'ュ','ュ':'ユ','ヨ':'ョ','ョ':'ヨ','ワ':'ヮ','ヮ':'ワ',
 };
 
-const DAKUTEN: Record<string, string> = {
-  'か':'が','き':'ぎ','く':'ぐ','け':'げ','こ':'ご',
-  'さ':'ざ','し':'じ','す':'ず','せ':'ぜ','そ':'ぞ',
-  'た':'だ','ち':'ぢ','つ':'づ','て':'で','と':'ど',
-  'は':'ば','ひ':'び','ふ':'ぶ','へ':'べ','ほ':'ぼ','う':'ゔ',
-  'が':'か','ぎ':'き','ぐ':'く','げ':'け','ご':'こ',
-  'ざ':'さ','じ':'し','ず':'す','ぜ':'せ','ぞ':'そ',
-  'だ':'た','ぢ':'ち','づ':'つ','で':'て','ど':'と',
-  'ば':'は','び':'ひ','ぶ':'ふ','べ':'へ','ぼ':'ほ','ゔ':'う',
-  'カ':'ガ','キ':'ギ','ク':'グ','ケ':'ゲ','コ':'ゴ',
-  'サ':'ザ','シ':'ジ','ス':'ズ','セ':'ゼ','ソ':'ゾ',
-  'タ':'ダ','チ':'ヂ','ツ':'ヅ','テ':'デ','ト':'ド',
-  'ハ':'バ','ヒ':'ビ','フ':'ブ','ヘ':'ベ','ホ':'ボ','ウ':'ヴ',
-  'ガ':'カ','ギ':'キ','グ':'ク','ゲ':'ケ','ゴ':'コ',
-  'ザ':'サ','ジ':'シ','ズ':'ス','ゼ':'セ','ゾ':'ソ',
-  'ダ':'タ','ヂ':'チ','ヅ':'ツ','デ':'テ','ド':'ト',
-  'バ':'ハ','ビ':'ヒ','ブ':'フ','ベ':'ヘ','ボ':'ホ','ヴ':'ウ',
-};
-const HANDAKUTEN: Record<string, string> = {
-  'は':'ぱ','ひ':'ぴ','ふ':'ぷ','へ':'ぺ','ほ':'ぽ',
-  'ば':'ぱ','び':'ぴ','ぶ':'ぷ','べ':'ぺ','ぼ':'ぽ',
-  'ぱ':'は','ぴ':'ひ','ぷ':'ふ','ぺ':'へ','ぽ':'ほ',
-  'ハ':'パ','ヒ':'ピ','フ':'プ','ヘ':'ペ','ホ':'ポ',
-  'バ':'パ','ビ':'ピ','ブ':'プ','ベ':'ペ','ボ':'ポ',
-  'パ':'ハ','ピ':'ヒ','プ':'フ','ペ':'ヘ','ポ':'ホ',
-};
-const SMALL_KANA: Record<string, string> = {
-  'あ':'ぁ','い':'ぃ','う':'ぅ','え':'ぇ','お':'ぉ',
-  'つ':'っ','や':'ゃ','ゆ':'ゅ','よ':'ょ','わ':'ゎ',
-  'ぁ':'あ','ぃ':'い','ぅ':'う','ぇ':'え','ぉ':'お',
-  'っ':'つ','ゃ':'や','ゅ':'ゆ','ょ':'よ','ゎ':'わ',
-  'ア':'ァ','イ':'ィ','ウ':'ゥ','エ':'ェ','オ':'ォ',
-  'ツ':'ッ','ヤ':'ャ','ユ':'ュ','ヨ':'ョ','ワ':'ヮ',
-  'ァ':'ア','ィ':'イ','ゥ':'ウ','ェ':'エ','ォ':'オ',
-  'ッ':'ツ','ャ':'ヤ','ュ':'ユ','ョ':'ヨ','ヮ':'ワ',
-};
-
 // ---------- InputHandler ----------
 
 // メールのドメイン。順は教材 (FineWeb・おーぷん2ちゃんねる) に「@ドメイン」が書かれた回数の多い順 (2026-10-13 に数えた。
@@ -367,6 +325,18 @@ export class InputHandler {
     if (nb >= 0) { this.hostCursor = nb; }
   }
 
+  // 入力欄の文字が変わった。打っている途中なのに欄が空になった (アプリの送信ボタンで送って欄を空にした) ときは、
+  // 打っている途中の状態と候補を捨てる (確定せずに送ると候補が残った。ユーザー 2026-10-16)。
+  // 入力欄の文字はアプリが消しているので、こちらでは消し直さない (送った文字やほかの文字を消さないため)
+  onHostText(text: string): void {
+    if (Date.now() < this.selfEditUntil) { return; }
+    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
+    if (state === InputState.IDLE || text.length > 0) { return; }
+    this.previewActive = false;   // 入力欄のプレビューは、もうアプリが消している
+    this.previewLen = 0;
+    this.resetComposition();
+  }
+
   private selfEditUntil: number = 0;
   private markSelfEdit(): void {
     this.selfEditUntil = Date.now() + InputHandler.SELF_EDIT_MS;
@@ -396,7 +366,7 @@ export class InputHandler {
   // このバッジ自体が「► で閉じられる」ことの案内も兼ねている。
   private pendingBracketClose: string = '';
 
-  // 閉じ括弧の保留を解く引き金 ('manual' | 'auto')。設定の実体は
+  // 括弧の入れ方 ('pair' | 'manual')。設定の実体は
   // SettingsStore 側にあり、ここは反映済みの値を読むだけ。設定画面
   // (パネル内 SettingsBar) と拡張本体は同じプロセスの AppStorage を
   // 共有するので、都度読めば必ず最新になる。
@@ -717,19 +687,14 @@ export class InputHandler {
         AppStorage.setOrCreate('oneHandedSide', s.oneHandedSide);
         AppStorage.setOrCreate('conversionEngine', s.conversionEngine);
         AppStorage.setOrCreate('numericPadEnabled', s.numericPadEnabled);
-        // オート確定・提案を分ける・英数字キーボードの変換・キーボード内の表示は設定を廃止して決め打ち
+        // 提案を分ける・英数字キーボードの変換・キーボード内の表示は設定を廃止して決め打ち
         // (ユーザー 2026-10-14「もういらない」。前に保存した値は無視)
-        s.liveCommit = false;
         s.separateSuggest = true;
         s.alphaCompose = true;
-        s.composingInPanel = true;
+        s.composingInPanel = false;  // ひらがなの行は入力欄に出せない欄だけ (常に出していたのは誤り、2026-10-15)
         s.composingInField = true;   // 入力欄に表示も決め打ち (設定は廃止、2026-10-14)
-        AppStorage.setOrCreate('liveCommit', s.liveCommit);
-        AiConverter.liveCommit = s.liveCommit;
         AppStorage.setOrCreate('separateSuggest', s.separateSuggest);
         AppStorage.setOrCreate('alphaCompose', s.alphaCompose);
-        // 不適切な語は常に出す (設定は廃止。ユーザー 2026-10-13「オフにする意味がない」。前に保存したオフは無視)
-        AiConverter.allowSlurs = true;
         AiConverter.setSuggestMode(s.separateSuggest);
         AppStorage.setOrCreate('hapticEnabled', s.hapticEnabled);
         AppStorage.setOrCreate('themeMode', s.themeMode);
@@ -1002,41 +967,6 @@ export class InputHandler {
     }
   }
 
-  // 長い入力の扱い: false = 保留 (既定。前の方は候補を持たせて入力中のまま)、true = オート確定 (Mac の IME のように前から確定)
-  // 提案 (打ち間違いの直し・日付・住所) を分けて出すか。オフなら今までどおり候補の帯に混ぜる
-  setSeparateSuggest(enabled: boolean): void {
-    AppStorage.setOrCreate('separateSuggest', enabled);
-    AiConverter.setSuggestMode(enabled);
-    AppStorage.setOrCreate('suggestList', [] as string[]);
-    if (this.imeContext) {
-      SettingsStore.saveSeparateSuggest(this.imeContext, enabled);
-    }
-  }
-
-  // 英数字キーボードで英字も組み立てて変換するか (使い心地が分かれるので切り替え。ユーザー 2026-10-09)
-  setAllowSlurs(enabled: boolean): void {
-    AppStorage.setOrCreate('allowSlurs', enabled);
-    AiConverter.allowSlurs = enabled;
-    if (this.imeContext) {
-      SettingsStore.saveAllowSlurs(this.imeContext, enabled);
-    }
-  }
-
-  setAlphaCompose(enabled: boolean): void {
-    AppStorage.setOrCreate('alphaCompose', enabled);
-    if (this.imeContext) {
-      SettingsStore.saveAlphaCompose(this.imeContext, enabled);
-    }
-  }
-
-  setLiveCommit(enabled: boolean): void {
-    AppStorage.setOrCreate('liveCommit', enabled);
-    AiConverter.liveCommit = enabled;
-    if (this.imeContext) {
-      SettingsStore.saveLiveCommit(this.imeContext, enabled);
-    }
-  }
-
   setNumericPadEnabled(enabled: boolean): void {
     AppStorage.setOrCreate('numericPadEnabled', enabled);
     if (!enabled && AppStorage.get<string>('keyboardSubMode') === 'numeric') {
@@ -1072,15 +1002,6 @@ export class InputHandler {
   setConversionEngine(_engine: string): void {
     AppStorage.setOrCreate('conversionEngine', 'ai');
     this.loadAiConverter();
-  }
-
-  // 入力中のかなの表示先の切替 (設定画面 → SettingsBar)。2つは独立で、
-  // 両方OFFにもできる (どこにも出なくなるので設定画面側で警告を出す)。
-  setComposingDisplay(inPanel: boolean, inField: boolean): void {
-    this.applyComposingDisplay(inPanel, inField);
-    if (this.imeContext) {
-      SettingsStore.saveComposingDisplay(this.imeContext, inPanel, inField);
-    }
   }
 
   // 保存せずに反映だけする。設定の読み直しは拡張側 (reloadSettings) と
@@ -1991,6 +1912,7 @@ export class InputHandler {
     this.reloadUserDict();
     this.reloadSettings();
     this.reloadSuppressed();
+    if (this.imeContext) { ClipboardPins.load(this.imeContext).catch((_e: Error) => {}); }
     AppStorage.setOrCreate('composingText', '');
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('candidates', [] as string[]);
@@ -2183,7 +2105,7 @@ export class InputHandler {
       // 扱いにすると括弧の中身を1文字打ち間違えて消しただけで閉じ括弧まで
       // 消えてしまう。そちらは「開き括弧そのものを消した = 括弧をやめた」
       // ときだけ破棄する。
-      if (this.bracketCloseMode() === 'auto' || BRACKET_PAIRS[deleted] === this.pendingBracketClose) {
+      if (BRACKET_PAIRS[deleted] === this.pendingBracketClose) {
         this.setPendingBracketClose('');
       }
       this.inputClient?.deleteForward(1);
@@ -2224,7 +2146,6 @@ export class InputHandler {
       this.bCur = 0;
       AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
       AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
-      AppStorage.setOrCreate('bunsetsuDisplay', '');
       AppStorage.setOrCreate('bunsetsuCurrent', 0);
       AppStorage.setOrCreate('composingText', composing);
       AppStorage.setOrCreate('inputState', InputState.COMPOSING);
@@ -2366,7 +2287,6 @@ export class InputHandler {
     AiConverter.recordSuggestUse(list[index]);
     this.insertText(text);
     KanaKanjiConverter.addContext(text);
-    AppStorage.setOrCreate('suggestText', '');
     AppStorage.setOrCreate('suggestList', [] as string[]);
     if (parts[1].length > 0) {
       this.continueWithTail(parts[1]);
@@ -2542,29 +2462,11 @@ export class InputHandler {
     AppStorage.setOrCreate('pendingRomaji', '');
     AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
     AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
-    AppStorage.setOrCreate('bunsetsuDisplay', '');
     AppStorage.setOrCreate('bunsetsuCurrent', 0);
     AppStorage.setOrCreate('inputState', InputState.COMPOSING);
     AppStorage.setOrCreate('convEnd', this.conversionEnd);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     this.updateCandidates();
-  }
-
-  // オート確定: AI 変換で固定された前の方 (読み fk -> 表記 fs) を確定し、残りのかなを入力中に残す。
-  // ローマ字の打ちかけ・文節の編集中・変換範囲を縮めているときはしない。
-  private autoCommitFrozen(target: string, fk: string, fs: string): void {
-    // 速く打つと、ここに来るまでに入力がもう進んでいる。固定した読みが頭に残っていれば確定してよい
-    const composing = AppStorage.get<string>('composingText') ?? '';
-    if (fk.length === 0 || !composing.startsWith(fk) || !target.startsWith(fk) || this.isRangeShrunk(composing)) { return; }
-    if ((AppStorage.get<string>('pendingRomaji') ?? '') !== '') { return; }
-    if ((AppStorage.get<string>('inputState') ?? InputState.IDLE) !== InputState.COMPOSING) { return; }
-    this.insertText(fs);
-    KanaKanjiConverter.addContext(fs);
-    AiConverter.clearFrozen(fk, fs);
-    this.continueWithTail(composing.slice(fk.length));
-    // continueWithTail は変換範囲を残りの長さに張るが、続けて打った字も変換したいので全体に戻す
-    this.conversionEnd = 0;
-    AppStorage.setOrCreate('convEnd', 0);
   }
 
   private resetComposition(): void {
@@ -2598,7 +2500,6 @@ export class InputHandler {
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('bunsetsuTexts', [] as string[]);
     AppStorage.setOrCreate('bunsetsuRaw', [] as string[]);
-    AppStorage.setOrCreate('bunsetsuDisplay', '');
     AppStorage.setOrCreate('bunsetsuCurrent', 0);
     AppStorage.setOrCreate('inputState', InputState.IDLE);
     AppStorage.setOrCreate('convEnd', 0);
@@ -2823,6 +2724,19 @@ export class InputHandler {
 
   // Paste an arbitrary entry from clipboard history (not necessarily the
   // current system clipboard contents).
+  // 固定した文を貼る / 固定する・外す (クリップボードのピン留め。ユーザー 2026-10-16)
+  pastePinned(text: string): void {
+    if (text.length === 0) { return; }
+    InputLog.recordPaste('pinned', text.length);
+    this.suppressInsertLog = true;
+    this.insertText(text, { raw: true } as InsertTextOptions);
+    this.suppressInsertLog = false;
+  }
+
+  togglePin(text: string): void {
+    if (this.imeContext) { ClipboardPins.toggle(this.imeContext, text).catch((_e: Error) => {}); }
+  }
+
   pasteFromHistory(index: number): void {
     const history = AppStorage.get<string[]>('clipboardHistory') ?? [];
     const text = history[index];
@@ -3153,7 +3067,7 @@ export class InputHandler {
     const fieldActive = this.composingInField && this.previewSupported;
     AppStorage.setOrCreate('previewInField', fieldActive);
     AppStorage.setOrCreate('showComposingPanel',
-      this.composingInPanel || (this.composingInField && !fieldActive));
+      this.composingInPanel || (this.composingInField && !fieldActive && !this.previewSupportPending));
     // 判定待ちの間は UI 側のフォールバック通知を抑止する (この間の
     // previewInField=false は「非対応」ではなく「まだ分からない」の意味)。
     AppStorage.setOrCreate('previewSupportPending', this.previewSupportPending);
@@ -3276,13 +3190,7 @@ export class InputHandler {
         if (this.conversionTarget() === target) { this.updateCandidates(); }
       });
     }
-    // 長い入力で前の方が固定されたとき: 既定 (保留) では入力欄に確定しない (AiConverter が固定した部分に候補を持たせ、
-    // 一覧から選び直せる)。設定「オート確定」がオンなら、固定した所を入力欄に確定して、残りだけを入力中に残す
-    if (aiMode && AiConverter.liveCommit && AiConverter.frozenKana().length > 0 && !this.isRangeShrunk(composing)) {
-      const fk = AiConverter.frozenKana();
-      const fs = AiConverter.frozenSurf();
-      setTimeout(() => { this.autoCommitFrozen(target, fk, fs); }, 0);
-    }
+    // 長い入力で前の方が固定されても入力欄には確定しない (AiConverter が固定した部分に候補を持たせ、一覧から選び直せる)
     const segs = [target];
     // 入力ログ用: 各候補をどの段が列に入れたか (InputLog の o 欄)。段ごとに
     // 「まだ印の無い候補」へ印を付けていくので、先に入れた段が勝つ。
@@ -3753,51 +3661,11 @@ export class InputHandler {
     AppStorage.setOrCreate('bunsetsuTexts', this.bChosen as string[]);
     AppStorage.setOrCreate('bunsetsuRaw', this.bSegs as string[]);
     AppStorage.setOrCreate('bunsetsuCurrent', this.bCur);
-    AppStorage.setOrCreate('bunsetsuDisplay', segTexts.join(''));
     const seg = this.bSegs[this.bCur];
     const cands = SuppressedCandidates.filter(seg, this.bunsetsuCandidates(this.bCur));
     AppStorage.setOrCreate('candidates', cands);
     AppStorage.setOrCreate('selectedCandidateIndex', 0);
     AppStorage.setOrCreate('inputState', InputState.BUNSETSU);
-  }
-
-  handleDakuten(): void {
-    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state !== InputState.COMPOSING) { return; }
-    const composing = AppStorage.get<string>('composingText') ?? '';
-    if (composing.length === 0) { return; }
-    const last = composing.slice(-1);
-    const toggled = DAKUTEN[last];
-    if (toggled !== undefined) {
-      InputLog.recordVariant('dakuten', last, toggled);
-      AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
-    }
-  }
-
-  handleHandakuten(): void {
-    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state !== InputState.COMPOSING) { return; }
-    const composing = AppStorage.get<string>('composingText') ?? '';
-    if (composing.length === 0) { return; }
-    const last = composing.slice(-1);
-    const toggled = HANDAKUTEN[last];
-    if (toggled !== undefined) {
-      InputLog.recordVariant('handakuten', last, toggled);
-      AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
-    }
-  }
-
-  handleSmall(): void {
-    const state = AppStorage.get<string>('inputState') ?? InputState.IDLE;
-    if (state !== InputState.COMPOSING) { return; }
-    const composing = AppStorage.get<string>('composingText') ?? '';
-    if (composing.length === 0) { return; }
-    const last = composing.slice(-1);
-    const toggled = SMALL_KANA[last];
-    if (toggled !== undefined) {
-      InputLog.recordVariant('small', last, toggled);
-      AppStorage.setOrCreate('composingText', composing.slice(0, -1) + toggled);
-    }
   }
 
   // raw: true は括弧の自動閉じを掛けない (貼り付け・予測タップなど、
@@ -3853,10 +3721,6 @@ export class InputHandler {
           // 出すのではなく、保留を消費してそのまま1つだけ出す
           // (「自分で閉じた」として扱う)。これが無いと "）" が
           // "））" になって出ていた (実際の不具合報告の原因)。
-          this.setPendingBracketClose('');
-        } else if (this.bracketCloseMode() === 'auto') {
-          InputLog.recordBracket(this.pendingBracketClose, 'auto');
-          finalText = text + this.pendingBracketClose;
           this.setPendingBracketClose('');
         }
         // 'manual' では確定の内容にも保留にも手を付けない。閉じが出るのは
@@ -4146,8 +4010,6 @@ export class KeyboardController {
     const shortVp = Math.min(dis.width, dis.height) / density;
     const isTabletClass = shortVp > 600;
     AppStorage.setOrCreate('isTabletClass', isTabletClass);
-    const widthScaleForWide = AppStorage.get<number>('keyboardWidthScale') ?? 1.0;
-    AppStorage.setOrCreate('isWideScreen', isTabletClass && fullVp > MAX_KB_VP * widthScaleForWide);
 
     // This is only a best-effort guess from raw display metrics — on-device
     // diagnostics confirmed this device's IME panel framework silently shrinks
@@ -4207,7 +4069,6 @@ export class KeyboardController {
       const keyHeight = this.computeKeyHeight(dis, isLandscape);
 
       AppStorage.setOrCreate('isLandscape', isLandscape);
-      AppStorage.setOrCreate('displayWidth', dis.width);
       AppStorage.setOrCreate('keyboardHeight', keyHeight);
       // 'keyboardHeight' は panel.resize() に渡す都合で px のまま。ArkUI側
       // (候補バー等の比率計算) が使うのは vp なので別キーで持つ
@@ -4291,7 +4152,6 @@ export class KeyboardController {
       const isLandscape = dis.width > dis.height;
 
       AppStorage.setOrCreate('isLandscape', isLandscape);
-      AppStorage.setOrCreate('displayWidth', dis.width);
 
       if (floating) {
         // フローティング中は画面全幅にも下端固定にもしない。位置・大きさは
@@ -4678,6 +4538,10 @@ export class KeyboardController {
       this.kbDelegate.on('selectionChange', (_ob: number, _oe: number, newBegin: number, _ne: number) => {
         InputHandler.getInstance().onHostSelection(newBegin);
       });
+      // 入力欄の文字が変わった (送信ボタンで欄が空になったら、打っている途中の状態を捨てる)
+      this.kbDelegate.on('textChange', (text: string) => {
+        InputHandler.getInstance().onHostText(text);
+      });
     } catch (err) {
       console.error('shuntiIME getKeyboardDelegate error', err);
     }
@@ -4687,5 +4551,6 @@ export class KeyboardController {
     display.off('change');
     this.kbDelegate?.off('keyDown');
     this.kbDelegate?.off('selectionChange');
+    this.kbDelegate?.off('textChange');
   }
 }

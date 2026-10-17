@@ -18,13 +18,12 @@ export struct CandidateBar {
   // まだ LEARN_THRESHOLD 未満の未知語(準候補)。通常候補と見分けが付くよう
   // 点線の縁取りだけ足す (UnknownWordLearner.quasiCandidates 参照)。
   @StorageLink('quasiCandidateSurfaces') quasiCandidateSurfaces: string[] = [];
-  // 提案 (打ち間違いの直し・日付・住所・絵文字…)。入力中の文字の帯 (ひらがなの帯) が無いとき (入力欄にプレビューを出す端末。
-  // HarmonyOS 7 から) は、候補の帯の 1 位のすぐ後ろに、色と ✦ の印で見分けられるようにして並べる (ユーザー 2026-10-13)
+  // 提案 (打ち間違いの直し・日付・住所・絵文字…)。候補の帯の 1 位のすぐ後ろに、青枠で見分けられるようにして並べる
+  // (ひらがなの帯の中に分けて出すのはやめた。ユーザー 2026-10-15)
   @StorageLink('suggestList') suggestList: string[] = [];
   @StorageLink('suggestKinds') suggestKinds: number[] = [];
   @StorageLink('typoTop') typoTop: string = '';   // 1 位にした打ち間違いの直し (“ ” で囲んで見せる)
   @StorageLink('suggestFrom') suggestFrom: string = '';
-  @StorageLink('showComposingPanel') showComposingPanel: boolean = true;
   // Which chip is showing its 削除 popup (-1 = none), and the text that chip
   // holds. Kept as state rather than passed into the popup builder because a
   // parameterised @Builder inside ForEach can capture a stale row -- the same
@@ -70,7 +69,7 @@ export struct CandidateBar {
   }
 
   private suggestInBar(): boolean {
-    return !this.showComposingPanel && this.suggestList.length > 0 && this.candidates.length > 0;
+    return this.suggestList.length > 0 && this.candidates.length > 0;
   }
 
   private isTypoSugg(i: number): boolean {

@@ -1,4 +1,4 @@
-import { InputHandler, InputMode, InputState } from '../ime/KeyboardController';
+import { InputHandler, InputMode } from '../ime/KeyboardController';
 import { kbTheme } from './Theme';
 import { JP_FONT_FAMILY } from './JpFont';
 
@@ -59,7 +59,6 @@ const NUM_FLICK_GRID: FlickKeyDef[][] = [
 @Component
 export struct NumericPadView {
   @StorageLink('flickKeyWidthVp') flickKeyWidthVp: number = 72;
-  @StorageLink('inputState') inputState: string = 'IDLE';
   @StorageLink('isDark') isDark: boolean = false;
   @StorageLink('keyChromeEnabled') keyChromeEnabled: boolean = true;
   // 数字パッドが有効だと「あA」キーは 日本語→アルファベット→数字 の3段階に

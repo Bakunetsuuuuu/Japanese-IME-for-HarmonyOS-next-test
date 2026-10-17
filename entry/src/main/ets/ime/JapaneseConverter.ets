@@ -139,10 +139,6 @@ export class JapaneseConverter {
     }
   }
 
-  getPending(): string {
-    return this.buffer;
-  }
-
   flushPending(): string {
     const pending = this.buffer;
     this.buffer = '';

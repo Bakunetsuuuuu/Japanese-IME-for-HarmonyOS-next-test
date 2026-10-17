@@ -36,6 +36,11 @@ KKC_API int kkc_last_suggest(kkc_engine* e, uint16_t* out, int cap, int32_t* kin
 KKC_API int kkc_convert(kkc_engine* e, const uint16_t* ctx, int nctx, const uint16_t* kana, int nk,
                         int maxout, int use_model, uint16_t* out, int cap);
 
+// 打った鍵の列 (ローマ字の英字) を渡す。英字のまま打った語 (github) を候補にできるようにする。
+// keys = 打った鍵 (英字・記号そのまま)。span_end[i] = 読みの i 文字目が鍵の何文字目までで決まったか (単調増加)。
+// 直後の 1 回の kkc_convert にだけ効く (その変換の読みの長さが nk と合わなければ使わない)
+KKC_API void kkc_set_keys(kkc_engine* e, const uint16_t* keys, int nkeys, const int32_t* span_end, int nk);
+
 // 直前の kkc_convert の 1 位と 2 位 (表記が違う最初の 2 つ) の経路のコストの差 (大きいほど迷いが少ない)。
 // 段階式 (辞書だけで決まるときはモデルを呼ばない) の判定に使う。2 位が無ければとても大きな値
 KKC_API double kkc_last_margin(kkc_engine* e);

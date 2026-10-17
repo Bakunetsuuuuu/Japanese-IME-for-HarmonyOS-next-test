@@ -36,6 +36,8 @@ public:
 
     // かな → ローマ字 (F9・F10 で英字に戻すとき、打ったキーが分からない場合に使う)
     u16 to_romaji(const u16& kana) const;
+    // 表に綴りを足す・上書きする (詳細設定のローマ字の表)
+    void add_pair(const u16& key, const u16& kana);
 
 private:
     Result process_buffered();
